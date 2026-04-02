@@ -1,0 +1,35 @@
+# 依赖
+node_modules/
+package-lock.json
+
+# 构建输出
+dist/
+build/
+
+# 开发工具
+.vscode/
+.idea/
+.DS_Store
+
+# 微信小游戏
+.project
+.miniprogram/
+
+# Python 虚拟环境
+.venv/
+venv/
+__pycache__/
+*.pyc
+
+# 未使用文件备份
+images/characters_anim/_未使用文件_备份/
+
+# 临时文件
+*.tmp
+*.log
+*.swp
+*~
+
+# 操作系统
+Thumbs.db
+Desktop.ini
