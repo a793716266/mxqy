@@ -26,8 +26,8 @@ export class TownScene {
     this.playerX = this.mapWidth / 2
     this.playerY = this.mapHeight / 2
     this.playerSpeed = 150 * this.dpr
-    this.playerDirection = 'down'
-    this.facingLeft = false
+    this.playerDirection = 'right'
+    this.facingLeft = true // 初始朝右（图片朝左，需要翻转）
     
     // 动画系统
     this.animFrame = 0
@@ -241,7 +241,10 @@ export class TownScene {
       if (dist > 5 * this.dpr) {
         if (Math.abs(dx) > Math.abs(dy)) {
           this.playerDirection = dx > 0 ? 'right' : 'left'
-          this.facingLeft = dx < 0
+          // 如果图片朝左，逻辑需要反过来：
+          // - 向右移动(dx>0)需要翻转(facingLeft=true)，让图片朝右
+          // - 向左移动(dx<0)不需要翻转(facingLeft=false)，图片朝左
+          this.facingLeft = dx > 0
         } else {
           this.playerDirection = dy > 0 ? 'down' : 'up'
         }
