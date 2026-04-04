@@ -192,7 +192,41 @@ export class TownScene {
   update(dt) {
     this.time += dt
     
-    // 更新对话
+    // 处理点击
+    if (this.game.input.taps.length > 0) {
+      const tap = this.game.input.consumeTap()
+      if (tap) {
+        // 对话框点击 - 优先处理
+        if (this.dialogue) {
+          this._showNextDialogue()
+          return
+        }
+        
+        // 和附近NPC互动
+        if (this.nearbyNPC) {
+          this._interactWithNPC(this.nearbyNPC)
+          return
+        }
+        
+        // 摇杆区域外 - 尝试激活摇杆
+        const jx = tap.x
+        const jy = tap.y
+        const distToJoystick = Math.sqrt(
+          (jx - this.joystickArea.x) ** 2 + (jy - this.joystickArea.y) ** 2
+        )
+        
+        if (distToJoystick <= this.joystickArea.r) {
+          // 点击在摇杆区域内
+          this.joystick.active = true
+          this.joystick.startX = jx
+          this.joystick.startY = jy
+          this.joystick.currentX = jx
+          this.joystick.currentY = jy
+        }
+      }
+    }
+    
+    // 如果在对话中，不处理移动
     if (this.dialogue) return
     
     // 摇杆控制移动
@@ -254,40 +288,6 @@ export class TownScene {
     
     // 检测附近的NPC
     this._checkNearbyNPC()
-    
-    // 处理点击
-    if (this.game.input.taps.length > 0) {
-      const tap = this.game.input.consumeTap()
-      if (tap) {
-        // 对话框点击
-        if (this.dialogue) {
-          this._showNextDialogue()
-          return
-        }
-        
-        // 和附近NPC互动
-        if (this.nearbyNPC) {
-          this._interactWithNPC(this.nearbyNPC)
-          return
-        }
-        
-        // 摇杆区域外 - 尝试激活摇杆
-        const jx = tap.x
-        const jy = tap.y
-        const distToJoystick = Math.sqrt(
-          (jx - this.joystickArea.x) ** 2 + (jy - this.joystickArea.y) ** 2
-        )
-        
-        if (distToJoystick <= this.joystickArea.r) {
-          // 点击在摇杆区域内
-          this.joystick.active = true
-          this.joystick.startX = jx
-          this.joystick.startY = jy
-          this.joystick.currentX = jx
-          this.joystick.currentY = jy
-        }
-      }
-    }
   }
   
   _updateCamera() {
