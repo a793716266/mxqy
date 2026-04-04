@@ -135,9 +135,10 @@ export class TownScene {
           return
         }
         
-        // 和附近NPC互动
-        if (this.nearbyNPC) {
-          this._interactWithNPC(this.nearbyNPC)
+        // 检查是否点击了NPC（必须点击NPC的位置）
+        const clickedNPC = this._checkClickNPC(tap)
+        if (clickedNPC) {
+          this._interactWithNPC(clickedNPC)
           return
         }
         
@@ -152,8 +153,38 @@ export class TownScene {
     // 更新移动系统（使用field-scene验证过的逻辑）
     this.movement.update(dt)
     
-    // 检测附近的NPC
+    // 检测附近的NPC（用于显示提示）
     this._checkNearbyNPC()
+  }
+  
+  /**
+   * 检查点击位置是否在NPC上
+   */
+  _checkClickNPC(tap) {
+    for (const npc of this.npcs) {
+      // 转换为屏幕坐标
+      const screenPos = this.movement.worldToScreen(npc.x, npc.y)
+      
+      // 检查点击是否在NPC的互动范围内
+      const dist = Math.sqrt(
+        (tap.x - screenPos.x) ** 2 +
+        (tap.y - screenPos.y) ** 2
+      )
+      
+      if (dist <= npc.interactionRadius) {
+        // 检查玩家是否在互动范围内
+        const playerDist = Math.sqrt(
+          (this.movement.playerX - npc.x) ** 2 +
+          (this.movement.playerY - npc.y) ** 2
+        )
+        
+        if (playerDist <= npc.interactionRadius * 1.5) {
+          return npc
+        }
+      }
+    }
+    
+    return null
   }
   
   _checkNearbyNPC() {
