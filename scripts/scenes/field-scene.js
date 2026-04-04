@@ -101,7 +101,7 @@ export class FieldScene {
         fieldBg: 'FIELD_GRASSLAND', // 野外探索地图
         battleBg: 'BG_GRASSLAND', // 战斗背景
         enemies: ['wild_cat', 'slime_cat', 'shadow_mouse'],
-        bossEnemy: null,
+        bossEnemy: 'lost_healer_cat',  // 添加Boss
         color: '#7bed9f'
       },
       forest: {
@@ -204,6 +204,45 @@ export class FieldScene {
     const maxMonsters = 20
     const margin = 150 * this.dpr // 边缘留空
     const minDistance = 120 * this.dpr // 怪物之间的最小距离
+
+    // 先生成Boss（如果该区域有Boss且未被击败）
+    if (this.areaInfo.bossEnemy) {
+      const bossId = this.areaInfo.bossEnemy
+      const bossData = ENEMIES_CH1[bossId]
+      
+      // 检查Boss是否已被击败
+      const bossFlag = `${this.areaId}_${bossId}_defeated`
+      if (!this.game.data.hasFlag(bossFlag) && bossData) {
+        // Boss位置：地图右上角区域
+        const bossX = this.mapWidth * 0.75
+        const bossY = this.mapHeight * 0.25
+        
+        monsters.push({
+          id: `boss_${bossId}`,
+          enemyId: bossId,
+          x: bossX,
+          y: bossY,
+          name: bossData.name,
+          isBoss: true,
+          isElite: false,
+          alive: true,
+          // Boss特殊动画
+          bobOffset: 0,
+          bobSpeed: 1.5,
+          // Boss不巡逻，只在原地小范围移动
+          homeX: bossX,
+          homeY: bossY,
+          patrolRadius: 20 * this.dpr,
+          moveAngle: 0,
+          moveSpeed: 10 * this.dpr,
+          moveTimer: 0,
+          pauseTimer: 0,
+          isMoving: true
+        })
+        
+        console.log(`[Field] 生成Boss: ${bossData.name} 在位置 (${bossX}, ${bossY})`)
+      }
+    }
 
     for (let i = 0; i < maxMonsters; i++) {
       let attempts = 0

@@ -289,6 +289,9 @@ export class BattleScene {
     // 敌人攻击动画更新
     this._updateEnemyAttackAnimation(dt)
 
+    // 感化剧情更新
+    this._updatePurifyScene(dt)
+
     // 检查战斗结束
     this._checkBattleEnd()
   }
@@ -370,6 +373,24 @@ export class BattleScene {
     const skills = this.enemy.skills || []
     const skill = skills[Math.floor(Math.random() * skills.length)] || { name: '攻击', power: 1.0 }
 
+    // 特殊技能类型：自我治愈
+    if (skill.type === 'heal_self') {
+      const healAmount = skill.healAmount || 30
+      this.enemy.hp = Math.min(this.enemy.maxHp, this.enemy.hp + healAmount)
+      
+      this.damageTexts.push({
+        text: `+${healAmount}`,
+        x: this.enemyBaseX,
+        y: this.enemyBaseY - 50 * this.dpr,
+        color: '#2ed573',
+        life: 1.5
+      })
+      
+      this._addLog(`${this.enemy.name} 使用「${skill.name}」！`)
+      this._addLog(`恢复了 ${healAmount} 点生命！`)
+      return
+    }
+
     let damage = Math.floor(this.enemy.atk * (skill.power || 1.0) - target.def * 0.4)
     damage = Math.max(1, damage + Math.floor(Math.random() * 4) - 1)
     target.hp = Math.max(0, target.hp - damage)
@@ -406,6 +427,9 @@ export class BattleScene {
       case 'victory':
       case 'defeat':
         this._handleEndTap(tx, ty)
+        break
+      case 'purify':
+        this._handlePurifyTap(tx, ty)
         break
     }
   }
@@ -614,11 +638,22 @@ export class BattleScene {
 
   _checkBattleEnd() {
     // 如果已经是胜利或失败状态，不再处理
-    if (this.phase === 'victory' || this.phase === 'defeat') {
+    if (this.phase === 'victory' || this.phase === 'defeat' || this.phase === 'purify') {
       return
     }
     
     if (this.enemy.hp <= 0) {
+      // 特殊处理：艾米Boss感化剧情
+      if (this.enemy.isAmy) {
+        this.phase = 'purify'
+        this.purifyStep = 0
+        this.purifyTimer = 0
+        this._addLog(`✨ ${this.enemy.name} 被打败了...`)
+        this._addLog(`一道温暖的光芒涌现...`)
+        console.log(`[Battle] 艾米Boss被击败，开始感化剧情`)
+        return
+      }
+      
       this.phase = 'victory'
       this._addLog(`🎉 ${this.enemy.name} 被击败了！`)
       this._addLog(`获得 ${this.enemy.exp || 0} 经验，${this.enemy.gold || 0} 金币`)
@@ -758,6 +793,9 @@ export class BattleScene {
       this._renderEndScreen(ctx, '🎉 胜利！', '#2ed573', '点击继续')
     } else if (this.phase === 'defeat') {
       this._renderEndScreen(ctx, '💔 战败...', '#ff4757', '点击返回')
+    } else if (this.phase === 'purify') {
+      // 感化剧情
+      this._renderPurifyScene(ctx)
     }
   }
 
@@ -1567,5 +1605,201 @@ export class BattleScene {
       'xiaobei': 'CAT_XIAOBEI'
     }
     return map[heroId] || 'HERO_ZHENBAO'
+  }
+
+  // ======== 感化剧情 ========
+  _updatePurifyScene(dt) {
+    if (this.phase !== 'purify') return
+
+    this.purifyTimer += dt
+
+    // 自动播放对话
+    if (this.purifyStep < 3 && this.purifyTimer > 2.5) {
+      this.purifyStep++
+      this.purifyTimer = 0
+    }
+  }
+
+  _renderPurifyScene(ctx) {
+    const w = this.width
+    const h = this.height
+    const dpr = this.dpr
+
+    // 背景渐变（温暖的光芒）
+    const progress = Math.min(1, this.purifyTimer * 0.5)
+    const bgAlpha = 0.85 + progress * 0.1
+    
+    ctx.fillStyle = `rgba(255, 248, 220, ${bgAlpha})`
+    ctx.fillRect(0, 0, w, h)
+
+    // 光芒效果
+    const glowAlpha = 0.3 + Math.sin(this.time * 3) * 0.2
+    const glowSize = 200 * dpr + Math.sin(this.time * 2) * 20 * dpr
+    
+    const gradient = ctx.createRadialGradient(
+      w / 2, h / 2, 0,
+      w / 2, h / 2, glowSize
+    )
+    gradient.addColorStop(0, `rgba(255, 255, 255, ${glowAlpha})`)
+    gradient.addColorStop(0.5, `rgba(255, 236, 179, ${glowAlpha * 0.5})`)
+    gradient.addColorStop(1, 'rgba(255, 236, 179, 0)')
+    
+    ctx.fillStyle = gradient
+    ctx.fillRect(0, 0, w, h)
+
+    // 艾米的头像（逐渐显现）
+    const amyImgKey = 'CAT_AMY'
+    const amyImg = this.game.assets.get(amyImgKey)
+    const avatarSize = 120 * dpr
+    const avatarY = h * 0.35
+    
+    // 头像背景光环
+    ctx.save()
+    ctx.globalAlpha = progress
+    const ringAlpha = 0.5 + Math.sin(this.time * 2) * 0.2
+    ctx.strokeStyle = `rgba(255, 215, 0, ${ringAlpha})`
+    ctx.lineWidth = 4 * dpr
+    ctx.beginPath()
+    ctx.arc(w / 2, avatarY, avatarSize / 2 + 10 * dpr, 0, Math.PI * 2)
+    ctx.stroke()
+    
+    // 头像
+    if (amyImg) {
+      ctx.beginPath()
+      ctx.arc(w / 2, avatarY, avatarSize / 2, 0, Math.PI * 2)
+      ctx.clip()
+      ctx.drawImage(amyImg, w / 2 - avatarSize / 2, avatarY - avatarSize / 2, avatarSize, avatarSize)
+    } else {
+      // 备用：显示角色名
+      ctx.font = `bold ${30 * dpr}px sans-serif`
+      ctx.fillStyle = '#2d3436'
+      ctx.textAlign = 'center'
+      ctx.fillText('💚', w / 2, avatarY)
+    }
+    ctx.restore()
+
+    // 角色名
+    ctx.font = `bold ${28 * dpr}px sans-serif`
+    ctx.fillStyle = '#2d3436'
+    ctx.textAlign = 'center'
+    ctx.fillText('艾米', w / 2, avatarY + avatarSize / 2 + 35 * dpr)
+
+    // 对话框
+    const dialogues = this.enemy.purifyDialogue || [
+      '你们的眼神...如此温暖...',
+      '我一直在寻找这样的羁绊...',
+      '请让我加入你们，一起守护这片大地！'
+    ]
+
+    const boxY = h * 0.55
+    const boxH = 180 * dpr
+    
+    // 对话框背景
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.95)'
+    ctx.beginPath()
+    this._roundRect(ctx, 40 * dpr, boxY, w - 80 * dpr, boxH, 15 * dpr)
+    ctx.fill()
+    
+    // 对话框边框
+    ctx.strokeStyle = '#ff9f43'
+    ctx.lineWidth = 3 * dpr
+    ctx.stroke()
+
+    // 显示对话（逐句显示）
+    ctx.font = `${18 * dpr}px sans-serif`
+    ctx.fillStyle = '#2d3436'
+    ctx.textAlign = 'center'
+    ctx.textBaseline = 'middle'
+
+    const displayTexts = dialogues.slice(0, this.purifyStep + 1)
+    let textY = boxY + 30 * dpr
+    for (const text of displayTexts) {
+      ctx.fillText(text, w / 2, textY)
+      textY += 35 * dpr
+    }
+
+    // 感化完成提示
+    if (this.purifyStep >= 2) {
+      ctx.font = `bold ${22 * dpr}px sans-serif`
+      ctx.fillStyle = '#ff9f43'
+      ctx.fillText('✨ 艾米加入了队伍！', w / 2, h * 0.88)
+      
+      // 继续按钮
+      const btnW = 180 * dpr
+      const btnH = 50 * dpr
+      const btnX = (w - btnW) / 2
+      const btnY = h * 0.92
+
+      const btnGrad = ctx.createLinearGradient(btnX, btnY, btnX, btnY + btnH)
+      btnGrad.addColorStop(0, '#2ed573')
+      btnGrad.addColorStop(1, '#26b863')
+      ctx.fillStyle = btnGrad
+      ctx.beginPath()
+      this._roundRect(ctx, btnX, btnY, btnW, btnH, 25 * dpr)
+      ctx.fill()
+
+      ctx.font = `bold ${20 * dpr}px sans-serif`
+      ctx.fillStyle = '#ffffff'
+      ctx.textBaseline = 'middle'
+      ctx.fillText('继续冒险', w / 2, btnY + btnH / 2)
+    } else {
+      // 等待提示
+      const dots = '.'.repeat(Math.floor(this.time * 2) % 4)
+      ctx.font = `${16 * dpr}px sans-serif`
+      ctx.fillStyle = 'rgba(0, 0, 0, 0.4)'
+      ctx.fillText(`${dots}`, w / 2, h * 0.92)
+    }
+  }
+
+  _handlePurifyTap(tx, ty) {
+    // 只有在感化完成（第3步）后才允许点击继续
+    if (this.purifyStep >= 2) {
+      const w = this.width
+      const h = this.height
+      const dpr = this.dpr
+      
+      // 检测点击"继续冒险"按钮
+      const btnW = 180 * dpr
+      const btnH = 50 * dpr
+      const btnX = (w - btnW) / 2
+      const btnY = h * 0.92
+
+      if (this._isInRect(tx, ty, btnX, btnY, btnW, btnH)) {
+        // 解锁艾米角色
+        const unlocked = charStateManager.unlockCharacter('amy')
+        if (unlocked) {
+          console.log('[Battle] 艾米成功加入队伍！')
+          this._addLog(`✨ 艾米加入了队伍！`)
+        }
+
+        // 标记Boss已击败
+        const bossFlag = `${this.nodeId}_${this.enemy.id}_defeated`
+        this.game.data.addFlag(bossFlag)
+
+        // 给予经验
+        const expReward = this.enemy.exp || 150
+        const goldReward = this.enemy.gold || 80
+        
+        const allChars = charStateManager.getAllCharacters()
+        for (const charState of allChars) {
+          const partyMember = this.party.find(h => h.id === charState.id)
+          if (partyMember) {
+            charState.hp = Math.max(0, Math.min(partyMember.hp, charState.maxHp))
+            charState.mp = Math.max(0, Math.min(partyMember.mp, charState.maxMp))
+            const levelUpCount = charState.gainExp(expReward)
+            if (levelUpCount > 0) {
+              this._addLog(`✨ ${charState.name} 升级了！(Lv.${charState.level})`)
+            }
+          }
+        }
+
+        // 保存角色状态
+        const charData = charStateManager.serialize()
+        this.game.data.set('characterStates', charData)
+
+        // 返回场景
+        this.game.changeScene('field', { nodeId: this.nodeId })
+      }
+    }
   }
 }

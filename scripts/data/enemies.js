@@ -68,7 +68,38 @@ export const ENEMIES_CH1 = {
     ],
     drop: [{ id: 'cat_collar', name: '猫项圈', chance: 0.5 }]
   },
-  // Boss - 极大幅加强
+  // Boss - 阳光草原
+  lost_healer_cat: {
+    id: 'lost_healer_cat',
+    name: '迷途的治愈猫',
+    maxHp: 350,
+    atk: 22,
+    def: 16,
+    spd: 11,
+    exp: 150,
+    gold: 80,
+    isBoss: true,
+    isAmy: true,  // 特殊标记：这是艾米的Boss形态
+    skills: [
+      { name: '治愈之爪', power: 1.3, type: 'attack' },
+      { name: '生命波纹', power: 0.8, type: 'attack', target: 'all' },
+      { name: '自我治愈', power: 0, type: 'heal_self', healAmount: 40 },
+      { name: '净化之光', power: 1.6, type: 'magic' },
+      { name: '治愈冲击', power: 2.2, type: 'magic' }
+    ],
+    drop: [{ id: 'healing_herb', name: '治愈草药', chance: 1.0 }],
+    dialogue: [
+      '你们...为什么要闯入这里？',
+      '我只是想守护这片草原的和平...',
+      '真正的力量...是治愈与守护吗...'
+    ],
+    purifyDialogue: [
+      '你们的眼神...如此温暖...',
+      '我一直在寻找这样的羁绊...',
+      '请让我加入你们，一起守护这片大地！'
+    ]
+  },
+  // Boss - 暗影洞穴
   dark_cat_king: {
     id: 'dark_cat_king',
     name: '暗影猫王',
