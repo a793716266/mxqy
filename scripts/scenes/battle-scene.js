@@ -696,6 +696,9 @@ export class BattleScene {
         }
       }
 
+      // 标记战斗胜利
+      this.game.data.set('battleVictory', true)
+
       // 标记 Boss 已击败
       if (this.enemy.isBoss) {
         this.game.data.addFlag('ch1_boss_defeated')
@@ -1765,6 +1768,9 @@ export class BattleScene {
       const btnY = h * 0.92
 
       if (this._isInRect(tx, ty, btnX, btnY, btnW, btnH)) {
+        // 标记战斗胜利
+        this.game.data.set('battleVictory', true)
+
         // 解锁艾米角色
         const unlocked = charStateManager.unlockCharacter('amy')
         if (unlocked) {

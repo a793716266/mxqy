@@ -310,16 +310,19 @@ export class FieldScene {
   }
   
   init() {
+    // 处理战斗结果
+    this._checkBattleResult()
+
     // 初始化相机位置
     this._updateCamera()
-    
+
     // 初始化摇杆区域
     this.joystickArea = {
       x: 50 * this.dpr,
       y: this.height - 200 * this.dpr,
       r: 80 * this.dpr
     }
-    
+
     // 注册触摸事件监听
     this._onTouchMove = (e) => {
       if (this.joystick.active && e.touches && Array.isArray(e.touches)) {
@@ -329,13 +332,41 @@ export class FieldScene {
         }
       }
     }
-    
+
     this._onTouchEnd = (e) => {
       this.joystick.active = false
     }
-    
+
     this.game.input.onMove(this._onTouchMove)
     this.game.input.onEnd(this._onTouchEnd)
+  }
+
+  _checkBattleResult() {
+    const battleMonsterId = this.game.data.get('currentBattleMonsterId')
+    const battleVictory = this.game.data.get('battleVictory')
+
+    if (battleMonsterId) {
+      // 找到对应怪物
+      const monster = this.mapMonsters.find(m => m.id === battleMonsterId)
+
+      if (monster) {
+        if (battleVictory) {
+          // 战斗胜利，标记怪物死亡
+          monster.alive = false
+          console.log(`[Field] 怪物 ${monster.name} 被击败`)
+        } else {
+          // 战斗失败，怪物保持存活
+          console.log(`[Field] 战斗失败，怪物 ${monster.name} 仍然存活`)
+        }
+      }
+
+      // 清除临时数据
+      this.game.data.delete('currentBattleMonsterId')
+      this.game.data.delete('battleVictory')
+
+      // 保存怪物状态
+      this.game.data.set('fieldMonsters', this.mapMonsters)
+    }
   }
   
   destroy() {
@@ -847,11 +878,9 @@ export class FieldScene {
 
     console.log(`[Field] 遭遇怪物: ${monster.name}`, enemy)
 
-    // 标记怪物为已战斗
-    monster.alive = false
-
-    // 保存怪物状态
-    this.game.data.set('fieldMonsters', this.mapMonsters)
+    // 不在这里标记怪物死亡，等战斗结束后根据结果决定
+    // 只保存当前正在战斗的怪物ID
+    this.game.data.set('currentBattleMonsterId', monster.id)
 
     // 保存队伍状态
     this.game.data.set('party', this.party)
