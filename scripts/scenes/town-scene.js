@@ -1,9 +1,12 @@
 /**
- * town-scene.js - 城镇主界面（安全区）
+ * town-scene.js - 村庄探索场景（可移动大地图）
  */
 
+import { HEROES } from '../data/heroes.js'
+import { charStateManager } from '../data/character-state.js'
+
 export class TownScene {
-  constructor(game) {
+  constructor(game, data) {
     this.game = game
     this.ctx = game.ctx
     this.width = game.width
@@ -11,113 +14,244 @@ export class TownScene {
     this.dpr = game.dpr
     this.time = 0
     
-    // 菜单状态
-    this.activeMenu = null  // null, 'party', 'inventory', 'save', 'quest'
-    this.selectedHero = 0
+    // 地图尺寸（根据village.jpeg实际尺寸：1664x928）
+    this.mapWidth = 1664 * this.dpr
+    this.mapHeight = 928 * this.dpr
     
-    // 按钮
-    this.buttons = []
+    // 相机位置
+    this.cameraX = 0
+    this.cameraY = 0
     
-    // 对话
+    // 玩家位置
+    this.playerX = this.mapWidth / 2
+    this.playerY = this.mapHeight / 2
+    this.playerSpeed = 150 * this.dpr
+    this.playerDirection = 'down'
+    this.facingLeft = false
+    
+    // 动画系统
+    this.animFrame = 0
+    this.animTimer = 0
+    this.isMoving = false
+    this.frameDuration = 0.15
+    
+    // 摇杆控制
+    this.joystick = { active: false, startX: 0, startY: 0, currentX: 0, currentY: 0 }
+    
+    // 初始化角色状态
+    const savedCharData = this.game.data.get('characterStates')
+    charStateManager.init(savedCharData)
+    
+    // 主角
+    this.mainCharacter = charStateManager.getAllCharacters()[0]
+    
+    // 队友跟随系统
+    this.followers = []
+    this.followerDistance = 35 * this.dpr
+    this.playerHistory = []
+    this.historyMaxLength = 90
+    this.historyInterval = 3
+    this.historyFrameCount = 0
+    this._initFollowers()
+    
+    // NPC列表
+    this.npcs = this._initNPCs()
+    
+    // 对话框
     this.dialogue = null
     this.dialogueQueue = []
+    this.nearbyNPC = null // 附近的NPC
     
-    // 臻宝角色动画
-    this.heroAnimFrame = 0
-    this.heroAnimTimer = 0
-    this.heroFrameDuration = 0.45 // 待机动画更慢（0.15 * 3）
+    // 初始对话
+    this.introShown = this.game.data.get('introShown')
+  }
+  
+  _initNPCs() {
+    // 村庄NPC定义
+    return [
+      {
+        id: 'village_chief',
+        name: '村长',
+        x: this.mapWidth * 0.3,
+        y: this.mapHeight * 0.4,
+        sprite: '👴',
+        color: '#ffd700',
+        dialogues: [
+          { text: '欢迎来到喵星村！' },
+          { text: '你是被选中的人类勇士，将带领猫咪们对抗暗影势力。' },
+          { text: '村外最近出现了很多怪物，请务必小心！' }
+        ],
+        interactionRadius: 60 * this.dpr
+      },
+      {
+        id: 'shop_keeper',
+        name: '商店老板',
+        x: this.mapWidth * 0.7,
+        y: this.mapHeight * 0.3,
+        sprite: '🏪',
+        color: '#54a0ff',
+        dialogues: [
+          { text: '欢迎光临！这里有各种道具和装备。' },
+          { text: '（商店功能开发中...）' }
+        ],
+        interactionRadius: 60 * this.dpr
+      },
+      {
+        id: 'quest_giver',
+        name: '冒险者公会',
+        x: this.mapWidth * 0.5,
+        y: this.mapHeight * 0.6,
+        sprite: '📜',
+        color: '#ff9f43',
+        dialogues: [
+          { text: '这里是冒险者公会，可以接取任务。' },
+          { text: '要探索野外吗？我可以为你指引方向。' },
+          { action: 'open_explore_menu' }
+        ],
+        interactionRadius: 60 * this.dpr
+      },
+      {
+        id: 'save_point',
+        name: '存档点',
+        x: this.mapWidth * 0.2,
+        y: this.mapHeight * 0.7,
+        sprite: '💾',
+        color: '#10ac84',
+        dialogues: [
+          { text: '这是一个存档点。' },
+          { action: 'save_game' }
+        ],
+        interactionRadius: 50 * this.dpr
+      }
+    ]
+  }
+  
+  _initFollowers() {
+    // 获取所有解锁的角色（除了第一个主角）
+    const allChars = charStateManager.getAllCharacters()
+    for (let i = 1; i < allChars.length; i++) {
+      this.followers.push({
+        character: allChars[i],
+        x: this.playerX,
+        y: this.playerY,
+        isMoving: false,
+        animFrame: 0,
+        animTimer: 0
+      })
+    }
+    console.log(`[Town] 初始化了 ${this.followers.length} 个跟随队友`)
   }
   
   init() {
-    const cx = this.width / 2
-    const btnW = 200 * this.dpr
-    const btnH = 50 * this.dpr
-    const startY = this.height - 280 * this.dpr
+    // 初始化相机位置
+    this._updateCamera()
     
-    this.buttons = [
-      {
-        id: 'explore',
-        text: '🗺️ 探索野外',
-        x: cx - btnW / 2,
-        y: startY,
-        w: btnW,
-        h: btnH,
-        color: '#ff9f43',
-        action: () => this._openExploreMenu()
-      },
-      {
-        id: 'party',
-        text: '👥 队伍管理',
-        x: cx - btnW / 2,
-        y: startY + 60 * this.dpr,
-        w: btnW,
-        h: btnH,
-        color: '#54a0ff',
-        action: () => { this.activeMenu = 'party' }
-      },
-      {
-        id: 'inventory',
-        text: '🎒 背包',
-        x: cx - btnW / 2,
-        y: startY + 120 * this.dpr,
-        w: btnW,
-        h: btnH,
-        color: '#5f27cd',
-        action: () => { this.activeMenu = 'inventory' }
-      },
-      {
-        id: 'save',
-        text: '💾 存档',
-        x: cx - btnW / 2,
-        y: startY + 180 * this.dpr,
-        w: btnW,
-        h: btnH,
-        color: '#10ac84',
-        action: () => this._save()
+    // 初始化摇杆区域
+    this.joystickArea = {
+      x: 50 * this.dpr,
+      y: this.height - 200 * this.dpr,
+      r: 80 * this.dpr
+    }
+    
+    // 注册触摸事件监听
+    this._onTouchMove = (e) => {
+      if (this.joystick.active && e.touches && Array.isArray(e.touches)) {
+        for (const t of e.touches) {
+          this.joystick.currentX = t.clientX * this.dpr
+          this.joystick.currentY = t.clientY * this.dpr
+        }
       }
-    ]
+    }
+    
+    this._onTouchEnd = (e) => {
+      this.joystick.active = false
+    }
+    
+    this.game.input.onMove(this._onTouchMove)
+    this.game.input.onEnd(this._onTouchEnd)
     
     // 初始对话
-    if (!this.game.data.get('introShown')) {
-      this.dialogueQueue = [
-        { name: '村长', text: '欢迎来到喵星村！' },
-        { name: '村长', text: '你是被选中的人类勇士，将带领猫咪们对抗暗影势力。' },
-        { name: '村长', text: '村外最近出现了很多怪物，请务必小心！' },
-        { name: '村长', text: '点击"探索野外"开始冒险吧。' }
-      ]
-      this._showNextDialogue()
-      this.game.data.set('introShown', true)
+    if (!this.introShown) {
+      const chief = this.npcs.find(n => n.id === 'village_chief')
+      if (chief) {
+        this.dialogueQueue = [...chief.dialogues]
+        this._showNextDialogue()
+        this.game.data.set('introShown', true)
+      }
     }
   }
   
-  _showNextDialogue() {
-    if (this.dialogueQueue.length > 0) {
-      this.dialogue = this.dialogueQueue.shift()
-    } else {
-      this.dialogue = null
-    }
-  }
-  
-  _openExploreMenu() {
-    // 显示探索区域选择
-    this.activeMenu = 'explore'
-  }
-  
-  _save() {
-    this.game.data.save()
-    this.dialogueQueue = [{ name: '系统', text: '存档成功！' }]
-    this._showNextDialogue()
+  destroy() {
+    // 清理事件监听
+    this.game.input.offMove(this._onTouchMove)
+    this.game.input.offEnd(this._onTouchEnd)
   }
   
   update(dt) {
     this.time += dt
     
-    // 更新臻宝动画
-    this.heroAnimTimer += dt
-    if (this.heroAnimTimer >= this.heroFrameDuration) {
-      this.heroAnimTimer = 0
-      this.heroAnimFrame = (this.heroAnimFrame + 1) % 2 // idle动画2帧循环
+    // 更新对话
+    if (this.dialogue) return
+    
+    // 摇杆控制移动
+    const wasMoving = this.isMoving
+    this.isMoving = false
+    
+    if (this.joystick.active) {
+      const dx = this.joystick.currentX - this.joystick.startX
+      const dy = this.joystick.currentY - this.joystick.startY
+      const dist = Math.sqrt(dx * dx + dy * dy)
+      
+      if (dist > 5 * this.dpr) {
+        if (Math.abs(dx) > Math.abs(dy)) {
+          this.playerDirection = dx > 0 ? 'right' : 'left'
+          this.facingLeft = dx < 0
+        } else {
+          this.playerDirection = dy > 0 ? 'down' : 'up'
+        }
+      }
+      
+      if (dist > 10 * this.dpr) {
+        this.isMoving = true
+        const moveX = (dx / dist) * this.playerSpeed * dt
+        const moveY = (dy / dist) * this.playerSpeed * dt
+        
+        this.playerX += moveX
+        this.playerY += moveY
+        
+        // 边界限制
+        const margin = 50 * this.dpr
+        this.playerX = Math.max(margin, Math.min(this.mapWidth - margin, this.playerX))
+        this.playerY = Math.max(margin, Math.min(this.mapHeight - margin, this.playerY))
+        
+        this._updateCamera()
+      }
     }
+    
+    // 更新队友跟随
+    this._updateFollowers(dt)
+    
+    // 检测从移动切换到idle
+    if (wasMoving && !this.isMoving) {
+      this.animFrame = 0
+      this.animTimer = 0
+    }
+    
+    // 动画帧更新
+    this.animTimer += dt
+    const currentFrameDuration = this.isMoving ? this.frameDuration : this.frameDuration * 3
+    
+    if (this.animTimer >= currentFrameDuration) {
+      this.animTimer = 0
+      if (this.isMoving) {
+        this.animFrame = (this.animFrame + 1) % 8
+      } else {
+        this.animFrame = (this.animFrame + 1) % 2
+      }
+    }
+    
+    // 检测附近的NPC
+    this._checkNearbyNPC()
     
     // 处理点击
     if (this.game.input.taps.length > 0) {
@@ -129,272 +263,334 @@ export class TownScene {
           return
         }
         
-        // 菜单关闭按钮
-        if (this.activeMenu) {
-          const closeBtn = { x: this.width - 50 * this.dpr, y: 100 * this.dpr, w: 40 * this.dpr, h: 40 * this.dpr }
-          if (tap.x >= closeBtn.x && tap.x <= closeBtn.x + closeBtn.w &&
-              tap.y >= closeBtn.y && tap.y <= closeBtn.y + closeBtn.h) {
-            this.activeMenu = null
-            return
-          }
+        // 和附近NPC互动
+        if (this.nearbyNPC) {
+          this._interactWithNPC(this.nearbyNPC)
+          return
         }
         
-        // 主菜单按钮
-        if (!this.activeMenu && this.buttons && Array.isArray(this.buttons)) {
-          for (const btn of this.buttons) {
-            if (tap.x >= btn.x && tap.x <= btn.x + btn.w &&
-                tap.y >= btn.y && tap.y <= btn.y + btn.h) {
-              btn.action()
-              return
-            }
-          }
-        }
+        // 摇杆区域外 - 尝试激活摇杆
+        const jx = tap.x
+        const jy = tap.y
+        const distToJoystick = Math.sqrt(
+          (jx - this.joystickArea.x) ** 2 + (jy - this.joystickArea.y) ** 2
+        )
         
-        // 探索区域选择
-        if (this.activeMenu === 'explore') {
-          this._handleExploreTap(tap)
+        if (distToJoystick <= this.joystickArea.r) {
+          // 点击在摇杆区域内
+          this.joystick.active = true
+          this.joystick.startX = jx
+          this.joystick.startY = jy
+          this.joystick.currentX = jx
+          this.joystick.currentY = jy
         }
       }
     }
   }
   
-  _handleExploreTap(tap) {
-    const areas = this._getExploreAreas()
-    const cx = this.width / 2
-    const itemW = 300 * this.dpr
-    const itemH = 60 * this.dpr
+  _updateCamera() {
+    // 相机跟随玩家
+    this.cameraX = this.playerX - this.width / 2
+    this.cameraY = this.playerY - this.height / 2
     
-    areas.forEach((area, i) => {
-      const y = 200 * this.dpr + i * (itemH + 20 * this.dpr)
-      if (tap.x >= cx - itemW/2 && tap.x <= cx + itemW/2 &&
-          tap.y >= y && tap.y <= y + itemH) {
-        // 进入野外地图
-        this.game.changeScene('field', { area: area.id })
+    // 相机边界限制
+    this.cameraX = Math.max(0, Math.min(this.mapWidth - this.width, this.cameraX))
+    this.cameraY = Math.max(0, Math.min(this.mapHeight - this.height, this.cameraY))
+  }
+  
+  _updateFollowers(dt) {
+    // 记录主角移动历史
+    this.historyFrameCount++
+    if (this.historyFrameCount >= this.historyInterval) {
+      this.historyFrameCount = 0
+      this.playerHistory.unshift({
+        x: this.playerX,
+        y: this.playerY,
+        facingLeft: this.facingLeft
+      })
+      if (this.playerHistory.length > this.historyMaxLength) {
+        this.playerHistory.pop()
+      }
+    }
+    
+    // 更新每个队友
+    this.followers.forEach((follower, i) => {
+      const historyIndex = Math.min((i + 1) * 10, this.playerHistory.length - 1)
+      
+      if (historyIndex >= 0 && this.playerHistory[historyIndex]) {
+        const targetPos = this.playerHistory[historyIndex]
+        const dx = targetPos.x - follower.x
+        const dy = targetPos.y - follower.y
+        const dist = Math.sqrt(dx * dx + dy * dy)
+        
+        if (dist > 5 * this.dpr) {
+          const speed = this.playerSpeed * 0.95
+          follower.x += (dx / dist) * speed * dt
+          follower.y += (dy / dist) * speed * dt
+          follower.isMoving = true
+          follower.facingLeft = targetPos.facingLeft
+        } else {
+          follower.isMoving = false
+        }
+      }
+      
+      // 更新队友动画
+      if (!this.isMoving) {
+        const wasMoving = follower.isMoving
+        follower.isMoving = false
+        if (wasMoving && !follower.isMoving) {
+          follower.animFrame = 0
+          follower.animTimer = 0
+        }
+      }
+      
+      follower.animTimer += dt
+      const frameDuration = this.isMoving ? this.frameDuration : this.frameDuration * 3
+      if (follower.animTimer >= frameDuration) {
+        follower.animTimer = 0
+        if (this.isMoving) {
+          follower.animFrame = (follower.animFrame + 1) % 8
+        } else {
+          follower.animFrame = (follower.animFrame + 1) % 2
+        }
       }
     })
   }
   
-  _getExploreAreas() {
-    const progress = this.game.data.get('progress') || 1
-    const areas = [
-      { id: 'grassland', name: '阳光草原', level: '1-3', unlocked: true },
-      { id: 'forest', name: '迷雾森林', level: '4-6', unlocked: progress >= 2 },
-      { id: 'cave', name: '暗影洞穴', level: '7-9', unlocked: progress >= 3 }
-    ]
-    return areas
+  _checkNearbyNPC() {
+    this.nearbyNPC = null
+    
+    for (const npc of this.npcs) {
+      const dist = Math.sqrt((this.playerX - npc.x) ** 2 + (this.playerY - npc.y) ** 2)
+      if (dist <= npc.interactionRadius) {
+        this.nearbyNPC = npc
+        break
+      }
+    }
+  }
+  
+  _interactWithNPC(npc) {
+    this.dialogueQueue = [...npc.dialogues]
+    this._showNextDialogue()
+  }
+  
+  _showNextDialogue() {
+    if (this.dialogueQueue.length > 0) {
+      const item = this.dialogueQueue.shift()
+      
+      // 检查是否有特殊动作
+      if (item.action) {
+        switch (item.action) {
+          case 'open_explore_menu':
+            // 进入野外探索
+            this.game.changeScene('field', { area: 'grassland' })
+            return
+          case 'save_game':
+            this.game.data.save()
+            this.dialogue = { name: '系统', text: '存档成功！' }
+            return
+        }
+      }
+      
+      this.dialogue = { name: this.nearbyNPC?.name || '???', text: item.text }
+    } else {
+      this.dialogue = null
+    }
   }
   
   render(ctx) {
-    // 背景 - 城镇图片
-    const bgImage = this.game.assets.get('BG_TOWN')
-    if (bgImage) {
-      ctx.drawImage(bgImage, 0, 0, this.width, this.height)
-      ctx.fillStyle = 'rgba(0,0,0,0.1)' // 降低遮罩透明度，让背景更清晰
-      ctx.fillRect(0, 0, this.width, this.height)
-    } else {
-      const bgGrad = ctx.createLinearGradient(0, 0, 0, this.height)
-      bgGrad.addColorStop(0, '#2d3436')
-      bgGrad.addColorStop(1, '#636e72')
-      ctx.fillStyle = bgGrad
-      ctx.fillRect(0, 0, this.width, this.height)
+    // 渲染背景地图
+    this._renderBackground(ctx)
+    
+    // 渲染NPC
+    this._renderNPCs(ctx)
+    
+    // 渲染主角和队友
+    this._renderPlayer(ctx)
+    
+    // 渲染摇杆
+    this._renderJoystick(ctx)
+    
+    // 渲染NPC提示
+    if (this.nearbyNPC && !this.dialogue) {
+      this._renderInteractionTip(ctx)
     }
     
-    // 渲染臻宝角色（在背景上）
-    this._renderHero(ctx)
-    
-    // 顶部状态栏
-    this._renderTopBar(ctx)
-    
-    // 主菜单按钮
-    if (!this.activeMenu && this.buttons && Array.isArray(this.buttons)) {
-      for (const btn of this.buttons) {
-        this._drawButton(ctx, btn)
-      }
-    }
-    
-    // 子菜单
-    if (this.activeMenu === 'party') {
-      this._renderPartyMenu(ctx)
-    } else if (this.activeMenu === 'explore') {
-      this._renderExploreMenu(ctx)
-    } else if (this.activeMenu === 'inventory') {
-      this._renderInventoryMenu(ctx)
-    }
-    
-    // 对话框
+    // 渲染对话框
     if (this.dialogue) {
       this._renderDialogue(ctx)
     }
   }
   
-  _renderHero(ctx) {
-    // 臻宝位置 - 在屏幕中央偏下
-    const heroX = this.width / 2
-    const heroY = this.height * 0.65
+  _renderBackground(ctx) {
+    const bgImage = this.game.assets.get('BG_TOWN')
     
-    // 渲染臻宝idle动画
-    const frameKey = `HERO_ZHENBAO_IDLE_${this.heroAnimFrame}`
-    let heroImg = this.game.assets.get(frameKey)
+    if (bgImage) {
+      // 保持原始比例渲染地图
+      // 计算缩放比例以适应地图尺寸
+      const scaleX = this.mapWidth / bgImage.width
+      const scaleY = this.mapHeight / bgImage.height
+      const scale = Math.max(scaleX, scaleY)
+      
+      const renderWidth = bgImage.width * scale
+      const renderHeight = bgImage.height * scale
+      
+      // 渲染可见部分
+      ctx.drawImage(
+        bgImage,
+        -this.cameraX, -this.cameraY,
+        renderWidth, renderHeight
+      )
+    } else {
+      // 备用背景
+      ctx.fillStyle = '#2d3436'
+      ctx.fillRect(0, 0, this.width, this.height)
+    }
+  }
+  
+  _renderNPCs(ctx) {
+    for (const npc of this.npcs) {
+      const screenX = npc.x - this.cameraX
+      const screenY = npc.y - this.cameraY
+      
+      // 只渲染可见的NPC
+      if (screenX < -100 || screenX > this.width + 100 ||
+          screenY < -100 || screenY > this.height + 100) {
+        continue
+      }
+      
+      // NPC光圈
+      if (this.nearbyNPC === npc) {
+        ctx.beginPath()
+        ctx.arc(screenX, screenY, npc.interactionRadius, 0, Math.PI * 2)
+        ctx.fillStyle = `${npc.color}33`
+        ctx.fill()
+      }
+      
+      // NPC图标
+      ctx.font = `${40 * this.dpr}px sans-serif`
+      ctx.textAlign = 'center'
+      ctx.textBaseline = 'middle'
+      ctx.fillText(npc.sprite, screenX, screenY)
+      
+      // NPC名称
+      ctx.font = `bold ${14 * this.dpr}px sans-serif`
+      ctx.fillStyle = '#ffffff'
+      ctx.strokeStyle = '#000000'
+      ctx.lineWidth = 3
+      ctx.strokeText(npc.name, screenX, screenY - 35 * this.dpr)
+      ctx.fillText(npc.name, screenX, screenY - 35 * this.dpr)
+    }
+  }
+  
+  _renderPlayer(ctx) {
+    // 渲染队友
+    this.followers.forEach((follower, i) => {
+      this._renderCharacter(ctx, follower.character, follower.x, follower.y, follower.animFrame, follower.facingLeft, true)
+    })
     
-    // 如果没有动画帧，使用静态立绘
-    if (!heroImg) {
-      heroImg = this.game.assets.get('HERO_ZHENBAO')
+    // 渲染主角
+    this._renderCharacter(ctx, this.mainCharacter, this.playerX, this.playerY, this.animFrame, this.facingLeft, false)
+  }
+  
+  _renderCharacter(ctx, character, x, y, animFrame, facingLeft, isFollower) {
+    const screenX = x - this.cameraX
+    const screenY = y - this.cameraY
+    
+    // 只渲染可见的角色
+    if (screenX < -100 || screenX > this.width + 100 ||
+        screenY < -100 || screenY > this.height + 100) {
+      return
     }
     
-    if (heroImg) {
-      const dpr = this.dpr
-      const targetHeight = 120 * dpr
-      const scale = targetHeight / heroImg.height
-      const targetWidth = heroImg.width * scale
+    const heroId = character.heroId || 'zhenbao'
+    
+    // 获取动画帧
+    const frameType = this.isMoving ? 'WALK' : 'IDLE'
+    const frameKey = `HERO_${heroId.toUpperCase()}_${frameType}_${animFrame}`
+    let img = this.game.assets.get(frameKey)
+    
+    // 如果没有动画帧，使用静态立绘
+    if (!img) {
+      img = this.game.assets.get(`HERO_${heroId.toUpperCase()}`)
+    }
+    
+    if (img) {
+      const targetHeight = 60 * this.dpr
+      const scale = targetHeight / img.height
+      const targetWidth = img.width * scale
       
       ctx.save()
+      
+      if (facingLeft) {
+        ctx.translate(screenX, screenY)
+        ctx.scale(-1, 1)
+        ctx.translate(-screenX, -screenY)
+      }
+      
       ctx.drawImage(
-        heroImg,
-        heroX - targetWidth / 2,
-        heroY - targetHeight / 2,
+        img,
+        screenX - targetWidth / 2,
+        screenY - targetHeight / 2,
         targetWidth,
         targetHeight
       )
+      
       ctx.restore()
     }
   }
   
-  _renderTopBar(ctx) {
-    // 背景
-    ctx.fillStyle = 'rgba(0,0,0,0.6)'
-    ctx.fillRect(0, 0, this.width, 80 * this.dpr)
+  _renderJoystick(ctx) {
+    const { x, y, r } = this.joystickArea
     
-    // 金币
-    ctx.font = `bold ${20 * this.dpr}px sans-serif`
-    ctx.fillStyle = '#ffd700'
-    ctx.textAlign = 'left'
-    ctx.fillText(`💰 ${this.game.data.get('gold') || 100}`, 20 * this.dpr, 50 * this.dpr)
+    // 摇杆底座
+    ctx.beginPath()
+    ctx.arc(x, y, r, 0, Math.PI * 2)
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.2)'
+    ctx.fill()
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.4)'
+    ctx.lineWidth = 2
+    ctx.stroke()
     
-    // 队伍数量
-    const party = this.game.data.get('party') || []
-    ctx.fillStyle = '#ffffff'
-    ctx.fillText(`👥 ${party.length}/6`, 200 * this.dpr, 50 * this.dpr)
-    
-    // 位置
-    ctx.textAlign = 'right'
-    ctx.fillText('📍 喵星村', this.width - 20 * this.dpr, 50 * this.dpr)
-  }
-  
-  _renderExploreMenu(ctx) {
-    // 半透明背景
-    ctx.fillStyle = 'rgba(0,0,0,0.8)'
-    ctx.fillRect(0, 0, this.width, this.height)
-    
-    // 标题
-    ctx.font = `bold ${32 * this.dpr}px sans-serif`
-    ctx.fillStyle = '#ffffff'
-    ctx.textAlign = 'center'
-    ctx.fillText('🗺️ 选择探索区域', this.width / 2, 140 * this.dpr)
-    
-    // 关闭按钮
-    ctx.font = `${24 * this.dpr}px sans-serif`
-    ctx.fillText('✕', this.width - 30 * this.dpr, 125 * this.dpr)
-    
-    // 区域列表
-    const areas = this._getExploreAreas()
-    const cx = this.width / 2
-    const itemW = 300 * this.dpr
-    const itemH = 60 * this.dpr
-    
-    areas.forEach((area, i) => {
-      const y = 200 * this.dpr + i * (itemH + 20 * this.dpr)
-      const unlocked = area.unlocked
+    // 摇杆手柄
+    if (this.joystick.active) {
+      let handleX = this.joystick.currentX
+      let handleY = this.joystick.currentY
       
-      // 背景
-      ctx.fillStyle = unlocked ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.3)'
-      ctx.beginPath()
-      this._roundRect(ctx, cx - itemW/2, y, itemW, itemH, 10 * this.dpr)
-      ctx.fill()
-      
-      // 边框
-      ctx.strokeStyle = unlocked ? 'rgba(255,255,255,0.3)' : 'rgba(255,255,255,0.1)'
-      ctx.lineWidth = 2
-      ctx.stroke()
-      
-      // 文字
-      ctx.textAlign = 'left'
-      ctx.font = `bold ${20 * this.dpr}px sans-serif`
-      ctx.fillStyle = unlocked ? '#ffffff' : 'rgba(255,255,255,0.3)'
-      ctx.fillText(area.name, cx - itemW/2 + 20 * this.dpr, y + 30 * this.dpr)
-      
-      ctx.font = `${14 * this.dpr}px sans-serif`
-      ctx.fillStyle = unlocked ? 'rgba(255,255,255,0.6)' : 'rgba(255,255,255,0.2)'
-      ctx.fillText(`等级 ${area.level}`, cx - itemW/2 + 20 * this.dpr, y + 48 * this.dpr)
-      
-      if (!unlocked) {
-        ctx.textAlign = 'right'
-        ctx.fillStyle = 'rgba(255,100,100,0.6)'
-        ctx.fillText('🔒 未解锁', cx + itemW/2 - 20 * this.dpr, y + 38 * this.dpr)
+      // 限制手柄在底座内
+      const dx = handleX - x
+      const dy = handleY - y
+      const dist = Math.sqrt(dx * dx + dy * dy)
+      if (dist > r) {
+        handleX = x + (dx / dist) * r
+        handleY = y + (dy / dist) * r
       }
-    })
-  }
-  
-  _renderPartyMenu(ctx) {
-    // 半透明背景
-    ctx.fillStyle = 'rgba(0,0,0,0.8)'
-    ctx.fillRect(0, 0, this.width, this.height)
-    
-    // 标题
-    ctx.font = `bold ${32 * this.dpr}px sans-serif`
-    ctx.fillStyle = '#ffffff'
-    ctx.textAlign = 'center'
-    ctx.fillText('👥 队伍管理', this.width / 2, 140 * this.dpr)
-    
-    // 关闭按钮
-    ctx.font = `${24 * this.dpr}px sans-serif`
-    ctx.fillText('✕', this.width - 30 * this.dpr, 125 * this.dpr)
-    
-    // 队伍列表
-    const party = this.game.data.get('party') || []
-    const itemW = this.width - 40 * this.dpr
-    const itemH = 80 * this.dpr
-    
-    party.forEach((hero, i) => {
-      const y = 180 * this.dpr + i * (itemH + 10 * this.dpr)
       
-      // 背景
-      ctx.fillStyle = 'rgba(255,255,255,0.1)'
       ctx.beginPath()
-      this._roundRect(ctx, 20 * this.dpr, y, itemW, itemH, 10 * this.dpr)
+      ctx.arc(handleX, handleY, r * 0.4, 0, Math.PI * 2)
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.6)'
       ctx.fill()
-      
-      // 名称
-      ctx.textAlign = 'left'
-      ctx.font = `bold ${18 * this.dpr}px sans-serif`
-      ctx.fillStyle = '#ffffff'
-      ctx.fillText(`${hero.name}  Lv.${hero.level}`, 30 * this.dpr, y + 25 * this.dpr)
-      
-      // HP条
-      const hpPercent = hero.hp / hero.maxHp
-      ctx.fillStyle = 'rgba(255,255,255,0.2)'
-      ctx.fillRect(30 * this.dpr, y + 35 * this.dpr, 150 * this.dpr, 8 * this.dpr)
-      ctx.fillStyle = hpPercent > 0.3 ? '#10ac84' : '#ee5a52'
-      ctx.fillRect(30 * this.dpr, y + 35 * this.dpr, 150 * this.dpr * hpPercent, 8 * this.dpr)
-      
-      ctx.font = `${12 * this.dpr}px sans-serif`
-      ctx.fillStyle = '#ffffff'
-      ctx.fillText(`${hero.hp}/${hero.maxHp}`, 190 * this.dpr, y + 42 * this.dpr)
-    })
+    } else {
+      // 未激活时显示中心点
+      ctx.beginPath()
+      ctx.arc(x, y, r * 0.3, 0, Math.PI * 2)
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.4)'
+      ctx.fill()
+    }
   }
   
-  _renderInventoryMenu(ctx) {
-    ctx.fillStyle = 'rgba(0,0,0,0.8)'
-    ctx.fillRect(0, 0, this.width, this.height)
+  _renderInteractionTip(ctx) {
+    const tipY = 100 * this.dpr
     
-    ctx.font = `bold ${32 * this.dpr}px sans-serif`
-    ctx.fillStyle = '#ffffff'
+    ctx.font = `bold ${16 * this.dpr}px sans-serif`
     ctx.textAlign = 'center'
-    ctx.fillText('🎒 背包', this.width / 2, 140 * this.dpr)
-    ctx.fillText('✕', this.width - 30 * this.dpr, 125 * this.dpr)
+    ctx.fillStyle = '#ffffff'
+    ctx.strokeStyle = '#000000'
+    ctx.lineWidth = 3
     
-    ctx.font = `${18 * this.dpr}px sans-serif`
-    ctx.fillStyle = 'rgba(255,255,255,0.5)'
-    ctx.fillText('暂无物品', this.width / 2, this.height / 2)
+    const text = `点击与 ${this.nearbyNPC.name} 互动`
+    ctx.strokeText(text, this.width / 2, tipY)
+    ctx.fillText(text, this.width / 2, tipY)
   }
   
   _renderDialogue(ctx) {
@@ -402,12 +598,12 @@ export class TownScene {
     const y = this.height - boxH - 20 * this.dpr
     
     // 背景
-    ctx.fillStyle = 'rgba(0,0,0,0.9)'
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.9)'
     ctx.beginPath()
     this._roundRect(ctx, 20 * this.dpr, y, this.width - 40 * this.dpr, boxH, 10 * this.dpr)
     ctx.fill()
     
-    ctx.strokeStyle = 'rgba(255,255,255,0.3)'
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.3)'
     ctx.lineWidth = 2
     ctx.stroke()
     
@@ -424,29 +620,9 @@ export class TownScene {
     
     // 提示
     ctx.font = `${14 * this.dpr}px sans-serif`
-    ctx.fillStyle = 'rgba(255,255,255,0.5)'
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.5)'
     ctx.textAlign = 'right'
     ctx.fillText('点击继续', this.width - 30 * this.dpr, y + boxH - 15 * this.dpr)
-  }
-  
-  _drawButton(ctx, btn) {
-    const { x, y, w, h, text, color } = btn
-    const r = 10 * this.dpr
-    
-    ctx.beginPath()
-    this._roundRect(ctx, x, y, w, h, r)
-    
-    const grad = ctx.createLinearGradient(x, y, x, y + h)
-    grad.addColorStop(0, color)
-    grad.addColorStop(1, this._darkenColor(color, 0.3))
-    ctx.fillStyle = grad
-    ctx.fill()
-    
-    ctx.font = `bold ${20 * this.dpr}px sans-serif`
-    ctx.fillStyle = '#ffffff'
-    ctx.textAlign = 'center'
-    ctx.textBaseline = 'middle'
-    ctx.fillText(text, x + w / 2, y + h / 2)
   }
   
   _roundRect(ctx, x, y, w, h, r) {
@@ -460,16 +636,5 @@ export class TownScene {
     ctx.lineTo(x, y + r)
     ctx.arcTo(x, y, x + r, y, r)
     ctx.closePath()
-  }
-  
-  _darkenColor(hex, amount) {
-    const num = parseInt(hex.slice(1), 16)
-    let r = (num >> 16) & 255
-    let g = (num >> 8) & 255
-    let b = num & 255
-    r = Math.floor(r * (1 - amount))
-    g = Math.floor(g * (1 - amount))
-    b = Math.floor(b * (1 - amount))
-    return `rgb(${r},${g},${b})`
   }
 }
