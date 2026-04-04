@@ -105,7 +105,7 @@ export class BattleScene {
 
     // 1.5秒后进入玩家回合
     setTimeout(() => {
-      this.phase = 'select_skill'
+      this.phase = 'select_hero'
       this._showHeroSelection()
     }, 1500)
   }
@@ -355,7 +355,7 @@ export class BattleScene {
           if (this.phase !== 'victory' && this.phase !== 'defeat') {
             this.turn++
             this._addLog(`--- 第 ${this.turn} 回合 ---`)
-            this.phase = 'select_skill'
+            this.phase = 'select_hero'
           }
         }, 300)
       } else {
@@ -394,6 +394,9 @@ export class BattleScene {
 
   _handleTap(tx, ty) {
     switch (this.phase) {
+      case 'select_hero':
+        this._handleHeroSelect(tx, ty)
+        break
       case 'select_skill':
         this._handleSkillSelect(tx, ty)
         break
@@ -406,60 +409,73 @@ export class BattleScene {
         break
     }
   }
-
-  _handleSkillSelect(tx, ty) {
-    // 生成技能按钮区域
-    const dpr = this.dpr
-    const btnW = (this.width - 30 * dpr) / 2
-    const btnH = 45 * dpr
-    const startX = 10 * dpr
-    const startY = this.height - 220 * dpr
-
-    // 遍历所有角色的技能
-    let btnIdx = 0
-    for (let pi = 0; pi < this.party.length; pi++) {
-      const hero = this.party[pi]
-      if (hero.hp <= 0) continue
-
-      for (let si = 0; si < hero.skills.length; si++) {
-        const skill = hero.skills[si]
-        const col = btnIdx % 2
-        const row = Math.floor(btnIdx / 2)
-        const bx = startX + col * (btnW + 10 * dpr)
-        const by = startY + row * (btnH + 8 * dpr)
-
-        if (this._isInRect(tx, ty, bx, by, btnW, btnH)) {
-          if (hero.mp >= skill.mpCost) {
-            this.selectedHero = hero
-            this.selectedSkill = skill
-
-            // 确定目标类型
-            if (skill.type === 'heal' && skill.target?.includes('ally')) {
-              // 治疗技能 - 选择己方目标
-              this.phase = 'select_target'
-              this._addLog(`${hero.name} 使用 ${skill.name}，选择治疗目标`)
-            } else if (skill.target === 'all' || skill.target === 'all_ally') {
-              // 全体技能 - 直接执行
-              this._executeSkill(hero, skill, null)
-            } else {
-              // 单体攻击 - 目标是敌人
-              this._executeSkill(hero, skill, this.enemy)
-            }
-            return
-          } else {
-            this._addLog(`MP不足！需要 ${skill.mpCost} MP`)
-            return
-          }
-        }
-        btnIdx++
+  
+  /**
+   * 处理角色选择
+   */
+  _handleHeroSelect(tx, ty) {
+    // 检查点击的角色卡片
+    for (const area of this.heroAreas) {
+      if (area.hero && area.hero.hp > 0 && this._isInRect(tx, ty, area.x, area.y, area.w, area.h)) {
+        this.selectedHero = area.hero
+        this.phase = 'select_skill'
+        this._addLog(`选择 ${area.hero.name} 的技能`)
+        return
       }
     }
+  }
+
+  _handleSkillSelect(tx, ty) {
+    // 只遍历选中角色的技能
+    if (!this.selectedHero || !this.selectedHero.skills) return
+    
+    const dpr = this.dpr
+    const btnW = (this.width - 40 * dpr) / 2
+    const btnH = 50 * dpr
+    const startX = 15 * dpr
+    const startY = this.height - 200 * dpr
+
+    for (let si = 0; si < this.selectedHero.skills.length; si++) {
+      const skill = this.selectedHero.skills[si]
+      const col = si % 2
+      const row = Math.floor(si / 2)
+      const bx = startX + col * (btnW + 10 * dpr)
+      const by = startY + row * (btnH + 8 * dpr)
+
+      if (this._isInRect(tx, ty, bx, by, btnW, btnH)) {
+        if (this.selectedHero.mp >= skill.mpCost) {
+          this.selectedSkill = skill
+
+          // 确定目标类型
+          if (skill.type === 'heal' && skill.target?.includes('ally')) {
+            // 治疗技能 - 选择己方目标
+            this.phase = 'select_target'
+            this._addLog(`${this.selectedHero.name} 使用 ${skill.name}，选择治疗目标`)
+          } else if (skill.target === 'all' || skill.target === 'all_ally') {
+            // 全体技能 - 直接执行
+            this._executeSkill(this.selectedHero, skill, null)
+          } else {
+            // 单体攻击 - 目标是敌人
+            this._executeSkill(this.selectedHero, skill, this.enemy)
+          }
+          return
+        } else {
+          this._addLog(`MP不足！需要 ${skill.mpCost} MP`)
+          return
+        }
+      }
+    }
+    
+    // 点击空白返回选择角色
+    this.phase = 'select_hero'
+    this.selectedHero = null
   }
 
   _handleTargetSelect(tx, ty) {
     // 安全检查：确保 heroAreas 存在
     if (!this.heroAreas || !Array.isArray(this.heroAreas)) {
-      this.phase = 'select_skill'
+      this.phase = 'select_hero'
+      this.selectedHero = null
       return
     }
     
@@ -471,8 +487,9 @@ export class BattleScene {
       }
     }
 
-    // 点击空白取消
-    this.phase = 'select_skill'
+    // 点击空白取消，返回选择角色
+    this.phase = 'select_hero'
+    this.selectedHero = null
     this.selectedSkill = null
   }
 
@@ -706,7 +723,7 @@ export class BattleScene {
     this._renderAttackingHero(ctx)
 
     // 技能面板
-    if (this.phase === 'select_skill' || this.phase === 'select_target') {
+    if (this.phase === 'select_hero' || this.phase === 'select_skill' || this.phase === 'select_target') {
       this._renderSkillPanel(ctx)
     }
 
@@ -1071,7 +1088,7 @@ export class BattleScene {
       const cardW = 180 * dpr
       const cardH = 85 * dpr
 
-      const isActive = this.phase === 'select_target' && hero.hp > 0
+      const isActive = (this.phase === 'select_target' || this.phase === 'select_hero') && hero.hp > 0
       const isDead = hero.hp <= 0
 
       // 卡片阴影
@@ -1205,39 +1222,53 @@ export class BattleScene {
     ctx.lineTo(w, panelY)
     ctx.stroke()
 
-    // 标题
-    ctx.font = `bold ${16 * dpr}px sans-serif`
-    ctx.fillStyle = '#ff9f43'
-    ctx.textAlign = 'left'
-    ctx.fillText(this.phase === 'select_target' ? '👆 选择治疗目标' : '⚔️ 选择技能', 20 * dpr, panelY + 25 * dpr)
-
-    if (this.phase === 'select_target') return
-
-    // 技能按钮
-    const btnW = (w - 40 * dpr) / 2
-    const btnH = 50 * dpr
-    const startX = 15 * dpr
-    const startY = panelY + 40 * dpr
-    let btnIdx = 0
-
-    // 安全检查：确保 party 存在且是数组
-    if (!this.party || !Array.isArray(this.party)) {
-      console.error('[Battle] party 数据不存在')
+    // 根据阶段显示不同内容
+    if (this.phase === 'select_target') {
+      // 选择目标提示
+      ctx.font = `bold ${16 * dpr}px sans-serif`
+      ctx.fillStyle = '#ff9f43'
+      ctx.textAlign = 'left'
+      ctx.fillText('👆 选择治疗目标', 20 * dpr, panelY + 25 * dpr)
       return
     }
-
-    for (const hero of this.party) {
-      if (!hero || hero.hp <= 0) continue
-      // 安全检查：确保 skills 存在且是数组
-      if (!hero.skills || !Array.isArray(hero.skills)) continue
+    
+    if (this.phase === 'select_hero') {
+      // 角色选择阶段
+      ctx.font = `bold ${16 * dpr}px sans-serif`
+      ctx.fillStyle = '#ff9f43'
+      ctx.textAlign = 'left'
+      ctx.fillText('👥 选择角色', 20 * dpr, panelY + 25 * dpr)
       
-      for (const skill of hero.skills) {
-        const col = btnIdx % 2
-        const row = Math.floor(btnIdx / 2)
+      // 提示文字
+      ctx.font = `${12 * dpr}px sans-serif`
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.6)'
+      ctx.fillText('点击左侧角色卡片选择行动角色', 20 * dpr, panelY + 45 * dpr)
+      return
+    }
+    
+    if (this.phase === 'select_skill') {
+      // 技能选择阶段 - 只显示选中角色的技能
+      ctx.font = `bold ${16 * dpr}px sans-serif`
+      ctx.fillStyle = '#ff9f43'
+      ctx.textAlign = 'left'
+      ctx.fillText(`⚔️ ${this.selectedHero?.name || '角色'}的技能`, 20 * dpr, panelY + 25 * dpr)
+
+      if (!this.selectedHero || !this.selectedHero.skills) return
+
+      // 技能按钮
+      const btnW = (w - 40 * dpr) / 2
+      const btnH = 50 * dpr
+      const startX = 15 * dpr
+      const startY = panelY + 40 * dpr
+
+      for (let si = 0; si < this.selectedHero.skills.length; si++) {
+        const skill = this.selectedHero.skills[si]
+        const col = si % 2
+        const row = Math.floor(si / 2)
         const bx = startX + col * (btnW + 10 * dpr)
         const by = startY + row * (btnH + 8 * dpr)
 
-        const canUse = hero.mp >= skill.mpCost
+        const canUse = this.selectedHero.mp >= skill.mpCost
 
         // 按钮阴影
         if (canUse) {
@@ -1288,10 +1319,10 @@ export class BattleScene {
         ctx.textBaseline = 'alphabetic'
         ctx.fillText(skill.name, iconX + iconSize + 8 * dpr, by + 22 * dpr)
 
-        // 消耗和角色
+        // MP消耗
         ctx.font = `${11 * dpr}px sans-serif`
         ctx.fillStyle = canUse ? 'rgba(255, 255, 255, 0.6)' : '#444'
-        ctx.fillText(`${hero.name} · MP ${skill.mpCost}`, iconX + iconSize + 8 * dpr, by + 40 * dpr)
+        ctx.fillText(`MP ${skill.mpCost}`, iconX + iconSize + 8 * dpr, by + 40 * dpr)
 
         // MP 不足标记
         if (!canUse) {
@@ -1305,8 +1336,6 @@ export class BattleScene {
           ctx.textAlign = 'right'
           ctx.fillText('MP不足', bx + btnW - 8 * dpr, by + 12 * dpr)
         }
-
-        btnIdx++
       }
     }
   }

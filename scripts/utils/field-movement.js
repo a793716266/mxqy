@@ -354,7 +354,7 @@ export class FieldMovement {
     }
     
     if (img) {
-      const targetHeight = 150 * this.dpr
+      const targetHeight = 130 * this.dpr
       const scale = targetHeight / img.height
       const targetWidth = img.width * scale
       
