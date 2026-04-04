@@ -4,6 +4,8 @@
  */
 
 import { HEROES } from './heroes.js'
+import { EQUIPMENT_CH1 } from './equipment.js'
+import { equipmentManager } from '../managers/equipment-manager.js'
 
 // 经验值需求表（等级 -> 升级所需经验）
 // 提高经验值需求，使升级速度更合理
@@ -66,6 +68,16 @@ export class CharacterState {
     this.hp = this.maxHp
     this.mp = this.maxMp
     this.buffs = []
+    
+    // 装备槽
+    this.equipment = {
+      weapon: null,   // 武器
+      armor: null,    // 防具
+      accessory: null // 饰品
+    }
+    
+    // 暴击率（基础为0，可由装备提升）
+    this.crit = 0
   }
   
   /**
@@ -107,6 +119,9 @@ export class CharacterState {
     this.mp = this.maxMp
     
     console.log(`${this.name} 升级到 Lv.${this.level}!`)
+    
+    // 重新应用装备属性（因为基础属性改变了）
+    // 注意：这里需要在外部调用 equipmentManager.recalculateEquipmentStats(this)
   }
   
   /**
@@ -126,7 +141,12 @@ export class CharacterState {
       exp: this.exp,
       hp: this.hp,
       mp: this.mp,
-      buffs: this.buffs
+      buffs: this.buffs,
+      equipment: {
+        weapon: this.equipment.weapon ? this.equipment.weapon.id : null,
+        armor: this.equipment.armor ? this.equipment.armor.id : null,
+        accessory: this.equipment.accessory ? this.equipment.accessory.id : null
+      }
     }
   }
   
@@ -150,6 +170,22 @@ export class CharacterState {
     state.hp = data.hp
     state.mp = data.mp
     state.buffs = data.buffs || []
+    
+    // 加载装备
+    if (data.equipment) {
+      if (data.equipment.weapon) {
+        state.equipment.weapon = EQUIPMENT_CH1[data.equipment.weapon]
+      }
+      if (data.equipment.armor) {
+        state.equipment.armor = EQUIPMENT_CH1[data.equipment.armor]
+      }
+      if (data.equipment.accessory) {
+        state.equipment.accessory = EQUIPMENT_CH1[data.equipment.accessory]
+      }
+      
+      // 应用装备属性
+      equipmentManager.recalculateEquipmentStats(state)
+    }
     
     return state
   }

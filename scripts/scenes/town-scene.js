@@ -4,6 +4,8 @@
 
 import { charStateManager } from '../data/character-state.js'
 import { FieldMovement } from '../utils/field-movement.js'
+import { equipmentManager } from '../managers/equipment-manager.js'
+import { EquipmentPanel } from '../ui/equipment-panel.js'
 
 export class TownScene {
   constructor(game, data) {
@@ -29,6 +31,13 @@ export class TownScene {
     // 初始化角色状态
     const savedCharData = this.game.data.get('characterStates')
     charStateManager.init(savedCharData)
+    
+    // 初始化装备管理器
+    const savedEquipData = this.game.data.get('equipmentData')
+    equipmentManager.init(savedEquipData)
+    
+    // 装备面板
+    this.equipmentPanel = new EquipmentPanel(game, charStateManager.getAllCharacters()[0])
     
     // NPC列表
     this.npcs = this._initNPCs(mapWidth, mapHeight)
@@ -69,6 +78,19 @@ export class TownScene {
         dialogues: [
           { text: '欢迎光临！这里有各种道具和装备。' },
           { text: '（商店功能开发中...）' }
+        ],
+        interactionRadius: 60 * this.dpr
+      },
+      {
+        id: 'blacksmith',
+        name: '铁匠',
+        x: mapWidth * 0.6,
+        y: mapHeight * 0.45,
+        sprite: '⚒️',
+        color: '#e67e22',
+        dialogues: [
+          { text: '需要管理装备吗？我可以帮你整理装备。' },
+          { action: 'open_equipment' }
         ],
         interactionRadius: 60 * this.dpr
       },
@@ -124,6 +146,24 @@ export class TownScene {
   
   update(dt) {
     this.time += dt
+    
+    // 如果装备面板打开，只处理面板输入
+    if (this.equipmentPanel.active) {
+      if (this.game.input.taps.length > 0) {
+        const tap = this.game.input.consumeTap()
+        if (tap) {
+          this.equipmentPanel.handleTap(tap.x, tap.y)
+        }
+      }
+      
+      // 处理滚动
+      if (this.game.input.scrollY) {
+        this.equipmentPanel.handleScroll(this.game.input.scrollY)
+        this.game.input.scrollY = 0
+      }
+      
+      return
+    }
     
     // 处理点击事件
     if (this.game.input.taps.length > 0) {
@@ -222,6 +262,12 @@ export class TownScene {
             this.currentDialogueNPC = null
             this.dialogue = { name: '系统', text: '存档成功！' }
             return
+          case 'open_equipment':
+            this.dialogue = null
+            this.currentDialogueNPC = null
+            // 打开装备面板
+            this.equipmentPanel.open(charStateManager.getAllCharacters()[0])
+            return
         }
       }
       
@@ -245,13 +291,16 @@ export class TownScene {
     // 渲染摇杆
     this.movement.renderJoystick(ctx)
     
-    if (this.nearbyNPC && !this.dialogue) {
+    if (this.nearbyNPC && !this.dialogue && !this.equipmentPanel.active) {
       this._renderInteractionTip(ctx)
     }
     
     if (this.dialogue) {
       this._renderDialogue(ctx)
     }
+    
+    // 渲染装备面板
+    this.equipmentPanel.render(ctx)
   }
   
   _renderBackground(ctx) {

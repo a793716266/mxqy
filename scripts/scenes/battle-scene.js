@@ -4,6 +4,7 @@
 
 import { ENEMIES_CH1 } from '../data/enemies.js'
 import { charStateManager } from '../data/character-state.js'
+import { getBossDrop, getRandomEquipment } from '../data/equipment.js'
 
 export class BattleScene {
   constructor(game, data) {
@@ -698,6 +699,38 @@ export class BattleScene {
 
       // 标记战斗胜利
       this.game.data.set('battleVictory', true)
+
+      // 装备掉落
+      let droppedEquipment = null
+      if (this.enemy.isBoss) {
+        // Boss必定掉落装备
+        droppedEquipment = getBossDrop(this.enemy.id)
+        if (droppedEquipment) {
+          this._addLog(`✨ 获得装备：${droppedEquipment.name}！`)
+        }
+      } else if (this.enemy.isElite) {
+        // 精英怪有较高概率掉落
+        if (Math.random() < 0.4) {
+          const rarity = Math.random() < 0.2 ? 'rare' : 'common'
+          droppedEquipment = getRandomEquipment(rarity)
+          if (droppedEquipment) {
+            this._addLog(`✨ 获得装备：${droppedEquipment.name}！`)
+          }
+        }
+      } else {
+        // 普通怪有低概率掉落
+        if (Math.random() < 0.15) {
+          droppedEquipment = getRandomEquipment('common')
+          if (droppedEquipment) {
+            this._addLog(`✨ 获得装备：${droppedEquipment.name}！`)
+          }
+        }
+      }
+      
+      // 保存掉落的装备（用于field-scene添加到背包）
+      if (droppedEquipment) {
+        this.game.data.set('droppedEquipment', droppedEquipment)
+      }
 
       // 标记 Boss 已击败
       if (this.enemy.isBoss) {

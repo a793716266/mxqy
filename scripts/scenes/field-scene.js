@@ -7,6 +7,8 @@ import { HEROES } from '../data/heroes.js'
 import { getMapCollisions } from '../data/map_collisions.js'
 import { charStateManager } from '../data/character-state.js'
 import { CharacterInfoPanel } from '../ui/character-info-panel.js'
+import { equipmentManager } from '../managers/equipment-manager.js'
+import { getBossDrop, getRandomEquipment } from '../data/equipment.js'
 
 export class FieldScene {
   constructor(game, data) {
@@ -48,6 +50,10 @@ export class FieldScene {
     // 初始化角色状态（必须在队伍初始化之前）
     const savedCharData = this.game.data.get('characterStates')
     charStateManager.init(savedCharData)
+    
+    // 初始化装备管理器
+    const savedEquipData = this.game.data.get('equipmentData')
+    equipmentManager.init(savedEquipData)
     
     // 队伍（使用角色状态管理中的数据）
     this.party = this._initParty()
@@ -344,6 +350,7 @@ export class FieldScene {
   _checkBattleResult() {
     const battleMonsterId = this.game.data.get('currentBattleMonsterId')
     const battleVictory = this.game.data.get('battleVictory')
+    const droppedEquipment = this.game.data.get('droppedEquipment')
 
     if (battleMonsterId) {
       // 找到对应怪物
@@ -354,6 +361,16 @@ export class FieldScene {
           // 战斗胜利，标记怪物死亡
           monster.alive = false
           console.log(`[Field] 怪物 ${monster.name} 被击败`)
+          
+          // 处理装备掉落
+          if (droppedEquipment) {
+            equipmentManager.addItem(droppedEquipment.id)
+            console.log(`[Field] 获得装备: ${droppedEquipment.name}`)
+            this.game.data.delete('droppedEquipment')
+            
+            // 保存装备数据
+            this.game.data.set('equipmentData', equipmentManager.serialize())
+          }
         } else {
           // 战斗失败，怪物保持存活
           console.log(`[Field] 战斗失败，怪物 ${monster.name} 仍然存活`)
