@@ -140,6 +140,52 @@
 
 ## ✅ 已修复 BUG
 
+### BUG-007: 装备面板在小屏幕上显示不全 ✅
+**优先级：** 🔴 高
+**状态：** ✅ 已修复
+**发现时间：** 2026-04-05 01:46
+**修复时间：** 2026-04-05 01:47
+
+**问题描述：**
+- 装备面板在小屏幕设备上无法完整显示
+- 面板尺寸硬编码为 600x450，超出屏幕范围
+
+**问题原因：**
+1. 面板尺寸硬编码，没有考虑不同屏幕尺寸
+2. 背包区域固定宽度，小屏幕溢出
+3. 物品大小固定，列数固定
+
+**修复方案：**
+
+**1. 面板尺寸自适应：**
+```javascript
+// 根据屏幕大小自适应
+this.panelWidth = Math.min(600 * this.dpr, this.width * 0.95)
+this.panelHeight = Math.min(500 * this.dpr, this.height * 0.85)
+```
+
+**2. 背包区域动态计算：**
+```javascript
+// 根据面板尺寸计算背包区域
+const invWidth = this.panelWidth - margin * 2 - 140 * this.dpr
+const invHeight = Math.min(280 * this.dpr, this.panelHeight - 200 * this.dpr)
+```
+
+**3. 物品大小自适应：**
+```javascript
+// 根据宽度调整物品大小和列数
+const itemSize = Math.min(65 * this.dpr, invWidth / 6)
+const cols = Math.floor(invWidth / (itemSize + spacing))
+```
+
+**效果：**
+- ✅ 小屏幕设备（如iPhone SE）可以完整显示
+- ✅ 大屏幕设备保持原有美观布局
+- ✅ 背包自动调整列数和物品大小
+- ✅ 所有UI元素都在可视范围内
+
+---
+
 ### BUG-006: 碰撞检测重复触发战斗 ✅
 **优先级：** 🔴 高
 **状态：** ✅ 已修复
