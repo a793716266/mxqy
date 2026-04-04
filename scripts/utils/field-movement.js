@@ -187,8 +187,8 @@ export class FieldMovement {
       (jx - this.joystickArea.x) ** 2 + (jy - this.joystickArea.y) ** 2
     )
     
-    if (distToJoystick <= this.joystickArea.r) {
-      // 点击在摇杆区域内
+    if (distToJoystick <= this.joystickArea.r * 1.5) {
+      // 点击在摇杆区域内（范围是半径的1.5倍，更容易激活）
       this.joystick.active = true
       this.joystick.startX = jx
       this.joystick.startY = jy
