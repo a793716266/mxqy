@@ -68,11 +68,27 @@ export class DataManager {
     this.data[key] = value
   }
 
+  delete(key) {
+    delete this.data[key]
+  }
+
   addFlag(key, value = true) {
     this.data.flags[key] = value
   }
 
   hasFlag(key) {
     return !!this.data.flags[key]
+  }
+
+  clear() {
+    this.data = this._defaultData()
+    try {
+      wx.removeStorageSync(this.saveKey)
+      console.log('[存档] 清除成功')
+      return true
+    } catch (e) {
+      console.error('[存档] 清除失败:', e)
+      return false
+    }
   }
 }
