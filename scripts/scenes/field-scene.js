@@ -4,6 +4,9 @@
 
 import { ENEMIES_CH1 } from '../data/enemies.js'
 import { HEROES } from '../data/heroes.js'
+import { getMapCollisions } from '../data/map_collisions.js'
+import { charStateManager } from '../data/character-state.js'
+import { CharacterInfoPanel } from '../ui/character-info-panel.js'
 
 export class FieldScene {
   constructor(game, data) {
@@ -42,8 +45,25 @@ export class FieldScene {
     // 摇杆控制
     this.joystick = { active: false, startX: 0, startY: 0, currentX: 0, currentY: 0 }
     
-    // 队伍
+    // 初始化角色状态（必须在队伍初始化之前）
+    const savedCharData = this.game.data.get('characterStates')
+    charStateManager.init(savedCharData)
+    
+    // 队伍（使用角色状态管理中的数据）
     this.party = this._initParty()
+    
+    // 获取第一个角色（主角）
+    this.currentCharacterIndex = 0 // 当前控制的角色索引
+    this.mainCharacter = charStateManager.getAllCharacters()[this.currentCharacterIndex]
+
+    // 角色信息面板
+    if (this.mainCharacter) {
+      this.charInfoPanel = new CharacterInfoPanel(game, this.mainCharacter)
+    }
+
+    // 角色切换提示
+    this.showSwitchTip = false
+    this.switchTipTimer = 0
 
     // 地图怪物（尝试恢复保存的状态）
     const savedMonsters = this.game.data.get('fieldMonsters')
@@ -60,6 +80,10 @@ export class FieldScene {
 
     // 地图元素（宝箱、资源点）
     this.mapObjects = this._generateMapObjects()
+    
+    // 地图碰撞数据
+    this.obstacles = getMapCollisions(this.areaId)
+    console.log(`[Field] 加载了 ${this.obstacles.length} 个障碍物`)
   }
   
   _getAreaInfo() {
@@ -93,42 +117,41 @@ export class FieldScene {
   }
   
   _initParty() {
-    // 确保 HEROES 存在
-    if (!HEROES || !Array.isArray(HEROES) || HEROES.length === 0) {
-      console.error('[Field] HEROES 数据不存在或为空')
+    // 使用角色状态管理中的数据
+    const allChars = charStateManager.getAllCharacters()
+    
+    if (allChars.length === 0) {
+      console.warn('[Field] 没有可用的角色状态')
       return []
     }
     
-    const savedParty = this.game.data.get('party')
-    
-    // 检查保存的队伍数据
-    if (savedParty && Array.isArray(savedParty) && savedParty.length > 0) {
-      // 如果保存的是索引数组（数字），转换为角色对象
-      if (typeof savedParty[0] === 'number') {
-        console.log('[Field] 将队伍索引转换为角色对象')
-        return savedParty.map(idx => {
-          const hero = HEROES[idx]
-          if (!hero) return null
-          return {
-            ...hero,
-            hp: hero.hp || hero.maxHp,
-            mp: hero.mp || hero.maxMp,
-            buffs: hero.buffs || []
-          }
-        }).filter(h => h !== null)
+    // 将角色状态转换为战斗用的角色对象
+    return allChars.map(charState => {
+      return {
+        id: charState.id,
+        name: charState.name,
+        title: charState.title,
+        role: charState.role,
+        avatar: charState.avatar,
+        skills: charState.skills,
+        
+        // 使用成长后的属性
+        maxHp: charState.maxHp,
+        maxMp: charState.maxMp,
+        atk: charState.atk,
+        def: charState.def,
+        spd: charState.spd,
+        
+        // 当前状态
+        hp: charState.hp,
+        mp: charState.mp,
+        buffs: charState.buffs || [],
+        
+        // 等级信息（用于显示）
+        level: charState.level,
+        exp: charState.exp
       }
-      // 如果已经是角色对象数组，直接返回
-      return savedParty
-    }
-    
-    // 默认队伍：前两个角色
-    console.log('[Field] 使用默认队伍')
-    return HEROES.slice(0, 2).map(h => ({
-      ...h,
-      hp: h.maxHp,
-      mp: h.maxMp,
-      buffs: []
-    }))
+    })
   }
   
   _generateMapObjects() {
@@ -199,7 +222,16 @@ export class FieldScene {
           alive: true,
           // 怪物动画
           bobOffset: Math.random() * Math.PI * 2, // 随机浮动偏移
-          bobSpeed: 2 + Math.random() // 随机浮动速度
+          bobSpeed: 2 + Math.random(), // 随机浮动速度
+          // 怪物巡逻移动
+          homeX: x, // 出生点（巡逻中心）
+          homeY: y,
+          patrolRadius: (80 + Math.random() * 40) * this.dpr, // 巡逻半径 80-120
+          moveAngle: Math.random() * Math.PI * 2, // 移动方向
+          moveSpeed: (20 + Math.random() * 10) * this.dpr, // 移动速度 20-30
+          moveTimer: 0, // 移动计时器
+          pauseTimer: 0, // 暂停计时器
+          isMoving: Math.random() > 0.3 // 70%概率初始移动
         })
       }
     }
@@ -240,6 +272,10 @@ export class FieldScene {
   destroy() {
     // 保存怪物状态
     this.game.data.set('fieldMonsters', this.mapMonsters)
+    
+    // 保存角色状态
+    const charData = charStateManager.serialize()
+    this.game.data.set('characterStates', charData)
 
     // 清理事件监听
     this.game.input.offMove(this._onTouchMove)
@@ -249,7 +285,11 @@ export class FieldScene {
   update(dt) {
     this.time += dt
 
+    // 更新怪物移动
+    this._updateMonsters(dt)
+
     // 摇杆控制移动
+    const wasMoving = this.isMoving
     this.isMoving = false
 
     if (this.joystick.active) {
@@ -274,6 +314,10 @@ export class FieldScene {
         const moveX = (dx / dist) * this.playerSpeed * dt
         const moveY = (dy / dist) * this.playerSpeed * dt
 
+        // 保存旧位置（用于碰撞回退）
+        const oldX = this.playerX
+        const oldY = this.playerY
+
         this.playerX += moveX
         this.playerY += moveY
 
@@ -281,6 +325,13 @@ export class FieldScene {
         const margin = 50 * this.dpr
         this.playerX = Math.max(margin, Math.min(this.mapWidth - margin, this.playerX))
         this.playerY = Math.max(margin, Math.min(this.mapHeight - margin, this.playerY))
+
+        // 检查与障碍物的碰撞
+        if (this._checkObstacleCollision()) {
+          // 碰撞了障碍物，退回原位置
+          this.playerX = oldX
+          this.playerY = oldY
+        }
 
         // 更新相机位置（跟随玩家）
         this._updateCamera()
@@ -290,18 +341,22 @@ export class FieldScene {
       }
     }
 
+    // 检测从移动切换到idle，重置动画帧（避免使用walk_7等无效帧）
+    if (wasMoving && !this.isMoving) {
+      this.animFrame = 0
+      this.animTimer = 0
+    }
+
     // 动画帧更新
     this.animTimer += dt
     const currentFrameDuration = this.isMoving ? this.frameDuration : this.frameDuration * 3 // 待机动画更慢
 
     if (this.animTimer >= currentFrameDuration) {
       this.animTimer = 0
-      const heroId = this.party[0]?.id || 'zhenbao'
 
       if (this.isMoving) {
-        // 走路动画：zhenbao 8帧，lixiaobao 4帧
-        const walkFrames = heroId === 'zhenbao' ? 8 : 4
-        this.animFrame = (this.animFrame + 1) % walkFrames
+        // 走路动画：所有角色都是8帧
+        this.animFrame = (this.animFrame + 1) % 8
       } else {
         // 待机动画：2帧循环
         this.animFrame = (this.animFrame + 1) % 2
@@ -318,6 +373,70 @@ export class FieldScene {
 
     // 检查并补充怪物
     this._checkAndRespawnMonsters()
+
+    // 更新切换提示计时器
+    if (this.showSwitchTip) {
+      this.switchTipTimer -= dt
+      if (this.switchTipTimer <= 0) {
+        this.showSwitchTip = false
+      }
+    }
+  }
+
+  _updateMonsters(dt) {
+    if (!this.mapMonsters || !Array.isArray(this.mapMonsters)) return
+
+    for (const monster of this.mapMonsters) {
+      if (!monster.alive) continue
+
+      // 暂停计时器
+      if (monster.pauseTimer > 0) {
+        monster.pauseTimer -= dt
+        continue
+      }
+
+      // 移动计时器
+      monster.moveTimer += dt
+
+      // 每隔一段时间改变方向或暂停
+      if (monster.moveTimer > 2 + Math.random() * 3) { // 2-5秒改变一次
+        monster.moveTimer = 0
+        if (Math.random() > 0.4) { // 60%概率改变方向
+          monster.moveAngle = Math.random() * Math.PI * 2
+          monster.isMoving = true
+        } else { // 40%概率暂停
+          monster.isMoving = false
+          monster.pauseTimer = 1 + Math.random() * 2 // 暂停1-3秒
+        }
+      }
+
+      // 移动怪物
+      if (monster.isMoving) {
+        const moveX = Math.cos(monster.moveAngle) * monster.moveSpeed * dt
+        const moveY = Math.sin(monster.moveAngle) * monster.moveSpeed * dt
+
+        const newX = monster.x + moveX
+        const newY = monster.y + moveY
+
+        // 检查是否在巡逻范围内
+        const distFromHome = Math.sqrt(
+          (newX - monster.homeX) ** 2 + (newY - monster.homeY) ** 2
+        )
+
+        if (distFromHome <= monster.patrolRadius) {
+          // 在范围内，正常移动
+          monster.x = newX
+          monster.y = newY
+        } else {
+          // 超出范围，改变方向朝向出生点
+          monster.moveAngle = Math.atan2(
+            monster.homeY - monster.y,
+            monster.homeX - monster.x
+          )
+          monster.isMoving = true
+        }
+      }
+    }
   }
 
   _checkAndRespawnMonsters() {
@@ -379,7 +498,16 @@ export class FieldScene {
           isElite: enemyData?.isElite || false,
           alive: true,
           bobOffset: Math.random() * Math.PI * 2,
-          bobSpeed: 2 + Math.random()
+          bobSpeed: 2 + Math.random(),
+          // 怪物巡逻移动
+          homeX: x,
+          homeY: y,
+          patrolRadius: (80 + Math.random() * 40) * this.dpr,
+          moveAngle: Math.random() * Math.PI * 2,
+          moveSpeed: (20 + Math.random() * 10) * this.dpr,
+          moveTimer: 0,
+          pauseTimer: 0,
+          isMoving: Math.random() > 0.3
         })
       }
     }
@@ -401,6 +529,47 @@ export class FieldScene {
   }
   
   _handleTap(tap) {
+    // 如果详细信息面板打开，检查关闭按钮
+    if (this.charInfoPanel && this.charInfoPanel.visible && this.charDetailBounds) {
+      const closeBtn = this.charDetailBounds.closeBtn
+      if (tap.x >= closeBtn.x && tap.x <= closeBtn.x + closeBtn.width &&
+          tap.y >= closeBtn.y && tap.y <= closeBtn.y + closeBtn.height) {
+        this.charInfoPanel.hide()
+        return
+      }
+      
+      // 点击面板外部也关闭
+      const panel = this.charDetailBounds
+      if (tap.x < panel.x || tap.x > panel.x + panel.width ||
+          tap.y < panel.y || tap.y > panel.y + panel.height) {
+        this.charInfoPanel.hide()
+        return
+      }
+      
+      return // 面板打开时不响应其他点击
+    }
+    
+    // 角色信息卡片点击（切换角色或打开详情）
+    if (this.charInfoCardBounds) {
+      const card = this.charInfoCardBounds
+      if (tap.x >= card.x && tap.x <= card.x + card.width &&
+          tap.y >= card.y && tap.y <= card.y + card.height) {
+        // 检查是否点击了切换按钮区域（右侧部分）
+        const isSwitchArea = tap.x > card.x + card.width - 40 * this.dpr
+        if (isSwitchArea) {
+          // 切换角色
+          this._switchCharacter()
+          return
+        } else {
+          // 打开详情面板
+          if (this.charInfoPanel) {
+            this.charInfoPanel.show()
+            return
+          }
+        }
+      }
+    }
+    
     // 返回按钮
     const backBtn = { x: this.width - 50 * this.dpr, y: 20 * this.dpr, w: 40 * this.dpr, h: 40 * this.dpr }
     if (tap.x >= backBtn.x && tap.x <= backBtn.x + backBtn.w &&
@@ -445,6 +614,80 @@ export class FieldScene {
     const gold = 10 + Math.floor(Math.random() * 20)
     this.game.data.set('gold', (this.game.data.get('gold') || 100) + gold)
     console.log(`[Field] 收集宝箱获得 ${gold} 金币`)
+  }
+
+  /**
+   * 切换角色
+   */
+  _switchCharacter() {
+    const allChars = charStateManager.getAllCharacters()
+    if (allChars.length <= 1) {
+      console.log('[Field] 只有一个角色，无法切换')
+      return
+    }
+
+    // 切换到下一个角色
+    this.currentCharacterIndex = (this.currentCharacterIndex + 1) % allChars.length
+    this.mainCharacter = allChars[this.currentCharacterIndex]
+
+    // 更新角色信息面板
+    if (this.charInfoPanel) {
+      this.charInfoPanel.character = this.mainCharacter
+    }
+
+    // 显示切换提示
+    this.showSwitchTip = true
+    this.switchTipTimer = 1.5 // 显示1.5秒
+
+    console.log(`[Field] 切换到角色: ${this.mainCharacter.name}`)
+  }
+
+  _checkObstacleCollision() {
+    if (!this.obstacles || this.obstacles.length === 0) return false
+
+    const playerRadius = 25 * this.dpr // 玩家碰撞半径
+
+    for (const obstacle of this.obstacles) {
+      if (obstacle.type === 'rect') {
+        // 矩形碰撞检测
+        const rect = {
+          x: obstacle.x * this.dpr,
+          y: obstacle.y * this.dpr,
+          width: obstacle.width * this.dpr,
+          height: obstacle.height * this.dpr
+        }
+
+        // 找到矩形上离玩家最近的点
+        const closestX = Math.max(rect.x, Math.min(this.playerX, rect.x + rect.width))
+        const closestY = Math.max(rect.y, Math.min(this.playerY, rect.y + rect.height))
+
+        // 计算距离
+        const distX = this.playerX - closestX
+        const distY = this.playerY - closestY
+        const distance = Math.sqrt(distX * distX + distY * distY)
+
+        if (distance < playerRadius) {
+          return true // 碰撞了
+        }
+      } else if (obstacle.type === 'circle') {
+        // 圆形碰撞检测
+        const circle = {
+          x: obstacle.x * this.dpr,
+          y: obstacle.y * this.dpr,
+          radius: obstacle.radius * this.dpr
+        }
+
+        const dist = Math.sqrt(
+          (this.playerX - circle.x) ** 2 + (this.playerY - circle.y) ** 2
+        )
+
+        if (dist < playerRadius + circle.radius) {
+          return true // 碰撞了
+        }
+      }
+    }
+
+    return false // 没有碰撞
   }
 
   _checkMonsterCollision() {
@@ -534,23 +777,85 @@ export class FieldScene {
     ctx.textAlign = 'right'
     ctx.fillText('✕', this.width - 20 * this.dpr, 50 * this.dpr)
     
+    // 角色信息卡片（左上角，顶部UI下方）
+    if (this.charInfoPanel && this.mainCharacter) {
+      this.charInfoCardBounds = this.charInfoPanel.renderMiniCard(
+        20 * this.dpr,  // 左边距
+        80 * this.dpr  // 顶部UI下方
+      )
+
+      // 绘制角色切换按钮
+      if (this.charInfoCardBounds) {
+        const btnX = this.charInfoCardBounds.x + this.charInfoCardBounds.width - 35 * this.dpr
+        const btnY = this.charInfoCardBounds.y + 10 * this.dpr
+        const btnSize = 25 * this.dpr
+
+        // 按钮背景
+        ctx.fillStyle = 'rgba(74, 158, 255, 0.8)'
+        ctx.beginPath()
+        ctx.arc(btnX + btnSize / 2, btnY + btnSize / 2, btnSize / 2, 0, Math.PI * 2)
+        ctx.fill()
+
+        // 切换图标
+        ctx.font = `${16 * this.dpr}px sans-serif`
+        ctx.fillStyle = '#ffffff'
+        ctx.textAlign = 'center'
+        ctx.textBaseline = 'middle'
+        ctx.fillText('↻', btnX + btnSize / 2, btnY + btnSize / 2)
+      }
+    }
+
+    // 角色切换提示
+    if (this.showSwitchTip) {
+      ctx.font = `bold ${20 * this.dpr}px sans-serif`
+      ctx.fillStyle = '#ffd700'
+      ctx.textAlign = 'center'
+      ctx.textBaseline = 'middle'
+
+      // 背景框
+      const tipText = `切换至 ${this.mainCharacter.name}`
+      const tipWidth = ctx.measureText(tipText).width + 40 * this.dpr
+      const tipHeight = 40 * this.dpr
+      const tipX = (this.width - tipWidth) / 2
+      const tipY = this.height / 2 - 100 * this.dpr
+
+      ctx.fillStyle = 'rgba(0, 0, 0, 0.8)'
+      ctx.fillRect(tipX, tipY, tipWidth, tipHeight)
+
+      ctx.strokeStyle = '#ffd700'
+      ctx.lineWidth = 2
+      ctx.strokeRect(tipX, tipY, tipWidth, tipHeight)
+
+      ctx.fillStyle = '#ffd700'
+      ctx.fillText(tipText, this.width / 2, tipY + tipHeight / 2)
+    }
+
+    // 角色详细信息面板
+    if (this.charInfoPanel) {
+      this.charDetailBounds = this.charInfoPanel.renderDetailPanel()
+    }
+    
     // 小地图
     if (this.showMinimap) {
       this._renderMinimap(ctx)
     }
+
+    // 调试：显示碰撞区域（可选）
+    // 取消注释下面这行可以显示碰撞区域
+    // this._renderObstacles(ctx)
   }
   
   _renderPlayer(ctx) {
-    const size = 60 * this.dpr
-    
+    const targetHeight = 60 * this.dpr // 固定高度
+
     // 转换为屏幕坐标
     const screenX = this.playerX - this.cameraX
     const screenY = this.playerY - this.cameraY
-    
+
     // 获取当前动画帧图片
     let frameImg = null
-    const heroId = this.party[0]?.id || 'zhenbao'
-    
+    const heroId = this.mainCharacter?.id || 'zhenbao'
+
     if (this.isMoving) {
       // 走路动画帧
       const walkKey = `HERO_${heroId.toUpperCase()}_WALK_${this.animFrame}`
@@ -560,16 +865,25 @@ export class FieldScene {
       const idleKey = `HERO_${heroId.toUpperCase()}_IDLE_${this.animFrame}`
       frameImg = this.game.assets.get(idleKey)
     }
-    
+
     // 如果动画帧不存在，尝试使用静态立绘
     if (!frameImg) {
       frameImg = this.game.assets.get(`HERO_${heroId.toUpperCase()}`)
     }
-    
+
     if (frameImg) {
+      // 获取图片原始尺寸
+      const imgWidth = frameImg.width
+      const imgHeight = frameImg.height
+
+      // 保持宽高比，基于图片高度缩放（与臻宝一致的处理方式）
+      const scale = targetHeight / imgHeight
+      const renderWidth = imgWidth * scale
+      const renderHeight = targetHeight
+
       // 保存当前状态
       ctx.save()
-      
+
       // 根据朝向决定是否翻转（角色图片本身朝左，所以向右时才翻转）
       if (!this.facingLeft) {
         // 向右时翻转图片（把朝左的图片翻成朝右）
@@ -577,35 +891,35 @@ export class FieldScene {
         ctx.scale(-1, 1)
         ctx.drawImage(
           frameImg,
-          -size / 2,
-          -size / 2,
-          size,
-          size
+          -renderWidth / 2,
+          -renderHeight / 2,
+          renderWidth,
+          renderHeight
         )
       } else {
         // 向左时不翻转（图片本身朝左）
         ctx.drawImage(
           frameImg,
-          screenX - size / 2,
-          screenY - size / 2,
-          size,
-          size
+          screenX - renderWidth / 2,
+          screenY - renderHeight / 2,
+          renderWidth,
+          renderHeight
         )
       }
-      
+
       // 恢复状态
       ctx.restore()
       
       // 底部阴影（不翻转）
       ctx.beginPath()
-      ctx.ellipse(screenX, screenY + size / 2 + 5 * this.dpr, size / 2.5, 8 * this.dpr, 0, 0, Math.PI * 2)
+      ctx.ellipse(screenX, screenY + targetHeight / 2 + 5 * this.dpr, targetHeight / 2.5, 8 * this.dpr, 0, 0, Math.PI * 2)
       ctx.fillStyle = 'rgba(0,0,0,0.3)'
       ctx.fill()
-      
+
       // 移动时添加轻微的方向指示器
       if (this.isMoving) {
         ctx.beginPath()
-        const arrowDist = size / 2 + 10 * this.dpr
+        const arrowDist = targetHeight / 2 + 10 * this.dpr
         let arrowX = screenX
         let arrowY = screenY
         
@@ -623,13 +937,13 @@ export class FieldScene {
     } else {
       // 备用：圆圈 + emoji
       ctx.beginPath()
-      ctx.arc(screenX, screenY, size / 2, 0, Math.PI * 2)
+      ctx.arc(screenX, screenY, targetHeight / 2, 0, Math.PI * 2)
       ctx.fillStyle = 'rgba(255,255,255,0.3)'
       ctx.fill()
       ctx.strokeStyle = '#ffffff'
       ctx.lineWidth = 3
       ctx.stroke()
-      
+
       ctx.font = `${30 * this.dpr}px sans-serif`
       ctx.textAlign = 'center'
       ctx.textBaseline = 'middle'
@@ -739,6 +1053,14 @@ export class FieldScene {
     ctx.font = `${16 * this.dpr}px sans-serif`
     ctx.fillStyle = 'rgba(255,255,255,0.8)'
     ctx.fillText(`👥 ${this.party.length}`, 20 * this.dpr, 65 * this.dpr)
+    
+    // 玩家坐标显示（调试用）
+    ctx.font = `${14 * this.dpr}px sans-serif`
+    ctx.fillStyle = 'rgba(255,255,0,0.9)'
+    ctx.textAlign = 'right'
+    const playerLogicX = Math.floor(this.playerX / this.dpr)
+    const playerLogicY = Math.floor(this.playerY / this.dpr)
+    ctx.fillText(`坐标: (${playerLogicX}, ${playerLogicY})`, this.width - 20 * this.dpr, 45 * this.dpr)
   }
   
   _renderJoystick(ctx) {
@@ -853,5 +1175,47 @@ export class FieldScene {
     ctx.lineTo(x, y + r)
     ctx.arcTo(x, y, x + r, y, r)
     ctx.closePath()
+  }
+
+  _renderObstacles(ctx) {
+    // 绘制碰撞区域的可视化（用于调试）
+    if (!this.obstacles || this.obstacles.length === 0) return
+
+    for (const obstacle of this.obstacles) {
+      // 转换为屏幕坐标
+      const screenX = obstacle.x * this.dpr - this.cameraX
+      const screenY = obstacle.y * this.dpr - this.cameraY
+
+      ctx.strokeStyle = 'rgba(255, 0, 0, 0.8)'
+      ctx.fillStyle = 'rgba(255, 0, 0, 0.2)'
+      ctx.lineWidth = 2
+
+      if (obstacle.type === 'rect') {
+        // 绘制矩形
+        const w = obstacle.width * this.dpr
+        const h = obstacle.height * this.dpr
+        ctx.fillRect(screenX, screenY, w, h)
+        ctx.strokeRect(screenX, screenY, w, h)
+
+        // 显示名称
+        ctx.font = `${12 * this.dpr}px sans-serif`
+        ctx.fillStyle = '#ff0000'
+        ctx.textAlign = 'center'
+        ctx.fillText(obstacle.name || '障碍', screenX + w / 2, screenY + h / 2)
+      } else if (obstacle.type === 'circle') {
+        // 绘制圆形
+        const r = obstacle.radius * this.dpr
+        ctx.beginPath()
+        ctx.arc(screenX, screenY, r, 0, Math.PI * 2)
+        ctx.fill()
+        ctx.stroke()
+
+        // 显示名称
+        ctx.font = `${12 * this.dpr}px sans-serif`
+        ctx.fillStyle = '#ff0000'
+        ctx.textAlign = 'center'
+        ctx.fillText(obstacle.name || '障碍', screenX, screenY)
+      }
+    }
   }
 }

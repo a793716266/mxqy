@@ -71,24 +71,28 @@ export const ASSETS = {
   
   // 主角走路动画帧 - 透明背景版本
   // zhenbao: 8帧动画（新版本）
-  HERO_ZHENBAO_WALK_0: 'images/characters_anim/transparent/zhenbao_walk_0.png',
-  HERO_ZHENBAO_WALK_1: 'images/characters_anim/transparent/zhenbao_walk_1.png',
-  HERO_ZHENBAO_WALK_2: 'images/characters_anim/transparent/zhenbao_walk_2.png',
-  HERO_ZHENBAO_WALK_3: 'images/characters_anim/transparent/zhenbao_walk_3.png',
-  HERO_ZHENBAO_WALK_4: 'images/characters_anim/transparent/zhenbao_walk_4.png',
-  HERO_ZHENBAO_WALK_5: 'images/characters_anim/transparent/zhenbao_walk_5.png',
-  HERO_ZHENBAO_WALK_6: 'images/characters_anim/transparent/zhenbao_walk_6.png',
-  HERO_ZHENBAO_WALK_7: 'images/characters_anim/transparent/zhenbao_walk_7.png',
-  HERO_ZHENBAO_IDLE_0: 'images/characters_anim/transparent/zhenbao_idle_0.png',
-  HERO_ZHENBAO_IDLE_1: 'images/characters_anim/transparent/zhenbao_idle_1.png',
+  HERO_ZHENBAO_WALK_0: 'images/characters_anim/transparent/walk/zhenbao_walk_0.png',
+  HERO_ZHENBAO_WALK_1: 'images/characters_anim/transparent/walk/zhenbao_walk_1.png',
+  HERO_ZHENBAO_WALK_2: 'images/characters_anim/transparent/walk/zhenbao_walk_2.png',
+  HERO_ZHENBAO_WALK_3: 'images/characters_anim/transparent/walk/zhenbao_walk_3.png',
+  HERO_ZHENBAO_WALK_4: 'images/characters_anim/transparent/walk/zhenbao_walk_4.png',
+  HERO_ZHENBAO_WALK_5: 'images/characters_anim/transparent/walk/zhenbao_walk_5.png',
+  HERO_ZHENBAO_WALK_6: 'images/characters_anim/transparent/walk/zhenbao_walk_6.png',
+  HERO_ZHENBAO_WALK_7: 'images/characters_anim/transparent/walk/zhenbao_walk_7.png',
+  HERO_ZHENBAO_IDLE_0: 'images/characters_anim/transparent/idle/zhenbao_idle_0.png',
+  HERO_ZHENBAO_IDLE_1: 'images/characters_anim/transparent/idle/zhenbao_idle_1.png',
   
-  // lixiaobao: 4帧动画
-  HERO_LIXIAOBAO_WALK_0: 'images/characters_anim/transparent/lixiaobao_walk_0.png',
-  HERO_LIXIAOBAO_WALK_1: 'images/characters_anim/transparent/lixiaobao_walk_1.png',
-  HERO_LIXIAOBAO_WALK_2: 'images/characters_anim/transparent/lixiaobao_walk_2.png',
-  HERO_LIXIAOBAO_WALK_3: 'images/characters_anim/transparent/lixiaobao_walk_3.png',
-  HERO_LIXIAOBAO_IDLE_0: 'images/characters_anim/transparent/lixiaobao_idle_0.png',
-  HERO_LIXIAOBAO_IDLE_1: 'images/characters_anim/transparent/lixiaobao_idle_1.png',
+  // lixiaobao: 8帧动画(与zhenbao一致)
+  HERO_LIXIAOBAO_WALK_0: 'images/characters_anim/transparent/walk/lixiaobao_walk_0.png',
+  HERO_LIXIAOBAO_WALK_1: 'images/characters_anim/transparent/walk/lixiaobao_walk_1.png',
+  HERO_LIXIAOBAO_WALK_2: 'images/characters_anim/transparent/walk/lixiaobao_walk_2.png',
+  HERO_LIXIAOBAO_WALK_3: 'images/characters_anim/transparent/walk/lixiaobao_walk_3.png',
+  HERO_LIXIAOBAO_WALK_4: 'images/characters_anim/transparent/walk/lixiaobao_walk_4.png',
+  HERO_LIXIAOBAO_WALK_5: 'images/characters_anim/transparent/walk/lixiaobao_walk_5.png',
+  HERO_LIXIAOBAO_WALK_6: 'images/characters_anim/transparent/walk/lixiaobao_walk_6.png',
+  HERO_LIXIAOBAO_WALK_7: 'images/characters_anim/transparent/walk/lixiaobao_walk_7.png',
+  HERO_LIXIAOBAO_IDLE_0: 'images/characters_anim/transparent/idle/lixiaobao_idle_0.png',
+  HERO_LIXIAOBAO_IDLE_1: 'images/characters_anim/transparent/idle/lixiaobao_idle_1.png',
   
   // 猫咪队员
   CAT_AMY: 'images/cats/team/cat_amy.png',

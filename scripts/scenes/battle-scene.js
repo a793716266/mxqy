@@ -3,6 +3,7 @@
  */
 
 import { ENEMIES_CH1 } from '../data/enemies.js'
+import { charStateManager } from '../data/character-state.js'
 
 export class BattleScene {
   constructor(game, data) {
@@ -488,6 +489,10 @@ export class BattleScene {
     
     if (this._isInRect(tx, ty, btnX, btnY, btnW, btnH)) {
       if (this.phase === 'victory') {
+        // 保存角色状态
+        const charData = charStateManager.serialize()
+        this.game.data.set('characterStates', charData)
+        
         this.game.changeScene('field', { nodeId: this.nodeId })
       } else if (this.phase === 'defeat') {
         this.game.changeScene('main-menu')
@@ -594,7 +599,39 @@ export class BattleScene {
     if (this.enemy.hp <= 0) {
       this.phase = 'victory'
       this._addLog(`🎉 ${this.enemy.name} 被击败了！`)
-      this._addLog(`获得 ${this.enemy.exp} 经验，${this.enemy.gold} 金币`)
+      this._addLog(`获得 ${this.enemy.exp || 0} 经验，${this.enemy.gold || 0} 金币`)
+
+      // 给所有参战角色增加经验
+      const expReward = this.enemy.exp || 50
+      const goldReward = this.enemy.gold || 20
+      
+      // 更新角色状态
+      const allChars = charStateManager.getAllCharacters()
+      for (const charState of allChars) {
+        // 找到参战的角色
+        const partyMember = this.party.find(h => h.id === charState.id)
+        if (partyMember) {
+          // 先同步战斗中的HP/MP到角色状态
+          charState.hp = Math.max(0, Math.min(partyMember.hp, charState.maxHp))
+          charState.mp = Math.max(0, Math.min(partyMember.mp, charState.maxMp))
+          
+          // 然后给予经验
+          const levelUpCount = charState.gainExp(expReward)
+          if (levelUpCount > 0) {
+            this._addLog(`✨ ${charState.name} 升级了！(Lv.${charState.level})`)
+          }
+          
+          // 同步回party（用于显示）
+          partyMember.hp = charState.hp
+          partyMember.mp = charState.mp
+          partyMember.maxHp = charState.maxHp
+          partyMember.maxMp = charState.maxMp
+          partyMember.atk = charState.atk
+          partyMember.def = charState.def
+          partyMember.spd = charState.spd
+          partyMember.level = charState.level
+        }
+      }
 
       // 标记 Boss 已击败
       if (this.enemy.isBoss) {
@@ -1101,12 +1138,14 @@ export class BattleScene {
         ctx.fillText(hero.role === 'warrior' ? '⚔️' : '🔮', avatarX + avatarSize / 2, avatarY + avatarSize / 2)
       }
 
-      // 角色名字
+      // 角色名字和等级
       ctx.font = `bold ${16 * dpr}px sans-serif`
       ctx.fillStyle = isDead ? '#666' : '#fff'
       ctx.textAlign = 'left'
       ctx.textBaseline = 'alphabetic'
-      ctx.fillText(hero.name, avatarX + avatarSize + 10 * dpr, y + 22 * dpr)
+      const nameText = hero.name
+      const levelText = hero.level ? ` Lv.${hero.level}` : ''
+      ctx.fillText(nameText + levelText, avatarX + avatarSize + 10 * dpr, y + 22 * dpr)
 
       // 职业
       ctx.font = `${11 * dpr}px sans-serif`
