@@ -21,6 +21,11 @@ export class TownScene {
     // 对话
     this.dialogue = null
     this.dialogueQueue = []
+    
+    // 臻宝角色动画
+    this.heroAnimFrame = 0
+    this.heroAnimTimer = 0
+    this.heroFrameDuration = 0.45 // 待机动画更慢（0.15 * 3）
   }
   
   init() {
@@ -107,6 +112,13 @@ export class TownScene {
   update(dt) {
     this.time += dt
     
+    // 更新臻宝动画
+    this.heroAnimTimer += dt
+    if (this.heroAnimTimer >= this.heroFrameDuration) {
+      this.heroAnimTimer = 0
+      this.heroAnimFrame = (this.heroAnimFrame + 1) % 2 // idle动画2帧循环
+    }
+    
     // 处理点击
     if (this.game.input.taps.length > 0) {
       const tap = this.game.input.consumeTap()
@@ -177,7 +189,7 @@ export class TownScene {
     const bgImage = this.game.assets.get('BG_TOWN')
     if (bgImage) {
       ctx.drawImage(bgImage, 0, 0, this.width, this.height)
-      ctx.fillStyle = 'rgba(0,0,0,0.2)'
+      ctx.fillStyle = 'rgba(0,0,0,0.1)' // 降低遮罩透明度，让背景更清晰
       ctx.fillRect(0, 0, this.width, this.height)
     } else {
       const bgGrad = ctx.createLinearGradient(0, 0, 0, this.height)
@@ -186,6 +198,9 @@ export class TownScene {
       ctx.fillStyle = bgGrad
       ctx.fillRect(0, 0, this.width, this.height)
     }
+    
+    // 渲染臻宝角色（在背景上）
+    this._renderHero(ctx)
     
     // 顶部状态栏
     this._renderTopBar(ctx)
@@ -209,6 +224,38 @@ export class TownScene {
     // 对话框
     if (this.dialogue) {
       this._renderDialogue(ctx)
+    }
+  }
+  
+  _renderHero(ctx) {
+    // 臻宝位置 - 在屏幕中央偏下
+    const heroX = this.width / 2
+    const heroY = this.height * 0.65
+    
+    // 渲染臻宝idle动画
+    const frameKey = `HERO_ZHENBAO_IDLE_${this.heroAnimFrame}`
+    let heroImg = this.game.assets.get(frameKey)
+    
+    // 如果没有动画帧，使用静态立绘
+    if (!heroImg) {
+      heroImg = this.game.assets.get('HERO_ZHENBAO')
+    }
+    
+    if (heroImg) {
+      const dpr = this.dpr
+      const targetHeight = 120 * dpr
+      const scale = targetHeight / heroImg.height
+      const targetWidth = heroImg.width * scale
+      
+      ctx.save()
+      ctx.drawImage(
+        heroImg,
+        heroX - targetWidth / 2,
+        heroY - targetHeight / 2,
+        targetWidth,
+        targetHeight
+      )
+      ctx.restore()
     }
   }
   

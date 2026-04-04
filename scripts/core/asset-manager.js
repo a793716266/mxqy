@@ -62,7 +62,7 @@ export const ASSETS = {
   BG_GRASSLAND: 'images/backgrounds/bg_grassland.png',
   BG_FOREST: 'images/backgrounds/bg_forest.png',
   BG_CAVE: 'images/backgrounds/bg_cave.png',
-  BG_TOWN: 'images/backgrounds/bg_town.png',
+  BG_TOWN: 'images/map/village.jpeg',
   BG_BOSS: 'images/backgrounds/bg_boss.png',
   
   // 主角
