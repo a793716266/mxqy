@@ -361,18 +361,27 @@ export class FieldMovement {
       ctx.save()
       
       if (facingLeft) {
+        // 向左时不翻转（图片本身朝左）
+        ctx.drawImage(
+          img,
+          screenPos.x - targetWidth / 2,
+          screenPos.y - targetHeight / 2,
+          targetWidth,
+          targetHeight
+        )
+      } else {
+        // 向右时翻转
         ctx.translate(screenPos.x, screenPos.y)
         ctx.scale(-1, 1)
         ctx.translate(-screenPos.x, -screenPos.y)
+        ctx.drawImage(
+          img,
+          screenPos.x - targetWidth / 2,
+          screenPos.y - targetHeight / 2,
+          targetWidth,
+          targetHeight
+        )
       }
-      
-      ctx.drawImage(
-        img,
-        screenPos.x - targetWidth / 2,
-        screenPos.y - targetHeight / 2,
-        targetWidth,
-        targetHeight
-      )
       
       ctx.restore()
     }
