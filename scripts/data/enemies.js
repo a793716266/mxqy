@@ -3,77 +3,88 @@
  */
 
 export const ENEMIES_CH1 = {
-  // 小怪
+  // 小怪 - 加强版
   wild_cat: {
     id: 'wild_cat',
     name: '野猫',
-    maxHp: 30,
-    atk: 8,
-    def: 3,
+    maxHp: 50,       // 30 → 50 (+67%)
+    atk: 12,         // 8 → 12 (+50%)
+    def: 5,          // 3 → 5 (+67%)
     spd: 9,
-    exp: 10,
-    gold: 5,
-    skills: [{ name: '抓挠', power: 1.0, type: 'attack' }],
+    exp: 15,         // 奖励提升
+    gold: 8,
+    skills: [
+      { name: '抓挠', power: 1.2, type: 'attack' },          // 1.0 → 1.2
+      { name: '狂抓', power: 1.5, type: 'attack' }           // 新增技能
+    ],
     drop: [{ id: 'fish', name: '小鱼干', chance: 0.3 }]
   },
   slime_cat: {
     id: 'slime_cat',
     name: '史莱姆猫',
-    maxHp: 40,
-    atk: 6,
-    def: 5,
+    maxHp: 70,       // 40 → 70 (+75%)
+    atk: 10,         // 6 → 10 (+67%)
+    def: 8,          // 5 → 8 (+60%)
     spd: 6,
-    exp: 12,
-    gold: 8,
-    skills: [{ name: '黏液喷射', power: 0.9, type: 'attack', effect: 'slow' }],
+    exp: 18,         // 奖励提升
+    gold: 12,
+    skills: [
+      { name: '黏液喷射', power: 1.1, type: 'attack', effect: 'slow' },  // 0.9 → 1.1
+      { name: '黏液包裹', power: 1.3, type: 'attack', effect: 'slow' }   // 新增技能
+    ],
     drop: [{ id: 'gel', name: '黏液', chance: 0.2 }]
   },
   shadow_mouse: {
     id: 'shadow_mouse',
     name: '暗影鼠',
-    maxHp: 25,
-    atk: 10,
-    def: 2,
-    spd: 14,
-    exp: 8,
-    gold: 4,
-    skills: [{ name: '暗影咬', power: 1.1, type: 'attack' }],
+    maxHp: 45,       // 25 → 45 (+80%)
+    atk: 15,         // 10 → 15 (+50%)
+    def: 4,          // 2 → 4
+    spd: 16,         // 14 → 16 (更快)
+    exp: 12,         // 奖励提升
+    gold: 6,
+    skills: [
+      { name: '暗影咬', power: 1.3, type: 'attack' },        // 1.1 → 1.3
+      { name: '暗影突袭', power: 1.8, type: 'attack' }       // 新增高伤技能
+    ],
     drop: [{ id: 'cheese', name: '奶酪', chance: 0.4 }]
   },
-  // 精英怪
+  // 精英怪 - 大幅加强
   stray_leader: {
     id: 'stray_leader',
     name: '流浪猫首领',
-    maxHp: 80,
-    atk: 14,
-    def: 8,
-    spd: 10,
-    exp: 30,
-    gold: 20,
+    maxHp: 180,      // 80 → 180 (+125%)
+    atk: 24,         // 14 → 24 (+71%)
+    def: 14,         // 8 → 14 (+75%)
+    spd: 12,         // 10 → 12
+    exp: 50,         // 奖励提升
+    gold: 35,
     isElite: true,
     skills: [
-      { name: '利爪连击', power: 1.2, type: 'attack' },
+      { name: '利爪连击', power: 1.5, type: 'attack' },      // 1.2 → 1.5
       { name: '召唤小弟', power: 0, type: 'summon', summonId: 'wild_cat' },
-      { name: '怒吼', power: 0.5, type: 'attack', target: 'all', effect: 'stun' }
+      { name: '怒吼', power: 1.0, type: 'attack', target: 'all', effect: 'stun' },  // 0.5 → 1.0
+      { name: '撕裂', power: 2.0, type: 'attack' }           // 新增强力技能
     ],
     drop: [{ id: 'cat_collar', name: '猫项圈', chance: 0.5 }]
   },
-  // Boss
+  // Boss - 极大幅加强
   dark_cat_king: {
     id: 'dark_cat_king',
     name: '暗影猫王',
-    maxHp: 200,
-    atk: 18,
-    def: 12,
-    spd: 11,
-    exp: 100,
-    gold: 50,
+    maxHp: 500,      // 200 → 500 (+150%)
+    atk: 32,         // 18 → 32 (+78%)
+    def: 22,         // 12 → 22 (+83%)
+    spd: 13,         // 11 → 13
+    exp: 200,        // 奖励提升
+    gold: 120,
     isBoss: true,
     skills: [
-      { name: '暗影爪击', power: 1.3, type: 'attack' },
-      { name: '暗影领域', power: 0.8, type: 'attack', target: 'all' },
-      { name: '生命吸取', power: 1.0, type: 'attack', effect: 'drain' },
-      { name: '暗影爆发', power: 2.0, type: 'attack' }
+      { name: '暗影爪击', power: 1.8, type: 'attack' },      // 1.3 → 1.8
+      { name: '暗影领域', power: 1.2, type: 'attack', target: 'all' },  // 0.8 → 1.2
+      { name: '生命吸取', power: 1.5, type: 'attack', effect: 'drain' }, // 1.0 → 1.5
+      { name: '暗影爆发', power: 2.5, type: 'attack' },      // 2.0 → 2.5
+      { name: '暗影之怒', power: 3.0, type: 'attack' }       // 新增大招
     ],
     drop: [{ id: 'dark_gem', name: '暗影宝石', chance: 1.0 }],
     dialogue: [
