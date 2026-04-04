@@ -80,12 +80,15 @@ export class MainMenuScene {
     this.time += dt
 
     // 更新粒子
-    for (const p of this.particles) {
-      p.y -= p.speed * dt
-      p.opacity = 0.3 + Math.sin(this.time * 2 + p.x) * 0.3
-      if (p.y < -10) {
-        p.y = this.height + 10
-        p.x = Math.random() * this.width
+    // 更新粒子（安全检查）
+    if (this.particles && Array.isArray(this.particles)) {
+      for (const p of this.particles) {
+        p.y -= p.speed * dt
+        p.opacity = 0.3 + Math.sin(this.time * 2 + p.x) * 0.3
+        if (p.y < -10) {
+          p.y = this.height + 10
+          p.x = Math.random() * this.width
+        }
       }
     }
 
@@ -100,11 +103,13 @@ export class MainMenuScene {
       if (tap) {
         const tx = tap.x
         const ty = tap.y
-        for (const btn of this.buttons) {
-          if (tx >= btn.x && tx <= btn.x + btn.w &&
-              ty >= btn.y && ty <= btn.y + btn.h) {
-            btn.action()
-            break
+        if (this.buttons && Array.isArray(this.buttons)) {
+          for (const btn of this.buttons) {
+            if (tx >= btn.x && tx <= btn.x + btn.w &&
+                ty >= btn.y && ty <= btn.y + btn.h) {
+              btn.action()
+              break
+            }
           }
         }
       }
@@ -124,11 +129,14 @@ export class MainMenuScene {
     ctx.fillRect(0, 0, w, h)
 
     // 星星粒子
-    for (const p of this.particles) {
-      ctx.beginPath()
-      ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2)
-      ctx.fillStyle = `rgba(255, 255, 200, ${p.opacity})`
-      ctx.fill()
+    // 渲染粒子（安全检查）
+    if (this.particles && Array.isArray(this.particles)) {
+      for (const p of this.particles) {
+        ctx.beginPath()
+        ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2)
+        ctx.fillStyle = `rgba(255, 255, 200, ${p.opacity})`
+        ctx.fill()
+      }
     }
 
     // 标题
@@ -151,9 +159,11 @@ export class MainMenuScene {
     ctx.fillStyle = `rgba(200, 200, 220, ${this.subtitleOpacity})`
     ctx.fillText('探索猫咪的奇幻世界', w / 2, glowY + 50 * this.dpr)
 
-    // 按钮
-    for (const btn of this.buttons) {
-      this._drawButton(ctx, btn)
+    // 按钮（安全检查）
+    if (this.buttons && Array.isArray(this.buttons)) {
+      for (const btn of this.buttons) {
+        this._drawButton(ctx, btn)
+      }
     }
 
     // 版本信息

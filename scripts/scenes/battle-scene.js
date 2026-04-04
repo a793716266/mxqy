@@ -16,7 +16,7 @@ export class BattleScene {
     // 战斗数据
     this.party = data.party || []
     this.enemy = data.enemy || {}
-    this.bgPath = data.bg || 'images/backgrounds/bg_grassland.png'
+    this.bgKey = data.bg || 'BG_GRASSLAND' // 直接使用资源 key
     this.nodeId = data.nodeId
 
     // 战斗状态
@@ -35,9 +35,9 @@ export class BattleScene {
     this.log = []
     this.logScroll = 0
 
-    // 敌人动画位置
-    this.enemyBaseX = this.width * 0.65
-    this.enemyBaseY = this.height * 0.35
+    // 敌人动画位置 - 调整到右上方更居中的位置
+    this.enemyBaseX = this.width * 0.7
+    this.enemyBaseY = this.height * 0.28
     this.enemyX = this.enemyBaseX
     this.enemyY = this.enemyBaseY
 
@@ -45,9 +45,44 @@ export class BattleScene {
     this.skillButtons = []
     this.targetAreas = []
     this.heroAreas = []
+
+    // 攻击动画
+    this.attackingHero = null  // 正在攻击的角色
+    this.attackAnim = null     // 动画状态
+    this.heroBasePositions = [] // 角色基础位置
+
+    // 敌人攻击动画
+    this.enemyAttacking = false
+    this.enemyAttackAnim = null
+    this.enemyAttackTarget = null
   }
 
   init() {
+    console.log('[Battle] 初始化战斗场景')
+    console.log('[Battle] party:', this.party)
+    console.log('[Battle] enemy:', this.enemy)
+    
+    // 安全检查：确保 party 存在
+    if (!this.party || !Array.isArray(this.party)) {
+      console.error('[Battle] party 数据不存在或不是数组')
+      this.party = []
+    }
+    
+    // 初始化敌人当前HP
+    if (!this.enemy.hp) {
+      this.enemy.hp = this.enemy.maxHp
+    }
+    
+    // 确保队伍成员有当前HP和MP
+    this.party = this.party.map(h => ({
+      ...h,
+      hp: h.hp || h.maxHp,
+      mp: h.mp || h.maxMp,
+      buffs: h.buffs || []
+    }))
+    
+    console.log('[Battle] 处理后的 party:', this.party)
+    
     // 初始化角色位置区域
     this.heroAreas = this.party.map((h, i) => ({
       hero: h,
@@ -56,6 +91,12 @@ export class BattleScene {
       w: 160 * this.dpr,
       h: 80 * this.dpr,
       index: i
+    }))
+
+    // 初始化角色基础位置（用于攻击动画）
+    this.heroBasePositions = this.party.map((h, i) => ({
+      x: 20 * this.dpr + 8 * this.dpr + 27.5 * this.dpr, // 头像中心
+      y: this.height * 0.42 + i * 95 * this.dpr + 42.5 * this.dpr
     }))
 
     this._addLog(`第 ${this.turn} 回合开始！`)
@@ -77,9 +118,129 @@ export class BattleScene {
     this._addLog(`选择角色使用技能`)
   }
 
+  // ======== 攻击动画 ========
+  _startAttackAnimation(hero, skill, target) {
+    const heroIndex = this.party.indexOf(hero)
+    if (heroIndex === -1 || !this.heroBasePositions[heroIndex]) return
+
+    const basePos = this.heroBasePositions[heroIndex]
+    const targetX = this.enemyBaseX - 60 * this.dpr // 攻击位置（敌人左侧）
+    const targetY = this.enemyBaseY
+
+    this.attackingHero = hero
+    this.attackAnimSkill = skill  // 保存技能引用
+    this.attackAnim = {
+      phase: 'jump',  // jump -> hit -> return
+      progress: 0,
+      baseX: basePos.x,
+      baseY: basePos.y,
+      targetX: targetX,
+      targetY: targetY,
+      currentX: basePos.x,
+      currentY: basePos.y
+    }
+  }
+
+  _updateAttackAnimation(dt) {
+    if (!this.attackAnim || !this.attackingHero) return
+
+    const anim = this.attackAnim
+    const speed = 3.5 // 动画速度
+
+    if (anim.phase === 'jump') {
+      // 跳向敌人
+      anim.progress += dt * speed
+      if (anim.progress >= 1) {
+        anim.progress = 0
+        anim.phase = 'hit'
+        anim.currentX = anim.targetX
+        anim.currentY = anim.targetY
+        // 触发攻击效果
+        this._applyAttackDamage(this.attackingHero, this.enemy)
+      } else {
+        // 使用缓动函数
+        const t = this._easeOutQuad(anim.progress)
+        anim.currentX = anim.baseX + (anim.targetX - anim.baseX) * t
+        anim.currentY = anim.baseY + (anim.targetY - anim.baseY) * t
+        // 添加跳跃高度
+        const jumpHeight = Math.sin(anim.progress * Math.PI) * 40 * this.dpr
+        anim.currentY -= jumpHeight
+      }
+    } else if (anim.phase === 'hit') {
+      // 攻击帧（短暂停顿）
+      anim.progress += dt * speed * 2
+      if (anim.progress >= 0.3) {
+        anim.progress = 0
+        anim.phase = 'return'
+      }
+    } else if (anim.phase === 'return') {
+      // 返回原位
+      anim.progress += dt * speed * 0.8
+      if (anim.progress >= 1) {
+        // 动画完成
+        this.attackingHero = null
+        this.attackAnim = null
+      } else {
+        const t = this._easeInQuad(anim.progress)
+        anim.currentX = anim.targetX + (anim.baseX - anim.targetX) * t
+        anim.currentY = anim.targetY + (anim.baseY - anim.targetY) * t
+      }
+    }
+  }
+
+  _easeOutQuad(t) {
+    return t * (2 - t)
+  }
+
+  _easeInQuad(t) {
+    return t * t
+  }
+
+  _applyAttackDamage(hero, target) {
+    const skill = this.attackAnimSkill
+    if (!skill) return
+
+    // 计算伤害
+    let damage = Math.floor(hero.atk * skill.power - (target.def || 0) * 0.5)
+    damage = Math.max(1, damage + Math.floor(Math.random() * 5) - 2)
+
+    const isCrit = Math.random() < 0.15
+    if (isCrit) {
+      damage = Math.floor(damage * 1.5)
+      this._addLog(`💥 暴击！`)
+    }
+
+    target.hp = Math.max(0, target.hp - damage)
+
+    // 动画效果
+    this.shakeAmount = 12
+    this.flashAlpha = 0.6
+    this.damageTexts.push({
+      text: `-${damage}`,
+      x: this.enemyBaseX,
+      y: this.enemyBaseY - 50 * this.dpr,
+      color: isCrit ? '#ff4757' : '#ffffff',
+      life: 1.5
+    })
+
+    this._addLog(`造成 ${damage} 点伤害！`)
+
+    if (skill.effect === 'drain') {
+      const heal = Math.floor(damage * 0.3)
+      hero.hp = Math.min(hero.maxHp, hero.hp + heal)
+      this._addLog(`恢复了 ${heal} 点生命`)
+    }
+
+    // 清除技能引用
+    this.attackAnimSkill = null
+  }
+
   // ======== 更新 ========
   update(dt) {
     this.time += dt
+
+    // 攻击动画更新
+    this._updateAttackAnimation(dt)
 
     // 动画更新
     if (this.shakeAmount > 0) {
@@ -119,8 +280,115 @@ export class BattleScene {
       this.phase = 'animating'
     }
 
+    // 检查攻击动画完成
+    if (this._waitForAttackComplete && this._waitForAttackComplete()) {
+      this._waitForAttackComplete = null
+    }
+
+    // 敌人攻击动画更新
+    this._updateEnemyAttackAnimation(dt)
+
     // 检查战斗结束
     this._checkBattleEnd()
+  }
+
+  // ======== 敌人攻击动画 ========
+  _startEnemyAttackAnimation(target) {
+    const targetIndex = this.party.indexOf(target)
+    if (targetIndex === -1 || !this.heroBasePositions[targetIndex]) return
+
+    const targetPos = this.heroBasePositions[targetIndex]
+
+    this.enemyAttacking = true
+    this.enemyAttackTarget = target
+    this.enemyAttackAnim = {
+      phase: 'jump',
+      progress: 0,
+      baseX: this.enemyBaseX,
+      baseY: this.enemyBaseY,
+      targetX: targetPos.x + 40 * this.dpr, // 攻击位置（角色右侧）
+      targetY: targetPos.y,
+      currentX: this.enemyBaseX,
+      currentY: this.enemyBaseY
+    }
+  }
+
+  _updateEnemyAttackAnimation(dt) {
+    if (!this.enemyAttackAnim || !this.enemyAttacking) return
+
+    const anim = this.enemyAttackAnim
+    const speed = 4.0 // 敌人稍微快一点
+
+    if (anim.phase === 'jump') {
+      anim.progress += dt * speed
+      if (anim.progress >= 1) {
+        anim.progress = 0
+        anim.phase = 'hit'
+        anim.currentX = anim.targetX
+        anim.currentY = anim.targetY
+        // 触发攻击效果
+        this._applyEnemyAttackDamage(this.enemyAttackTarget)
+      } else {
+        const t = this._easeOutQuad(anim.progress)
+        anim.currentX = anim.baseX + (anim.targetX - anim.baseX) * t
+        anim.currentY = anim.baseY + (anim.targetY - anim.baseY) * t
+        const jumpHeight = Math.sin(anim.progress * Math.PI) * 50 * this.dpr
+        anim.currentY -= jumpHeight
+      }
+    } else if (anim.phase === 'hit') {
+      anim.progress += dt * speed * 2
+      if (anim.progress >= 0.25) {
+        anim.progress = 0
+        anim.phase = 'return'
+      }
+    } else if (anim.phase === 'return') {
+      anim.progress += dt * speed * 0.8
+      if (anim.progress >= 1) {
+        // 动画完成
+        this.enemyAttacking = false
+        this.enemyAttackAnim = null
+        this.enemyAttackTarget = null
+
+        // 进入下一回合
+        setTimeout(() => {
+          if (this.phase !== 'victory' && this.phase !== 'defeat') {
+            this.turn++
+            this._addLog(`--- 第 ${this.turn} 回合 ---`)
+            this.phase = 'select_skill'
+          }
+        }, 300)
+      } else {
+        const t = this._easeInQuad(anim.progress)
+        anim.currentX = anim.targetX + (anim.baseX - anim.targetX) * t
+        anim.currentY = anim.targetY + (anim.baseY - anim.targetY) * t
+      }
+    }
+  }
+
+  _applyEnemyAttackDamage(target) {
+    const skills = this.enemy.skills || []
+    const skill = skills[Math.floor(Math.random() * skills.length)] || { name: '攻击', power: 1.0 }
+
+    let damage = Math.floor(this.enemy.atk * (skill.power || 1.0) - target.def * 0.4)
+    damage = Math.max(1, damage + Math.floor(Math.random() * 4) - 1)
+    target.hp = Math.max(0, target.hp - damage)
+
+    this.shakeAmount = 8
+    this.flashAlpha = 0.4
+
+    const targetIndex = this.party.indexOf(target)
+    const targetPos = this.heroBasePositions[targetIndex]
+
+    this.damageTexts.push({
+      text: `-${damage}`,
+      x: targetPos ? targetPos.x : 80 * this.dpr,
+      y: targetPos ? targetPos.y - 40 * this.dpr : this.height * 0.5,
+      color: '#ff6b6b',
+      life: 1.5
+    })
+
+    this._addLog(`${this.enemy.name} 使用「${skill.name}」！`)
+    this._addLog(`${target.name} 受到 ${damage} 点伤害！`)
   }
 
   _handleTap(tx, ty) {
@@ -188,9 +456,15 @@ export class BattleScene {
   }
 
   _handleTargetSelect(tx, ty) {
+    // 安全检查：确保 heroAreas 存在
+    if (!this.heroAreas || !Array.isArray(this.heroAreas)) {
+      this.phase = 'select_skill'
+      return
+    }
+    
     // 选择治疗目标
     for (const area of this.heroAreas) {
-      if (area.hero.hp > 0 && this._isInRect(tx, ty, area.x, area.y, area.w, area.h)) {
+      if (area.hero && area.hero.hp > 0 && this._isInRect(tx, ty, area.x, area.y, area.w, area.h)) {
         this._executeSkill(this.selectedHero, this.selectedSkill, area.hero)
         return
       }
@@ -202,72 +476,69 @@ export class BattleScene {
   }
 
   _handleEndTap(tx, ty) {
-    // 任意点击结束
-    if (this.phase === 'victory') {
-      this.game.changeScene('map', { nodeId: this.nodeId })
-    } else if (this.phase === 'defeat') {
-      this.game.changeScene('main-menu')
+    const dpr = this.dpr
+    const w = this.width
+    const h = this.height
+    
+    // 检测点击"继续"按钮区域
+    const btnW = 160 * dpr
+    const btnH = 50 * dpr
+    const btnX = (w - btnW) / 2
+    const btnY = h / 2 + 60 * dpr
+    
+    if (this._isInRect(tx, ty, btnX, btnY, btnW, btnH)) {
+      if (this.phase === 'victory') {
+        this.game.changeScene('field', { nodeId: this.nodeId })
+      } else if (this.phase === 'defeat') {
+        this.game.changeScene('main-menu')
+      }
     }
   }
 
   // ======== 技能执行 ========
   _executeSkill(hero, skill, target) {
     this.phase = 'animating'
-
     hero.mp -= skill.mpCost
     this._addLog(`${hero.name} 使用了「${skill.name}」！`)
 
-    // 技能效果
-    setTimeout(() => {
-      if (skill.type === 'attack' || skill.type === 'magic') {
-        this._executeAttack(hero, skill, target)
-      } else if (skill.type === 'heal') {
-        this._executeHeal(hero, skill, target)
-      } else if (skill.type === 'buff') {
-        this._executeBuff(hero, skill, target)
-      }
-
-      // 检查是否所有角色都行动完了
-      setTimeout(() => {
-        if (this.phase !== 'victory' && this.phase !== 'defeat') {
-          this.phase = 'enemy_turn'
+    // 根据技能类型执行
+    if (skill.type === 'attack' || skill.type === 'magic') {
+      // 攻击技能 - 启动动画
+      this._startAttackAnimation(hero, skill, target)
+      // 动画完成后会在 _applyAttackDamage 中处理伤害
+      // 设置一个检查动画完成的状态
+      this._waitForAttackComplete = () => {
+        if (!this.attackAnim && !this.attackingHero) {
+          // 动画完成，检查战斗结束
+          setTimeout(() => {
+            if (this.phase !== 'victory' && this.phase !== 'defeat') {
+              this.phase = 'enemy_turn'
+            }
+          }, 300)
+          return true
         }
-      }, 600)
-    }, 400)
-  }
-
-  _executeAttack(hero, skill, target) {
-    // 计算伤害
-    let damage = Math.floor(hero.atk * skill.power - (target.def || 0) * 0.5)
-    damage = Math.max(1, damage + Math.floor(Math.random() * 5) - 2)
-
-    // 暴击
-    const isCrit = Math.random() < 0.15
-    if (isCrit) {
-      damage = Math.floor(damage * 1.5)
-      this._addLog(`💥 暴击！`)
-    }
-
-    target.hp = Math.max(0, target.hp - damage)
-
-    // 动画效果
-    this.shakeAmount = 10
-    this.flashAlpha = 0.5
-    this.damageTexts.push({
-      text: `-${damage}`,
-      x: this.enemyX,
-      y: this.enemyBaseY - 30 * this.dpr,
-      color: isCrit ? '#ff4757' : '#ffffff',
-      life: 1.5
-    })
-
-    this._addLog(`造成 ${damage} 点伤害！`)
-
-    // 吸血效果
-    if (skill.effect === 'drain') {
-      const heal = Math.floor(damage * 0.3)
-      hero.hp = Math.min(hero.maxHp, hero.hp + heal)
-      this._addLog(`恢复了 ${heal} 点生命`)
+        return false
+      }
+    } else if (skill.type === 'heal') {
+      // 治疗技能 - 直接执行
+      setTimeout(() => {
+        this._executeHeal(hero, skill, target)
+        setTimeout(() => {
+          if (this.phase !== 'victory' && this.phase !== 'defeat') {
+            this.phase = 'enemy_turn'
+          }
+        }, 400)
+      }, 300)
+    } else if (skill.type === 'buff') {
+      // 增益技能
+      setTimeout(() => {
+        this._executeBuff(hero, skill, target)
+        setTimeout(() => {
+          if (this.phase !== 'victory' && this.phase !== 'defeat') {
+            this.phase = 'enemy_turn'
+          }
+        }, 400)
+      }, 300)
     }
   }
 
@@ -276,10 +547,18 @@ export class BattleScene {
     heal = Math.min(heal, target.maxHp - target.hp)
     target.hp = Math.min(target.maxHp, target.hp + heal)
 
+    // 治疗特效位置（目标角色的位置）
+    const targetIndex = this.party.indexOf(target)
+    const targetY = targetIndex >= 0 && this.heroBasePositions[targetIndex] 
+      ? this.heroBasePositions[targetIndex].y - 30 * this.dpr
+      : this.height * 0.4
+
     this.damageTexts.push({
       text: `+${heal}`,
-      x: 80 * this.dpr,
-      y: this.height * 0.4,
+      x: targetIndex >= 0 && this.heroBasePositions[targetIndex] 
+        ? this.heroBasePositions[targetIndex].x 
+        : 80 * this.dpr,
+      y: targetY,
       color: '#2ed573',
       life: 1.5
     })
@@ -301,41 +580,14 @@ export class BattleScene {
   _enemyAction() {
     if (this.enemy.hp <= 0) return
 
-    // 随机选择技能
-    const skills = this.enemy.skills || []
-    const skill = skills[Math.floor(Math.random() * skills.length)] || { name: '攻击', power: 1.0, type: 'attack' }
-
-    this._addLog(`${this.enemy.name} 使用了「${skill.name}」！`)
-
     // 选择目标（随机存活角色）
     const alive = this.party.filter(h => h.hp > 0)
     if (alive.length === 0) return
+
     const target = alive[Math.floor(Math.random() * alive.length)]
 
-    // 计算伤害
-    let damage = Math.floor(this.enemy.atk * (skill.power || 1.0) - target.def * 0.4)
-    damage = Math.max(1, damage + Math.floor(Math.random() * 4) - 1)
-    target.hp = Math.max(0, target.hp - damage)
-
-    this.shakeAmount = 5
-    this.damageTexts.push({
-      text: `-${damage}`,
-      x: 80 * this.dpr,
-      y: this.height * 0.5,
-      color: '#ff6b6b',
-      life: 1.5
-    })
-
-    this._addLog(`${target.name} 受到 ${damage} 点伤害！`)
-
-    // 下一个回合
-    setTimeout(() => {
-      if (this.phase !== 'victory' && this.phase !== 'defeat') {
-        this.turn++
-        this._addLog(`--- 第 ${this.turn} 回合 ---`)
-        this.phase = 'select_skill'
-      }
-    }, 800)
+    // 启动攻击动画
+    this._startEnemyAttackAnimation(target)
   }
 
   _checkBattleEnd() {
@@ -392,10 +644,18 @@ export class BattleScene {
     }
 
     // 敌人区域
-    this._renderEnemy(ctx)
+    if (!this.enemyAttacking) {
+      this._renderEnemy(ctx)
+    } else {
+      // 攻击中的敌人单独绘制
+      this._renderAttackingEnemy(ctx)
+    }
 
     // 己方队伍
     this._renderParty(ctx)
+
+    // 攻击中的角色（绘制在敌人附近）
+    this._renderAttackingHero(ctx)
 
     // 技能面板
     if (this.phase === 'select_skill' || this.phase === 'select_target') {
@@ -405,12 +665,14 @@ export class BattleScene {
     // 战斗日志
     this._renderBattleLog(ctx)
 
-    // 伤害数字
-    for (const dt of this.damageTexts) {
-      ctx.font = `bold ${28 * dpr}px sans-serif`
-      ctx.fillStyle = dt.color
-      ctx.textAlign = 'center'
-      ctx.fillText(dt.text, dt.x, dt.y)
+    // 伤害数字（安全检查）
+    if (this.damageTexts && Array.isArray(this.damageTexts)) {
+      for (const dt of this.damageTexts) {
+        ctx.font = `bold ${28 * dpr}px sans-serif`
+        ctx.fillStyle = dt.color
+        ctx.textAlign = 'center'
+        ctx.fillText(dt.text, dt.x, dt.y)
+      }
     }
 
     // 闪光效果
@@ -420,10 +682,7 @@ export class BattleScene {
     }
 
     // 回合信息
-    ctx.font = `bold ${16 * dpr}px sans-serif`
-    ctx.fillStyle = '#ffffff'
-    ctx.textAlign = 'center'
-    ctx.fillText(`第 ${this.turn} 回合`, w / 2, 30 * dpr)
+    this._renderTurnInfo(ctx)
 
     if (this.shakeAmount > 0) {
       ctx.restore()
@@ -442,126 +701,427 @@ export class BattleScene {
     const ex = this.enemyBaseX
     const ey = this.enemyBaseY
 
-    // 敌人名称和血条
-    ctx.font = `bold ${20 * dpr}px sans-serif`
+    // 敌人光环效果
+    if (this.enemy.isBoss) {
+      const glowSize = 80 * dpr + Math.sin(this.time * 2) * 5 * dpr
+      ctx.fillStyle = 'rgba(255, 71, 87, 0.15)'
+      ctx.beginPath()
+      ctx.arc(ex, ey, glowSize, 0, Math.PI * 2)
+      ctx.fill()
+    }
+
+    // 敌人名称
+    ctx.font = `bold ${22 * dpr}px sans-serif`
     ctx.fillStyle = this.enemy.isBoss ? '#ff4757' : '#ffffff'
     ctx.textAlign = 'center'
 
     const title = this.enemy.isBoss ? `👑 ${this.enemy.name}` : this.enemy.name
-    ctx.fillText(title, ex, ey - 60 * dpr)
+    ctx.fillText(title, ex, ey - 70 * dpr)
 
-    // 敌人 HP 条
-    const hpBarW = 150 * dpr
-    const hpBarH = 16 * dpr
-    this._drawBar(ctx, ex - hpBarW / 2, ey - 45 * dpr, hpBarW, hpBarH,
-      this.enemy.hp / this.enemy.maxHp, '#ff6b6b', `${this.enemy.hp}/${this.enemy.maxHp}`)
+    // 敌人 HP 条背景
+    const hpBarW = 160 * dpr
+    const hpBarH = 20 * dpr
+    const hpBarX = ex - hpBarW / 2
+    const hpBarY = ey - 55 * dpr
 
-    // 敌人形象（简单图形替代）
+    // HP 条外框
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.5)'
+    ctx.beginPath()
+    this._roundRect(ctx, hpBarX - 3 * dpr, hpBarY - 3 * dpr, hpBarW + 6 * dpr, hpBarH + 6 * dpr, 12 * dpr)
+    ctx.fill()
+
+    // HP 条
+    this._drawBar(ctx, hpBarX, hpBarY, hpBarW, hpBarH,
+      this.enemy.hp / this.enemy.maxHp, 
+      this.enemy.isBoss ? '#ff4757' : '#ff6b6b', 
+      `${this.enemy.hp}/${this.enemy.maxHp}`)
+
+    // 敌人形象
     this._drawEnemySprite(ctx, ex, ey)
   }
 
   _drawEnemySprite(ctx, x, y) {
     const dpr = this.dpr
-    const size = 50 * dpr
+    const size = 55 * dpr
+    const bounce = Math.sin(this.time * 2) * 3 * dpr // 呼吸动画
 
-    // 用简单图形绘制敌人
-    ctx.fillStyle = this.enemy.isBoss ? '#ff4757' : '#a55eea'
+    ctx.save()
+    ctx.translate(x, y + bounce)
+
+    // 阴影
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.3)'
+    ctx.beginPath()
+    ctx.ellipse(0, size * 0.4, size * 0.5, size * 0.15, 0, 0, Math.PI * 2)
+    ctx.fill()
+
+    // 身体颜色
+    const bodyColor = this.enemy.isBoss ? '#ff4757' : 
+                      this.enemy.isElite ? '#a55eea' : '#7c5ce0'
+
+    // 身体渐变
+    const bodyGrad = ctx.createRadialGradient(-size * 0.2, -size * 0.2, 0, 0, 0, size * 0.7)
+    bodyGrad.addColorStop(0, this._lightenColor(bodyColor, 30))
+    bodyGrad.addColorStop(1, bodyColor)
+    ctx.fillStyle = bodyGrad
 
     // 身体
     ctx.beginPath()
-    ctx.ellipse(x, y, size * 0.6, size * 0.5, 0, 0, Math.PI * 2)
+    ctx.ellipse(0, 0, size * 0.55, size * 0.45, 0, 0, Math.PI * 2)
     ctx.fill()
 
     // 耳朵
+    ctx.fillStyle = bodyColor
+    // 左耳
     ctx.beginPath()
-    ctx.moveTo(x - size * 0.4, y - size * 0.3)
-    ctx.lineTo(x - size * 0.5, y - size * 0.7)
-    ctx.lineTo(x - size * 0.1, y - size * 0.35)
+    ctx.moveTo(-size * 0.4, -size * 0.25)
+    ctx.quadraticCurveTo(-size * 0.55, -size * 0.8, -size * 0.15, -size * 0.4)
+    ctx.fill()
+    // 右耳
+    ctx.beginPath()
+    ctx.moveTo(size * 0.4, -size * 0.25)
+    ctx.quadraticCurveTo(size * 0.55, -size * 0.8, size * 0.15, -size * 0.4)
     ctx.fill()
 
+    // 耳朵内部
+    ctx.fillStyle = '#ffb8b8'
     ctx.beginPath()
-    ctx.moveTo(x + size * 0.4, y - size * 0.3)
-    ctx.lineTo(x + size * 0.5, y - size * 0.7)
-    ctx.lineTo(x + size * 0.1, y - size * 0.35)
+    ctx.moveTo(-size * 0.35, -size * 0.3)
+    ctx.quadraticCurveTo(-size * 0.45, -size * 0.65, -size * 0.2, -size * 0.38)
+    ctx.fill()
+    ctx.beginPath()
+    ctx.moveTo(size * 0.35, -size * 0.3)
+    ctx.quadraticCurveTo(size * 0.45, -size * 0.65, size * 0.2, -size * 0.38)
     ctx.fill()
 
     // 眼睛
     ctx.fillStyle = '#ffffff'
     ctx.beginPath()
-    ctx.arc(x - 15 * dpr, y - 5 * dpr, 6 * dpr, 0, Math.PI * 2)
-    ctx.arc(x + 15 * dpr, y - 5 * dpr, 6 * dpr, 0, Math.PI * 2)
+    ctx.ellipse(-size * 0.2, -size * 0.05, size * 0.12, size * 0.14, 0, 0, Math.PI * 2)
+    ctx.fill()
+    ctx.beginPath()
+    ctx.ellipse(size * 0.2, -size * 0.05, size * 0.12, size * 0.14, 0, 0, Math.PI * 2)
     ctx.fill()
 
-    ctx.fillStyle = '#000000'
+    // 瞳孔
+    ctx.fillStyle = '#1a1a2e'
     ctx.beginPath()
-    ctx.arc(x - 14 * dpr, y - 4 * dpr, 3 * dpr, 0, Math.PI * 2)
-    ctx.arc(x + 16 * dpr, y - 4 * dpr, 3 * dpr, 0, Math.PI * 2)
+    ctx.ellipse(-size * 0.18, -size * 0.03, size * 0.06, size * 0.08, 0, 0, Math.PI * 2)
     ctx.fill()
+    ctx.beginPath()
+    ctx.ellipse(size * 0.22, -size * 0.03, size * 0.06, size * 0.08, 0, 0, Math.PI * 2)
+    ctx.fill()
+
+    // 眼睛高光
+    ctx.fillStyle = '#ffffff'
+    ctx.beginPath()
+    ctx.arc(-size * 0.22, -size * 0.08, size * 0.03, 0, Math.PI * 2)
+    ctx.fill()
+    ctx.beginPath()
+    ctx.arc(size * 0.18, -size * 0.08, size * 0.03, 0, Math.PI * 2)
+    ctx.fill()
+
+    // 鼻子
+    ctx.fillStyle = '#ff9ff3'
+    ctx.beginPath()
+    ctx.moveTo(0, size * 0.08)
+    ctx.lineTo(-size * 0.05, size * 0.15)
+    ctx.lineTo(size * 0.05, size * 0.15)
+    ctx.closePath()
+    ctx.fill()
+
+    // 嘴巴
+    ctx.strokeStyle = '#2d3436'
+    ctx.lineWidth = 1.5 * dpr
+    ctx.beginPath()
+    ctx.moveTo(0, size * 0.15)
+    ctx.lineTo(0, size * 0.22)
+    ctx.moveTo(-size * 0.1, size * 0.25)
+    ctx.quadraticCurveTo(0, size * 0.3, size * 0.1, size * 0.25)
+    ctx.stroke()
+
+    // 胡须
+    ctx.strokeStyle = '#2d3436'
+    ctx.lineWidth = 1 * dpr
+    // 左胡须
+    ctx.beginPath()
+    ctx.moveTo(-size * 0.25, size * 0.12)
+    ctx.lineTo(-size * 0.55, size * 0.08)
+    ctx.moveTo(-size * 0.25, size * 0.18)
+    ctx.lineTo(-size * 0.55, size * 0.18)
+    // 右胡须
+    ctx.moveTo(size * 0.25, size * 0.12)
+    ctx.lineTo(size * 0.55, size * 0.08)
+    ctx.moveTo(size * 0.25, size * 0.18)
+    ctx.lineTo(size * 0.55, size * 0.18)
+    ctx.stroke()
+
+    // Boss 特效：角
+    if (this.enemy.isBoss) {
+      ctx.fillStyle = '#2d3436'
+      ctx.beginPath()
+      ctx.moveTo(-size * 0.3, -size * 0.35)
+      ctx.lineTo(-size * 0.4, -size * 0.7)
+      ctx.lineTo(-size * 0.2, -size * 0.35)
+      ctx.fill()
+      ctx.beginPath()
+      ctx.moveTo(size * 0.3, -size * 0.35)
+      ctx.lineTo(size * 0.4, -size * 0.7)
+      ctx.lineTo(size * 0.2, -size * 0.35)
+      ctx.fill()
+    }
+
+    ctx.restore()
+  }
+
+  _lightenColor(hex, percent) {
+    const num = parseInt(hex.slice(1), 16)
+    const amt = Math.round(2.55 * percent)
+    const R = Math.min(255, (num >> 16) + amt)
+    const G = Math.min(255, ((num >> 8) & 0x00FF) + amt)
+    const B = Math.min(255, (num & 0x0000FF) + amt)
+    return `rgb(${R}, ${G}, ${B})`
+  }
+
+  _renderAttackingHero(ctx) {
+    if (!this.attackAnim || !this.attackingHero) return
+
+    const hero = this.attackingHero
+    const anim = this.attackAnim
+    const dpr = this.dpr
+
+    const heroImgKey = this._getHeroImageKey(hero.id)
+    const heroImg = this.game.assets.get(heroImgKey)
+    const avatarSize = 70 * dpr
+
+    // 攻击状态特效
+    if (anim.phase === 'jump') {
+      // 移动轨迹残影
+      ctx.globalAlpha = 0.3
+      ctx.beginPath()
+      ctx.arc(anim.baseX, anim.baseY, avatarSize / 2 * 0.8, 0, Math.PI * 2)
+      ctx.fillStyle = 'rgba(255, 159, 67, 0.3)'
+      ctx.fill()
+      ctx.globalAlpha = 1
+    } else if (anim.phase === 'hit') {
+      // 攻击闪光
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.5)'
+      ctx.beginPath()
+      ctx.arc(anim.currentX, anim.currentY, avatarSize * 0.8, 0, Math.PI * 2)
+      ctx.fill()
+    }
+
+    // 绘制角色
+    ctx.save()
+    ctx.translate(anim.currentX, anim.currentY)
+
+    // 攻击时朝向右边
+    if (anim.phase !== 'return') {
+      ctx.scale(-1, 1)
+    }
+
+    if (heroImg) {
+      // 攻击时稍微放大
+      const scale = anim.phase === 'hit' ? 1.2 : 1.1
+      ctx.drawImage(heroImg, -avatarSize * scale / 2, -avatarSize * scale / 2, 
+                   avatarSize * scale, avatarSize * scale)
+    } else {
+      ctx.font = `${35 * dpr}px sans-serif`
+      ctx.textAlign = 'center'
+      ctx.textBaseline = 'middle'
+      ctx.fillText(hero.role === 'warrior' ? '⚔️' : '🔮', 0, 0)
+    }
+
+    ctx.restore()
+
+    // 攻击特效
+    if (anim.phase === 'hit') {
+      // 攻击冲击波
+      const impactSize = 40 * dpr + Math.sin(this.time * 10) * 10 * dpr
+      ctx.strokeStyle = 'rgba(255, 159, 67, 0.8)'
+      ctx.lineWidth = 3 * dpr
+      ctx.beginPath()
+      ctx.arc(anim.currentX + 30 * dpr, anim.currentY, impactSize, 0, Math.PI * 2)
+      ctx.stroke()
+
+      // 攻击文字
+      ctx.font = `bold ${18 * dpr}px sans-serif`
+      ctx.fillStyle = '#ff9f43'
+      ctx.textAlign = 'center'
+      ctx.fillText('攻击!', anim.currentX, anim.currentY - avatarSize / 2 - 20 * dpr)
+    }
+  }
+
+  _renderAttackingEnemy(ctx) {
+    if (!this.enemyAttackAnim) return
+
+    const anim = this.enemyAttackAnim
+    const dpr = this.dpr
+
+    // 攻击状态特效
+    if (anim.phase === 'jump') {
+      ctx.globalAlpha = 0.3
+      ctx.beginPath()
+      ctx.arc(anim.baseX, anim.baseY, 50 * dpr, 0, Math.PI * 2)
+      ctx.fillStyle = this.enemy.isBoss ? 'rgba(255, 71, 87, 0.3)' : 'rgba(124, 92, 224, 0.3)'
+      ctx.fill()
+      ctx.globalAlpha = 1
+    } else if (anim.phase === 'hit') {
+      ctx.fillStyle = 'rgba(255, 0, 0, 0.5)'
+      ctx.beginPath()
+      ctx.arc(anim.currentX, anim.currentY, 60 * dpr, 0, Math.PI * 2)
+      ctx.fill()
+    }
+
+    // 绘制敌人
+    ctx.save()
+    ctx.translate(anim.currentX, anim.currentY)
+
+    // 攻击时朝向左边
+    if (anim.phase !== 'return') {
+      ctx.scale(-1, 1)
+    }
+
+    // 调用敌人绘制
+    this._drawEnemySprite(ctx, 0, 0)
+
+    ctx.restore()
+
+    // 攻击特效
+    if (anim.phase === 'hit') {
+      const impactSize = 45 * dpr + Math.sin(this.time * 10) * 10 * dpr
+      ctx.strokeStyle = this.enemy.isBoss ? 'rgba(255, 71, 87, 0.8)' : 'rgba(124, 92, 224, 0.8)'
+      ctx.lineWidth = 3 * dpr
+      ctx.beginPath()
+      ctx.arc(anim.currentX - 30 * dpr, anim.currentY, impactSize, 0, Math.PI * 2)
+      ctx.stroke()
+    }
   }
 
   _renderParty(ctx) {
     const dpr = this.dpr
 
+    // 安全检查：确保 party 存在
+    if (!this.party || !Array.isArray(this.party) || this.party.length === 0) {
+      console.error('[Battle] party 数据不存在或为空')
+      return
+    }
+
     for (let i = 0; i < this.party.length; i++) {
       const hero = this.party[i]
-      const x = 30 * dpr
-      const y = this.height * 0.45 + i * 90 * dpr
-      const cardW = 170 * dpr
-      const cardH = 80 * dpr
+      
+      // 安全检查：确保 hero 存在
+      if (!hero) {
+        console.error(`[Battle] party[${i}] 不存在`)
+        continue
+      }
 
-      // 卡片背景
+      // 跳过正在攻击的角色
+      if (this.attackingHero === hero && this.attackAnim) continue
+      
+      const x = 20 * dpr
+      const y = this.height * 0.42 + i * 95 * dpr
+      const cardW = 180 * dpr
+      const cardH = 85 * dpr
+
       const isActive = this.phase === 'select_target' && hero.hp > 0
-      ctx.fillStyle = hero.hp <= 0 ? 'rgba(50, 50, 50, 0.5)' :
-                     isActive ? 'rgba(255, 159, 67, 0.3)' :
-                     'rgba(255, 255, 255, 0.1)'
+      const isDead = hero.hp <= 0
 
+      // 卡片阴影
+      ctx.fillStyle = 'rgba(0, 0, 0, 0.3)'
+      ctx.beginPath()
+      this._roundRect(ctx, x + 3 * dpr, y + 3 * dpr, cardW, cardH, 10 * dpr)
+      ctx.fill()
+
+      // 卡片背景渐变
+      if (!isDead) {
+        const cardGrad = ctx.createLinearGradient(x, y, x, y + cardH)
+        if (isActive) {
+          cardGrad.addColorStop(0, 'rgba(255, 159, 67, 0.4)')
+          cardGrad.addColorStop(1, 'rgba(255, 159, 67, 0.2)')
+        } else {
+          cardGrad.addColorStop(0, 'rgba(255, 255, 255, 0.15)')
+          cardGrad.addColorStop(1, 'rgba(255, 255, 255, 0.05)')
+        }
+        ctx.fillStyle = cardGrad
+      } else {
+        ctx.fillStyle = 'rgba(50, 50, 50, 0.4)'
+      }
+
+      ctx.beginPath()
+      this._roundRect(ctx, x, y, cardW, cardH, 10 * dpr)
+      ctx.fill()
+
+      // 卡片边框
       if (isActive) {
         ctx.strokeStyle = '#ff9f43'
-        ctx.lineWidth = 2 * dpr
+        ctx.lineWidth = 3 * dpr
         ctx.beginPath()
-        this._roundRect(ctx, x, y, cardW, cardH, 8 * dpr)
-        ctx.fill()
+        this._roundRect(ctx, x, y, cardW, cardH, 10 * dpr)
         ctx.stroke()
-      } else {
+      } else if (!isDead) {
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.2)'
+        ctx.lineWidth = 1.5 * dpr
         ctx.beginPath()
-        this._roundRect(ctx, x, y, cardW, cardH, 8 * dpr)
-        ctx.fill()
+        this._roundRect(ctx, x, y, cardW, cardH, 10 * dpr)
+        ctx.stroke()
       }
 
       // 角色立绘
       const heroImgKey = this._getHeroImageKey(hero.id)
       const heroImg = this.game.assets.get(heroImgKey)
-      const avatarSize = 50 * dpr
+      const avatarSize = 55 * dpr
+      const avatarX = x + 8 * dpr
+      const avatarY = y + (cardH - avatarSize) / 2
+
+      // 头像背景
+      ctx.fillStyle = isDead ? 'rgba(0, 0, 0, 0.5)' : 'rgba(255, 255, 255, 0.1)'
+      ctx.beginPath()
+      ctx.arc(avatarX + avatarSize / 2, avatarY + avatarSize / 2, avatarSize / 2 + 3 * dpr, 0, Math.PI * 2)
+      ctx.fill()
       
       if (heroImg) {
-        // 绘制角色立绘
-        ctx.drawImage(heroImg, x + 5 * dpr, y + 5 * dpr, avatarSize, avatarSize)
+        ctx.save()
+        ctx.beginPath()
+        ctx.arc(avatarX + avatarSize / 2, avatarY + avatarSize / 2, avatarSize / 2, 0, Math.PI * 2)
+        ctx.clip()
+        ctx.drawImage(heroImg, avatarX, avatarY, avatarSize, avatarSize)
+        ctx.restore()
+        
+        // 头像边框
+        ctx.strokeStyle = isActive ? '#ff9f43' : 'rgba(255, 255, 255, 0.3)'
+        ctx.lineWidth = 2 * dpr
+        ctx.beginPath()
+        ctx.arc(avatarX + avatarSize / 2, avatarY + avatarSize / 2, avatarSize / 2, 0, Math.PI * 2)
+        ctx.stroke()
       } else {
         // 备用：职业图标
-        ctx.font = `${30 * dpr}px sans-serif`
+        ctx.font = `${28 * dpr}px sans-serif`
         ctx.textAlign = 'center'
         ctx.textBaseline = 'middle'
-        ctx.fillText(hero.role === 'warrior' ? '⚔️' : '🔮', x + 30 * dpr, y + cardH / 2)
+        ctx.fillText(hero.role === 'warrior' ? '⚔️' : '🔮', avatarX + avatarSize / 2, avatarY + avatarSize / 2)
       }
 
       // 角色名字
-      ctx.font = `bold ${14 * dpr}px sans-serif`
-      ctx.fillStyle = hero.hp <= 0 ? '#666' : '#fff'
+      ctx.font = `bold ${16 * dpr}px sans-serif`
+      ctx.fillStyle = isDead ? '#666' : '#fff'
       ctx.textAlign = 'left'
-      ctx.fillText(hero.name, x + 60 * dpr, y + 18 * dpr)
+      ctx.textBaseline = 'alphabetic'
+      ctx.fillText(hero.name, avatarX + avatarSize + 10 * dpr, y + 22 * dpr)
 
       // 职业
-      ctx.font = `${10 * dpr}px sans-serif`
-      ctx.fillStyle = hero.hp <= 0 ? '#555' : 'rgba(255,255,255,0.6)'
-      ctx.fillText(this._roleLabel(hero.role), x + 60 * dpr, y + 34 * dpr)
+      ctx.font = `${11 * dpr}px sans-serif`
+      ctx.fillStyle = isDead ? '#444' : 'rgba(255, 255, 255, 0.6)'
+      ctx.fillText(this._roleLabel(hero.role), avatarX + avatarSize + 10 * dpr, y + 38 * dpr)
 
-      // HP
-      this._drawBar(ctx, x + 8 * dpr, y + 42 * dpr, cardW - 20 * dpr, 12 * dpr,
-        hero.hp / hero.maxHp, '#ff6b6b', `${hero.hp}/${hero.maxHp}`)
+      // HP 条
+      const barX = avatarX + avatarSize + 8 * dpr
+      const barW = cardW - avatarSize - 24 * dpr
+      this._drawBar(ctx, barX, y + 48 * dpr, barW, 14 * dpr,
+        hero.hp / hero.maxHp, '#ff6b6b', `HP ${hero.hp}/${hero.maxHp}`)
 
-      // MP
-      this._drawBar(ctx, x + 8 * dpr, y + 58 * dpr, cardW - 20 * dpr, 12 * dpr,
-        hero.mp / hero.maxMp, '#4ecdc4', `${hero.mp}/${hero.maxMp}`)
+      // MP 条
+      this._drawBar(ctx, barX, y + 66 * dpr, barW, 14 * dpr,
+        hero.mp / hero.maxMp, '#4ecdc4', `MP ${hero.mp}/${hero.maxMp}`)
     }
   }
 
@@ -571,53 +1131,130 @@ export class BattleScene {
     const h = this.height
 
     // 面板背景
-    const panelY = h - 230 * dpr
-    ctx.fillStyle = 'rgba(0, 0, 0, 0.7)'
+    const panelY = h - 240 * dpr
+    const panelH = 230 * dpr
+    
+    // 渐变背景
+    const panelGrad = ctx.createLinearGradient(0, panelY, 0, panelY + panelH)
+    panelGrad.addColorStop(0, 'rgba(20, 20, 40, 0.95)')
+    panelGrad.addColorStop(1, 'rgba(10, 10, 30, 0.98)')
+    ctx.fillStyle = panelGrad
     ctx.beginPath()
-    this._roundRect(ctx, 5 * dpr, panelY, w - 10 * dpr, 220 * dpr, 10 * dpr)
+    this._roundRect(ctx, 0, panelY, w, panelH, 15 * dpr)
     ctx.fill()
 
+    // 顶部装饰线
+    const lineGrad = ctx.createLinearGradient(0, panelY, w, panelY)
+    lineGrad.addColorStop(0, 'rgba(255, 159, 67, 0)')
+    lineGrad.addColorStop(0.5, 'rgba(255, 159, 67, 0.8)')
+    lineGrad.addColorStop(1, 'rgba(255, 159, 67, 0)')
+    ctx.strokeStyle = lineGrad
+    ctx.lineWidth = 2 * dpr
+    ctx.beginPath()
+    ctx.moveTo(0, panelY)
+    ctx.lineTo(w, panelY)
+    ctx.stroke()
+
     // 标题
-    ctx.font = `bold ${14 * dpr}px sans-serif`
+    ctx.font = `bold ${16 * dpr}px sans-serif`
     ctx.fillStyle = '#ff9f43'
     ctx.textAlign = 'left'
-    ctx.fillText(this.phase === 'select_target' ? '👆 选择治疗目标' : '⚔️ 选择技能', 15 * dpr, panelY + 20 * dpr)
+    ctx.fillText(this.phase === 'select_target' ? '👆 选择治疗目标' : '⚔️ 选择技能', 20 * dpr, panelY + 25 * dpr)
 
     if (this.phase === 'select_target') return
 
     // 技能按钮
-    const btnW = (w - 30 * dpr) / 2
-    const btnH = 45 * dpr
-    const startX = 10 * dpr
-    const startY = panelY + 30 * dpr
+    const btnW = (w - 40 * dpr) / 2
+    const btnH = 50 * dpr
+    const startX = 15 * dpr
+    const startY = panelY + 40 * dpr
     let btnIdx = 0
 
+    // 安全检查：确保 party 存在且是数组
+    if (!this.party || !Array.isArray(this.party)) {
+      console.error('[Battle] party 数据不存在')
+      return
+    }
+
     for (const hero of this.party) {
-      if (hero.hp <= 0) continue
+      if (!hero || hero.hp <= 0) continue
+      // 安全检查：确保 skills 存在且是数组
+      if (!hero.skills || !Array.isArray(hero.skills)) continue
+      
       for (const skill of hero.skills) {
         const col = btnIdx % 2
         const row = Math.floor(btnIdx / 2)
         const bx = startX + col * (btnW + 10 * dpr)
-        const by = startY + row * (btnH + 6 * dpr)
+        const by = startY + row * (btnH + 8 * dpr)
 
         const canUse = hero.mp >= skill.mpCost
 
-        // 按钮背景
-        ctx.fillStyle = canUse ? 'rgba(255, 255, 255, 0.15)' : 'rgba(100, 100, 100, 0.3)'
+        // 按钮阴影
+        if (canUse) {
+          ctx.fillStyle = 'rgba(0, 0, 0, 0.3)'
+          ctx.beginPath()
+          this._roundRect(ctx, bx + 2 * dpr, by + 2 * dpr, btnW, btnH, 8 * dpr)
+          ctx.fill()
+        }
+
+        // 按钮背景渐变
+        if (canUse) {
+          const btnGrad = ctx.createLinearGradient(bx, by, bx, by + btnH)
+          btnGrad.addColorStop(0, 'rgba(255, 255, 255, 0.2)')
+          btnGrad.addColorStop(1, 'rgba(255, 255, 255, 0.08)')
+          ctx.fillStyle = btnGrad
+        } else {
+          ctx.fillStyle = 'rgba(60, 60, 60, 0.4)'
+        }
         ctx.beginPath()
-        this._roundRect(ctx, bx, by, btnW, btnH, 6 * dpr)
+        this._roundRect(ctx, bx, by, btnW, btnH, 8 * dpr)
         ctx.fill()
 
-        // 技能名
-        ctx.font = `bold ${14 * dpr}px sans-serif`
+        // 按钮边框
+        ctx.strokeStyle = canUse ? 'rgba(255, 255, 255, 0.3)' : 'rgba(100, 100, 100, 0.3)'
+        ctx.lineWidth = 1.5 * dpr
+        ctx.beginPath()
+        this._roundRect(ctx, bx, by, btnW, btnH, 8 * dpr)
+        ctx.stroke()
+
+        // 技能图标
+        const iconSize = 28 * dpr
+        const iconX = bx + 12 * dpr
+        const iconY = by + (btnH - iconSize) / 2
+        ctx.font = `${iconSize}px sans-serif`
+        ctx.textAlign = 'center'
+        ctx.textBaseline = 'middle'
+        
+        const skillIcon = skill.type === 'heal' ? '💚' : 
+                         skill.type === 'magic' ? '✨' :
+                         skill.type === 'buff' ? '⬆️' : '⚔️'
         ctx.fillStyle = canUse ? '#fff' : '#666'
+        ctx.fillText(skillIcon, iconX + iconSize / 2, iconY + iconSize / 2)
+
+        // 技能名
+        ctx.font = `bold ${15 * dpr}px sans-serif`
+        ctx.fillStyle = canUse ? '#fff' : '#555'
         ctx.textAlign = 'left'
-        ctx.fillText(`${skill.name}`, bx + 8 * dpr, by + 18 * dpr)
+        ctx.textBaseline = 'alphabetic'
+        ctx.fillText(skill.name, iconX + iconSize + 8 * dpr, by + 22 * dpr)
 
         // 消耗和角色
-        ctx.font = `${10 * dpr}px sans-serif`
-        ctx.fillStyle = canUse ? 'rgba(255,255,255,0.6)' : '#555'
-        ctx.fillText(`${hero.name} · MP ${skill.mpCost}`, bx + 8 * dpr, by + 34 * dpr)
+        ctx.font = `${11 * dpr}px sans-serif`
+        ctx.fillStyle = canUse ? 'rgba(255, 255, 255, 0.6)' : '#444'
+        ctx.fillText(`${hero.name} · MP ${skill.mpCost}`, iconX + iconSize + 8 * dpr, by + 40 * dpr)
+
+        // MP 不足标记
+        if (!canUse) {
+          ctx.fillStyle = 'rgba(255, 71, 87, 0.3)'
+          ctx.beginPath()
+          this._roundRect(ctx, bx, by, btnW, btnH, 8 * dpr)
+          ctx.fill()
+          
+          ctx.font = `bold ${10 * dpr}px sans-serif`
+          ctx.fillStyle = '#ff4757'
+          ctx.textAlign = 'right'
+          ctx.fillText('MP不足', bx + btnW - 8 * dpr, by + 12 * dpr)
+        }
 
         btnIdx++
       }
@@ -626,39 +1263,104 @@ export class BattleScene {
 
   _renderBattleLog(ctx) {
     const dpr = this.dpr
-    const logW = 200 * dpr
-    const logX = this.width - logW - 10 * dpr
-    const logY = 50 * dpr
+    // 日志放在左下角，技能面板上方
+    const logW = this.width - 30 * dpr
+    const logH = 80 * dpr
+    const logX = 15 * dpr
+    const logY = this.height - 330 * dpr // 技能面板上方
 
-    ctx.fillStyle = 'rgba(0, 0, 0, 0.5)'
+    // 日志背景
+    const logGrad = ctx.createLinearGradient(logX, logY, logX, logY + logH)
+    logGrad.addColorStop(0, 'rgba(20, 20, 40, 0.9)')
+    logGrad.addColorStop(1, 'rgba(10, 10, 30, 0.95)')
+    ctx.fillStyle = logGrad
     ctx.beginPath()
-    this._roundRect(ctx, logX, logY, logW, this.height * 0.35, 8 * dpr)
+    this._roundRect(ctx, logX, logY, logW, logH, 8 * dpr)
     ctx.fill()
 
+    // 顶部装饰线
+    ctx.strokeStyle = 'rgba(255, 159, 67, 0.5)'
+    ctx.lineWidth = 2 * dpr
+    ctx.beginPath()
+    ctx.moveTo(logX + 10 * dpr, logY)
+    ctx.lineTo(logX + logW - 10 * dpr, logY)
+    ctx.stroke()
+
+    // 标题
+    ctx.font = `bold ${12 * dpr}px sans-serif`
+    ctx.fillStyle = '#ff9f43'
+    ctx.textAlign = 'left'
+    ctx.fillText('📜 战斗日志', logX + 12 * dpr, logY + 16 * dpr)
+
+    // 日志内容 - 横向显示最近3条
     ctx.font = `${11 * dpr}px sans-serif`
-    ctx.fillStyle = 'rgba(255,255,255,0.8)'
     ctx.textAlign = 'left'
 
-    const lineHeight = 16 * dpr
-    const maxLines = Math.floor((this.height * 0.35 - 20 * dpr) / lineHeight)
-    const startIdx = Math.max(0, this.log.length - maxLines)
+    const recentLogs = this.log.slice(-3)
+    let xPos = logX + 12 * dpr
 
-    for (let i = startIdx; i < this.log.length; i++) {
-      const entry = this.log[i]
-      const lineY = logY + 16 * dpr + (i - startIdx) * lineHeight
+    for (let i = 0; i < recentLogs.length; i++) {
+      const entry = recentLogs[i]
 
       // 根据内容着色
+      let textColor = 'rgba(255, 255, 255, 0.8)'
       if (entry.text.includes('暴击') || entry.text.includes('💥')) {
-        ctx.fillStyle = '#ff9f43'
+        textColor = '#ff9f43'
       } else if (entry.text.includes('恢复') || entry.text.includes('🎉')) {
-        ctx.fillStyle = '#2ed573'
-      } else if (entry.text.includes('击败')) {
-        ctx.fillStyle = '#54a0ff'
-      } else {
-        ctx.fillStyle = 'rgba(255,255,255,0.8)'
+        textColor = '#2ed573'
+      } else if (entry.text.includes('击败') || entry.text.includes('胜利')) {
+        textColor = '#54a0ff'
+      } else if (entry.text.includes('MP不足') || entry.text.includes('全灭')) {
+        textColor = '#ff6b6b'
       }
 
-      ctx.fillText(entry.text, logX + 8 * dpr, lineY, logW - 16 * dpr)
+      ctx.fillStyle = textColor
+      const text = entry.text.length > 20 ? entry.text.substring(0, 20) + '...' : entry.text
+      ctx.fillText(text, xPos, logY + 50 * dpr)
+      xPos += ctx.measureText(text).width + 20 * dpr
+    }
+  }
+
+  _renderTurnInfo(ctx) {
+    const dpr = this.dpr
+    const w = this.width
+    
+    // 回合背景
+    const infoW = 140 * dpr
+    const infoH = 36 * dpr
+    const infoX = (w - infoW) / 2
+    const infoY = 15 * dpr
+
+    const infoGrad = ctx.createLinearGradient(infoX, infoY, infoX + infoW, infoY)
+    infoGrad.addColorStop(0, 'rgba(255, 159, 67, 0.3)')
+    infoGrad.addColorStop(0.5, 'rgba(255, 159, 67, 0.5)')
+    infoGrad.addColorStop(1, 'rgba(255, 159, 67, 0.3)')
+    ctx.fillStyle = infoGrad
+    ctx.beginPath()
+    this._roundRect(ctx, infoX, infoY, infoW, infoH, 18 * dpr)
+    ctx.fill()
+
+    // 回合文字
+    ctx.font = `bold ${18 * dpr}px sans-serif`
+    ctx.fillStyle = '#ffffff'
+    ctx.textAlign = 'center'
+    ctx.textBaseline = 'middle'
+    ctx.fillText(`第 ${this.turn} 回合`, w / 2, infoY + infoH / 2)
+    ctx.textBaseline = 'alphabetic'
+
+    // 阶段提示
+    const phaseText = {
+      'select_skill': '选择技能',
+      'select_target': '选择目标',
+      'animating': '战斗中...',
+      'enemy_turn': '敌方回合',
+      'intro': '战斗开始！'
+    }[this.phase] || ''
+
+    if (phaseText && this.phase !== 'victory' && this.phase !== 'defeat') {
+      ctx.font = `${12 * dpr}px sans-serif`
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.6)'
+      ctx.fillText(phaseText, w / 2, infoY + infoH + 15 * dpr)
     }
   }
 
@@ -668,19 +1370,65 @@ export class BattleScene {
     const dpr = this.dpr
 
     // 半透明遮罩
-    ctx.fillStyle = 'rgba(0, 0, 0, 0.7)'
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.8)'
     ctx.fillRect(0, 0, w, h)
 
+    // 胜利/失败图标背景
+    const iconSize = 100 * dpr
+    const iconY = h / 2 - 80 * dpr
+    ctx.fillStyle = this.phase === 'victory' ? 'rgba(46, 213, 115, 0.2)' : 'rgba(255, 71, 87, 0.2)'
+    ctx.beginPath()
+    ctx.arc(w / 2, iconY, iconSize, 0, Math.PI * 2)
+    ctx.fill()
+
     // 标题
-    ctx.font = `bold ${40 * dpr}px sans-serif`
+    ctx.font = `bold ${36 * dpr}px sans-serif`
     ctx.fillStyle = color
     ctx.textAlign = 'center'
-    ctx.fillText(title, w / 2, h / 2 - 20 * dpr)
+    ctx.fillText(title, w / 2, iconY + 10 * dpr)
 
-    // 提示
-    ctx.font = `${18 * dpr}px sans-serif`
-    ctx.fillStyle = `rgba(255,255,255,${0.5 + Math.sin(this.time * 3) * 0.3})`
-    ctx.fillText(hint, w / 2, h / 2 + 30 * dpr)
+    // 奖励信息（胜利时）
+    if (this.phase === 'victory' && this.enemy) {
+      ctx.font = `${16 * dpr}px sans-serif`
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.9)'
+      ctx.fillText(`获得 ${this.enemy.exp || 0} 经验值`, w / 2, h / 2 - 20 * dpr)
+      ctx.fillText(`获得 ${this.enemy.gold || 0} 金币`, w / 2, h / 2 + 10 * dpr)
+    }
+
+    // 继续按钮
+    const btnW = 180 * dpr
+    const btnH = 50 * dpr
+    const btnX = (w - btnW) / 2
+    const btnY = h / 2 + 60 * dpr
+
+    // 按钮背景
+    const btnGrad = ctx.createLinearGradient(btnX, btnY, btnX, btnY + btnH)
+    btnGrad.addColorStop(0, this.phase === 'victory' ? '#2ed573' : '#ff6b6b')
+    btnGrad.addColorStop(1, this.phase === 'victory' ? '#26b863' : '#ee5a5a')
+    ctx.fillStyle = btnGrad
+    ctx.beginPath()
+    this._roundRect(ctx, btnX, btnY, btnW, btnH, 25 * dpr)
+    ctx.fill()
+
+    // 按钮高光
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.2)'
+    ctx.beginPath()
+    this._roundRect(ctx, btnX, btnY, btnW, btnH / 2, 25 * dpr)
+    ctx.fill()
+
+    // 按钮文字
+    ctx.font = `bold ${20 * dpr}px sans-serif`
+    ctx.fillStyle = '#ffffff'
+    ctx.textAlign = 'center'
+    ctx.textBaseline = 'middle'
+    ctx.fillText(hint, w / 2, btnY + btnH / 2)
+    ctx.textBaseline = 'alphabetic'
+
+    // 闪烁提示
+    const alpha = 0.3 + Math.sin(this.time * 3) * 0.2
+    ctx.fillStyle = `rgba(255, 255, 255, ${alpha})`
+    ctx.font = `${14 * dpr}px sans-serif`
+    ctx.fillText('点击按钮继续', w / 2, btnY + btnH + 30 * dpr)
   }
 
   // ======== 工具方法 ========
@@ -725,18 +1473,8 @@ export class BattleScene {
   }
   
   _getBgKey() {
-    // 根据 bgPath 返回资源 key
-    const map = {
-      'grassland': 'BG_GRASSLAND',
-      'forest': 'BG_FOREST',
-      'cave': 'BG_CAVE',
-      'town': 'BG_TOWN',
-      'boss': 'BG_BOSS'
-    }
-    for (const [k, v] of Object.entries(map)) {
-      if (this.bgPath.includes(k)) return v
-    }
-    return 'BG_GRASSLAND'
+    // 直接返回资源 key
+    return this.bgKey
   }
   
   _getHeroImageKey(heroId) {

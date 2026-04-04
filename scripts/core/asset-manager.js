@@ -11,16 +11,21 @@ export class AssetManager {
   // 加载单张图片
   loadImage(key, path) {
     return new Promise((resolve, reject) => {
-      const img = wx.createImage()
-      img.onload = () => {
-        this.images[key] = img
-        resolve(img)
+      try {
+        const img = wx.createImage()
+        img.onload = () => {
+          this.images[key] = img
+          resolve(img)
+        }
+        img.onerror = (err) => {
+          console.error(`[AssetManager] 加载失败: ${path}`, err)
+          resolve(null) // 失败也继续
+        }
+        img.src = path
+      } catch (error) {
+        console.error(`[AssetManager] 创建图片失败: ${key}`, error)
+        resolve(null)
       }
-      img.onerror = (err) => {
-        console.error(`[AssetManager] 加载失败: ${path}`, err)
-        resolve(null) // 失败也继续
-      }
-      img.src = path
     })
   }
 
@@ -48,7 +53,12 @@ export class AssetManager {
 
 // 资源路径定义
 export const ASSETS = {
-  // 背景
+  // 野外探索地图
+  FIELD_GRASSLAND: 'images/map/grassland.png',
+  FIELD_FOREST: 'images/map/grassland.png', // 暂时使用草地地图
+  FIELD_CAVE: 'images/map/grassland.png', // 暂时使用草地地图
+  
+  // 战斗背景
   BG_GRASSLAND: 'images/backgrounds/bg_grassland.png',
   BG_FOREST: 'images/backgrounds/bg_forest.png',
   BG_CAVE: 'images/backgrounds/bg_cave.png',
@@ -109,9 +119,9 @@ export const ASSETS = {
   UI_ICON_BACK: 'images/ui/icon_back.png',
   UI_ICON_FORWARD: 'images/ui/icon_forward.png',
   UI_ICON_SAVE: 'images/ui/icon_save.png',
-  UI_ICON_PAW: 'images/ui/icon_paw.png',
+  UI_ICON_PAW: 'images/ui/icon_cat_paw.png', // 修正文件名
   UI_ICON_STAR: 'images/ui/icon_star.png',
-  UI_ICON_GOLD: 'images/ui/icon_gold.png',
+  UI_ICON_GOLD: 'images/ui/icon_coin.png', // 修正文件名
   UI_ICON_HP: 'images/ui/icon_hp.png',
   UI_ICON_MP: 'images/ui/icon_mp.png',
   

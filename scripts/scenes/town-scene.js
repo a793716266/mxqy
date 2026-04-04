@@ -128,7 +128,7 @@ export class TownScene {
         }
         
         // 主菜单按钮
-        if (!this.activeMenu) {
+        if (!this.activeMenu && this.buttons && Array.isArray(this.buttons)) {
           for (const btn of this.buttons) {
             if (tap.x >= btn.x && tap.x <= btn.x + btn.w &&
                 tap.y >= btn.y && tap.y <= btn.y + btn.h) {
@@ -191,7 +191,7 @@ export class TownScene {
     this._renderTopBar(ctx)
     
     // 主菜单按钮
-    if (!this.activeMenu) {
+    if (!this.activeMenu && this.buttons && Array.isArray(this.buttons)) {
       for (const btn of this.buttons) {
         this._drawButton(ctx, btn)
       }

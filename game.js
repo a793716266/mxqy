@@ -5,6 +5,10 @@
 
 // 导入模块
 import { Game } from './scripts/game.js'
+import { setupErrorHandler } from './scripts/utils/error-handler.js'
+
+// 初始化错误处理器
+setupErrorHandler()
 
 // 获取 canvas
 const canvas = wx.createCanvas()
