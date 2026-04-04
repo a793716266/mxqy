@@ -50,7 +50,8 @@ export class FieldMovement {
     this.historyFrameCount = 0
     
     // 主角
-    this.mainCharacter = charStateManager.getAllCharacters()[0]
+    const allChars = charStateManager.getAllCharacters()
+    this.mainCharacter = allChars.length > 0 ? allChars[0] : null
     
     // 触摸事件回调
     this._onTouchMove = null
@@ -324,6 +325,11 @@ export class FieldMovement {
    * 渲染角色（主角或队友）
    */
   renderCharacter(ctx, character, x, y, animFrame, facingLeft, isMoving) {
+    // 空值检查
+    if (!character) {
+      return
+    }
+    
     const screenPos = this.worldToScreen(x, y)
     
     // 只渲染可见的角色
@@ -375,27 +381,31 @@ export class FieldMovement {
   renderCharacters(ctx) {
     // 渲染队友
     for (const follower of this.followers) {
-      this.renderCharacter(
-        ctx,
-        follower.character,
-        follower.x,
-        follower.y,
-        follower.animFrame,
-        follower.facingLeft,
-        follower.isMoving
-      )
+      if (follower.character) {
+        this.renderCharacter(
+          ctx,
+          follower.character,
+          follower.x,
+          follower.y,
+          follower.animFrame,
+          follower.facingLeft,
+          follower.isMoving
+        )
+      }
     }
     
     // 渲染主角
-    this.renderCharacter(
-      ctx,
-      this.mainCharacter,
-      this.playerX,
-      this.playerY,
-      this.animFrame,
-      this.facingLeft,
-      this.isMoving
-    )
+    if (this.mainCharacter) {
+      this.renderCharacter(
+        ctx,
+        this.mainCharacter,
+        this.playerX,
+        this.playerY,
+        this.animFrame,
+        this.facingLeft,
+        this.isMoving
+      )
+    }
   }
   
   /**
