@@ -140,6 +140,49 @@
 
 ## ✅ 已修复 BUG
 
+### BUG-006: 碰撞检测重复触发战斗 ✅
+**优先级：** 🔴 高
+**状态：** ✅ 已修复
+**发现时间：** 2026-04-05 01:37
+**修复时间：** 2026-04-05 01:38
+
+**问题描述：**
+- 遭遇怪物时，`_triggerBattle` 被重复调用多次
+- 日志输出重复："[Field] 遭遇怪物: 野猫" 出现很多次
+
+**问题原因：**
+- 场景切换（`changeScene`）有淡入淡出动画，是异步的
+- 在场景切换完成前，`update` 方法还在继续运行
+- 每帧的碰撞检测都会再次触发战斗
+- 导致多次调用 `_triggerBattle`
+
+**修复方案：**
+1. 添加 `isEnteringBattle` 标志位
+2. 在 `_checkMonsterCollision` 开始时检查标志位
+3. 在 `_triggerBattle` 开始时设置标志位为 `true`
+4. 防止在场景切换过程中重复触发
+
+**代码修改：**
+```javascript
+// field-scene.js
+constructor() {
+  this.isEnteringBattle = false // 新增标志位
+}
+
+_checkMonsterCollision() {
+  if (this.isEnteringBattle) return // 检查标志位
+  // ... 碰撞检测逻辑
+}
+
+_triggerBattle(monster) {
+  if (this.isEnteringBattle) return // 双重检查
+  this.isEnteringBattle = true // 设置标志位
+  // ... 战斗逻辑
+}
+```
+
+---
+
 ### BUG-005: DataManager缺少delete方法 ✅
 **优先级：** 🔴 高
 **状态：** ✅ 已修复
