@@ -285,12 +285,12 @@ export class FieldMovement {
       
       // 更新队友动画
       follower.animTimer += dt
-      const currentFrameDuration = this.isMoving ? this.frameDuration : this.frameDuration * 3
+      const frameDuration = follower.isMoving ? this.frameDuration : this.frameDuration * 3
       
-      if (follower.animTimer >= currentFrameDuration) {
+      if (follower.animTimer >= frameDuration) {
         follower.animTimer = 0
         
-        if (this.isMoving) {
+        if (follower.isMoving) {
           follower.animFrame = (follower.animFrame + 1) % 8
         } else {
           follower.animFrame = (follower.animFrame + 1) % 2
