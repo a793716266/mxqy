@@ -495,14 +495,30 @@ export class TownScene {
   _renderPlayer(ctx) {
     // 渲染队友
     this.followers.forEach((follower, i) => {
-      this._renderCharacter(ctx, follower.character, follower.x, follower.y, follower.animFrame, follower.facingLeft, true)
+      this._renderCharacter(
+        ctx,
+        follower.character,
+        follower.x,
+        follower.y,
+        follower.animFrame,
+        follower.facingLeft,
+        follower.isMoving
+      )
     })
     
     // 渲染主角
-    this._renderCharacter(ctx, this.mainCharacter, this.playerX, this.playerY, this.animFrame, this.facingLeft, false)
+    this._renderCharacter(
+      ctx,
+      this.mainCharacter,
+      this.playerX,
+      this.playerY,
+      this.animFrame,
+      this.facingLeft,
+      this.isMoving
+    )
   }
   
-  _renderCharacter(ctx, character, x, y, animFrame, facingLeft, isFollower) {
+  _renderCharacter(ctx, character, x, y, animFrame, facingLeft, isMoving) {
     const screenX = x - this.cameraX
     const screenY = y - this.cameraY
     
@@ -512,10 +528,10 @@ export class TownScene {
       return
     }
     
-    const heroId = character.heroId || 'zhenbao'
+    const heroId = character.id || 'zhenbao'
     
     // 获取动画帧
-    const frameType = this.isMoving ? 'WALK' : 'IDLE'
+    const frameType = isMoving ? 'WALK' : 'IDLE'
     const frameKey = `HERO_${heroId.toUpperCase()}_${frameType}_${animFrame}`
     let img = this.game.assets.get(frameKey)
     
