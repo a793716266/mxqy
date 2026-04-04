@@ -61,6 +61,7 @@ export class TownScene {
     this.dialogue = null
     this.dialogueQueue = []
     this.nearbyNPC = null // 附近的NPC
+    this.currentDialogueNPC = null // 当前对话的NPC
     
     // 初始对话
     this.introShown = this.game.data.get('introShown')
@@ -174,6 +175,7 @@ export class TownScene {
     if (!this.introShown) {
       const chief = this.npcs.find(n => n.id === 'village_chief')
       if (chief) {
+        this.currentDialogueNPC = chief
         this.dialogueQueue = [...chief.dialogues]
         this._showNextDialogue()
         this.game.data.set('introShown', true)
@@ -370,6 +372,7 @@ export class TownScene {
   }
   
   _interactWithNPC(npc) {
+    this.currentDialogueNPC = npc
     this.dialogueQueue = [...npc.dialogues]
     this._showNextDialogue()
   }
@@ -387,14 +390,20 @@ export class TownScene {
             return
           case 'save_game':
             this.game.data.save()
+            this.currentDialogueNPC = null
             this.dialogue = { name: '系统', text: '存档成功！' }
             return
         }
       }
       
-      this.dialogue = { name: this.nearbyNPC?.name || '???', text: item.text }
+      this.dialogue = {
+        name: this.currentDialogueNPC?.name || '???',
+        text: item.text
+      }
     } else {
+      // 对话结束
       this.dialogue = null
+      this.currentDialogueNPC = null
     }
   }
   
