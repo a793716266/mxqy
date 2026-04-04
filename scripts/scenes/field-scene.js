@@ -53,8 +53,16 @@ export class FieldScene {
     this.party = this._initParty()
     
     // 获取第一个角色（主角）
-    this.currentCharacterIndex = 0 // 当前控制的角色索引
-    this.mainCharacter = charStateManager.getAllCharacters()[this.currentCharacterIndex]
+    this.mainCharacter = charStateManager.getAllCharacters()[0]
+
+    // 队友跟随系统
+    this.followers = [] // 跟随的队友列表
+    this.followerDistance = 35 * this.dpr // 队友跟随距离
+    this.playerHistory = [] // 主角移动历史（用于队友跟随路径）
+    this.historyMaxLength = 90 // 保存最近90帧的位置（约1.5秒）
+    this.historyInterval = 3 // 每3帧记录一次位置
+    this.historyFrameCount = 0 // 记录帧计数器
+    this._initFollowers() // 初始化队友
 
     // 角色信息面板
     if (this.mainCharacter) {
@@ -152,6 +160,28 @@ export class FieldScene {
         exp: charState.exp
       }
     })
+  }
+
+  /**
+   * 初始化跟随队友
+   */
+  _initFollowers() {
+    const allChars = charStateManager.getAllCharacters()
+    
+    // 从第二个角色开始，都是跟随队友
+    for (let i = 1; i < allChars.length; i++) {
+      this.followers.push({
+        character: allChars[i],
+        x: this.playerX - i * this.followerDistance, // 初始位置在主角后面
+        y: this.playerY,
+        animFrame: 0,
+        animTimer: 0,
+        isMoving: false,
+        facingLeft: this.facingLeft
+      })
+    }
+    
+    console.log(`[Field] 初始化了 ${this.followers.length} 个跟随队友`)
   }
   
   _generateMapObjects() {
@@ -341,6 +371,9 @@ export class FieldScene {
       }
     }
 
+    // 更新队友跟随
+    this._updateFollowers(dt)
+
     // 检测从移动切换到idle，重置动画帧（避免使用walk_7等无效帧）
     if (wasMoving && !this.isMoving) {
       this.animFrame = 0
@@ -527,6 +560,87 @@ export class FieldScene {
     this.cameraX = Math.max(0, Math.min(this.mapWidth - this.width, targetCameraX))
     this.cameraY = Math.max(0, Math.min(this.mapHeight - this.height, targetCameraY))
   }
+
+  /**
+   * 更新队友跟随
+   */
+  _updateFollowers(dt) {
+    if (this.followers.length === 0) return
+
+    // 记录主角位置历史（每3帧记录一次，避免太密集）
+    this.historyFrameCount++
+    if (this.historyFrameCount >= this.historyInterval) {
+      this.historyFrameCount = 0
+      this.playerHistory.unshift({
+        x: this.playerX,
+        y: this.playerY,
+        facingLeft: this.facingLeft
+      })
+      
+      // 限制历史长度
+      if (this.playerHistory.length > this.historyMaxLength) {
+        this.playerHistory.pop()
+      }
+    }
+
+    // 每个队友跟随不同的历史位置
+    for (let i = 0; i < this.followers.length; i++) {
+      const follower = this.followers[i]
+      
+      // 计算队友应该在的历史位置索引
+      // 第1个队友延迟10个记录点，第2个延迟20个记录点，以此类推
+      // 每个记录点间隔3帧，所以实际延迟约30帧
+      const historyIndex = Math.min((i + 1) * 10, this.playerHistory.length - 1)
+      
+      if (historyIndex >= 0 && this.playerHistory.length > 0) {
+        const targetPos = this.playerHistory[historyIndex]
+        
+        // 平滑移动到目标位置
+        const dx = targetPos.x - follower.x
+        const dy = targetPos.y - follower.y
+        const dist = Math.sqrt(dx * dx + dy * dy)
+        
+        // 如果距离大于阈值，移动队友
+        // 降低速度，避免追上主角
+        if (dist > 10 * this.dpr) {
+          const speed = this.playerSpeed * 0.95
+          const moveX = (dx / dist) * speed * dt
+          const moveY = (dy / dist) * speed * dt
+          
+          follower.x += moveX
+          follower.y += moveY
+          follower.facingLeft = targetPos.facingLeft
+          follower.isMoving = true
+        } else {
+          // 距离足够近，停止移动
+          // 只有在主角也停止时才重置动画帧
+          if (!this.isMoving) {
+            const wasMoving = follower.isMoving
+            follower.isMoving = false
+            
+            if (wasMoving && !follower.isMoving) {
+              follower.animFrame = 0
+              follower.animTimer = 0
+            }
+          }
+        }
+      }
+      
+      // 更新队友动画
+      follower.animTimer += dt
+      const frameDuration = follower.isMoving ? this.frameDuration : this.frameDuration * 3
+      
+      if (follower.animTimer >= frameDuration) {
+        follower.animTimer = 0
+        
+        if (follower.isMoving) {
+          follower.animFrame = (follower.animFrame + 1) % 8
+        } else {
+          follower.animFrame = (follower.animFrame + 1) % 2
+        }
+      }
+    }
+  }
   
   _handleTap(tap) {
     // 如果详细信息面板打开，检查关闭按钮
@@ -557,8 +671,8 @@ export class FieldScene {
         // 检查是否点击了切换按钮区域（右侧部分）
         const isSwitchArea = tap.x > card.x + card.width - 40 * this.dpr
         if (isSwitchArea) {
-          // 切换角色
-          this._switchCharacter()
+          // 切换角色（已移除，改为跟随模式）
+          console.log('[Field] 已切换为跟随模式')
           return
         } else {
           // 打开详情面板
@@ -614,32 +728,6 @@ export class FieldScene {
     const gold = 10 + Math.floor(Math.random() * 20)
     this.game.data.set('gold', (this.game.data.get('gold') || 100) + gold)
     console.log(`[Field] 收集宝箱获得 ${gold} 金币`)
-  }
-
-  /**
-   * 切换角色
-   */
-  _switchCharacter() {
-    const allChars = charStateManager.getAllCharacters()
-    if (allChars.length <= 1) {
-      console.log('[Field] 只有一个角色，无法切换')
-      return
-    }
-
-    // 切换到下一个角色
-    this.currentCharacterIndex = (this.currentCharacterIndex + 1) % allChars.length
-    this.mainCharacter = allChars[this.currentCharacterIndex]
-
-    // 更新角色信息面板
-    if (this.charInfoPanel) {
-      this.charInfoPanel.character = this.mainCharacter
-    }
-
-    // 显示切换提示
-    this.showSwitchTip = true
-    this.switchTipTimer = 1.5 // 显示1.5秒
-
-    console.log(`[Field] 切换到角色: ${this.mainCharacter.name}`)
   }
 
   _checkObstacleCollision() {
@@ -762,7 +850,10 @@ export class FieldScene {
     // 地图怪物
     this._renderMonsters(ctx)
 
-    // 玩家角色
+    // 渲染队友（在主角后面）
+    this._renderFollowers(ctx)
+    
+    // 渲染主角
     this._renderPlayer(ctx)
     
     // 顶部UI
@@ -843,6 +934,75 @@ export class FieldScene {
     // 调试：显示碰撞区域（可选）
     // 取消注释下面这行可以显示碰撞区域
     // this._renderObstacles(ctx)
+  }
+
+  /**
+   * 渲染跟随队友
+   */
+  _renderFollowers(ctx) {
+    const targetHeight = 60 * this.dpr
+
+    for (const follower of this.followers) {
+      // 转换为屏幕坐标
+      const screenX = follower.x - this.cameraX
+      const screenY = follower.y - this.cameraY
+
+      // 获取当前动画帧图片
+      let frameImg = null
+      const heroId = follower.character.id
+
+      if (follower.isMoving) {
+        const walkKey = `HERO_${heroId.toUpperCase()}_WALK_${follower.animFrame}`
+        frameImg = this.game.assets.get(walkKey)
+      } else {
+        const idleKey = `HERO_${heroId.toUpperCase()}_IDLE_${follower.animFrame}`
+        frameImg = this.game.assets.get(idleKey)
+      }
+
+      // 如果动画帧不存在，尝试使用静态立绘
+      if (!frameImg) {
+        frameImg = this.game.assets.get(`HERO_${heroId.toUpperCase()}`)
+      }
+
+      if (frameImg) {
+        const imgWidth = frameImg.width
+        const imgHeight = frameImg.height
+        const scale = targetHeight / imgHeight
+        const renderWidth = imgWidth * scale
+        const renderHeight = targetHeight
+
+        ctx.save()
+
+        // 根据朝向决定是否翻转
+        if (!follower.facingLeft) {
+          ctx.translate(screenX, screenY)
+          ctx.scale(-1, 1)
+          ctx.drawImage(
+            frameImg,
+            -renderWidth / 2,
+            -renderHeight / 2,
+            renderWidth,
+            renderHeight
+          )
+        } else {
+          ctx.drawImage(
+            frameImg,
+            screenX - renderWidth / 2,
+            screenY - renderHeight / 2,
+            renderWidth,
+            renderHeight
+          )
+        }
+
+        ctx.restore()
+        
+        // 底部阴影
+        ctx.beginPath()
+        ctx.ellipse(screenX, screenY + targetHeight / 2 + 5 * this.dpr, targetHeight / 2.5, 8 * this.dpr, 0, 0, Math.PI * 2)
+        ctx.fillStyle = 'rgba(0,0,0,0.3)'
+        ctx.fill()
+      }
+    }
   }
   
   _renderPlayer(ctx) {

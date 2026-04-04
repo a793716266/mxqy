@@ -602,8 +602,8 @@ export class BattleScene {
       this._addLog(`获得 ${this.enemy.exp || 0} 经验，${this.enemy.gold || 0} 金币`)
 
       // 给所有参战角色增加经验
-      const expReward = this.enemy.exp || 50
-      const goldReward = this.enemy.gold || 20
+      const expReward = this.enemy.exp || 10
+      const goldReward = this.enemy.gold || 5
       
       // 更新角色状态
       const allChars = charStateManager.getAllCharacters()
