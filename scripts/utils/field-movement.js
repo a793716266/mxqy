@@ -49,9 +49,8 @@ export class FieldMovement {
     this.historyInterval = 3
     this.historyFrameCount = 0
     
-    // 主角
-    const allChars = charStateManager.getAllCharacters()
-    this.mainCharacter = allChars.length > 0 ? allChars[0] : null
+    // 主角（将在init()中初始化）
+    this.mainCharacter = null
     
     // 触摸事件回调
     this._onTouchMove = null
@@ -62,6 +61,10 @@ export class FieldMovement {
    * 初始化移动系统
    */
   init() {
+    // 初始化主角（必须在charStateManager.init()之后）
+    const allChars = charStateManager.getAllCharacters()
+    this.mainCharacter = allChars.length > 0 ? allChars[0] : null
+    
     // 初始化相机位置
     this._updateCamera()
     
