@@ -140,6 +140,46 @@
 
 ## ✅ 已修复 BUG
 
+### BUG-005: DataManager缺少delete方法 ✅
+**优先级：** 🔴 高
+**状态：** ✅ 已修复
+**发现时间：** 2026-04-05 01:35
+**修复时间：** 2026-04-05 01:36
+
+**问题描述：**
+- 击败怪物后报错：`this.game.data.delete is not a function`
+- 在 `_checkBattleResult` 中调用 `this.game.data.delete` 失败
+
+**问题原因：**
+- `DataManager` 类只实现了 `get` 和 `set` 方法
+- 缺少 `delete` 方法用于删除临时数据
+
+**修复方案：**
+- 在 `DataManager` 中添加 `delete(key)` 方法
+- 同时添加 `clear()` 方法用于清除所有存档
+
+**代码修改：**
+```javascript
+// data-manager.js
+delete(key) {
+  delete this.data[key]
+}
+
+clear() {
+  this.data = this._defaultData()
+  try {
+    wx.removeStorageSync(this.saveKey)
+    console.log('[存档] 清除成功')
+    return true
+  } catch (e) {
+    console.error('[存档] 清除失败:', e)
+    return false
+  }
+}
+```
+
+---
+
 ### BUG-004: 战斗失败后Boss消失问题 ✅
 **优先级：** 🟡 中
 **状态：** ✅ 已修复
