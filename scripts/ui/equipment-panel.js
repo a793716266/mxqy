@@ -20,11 +20,13 @@ export class EquipmentPanel {
     this.selectedSlot = null // 当前选中的装备槽
     this.selectedInventoryItem = null // 当前选中的背包装备
     
-    // 面板尺寸
-    this.panelWidth = 600 * this.dpr
-    this.panelHeight = 450 * this.dpr
+    // 面板尺寸 - 根据屏幕大小自适应
+    this.panelWidth = Math.min(600 * this.dpr, this.width * 0.95)
+    this.panelHeight = Math.min(500 * this.dpr, this.height * 0.85)
     this.panelX = (this.width - this.panelWidth) / 2
     this.panelY = (this.height - this.panelHeight) / 2
+    
+    console.log(`[EquipmentPanel] 屏幕尺寸: ${this.width}x${this.height}, 面板尺寸: ${this.panelWidth}x${this.panelHeight}`)
     
     // 背包滚动
     this.inventoryScrollY = 0
@@ -227,8 +229,9 @@ export class EquipmentPanel {
     ctx.lineWidth = 3 * this.dpr
     ctx.stroke()
     
-    // 标题
-    ctx.font = `bold ${24 * this.dpr}px sans-serif`
+    // 标题（动态字体大小）
+    const titleFontSize = Math.min(24, this.panelHeight * 0.05) * this.dpr
+    ctx.font = `bold ${titleFontSize}px sans-serif`
     ctx.fillStyle = '#ffffff'
     ctx.textAlign = 'center'
     ctx.fillText(`装备管理 - ${this.character.name}`, this.panelX + this.panelWidth / 2, this.panelY + 40 * this.dpr)
@@ -343,10 +346,12 @@ export class EquipmentPanel {
    * 渲染背包
    */
   _renderInventory(ctx) {
-    const invX = this.panelX + 160 * this.dpr
+    // 根据面板尺寸动态计算背包区域
+    const margin = 20 * this.dpr
+    const invX = this.panelX + margin + 140 * this.dpr
     const invY = this.panelY + 80 * this.dpr
-    const invWidth = 380 * this.dpr
-    const invHeight = 280 * this.dpr
+    const invWidth = this.panelWidth - margin * 2 - 140 * this.dpr
+    const invHeight = Math.min(280 * this.dpr, this.panelHeight - 200 * this.dpr)
     
     // 背包标题
     ctx.font = `${16 * this.dpr}px sans-serif`
@@ -368,9 +373,9 @@ export class EquipmentPanel {
     
     // 渲染物品
     const inventory = equipmentManager.getInventory()
-    const itemSize = 65 * this.dpr
+    const itemSize = Math.min(65 * this.dpr, invWidth / 6) // 根据宽度调整物品大小
     const spacing = 10 * this.dpr
-    const cols = 5
+    const cols = Math.floor(invWidth / (itemSize + spacing))
     
     for (let i = 0; i < inventory.length; i++) {
       const item = inventory[i]
@@ -398,7 +403,7 @@ export class EquipmentPanel {
       ctx.stroke()
       
       // 图标
-      ctx.font = `${28 * this.dpr}px sans-serif`
+      ctx.font = `${Math.floor(itemSize * 0.45)}px sans-serif`
       ctx.textAlign = 'center'
       ctx.fillText(typeConfig.icon, itemX + itemSize / 2, itemY + itemSize / 2 + 8 * this.dpr)
     }
