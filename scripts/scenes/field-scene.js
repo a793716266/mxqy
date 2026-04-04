@@ -940,7 +940,7 @@ export class FieldScene {
    * 渲染跟随队友
    */
   _renderFollowers(ctx) {
-    const targetHeight = 80 * this.dpr
+    const targetHeight = 100 * this.dpr
 
     for (const follower of this.followers) {
       // 转换为屏幕坐标
@@ -1006,7 +1006,7 @@ export class FieldScene {
   }
   
   _renderPlayer(ctx) {
-    const targetHeight = 80 * this.dpr // 固定高度
+    const targetHeight = 100 * this.dpr // 固定高度
 
     // 转换为屏幕坐标
     const screenX = this.playerX - this.cameraX
