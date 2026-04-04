@@ -1,14 +1,9 @@
 /**
- * town-scene.js - 村庄探索场景（可移动大地图）
+ * town-scene.js - 村庄探索场景（使用field移动系统）
  */
 
 import { charStateManager } from '../data/character-state.js'
-import {
-  JoystickController,
-  PlayerMovementController,
-  CameraController,
-  FollowerSystem
-} from '../utils/movement-controller.js'
+import { FieldMovement } from '../utils/field-movement.js'
 
 export class TownScene {
   constructor(game, data) {
@@ -23,39 +18,17 @@ export class TownScene {
     const mapWidth = 1664 * this.dpr
     const mapHeight = 928 * this.dpr
     
-    // 初始化移动控制器
-    this.joystick = new JoystickController(this.dpr)
-    this.playerMovement = new PlayerMovementController(this.dpr, {
-      playerX: mapWidth / 2,
-      playerY: mapHeight / 2,
-      playerSpeed: 150 * this.dpr,
-      playerDirection: 'right',
-      facingLeft: true, // 图片朝左，初始朝右需要翻转
+    // 初始化移动系统（使用field-scene验证过的移动逻辑）
+    this.movement = new FieldMovement(game, {
       mapWidth: mapWidth,
       mapHeight: mapHeight,
-      imageFacesLeft: true // 图片朝左
+      playerX: mapWidth / 2,
+      playerY: mapHeight / 2
     })
-    
-    this.camera = new CameraController(this.width, this.height, this.dpr, {
-      mapWidth: mapWidth,
-      mapHeight: mapHeight
-    })
-    
-    this.followerSystem = new FollowerSystem(this.dpr)
     
     // 初始化角色状态
     const savedCharData = this.game.data.get('characterStates')
     charStateManager.init(savedCharData)
-    
-    // 主角
-    this.mainCharacter = charStateManager.getAllCharacters()[0]
-    
-    // 初始化队友跟随系统
-    this.followerSystem.init(
-      this.playerMovement.playerX,
-      this.playerMovement.playerY,
-      true // 图片朝左
-    )
     
     // NPC列表
     this.npcs = this._initNPCs(mapWidth, mapHeight)
@@ -130,11 +103,8 @@ export class TownScene {
   }
   
   init() {
-    // 绑定摇杆输入
-    this.joystick.bindInput(this.game)
-    
-    // 设置摇杆位置（屏幕左下角）
-    this.joystick.setAreaY(this.height - 200 * this.dpr)
+    // 初始化移动系统
+    this.movement.init()
     
     // 初始对话
     if (!this.introShown) {
@@ -149,7 +119,7 @@ export class TownScene {
   }
   
   destroy() {
-    this.joystick.unbindInput(this.game)
+    this.movement.destroy()
   }
   
   update(dt) {
@@ -172,28 +142,15 @@ export class TownScene {
         }
         
         // 尝试激活摇杆
-        this.joystick.handleTap(tap)
+        this.movement.handleTap(tap)
       }
     }
     
     // 如果在对话中，不处理移动
     if (this.dialogue) return
     
-    // 更新玩家移动
-    this.playerMovement.update(dt, this.joystick)
-    
-    // 更新相机跟随
-    this.camera.follow(this.playerMovement.playerX, this.playerMovement.playerY)
-    
-    // 更新队友跟随
-    this.followerSystem.update(
-      dt,
-      this.playerMovement.playerX,
-      this.playerMovement.playerY,
-      this.playerMovement.facingLeft,
-      this.playerMovement.isMoving,
-      this.playerMovement.playerSpeed
-    )
+    // 更新移动系统（使用field-scene验证过的逻辑）
+    this.movement.update(dt)
     
     // 检测附近的NPC
     this._checkNearbyNPC()
@@ -204,8 +161,8 @@ export class TownScene {
     
     for (const npc of this.npcs) {
       const dist = Math.sqrt(
-        (this.playerMovement.playerX - npc.x) ** 2 +
-        (this.playerMovement.playerY - npc.y) ** 2
+        (this.movement.playerX - npc.x) ** 2 +
+        (this.movement.playerY - npc.y) ** 2
       )
       if (dist <= npc.interactionRadius) {
         this.nearbyNPC = npc
@@ -250,8 +207,12 @@ export class TownScene {
   render(ctx) {
     this._renderBackground(ctx)
     this._renderNPCs(ctx)
-    this._renderPlayer(ctx)
-    this._renderJoystick(ctx)
+    
+    // 渲染主角和队友（使用field-scene验证过的渲染逻辑）
+    this.movement.renderCharacters(ctx)
+    
+    // 渲染摇杆
+    this.movement.renderJoystick(ctx)
     
     if (this.nearbyNPC && !this.dialogue) {
       this._renderInteractionTip(ctx)
@@ -266,8 +227,8 @@ export class TownScene {
     const bgImage = this.game.assets.get('BG_TOWN')
     
     if (bgImage) {
-      const scaleX = this.playerMovement.mapWidth / bgImage.width
-      const scaleY = this.playerMovement.mapHeight / bgImage.height
+      const scaleX = this.movement.mapWidth / bgImage.width
+      const scaleY = this.movement.mapHeight / bgImage.height
       const scale = Math.max(scaleX, scaleY)
       
       const renderWidth = bgImage.width * scale
@@ -275,7 +236,7 @@ export class TownScene {
       
       ctx.drawImage(
         bgImage,
-        -this.camera.cameraX, -this.camera.cameraY,
+        -this.movement.cameraX, -this.movement.cameraY,
         renderWidth, renderHeight
       )
     } else {
@@ -286,7 +247,7 @@ export class TownScene {
   
   _renderNPCs(ctx) {
     for (const npc of this.npcs) {
-      const screenPos = this.camera.worldToScreen(npc.x, npc.y)
+      const screenPos = this.movement.worldToScreen(npc.x, npc.y)
       
       if (screenPos.x < -100 || screenPos.x > this.width + 100 ||
           screenPos.y < -100 || screenPos.y > this.height + 100) {
@@ -311,109 +272,6 @@ export class TownScene {
       ctx.lineWidth = 3
       ctx.strokeText(npc.name, screenPos.x, screenPos.y - 35 * this.dpr)
       ctx.fillText(npc.name, screenPos.x, screenPos.y - 35 * this.dpr)
-    }
-  }
-  
-  _renderPlayer(ctx) {
-    // 渲染队友
-    const followers = this.followerSystem.getFollowers()
-    followers.forEach(follower => {
-      this._renderCharacter(
-        ctx,
-        follower.character,
-        follower.x,
-        follower.y,
-        follower.animFrame,
-        follower.facingLeft,
-        follower.isMoving
-      )
-    })
-    
-    // 渲染主角
-    this._renderCharacter(
-      ctx,
-      this.mainCharacter,
-      this.playerMovement.playerX,
-      this.playerMovement.playerY,
-      this.playerMovement.animFrame,
-      this.playerMovement.facingLeft,
-      this.playerMovement.isMoving
-    )
-  }
-  
-  _renderCharacter(ctx, character, x, y, animFrame, facingLeft, isMoving) {
-    const screenPos = this.camera.worldToScreen(x, y)
-    
-    if (screenPos.x < -100 || screenPos.x > this.width + 100 ||
-        screenPos.y < -100 || screenPos.y > this.height + 100) {
-      return
-    }
-    
-    const heroId = character.id || 'zhenbao'
-    
-    const frameType = isMoving ? 'WALK' : 'IDLE'
-    const frameKey = `HERO_${heroId.toUpperCase()}_${frameType}_${animFrame}`
-    let img = this.game.assets.get(frameKey)
-    
-    if (!img) {
-      img = this.game.assets.get(`HERO_${heroId.toUpperCase()}`)
-    }
-    
-    if (img) {
-      const targetHeight = 60 * this.dpr
-      const scale = targetHeight / img.height
-      const targetWidth = img.width * scale
-      
-      ctx.save()
-      
-      if (facingLeft) {
-        ctx.translate(screenPos.x, screenPos.y)
-        ctx.scale(-1, 1)
-        ctx.translate(-screenPos.x, -screenPos.y)
-      }
-      
-      ctx.drawImage(
-        img,
-        screenPos.x - targetWidth / 2,
-        screenPos.y - targetHeight / 2,
-        targetWidth,
-        targetHeight
-      )
-      
-      ctx.restore()
-    }
-  }
-  
-  _renderJoystick(ctx) {
-    const { x, y, r } = this.joystick.area
-    
-    ctx.beginPath()
-    ctx.arc(x, y, r, 0, Math.PI * 2)
-    ctx.fillStyle = 'rgba(255, 255, 255, 0.2)'
-    ctx.fill()
-    ctx.strokeStyle = 'rgba(255, 255, 255, 0.4)'
-    ctx.lineWidth = 2
-    ctx.stroke()
-    
-    if (this.joystick.active) {
-      const offset = this.joystick.getOffset()
-      let handleX = this.joystick.currentX
-      let handleY = this.joystick.currentY
-      
-      if (offset.dist > r) {
-        handleX = x + (offset.dx / offset.dist) * r
-        handleY = y + (offset.dy / offset.dist) * r
-      }
-      
-      ctx.beginPath()
-      ctx.arc(handleX, handleY, r * 0.4, 0, Math.PI * 2)
-      ctx.fillStyle = 'rgba(255, 255, 255, 0.6)'
-      ctx.fill()
-    } else {
-      ctx.beginPath()
-      ctx.arc(x, y, r * 0.3, 0, Math.PI * 2)
-      ctx.fillStyle = 'rgba(255, 255, 255, 0.4)'
-      ctx.fill()
     }
   }
   
