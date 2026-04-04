@@ -596,6 +596,11 @@ export class BattleScene {
   }
 
   _checkBattleEnd() {
+    // 如果已经是胜利或失败状态，不再处理
+    if (this.phase === 'victory' || this.phase === 'defeat') {
+      return
+    }
+    
     if (this.enemy.hp <= 0) {
       this.phase = 'victory'
       this._addLog(`🎉 ${this.enemy.name} 被击败了！`)
@@ -604,6 +609,8 @@ export class BattleScene {
       // 给所有参战角色增加经验
       const expReward = this.enemy.exp || 10
       const goldReward = this.enemy.gold || 5
+      
+      console.log(`[Battle] 击败 ${this.enemy.name}，获得 ${expReward} 经验，${goldReward} 金币`)
       
       // 更新角色状态
       const allChars = charStateManager.getAllCharacters()
@@ -615,11 +622,15 @@ export class BattleScene {
           charState.hp = Math.max(0, Math.min(partyMember.hp, charState.maxHp))
           charState.mp = Math.max(0, Math.min(partyMember.mp, charState.maxMp))
           
+          console.log(`[Battle] ${charState.name} 当前状态: Lv.${charState.level}, EXP:${charState.exp}/${charState.maxExp}`)
+          
           // 然后给予经验
           const levelUpCount = charState.gainExp(expReward)
           if (levelUpCount > 0) {
             this._addLog(`✨ ${charState.name} 升级了！(Lv.${charState.level})`)
           }
+          
+          console.log(`[Battle] ${charState.name} 获得经验后: Lv.${charState.level}, EXP:${charState.exp}/${charState.maxExp}`)
           
           // 同步回party（用于显示）
           partyMember.hp = charState.hp

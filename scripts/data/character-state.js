@@ -72,11 +72,13 @@ export class CharacterState {
    * 获得经验值
    */
   gainExp(amount) {
+    console.log(`[CharacterState] ${this.name} 获得 ${amount} 经验值，当前 ${this.exp}/${this.maxExp}`)
     this.exp += amount
     
     // 检查升级
     let levelUpCount = 0
     while (this.exp >= this.maxExp && this.level < 99) {
+      console.log(`[CharacterState] ${this.name} 升级！${this.exp}/${this.maxExp} -> 升级`)
       this.exp -= this.maxExp
       this.level++
       this.maxExp = EXP_TABLE[this.level] || EXP_TABLE[10] // 超过10级用10级的经验表
