@@ -409,44 +409,45 @@ export class FieldMovement {
   }
   
   /**
-   * 渲染摇杆
+   * 渲染摇杆（完全复制field-scene的代码）
    */
   renderJoystick(ctx) {
-    const { x, y, r } = this.joystickArea
+    const ja = this.joystickArea
     
     // 摇杆底座
     ctx.beginPath()
-    ctx.arc(x, y, r, 0, Math.PI * 2)
-    ctx.fillStyle = 'rgba(255, 255, 255, 0.2)'
+    ctx.arc(ja.x, ja.y, ja.r, 0, Math.PI * 2)
+    ctx.fillStyle = 'rgba(255,255,255,0.2)'
     ctx.fill()
-    ctx.strokeStyle = 'rgba(255, 255, 255, 0.4)'
-    ctx.lineWidth = 2
+    ctx.strokeStyle = 'rgba(255,255,255,0.4)'
+    ctx.lineWidth = 3
     ctx.stroke()
     
     // 摇杆手柄
     if (this.joystick.active) {
-      const dx = this.joystick.currentX - x
-      const dy = this.joystick.currentY - y
+      const dx = this.joystick.currentX - this.joystick.startX
+      const dy = this.joystick.currentY - this.joystick.startY
       const dist = Math.sqrt(dx * dx + dy * dy)
+      const maxDist = ja.r * 0.7
       
-      let handleX = this.joystick.currentX
-      let handleY = this.joystick.currentY
-      
-      if (dist > r) {
-        handleX = x + (dx / dist) * r
-        handleY = y + (dy / dist) * r
-      }
+      let handleX = ja.x + (dx / dist) * Math.min(dist, maxDist)
+      let handleY = ja.y + (dy / dist) * Math.min(dist, maxDist)
       
       ctx.beginPath()
-      ctx.arc(handleX, handleY, r * 0.4, 0, Math.PI * 2)
-      ctx.fillStyle = 'rgba(255, 255, 255, 0.6)'
+      ctx.arc(handleX, handleY, 25 * this.dpr, 0, Math.PI * 2)
+      ctx.fillStyle = 'rgba(255,255,255,0.6)'
       ctx.fill()
     } else {
-      // 未激活时显示中心点
       ctx.beginPath()
-      ctx.arc(x, y, r * 0.3, 0, Math.PI * 2)
-      ctx.fillStyle = 'rgba(255, 255, 255, 0.4)'
+      ctx.arc(ja.x, ja.y, 25 * this.dpr, 0, Math.PI * 2)
+      ctx.fillStyle = 'rgba(255,255,255,0.4)'
       ctx.fill()
     }
+    
+    // 提示文字
+    ctx.font = `${12 * this.dpr}px sans-serif`
+    ctx.fillStyle = 'rgba(255,255,255,0.6)'
+    ctx.textAlign = 'center'
+    ctx.fillText('移动', ja.x, ja.y + ja.r + 20 * this.dpr)
   }
 }
