@@ -78,6 +78,9 @@ export class FieldScene {
     // 角色切换提示
     this.showSwitchTip = false
     this.switchTipTimer = 0
+    
+    // 战斗触发标志（防止重复触发）
+    this.isEnteringBattle = false
 
     // 地图怪物（尝试恢复保存的状态）
     const savedMonsters = this.game.data.get('fieldMonsters')
@@ -866,6 +869,9 @@ export class FieldScene {
   }
 
   _checkMonsterCollision() {
+    // 如果已经在进入战斗，不再检测
+    if (this.isEnteringBattle) return
+    
     if (!this.mapMonsters || !Array.isArray(this.mapMonsters)) return
 
     const playerRadius = 30 * this.dpr
@@ -887,9 +893,14 @@ export class FieldScene {
   }
 
   _triggerBattle(monster) {
+    // 标记正在进入战斗，防止重复触发
+    if (this.isEnteringBattle) return
+    this.isEnteringBattle = true
+    
     const enemy = ENEMIES_CH1[monster.enemyId]
     if (!enemy) {
       console.error(`[Field] 敌人数据不存在: ${monster.enemyId}`)
+      this.isEnteringBattle = false
       return
     }
 
