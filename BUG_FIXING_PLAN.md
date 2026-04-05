@@ -6,6 +6,110 @@
 
 **提交记录：**
 - 提交ID：TBD
+- 提交信息：fix: 修复感化剧情后BOSS消失和怪物状态丢失的问题
+- 提交时间：2026-04-05 13:10
+
+**问题：阳光草原BOSS击败后报错**
+
+**问题现象：**
+1. 击败阳光草原的BOSS（艾米）
+2. 感化剧情完成，艾米加入队伍
+3. 返回野外地图时，怪物状态丢失
+4. 日志显示"已保存: false"，重新生成了怪物
+
+**根本原因：**
+
+发现了三个关键问题：
+
+**问题1：触发战斗时没有保存怪物状态**
+```javascript
+// ❌ 触发战斗时只保存了currentBattleMonsterId
+this.game.data.set('currentBattleMonsterId', monster.id)
+// 没有保存怪物状态！
+
+// 返回时：
+// fieldMonsters_grassland 不存在
+// → 重新生成怪物
+// → BOSS flag已设置，不生成BOSS
+// → 找不到 currentBattleMonsterId 对应的怪物
+```
+
+**问题2：战斗场景没有保存monsterId**
+```javascript
+// ❌ battle-scene.js constructor
+this.nodeId = data.nodeId
+// 没有保存 monsterId！
+
+// 感化剧情处理时：
+// this.monsterId = undefined
+// 无法正确设置 currentBattleMonsterId
+```
+
+**问题3：感化剧情没有确保数据完整性**
+```javascript
+// ❌ 感化剧情中只设置了部分数据
+this.game.data.set('battleVictory', true)
+// 没有确保 currentBattleMonsterId 存在
+```
+
+**修复方案：**
+
+**修复1：触发战斗前保存怪物状态**
+```javascript
+// ✅ field-scene.js _triggerBattle
+this.game.data.set('currentBattleMonsterId', monster.id)
+this.game.data.set('party', this.party)
+
+// ⚠️ 关键：保存怪物状态
+this.game.data.set(`fieldMonsters_${this.areaId}`, this.mapMonsters)
+console.log(`[Field] 战斗前保存了 ${this.mapMonsters.filter(m => m.alive).length} 只怪物`)
+```
+
+**修复2：战斗场景保存monsterId**
+```javascript
+// ✅ battle-scene.js constructor
+this.nodeId = data.nodeId
+this.monsterId = data.monsterId  // ⚠️ 保存怪物ID
+```
+
+**修复3：感化剧情确保数据完整**
+```javascript
+// ✅ battle-scene.js _handlePurifyTap
+this.game.data.set('battleVictory', true)
+
+// 确保设置战斗怪物ID
+if (this.monsterId) {
+  this.game.data.set('currentBattleMonsterId', this.monsterId)
+  console.log(`[Battle] 感化剧情完成，设置战斗怪物ID: ${this.monsterId}`)
+}
+```
+
+**执行流程对比：**
+
+```
+❌ 错误流程：
+进入草原 → 生成怪物（不保存）
+遇到BOSS → 保存 currentBattleMonsterId（不保存怪物状态）
+进入战斗 → BOSS被击败 → 感化剧情
+返回野外 → fieldMonsters_grassland 不存在 → 重新生成
+→ BOSS不生成（flag已设置）→ 找不到怪物 → 错误
+
+✅ 正确流程：
+进入草原 → 生成怪物（不保存）
+遇到BOSS → 保存 currentBattleMonsterId + 怪物状态
+进入战斗 → BOSS被击败 → 感化剧情
+返回野外 → fieldMonsters_grassland 存在 → 恢复怪物
+→ 找到BOSS → 标记死亡 → 保存状态 → 清除临时数据
+```
+
+**文件修改：**
+- `scripts/scenes/field-scene.js` - 触发战斗前保存怪物状态
+- `scripts/scenes/battle-scene.js` - 保存monsterId，感化剧情确保数据完整
+
+---
+
+**提交记录：**
+- 提交ID：375c9ab
 - 提交信息：fix: 修复战斗返回后区域ID错误导致怪物数据丢失的问题
 - 提交时间：2026-04-05 13:05
 

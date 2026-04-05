@@ -22,6 +22,7 @@ export class BattleScene {
     this.enemy = this.enemies[0] || {}  // 主敌人（兼容现有代码）
     this.bgKey = data.bg || 'BG_GRASSLAND' // 直接使用资源 key
     this.nodeId = data.nodeId
+    this.monsterId = data.monsterId  // ⚠️ 保存怪物ID，用于感化剧情
 
     // 战斗状态
     this.phase = 'intro'  // intro, player_turn, select_skill, select_target, enemy_turn, animating, victory, defeat
@@ -2214,6 +2215,14 @@ export class BattleScene {
       if (this._isInRect(tx, ty, btnX, btnY, btnW, btnH)) {
         // 标记战斗胜利
         this.game.data.set('battleVictory', true)
+        
+        // ⚠️ 确保设置战斗怪物ID（用于野外场景标记怪物死亡）
+        if (this.monsterId) {
+          this.game.data.set('currentBattleMonsterId', this.monsterId)
+          console.log(`[Battle] 感化剧情完成，设置战斗怪物ID: ${this.monsterId}`)
+        }
+        
+        console.log(`[Battle] 准备返回野外地图，区域: ${this.nodeId}`)
 
         // 解锁角色（根据Boss类型）
         if (this.enemy.isAmy) {

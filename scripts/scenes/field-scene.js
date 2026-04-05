@@ -1047,6 +1047,10 @@ export class FieldScene {
 
     // 保存队伍状态
     this.game.data.set('party', this.party)
+    
+    // ⚠️ 保存怪物状态（防止返回时重新生成）
+    this.game.data.set(`fieldMonsters_${this.areaId}`, this.mapMonsters)
+    console.log(`[Field] 战斗前保存了 ${this.mapMonsters.filter(m => m.alive).length} 只怪物到区域 ${this.areaId}`)
 
     // 进入战斗
     this.game.changeScene('battle', {
