@@ -114,15 +114,22 @@ export class CharacterState {
     this.def = Math.floor(this.baseDef * (1 + growth.def * (this.level - 1)))
     this.spd = Math.floor(this.baseSpd * (1 + growth.spd * (this.level - 1)))
     
-    // 升级时恢复满状态
+    // 升级时恢复满状态（装备属性后面会再加）
     this.hp = this.maxHp
     this.mp = this.maxMp
     
     console.log(`${this.name} 升级到 Lv.${this.level}!`)
     
-    // 重新应用装备属性（因为基础属性改变了）
-    equipmentManager.recalculateEquipmentStats(this)
-    console.log(`[CharacterState] 重新应用装备属性`)
+    // 重新应用装备属性（此时属性是纯基础值，直接添加装备属性即可）
+    if (this.equipment) {
+      for (const slot in this.equipment) {
+        const equipment = this.equipment[slot]
+        if (equipment) {
+          equipmentManager._applyStats(this, equipment)
+        }
+      }
+      console.log(`[CharacterState] 升级后重新应用装备属性`)
+    }
   }
   
   /**
