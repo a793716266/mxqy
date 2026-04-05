@@ -5,6 +5,104 @@
 ### 2026-04-05
 
 **提交记录：**
+- 提交ID：24335a2
+- 提交信息：fix: 修复升级后装备属性丢失的问题（二次修复）
+- 提交时间：2026-04-05 12:05
+
+**问题：升级之后没有携带装备的属性（二次报告）**
+
+**问题现象：**
+用户报告之前修复后，升级时装备属性还是丢失。
+
+**根本原因：**
+
+第一次修复使用了`equipmentManager.recalculateEquipmentStats(this)`，但这个方法的逻辑有问题：
+
+```javascript
+recalculateEquipmentStats(character) {
+  // 1. 先移除所有装备属性
+  for (const slot in character.equipment) {
+    const equipment = character.equipment[slot]
+    if (equipment) {
+      this._removeStats(character, equipment) // ❌ 错误：减去装备属性
+    }
+  }
+  
+  // 2. 再重新应用所有装备属性
+  for (const slot in character.equipment) {
+    const equipment = character.equipment[slot]
+    if (equipment) {
+      this._applyStats(character, equipment) // 添加装备属性
+    }
+  }
+}
+```
+
+**问题分析：**
+
+升级时`_applyLevelUp()`先计算了纯基础属性（不包含装备加成），然后调用`recalculateEquipmentStats()`：
+
+```
+升级前的属性：
+  基础攻击力：50
+  武器加成：+20
+  最终攻击力：70
+
+升级流程（第一次修复的错误）：
+  1. 重新计算基础属性：50 → 55（纯基础值，不含装备）
+  2. 调用recalculateEquipmentStats()
+  3. ❌ 先移除装备属性：55 - 20 = 35（错误！应该减去的属性根本不存在）
+  4. 再添加装备属性：35 + 20 = 55
+  5. 最终攻击力：55（还是错误的！应该75）
+
+正确流程：
+  升级前的属性：
+    基础攻击力：50
+    武器加成：+20
+    最终攻击力：70
+
+  升级流程（第二次修复）：
+    1. 重新计算基础属性：50 → 55（纯基础值）
+    2. ✅ 直接遍历装备槽，使用_applyStats()添加属性
+    3. 最终攻击力：55 + 20 = 75 ✅
+```
+
+**修复方案：**
+
+直接遍历装备槽，调用`_applyStats()`添加装备属性，不先移除：
+
+```javascript
+_applyLevelUp() {
+  // ... 属性成长计算
+  
+  // 升级时恢复满状态（装备属性后面会再加）
+  this.hp = this.maxHp
+  this.mp = this.maxMp
+  
+  // ✅ 直接遍历装备槽，添加装备属性
+  if (this.equipment) {
+    for (const slot in this.equipment) {
+      const equipment = this.equipment[slot]
+      if (equipment) {
+        equipmentManager._applyStats(this, equipment)
+      }
+    }
+  }
+}
+```
+
+**测试验证：**
+- ✅ 角色穿戴装备（武器+20攻击）
+- ✅ 角色升级
+- ✅ 装备属性正确保留
+- ✅ 最终属性 = 基础属性 + 装备属性
+
+**文件修改：**
+- `scripts/data/character-state.js` - `_applyLevelUp()` 方法
+
+---
+
+**提交记录：**
 - 提交ID：a87f45a
 - 提交信息：fix: 修复角色升级后装备属性丢失的问题
 - 提交时间：2026-04-05 11:58
