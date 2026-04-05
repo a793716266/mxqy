@@ -5,6 +5,178 @@
 ### 2026-04-05
 
 **提交记录：**
+- 提交ID：694bd60
+- 提交信息：fix: 修复第二页角色无法攻击和翻页卡死的问题
+- 提交时间：2026-04-05 12:38
+
+**问题1：第二页的角色不会攻击**
+
+**问题现象：**
+1. 翻到第二页选择角色
+2. 选择技能后角色不执行攻击动作
+3. 战斗卡住，无法继续
+
+**问题2：后面的回合切换到第二页就直接卡死**
+
+**问题现象：**
+1. 第一回合可以正常战斗
+2. 进入第二回合后
+3. 翻页到第二页就卡死
+
+**根本原因：**
+
+攻击动画的位置数据结构设计有问题：
+
+```javascript
+// 旧设计
+_initHeroAreas() {
+  // 计算当前页的角色
+  const startIdx = this.heroPage * this.heroPerPage
+  const endIdx = Math.min(startIdx + this.heroPerPage, this.party.length)
+  const pageHeroes = this.party.slice(startIdx, endIdx)
+  
+  this.heroAreas = pageHeroes.map((h, i) => ({...}))
+  
+  // ❌ 问题：只保存当前页的角色位置
+  this.heroBasePositions = this.heroAreas.map((area) => ({
+    x: area.x + ...,
+    y: area.y + ...
+  }))
+}
+
+_startAttackAnimation(hero, skill, target) {
+  // 使用全局索引查找位置
+  const heroIndex = this.party.indexOf(hero)  // 例如：第二页第一个角色索引是3
+  const basePos = this.heroBasePositions[heroIndex]  // ❌ undefined！因为数组只有3个元素
+  if (!basePos) return  // 直接返回，攻击动画不会启动
+}
+```
+
+**问题分析：**
+
+```
+假设队伍有4个角色：[臻宝, 李小宝, 艾米, 安妮]
+
+第1页（heroPage=0）：
+  heroAreas = [臻宝, 李小宝, 艾米]  // 只有3个元素
+  heroBasePositions = [位置0, 位置1, 位置2]  // 只有3个位置
+
+选择安妮（第2页）攻击：
+  heroIndex = party.indexOf(安妮) = 3  // 全局索引
+  heroBasePositions[3] = undefined  // ❌ 超出数组范围！
+  → 攻击动画无法启动
+```
+
+**修复方案：**
+
+将 `heroBasePositions` 改为包含**所有角色**的位置，而不仅仅是当前页：
+
+```javascript
+/**
+ * 初始化所有角色的基础位置（用于攻击动画）
+ * 注意：这个方法计算所有角色的位置，而不仅仅是当前页
+ */
+_initAllHeroPositions() {
+  const cardW = 120 * this.dpr
+  const cardH = 70 * this.dpr
+  const cardSpacing = 10 * this.dpr
+  const logHeight = 330 * this.dpr
+
+  const logY = this.height - logHeight
+  const cardY = logY - cardH - 15 * this.dpr
+
+  // 计算所有角色的位置
+  this.heroBasePositions = this.party.map((hero, globalIndex) => {
+    // 计算该角色所在的页和在该页中的索引
+    const page = Math.floor(globalIndex / this.heroPerPage)
+    const indexInPage = globalIndex % this.heroPerPage
+
+    // 计算该页的角色数量
+    const pageStart = page * this.heroPerPage
+    const pageEnd = Math.min(pageStart + this.heroPerPage, this.party.length)
+    const pageHeroesCount = pageEnd - pageStart
+
+    // 计算该页卡片的起始X位置
+    const totalWidth = pageHeroesCount * cardW + (pageHeroesCount - 1) * cardSpacing
+    const startX = (this.width - totalWidth) / 2
+
+    // 计算该角色的位置
+    const cardX = startX + indexInPage * (cardW + cardSpacing)
+
+    return {
+      x: cardX + 6 * this.dpr + 22.5 * this.dpr,
+      y: cardY + cardH / 2
+    }
+  })
+}
+```
+
+**翻页时更新位置：**
+
+```javascript
+_prevHeroPage() {
+  if (this.heroPage > 0) {
+    this.heroPage--
+    this._initHeroAreas()
+    this._initAllHeroPositions()  // 重新计算所有角色位置
+    this._addLog(`← 第 ${this.heroPage + 1}/${this.totalHeroPages} 页`)
+  }
+}
+
+_nextHeroPage() {
+  if (this.heroPage < this.totalHeroPages - 1) {
+    this.heroPage++
+    this._initHeroAreas()
+    this._initAllHeroPositions()  // 重新计算所有角色位置
+    this._addLog(`→ 第 ${this.heroPage + 1}/${this.totalHeroPages} 页`)
+  }
+}
+```
+
+**修复后的数据结构：**
+
+```
+队伍：[臻宝, 李小宝, 艾米, 安妮]
+
+heroAreas（当前页）：
+  第1页：[臻宝, 李小宝, 艾米]
+  第2页：[安妮]
+
+heroBasePositions（所有角色）：
+  [位置0, 位置1, 位置2, 位置3]  // ✅ 包含所有4个角色
+
+攻击安妮：
+  heroIndex = 3
+  heroBasePositions[3] = 位置3  // ✅ 正确获取位置
+  → 攻击动画正常启动
+```
+
+**关键概念区分：**
+
+1. **heroAreas**：当前页的角色卡片数组
+   - 只包含当前显示的角色
+   - 用于点击检测、卡片渲染
+
+2. **heroBasePositions**：所有角色的位置数组
+   - 包含所有角色的位置（不管当前在哪一页）
+   - 用于攻击动画、敌人攻击、治疗特效等
+
+3. **全局索引**：角色在 `this.party` 数组中的索引
+   - 用于查找角色在 `heroBasePositions` 中的位置
+
+**测试验证：**
+- ✅ 第二页角色可以正常攻击
+- ✅ 翻页不会卡死
+- ✅ 攻击动画位置正确
+- ✅ 敌人攻击位置正确
+- ✅ 治疗特效位置正确
+
+**文件修改：**
+- `scripts/scenes/battle-scene.js` - 新增_initAllHeroPositions()方法，翻页时更新位置
+
+---
+
+**提交记录：**
 - 提交ID：d46a6a1
 - 提交信息：fix: 修复角色重复攻击和翻页按钮显示问题
 - 提交时间：2026-04-05 12:22
