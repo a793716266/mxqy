@@ -5,6 +5,208 @@
 ### 2026-04-05
 
 **提交记录：**
+- 提交ID：b4f3399
+- 提交信息：fix: 修复多角色战斗卡住和翻页按钮问题
+- 提交时间：2026-04-05 12:15
+
+**问题1：新角色攻击之后战斗就卡住了**
+
+**问题现象：**
+1. 队伍有4个角色（臻宝、李小宝、艾米、安妮）
+2. 第一个角色攻击后，直接进入敌人回合
+3. 其他角色无法行动
+4. 战斗流程不符合回合制规则
+
+**问题2：超过3个角色看不到后面的角色**
+
+**问题现象：**
+1. 队伍有4个角色，只显示前3个
+2. 第4个角色看不到，无法选择
+
+**根本原因：**
+
+**问题1：回合制逻辑错误**
+
+原来的代码在每个角色攻击后，都会立即进入敌人回合：
+
+```javascript
+_executeSkill(hero, skill, target) {
+  // ...
+  this._waitForAttackComplete = () => {
+    if (!this.attackAnim && !this.attackingHero) {
+      setTimeout(() => {
+        if (this.phase !== 'victory' && this.phase !== 'defeat') {
+          this.phase = 'enemy_turn'  // ❌ 直接进入敌人回合
+        }
+      }, 300)
+      return true
+    }
+    return false
+  }
+}
+```
+
+**问题流程：**
+
+```
+第1回合开始：
+  1. 选择臻宝攻击
+  2. 臻宝攻击完成 → 立即进入敌人回合 ❌
+  3. 敌人攻击
+  4. 其他角色（李小宝、艾米、安妮）无法行动
+
+正确流程应该是：
+  1. 玩家回合：所有角色依次行动
+  2. 所有角色行动完毕 → 进入敌人回合
+  3. 敌人回合：所有敌人依次攻击
+  4. 所有敌人攻击完毕 → 进入下一回合
+```
+
+**问题2：翻页按钮不够明显**
+
+虽然有分页系统，但翻页按钮的样式不够突出：
+- 背景透明度只有0.2，几乎看不见
+- 按钮尺寸较小（35px）
+- 没有明显的视觉提示
+
+**修复方案：**
+
+**问题1：添加行动跟踪系统**
+
+1. **构造函数**：添加`actedHeroes`集合跟踪已行动角色
+
+```javascript
+// 行动跟踪系统
+this.actedHeroes = new Set()  // 已行动的角色ID集合
+```
+
+2. **回合开始**：重置行动状态
+
+```javascript
+setTimeout(() => {
+  this.phase = 'select_hero'
+  this.actedHeroes.clear()  // 重置行动状态
+  this._initHeroAreas()
+}, 1500)
+```
+
+3. **技能执行**：标记已行动，检查是否全部行动完毕
+
+```javascript
+_executeSkill(hero, skill, target) {
+  // 标记角色为已行动
+  this.actedHeroes.add(hero.id)
+  
+  // 技能执行后...
+  this._waitForAttackComplete = () => {
+    if (!this.attackAnim && !this.attackingHero) {
+      setTimeout(() => {
+        if (this.phase !== 'victory' && this.phase !== 'defeat') {
+          // ✅ 检查是否所有角色都已行动
+          if (this._allHeroesActed()) {
+            this.phase = 'enemy_turn'
+          } else {
+            this.phase = 'select_hero'
+            this._addLog(`继续选择角色行动`)
+          }
+        }
+      }, 300)
+      return true
+    }
+    return false
+  }
+}
+```
+
+4. **辅助方法**：检查所有角色是否已行动
+
+```javascript
+_allHeroesActed() {
+  const aliveHeroes = this.party.filter(h => h.hp > 0)
+  return aliveHeroes.every(h => this.actedHeroes.has(h.id))
+}
+```
+
+5. **敌人回合结束**：重置行动状态
+
+```javascript
+} else {
+  // 所有敌人攻击完毕，进入玩家回合
+  this.enemyAttackQueue = []
+  this.currentEnemyIndex = 0
+  this.turn++
+  this.actedHeroes.clear()  // 重置行动状态
+  this._addLog(`--- 第 ${this.turn} 回合 ---`)
+  this.phase = 'select_hero'
+}
+```
+
+**问题2：优化翻页按钮可见性**
+
+```javascript
+_renderPageButtons(ctx) {
+  const btnSize = 40 * dpr  // 增大按钮尺寸（35→40）
+  
+  // 外发光效果
+  ctx.shadowColor = '#ff9f43'
+  ctx.shadowBlur = 10 * dpr
+  
+  // 按钮背景（更明显的背景）
+  ctx.fillStyle = 'rgba(255, 159, 67, 0.8)'  // 透明度 0.2→0.8
+  ctx.beginPath()
+  ctx.arc(btnX, btnY, btnSize / 2, 0, Math.PI * 2)
+  ctx.fill()
+  
+  // 重置阴影
+  ctx.shadowColor = 'transparent'
+  ctx.shadowBlur = 0
+  
+  // 按钮边框
+  ctx.strokeStyle = '#fff'
+  ctx.lineWidth = 2 * dpr
+  ctx.stroke()
+  
+  // 箭头
+  ctx.fillStyle = '#fff'
+  ctx.font = `bold ${20 * dpr}px sans-serif`
+  ctx.fillText('◀', btnX, btnY)
+}
+```
+
+**修复后的流程：**
+
+```
+第1回合开始：
+  1. actedHeroes.clear()
+  2. 选择臻宝攻击 → actedHeroes.add('zhenbao')
+  3. 检查：其他角色未行动 → phase = 'select_hero'
+  4. 选择李小宝攻击 → actedHeroes.add('lixiaobao')
+  5. 检查：其他角色未行动 → phase = 'select_hero'
+  6. 选择艾米攻击 → actedHeroes.add('amy')
+  7. 检查：其他角色未行动 → phase = 'select_hero'
+  8. 选择安妮攻击 → actedHeroes.add('annie')
+  9. 检查：所有角色已行动 → phase = 'enemy_turn'
+  10. 敌人攻击
+  11. 敌人回合结束 → actedHeroes.clear()
+
+第2回合开始：
+  1. actedHeroes = {}（空集合）
+  2. 重复上述流程...
+```
+
+**测试验证：**
+- ✅ 4个角色都能依次行动
+- ✅ 所有角色行动完毕后才进入敌人回合
+- ✅ 回合流程正确循环
+- ✅ 翻页按钮清晰可见
+- ✅ 可以翻页查看所有角色
+
+**文件修改：**
+- `scripts/scenes/battle-scene.js` - 添加行动跟踪系统、优化翻页按钮
+
+---
+
+**提交记录：**
 - 提交ID：24335a2
 - 提交信息：fix: 修复升级后装备属性丢失的问题（二次修复）
 - 提交时间：2026-04-05 12:05
