@@ -5,6 +5,85 @@
 ### 2026-04-05
 
 **提交记录：**
+- 提交ID：12f1ca4
+- 提交信息：fix: 修复测试解锁副本和新角色跟随问题
+- 提交时间：2026-04-05 11:45
+
+**问题1：测试解锁所有副本功能没有实现**
+
+- **问题：** 测试按钮点击后，只设置了amyDefeated标志，但其他副本仍然是锁定状态
+- **原因：** 副本解锁逻辑是硬编码的，没有测试模式标志
+- **解决：** 添加testUnlockAll测试模式标志，所有副本在测试模式下自动解锁
+
+**实现细节：**
+1. **测试模式标志**
+   ```javascript
+   const testMode = this.game.data.get('testUnlockAll') || false
+   ```
+
+2. **副本解锁逻辑**
+   - 阳光草原：始终解锁
+   - 魔法塔危机：testMode || (amyDefeated && partyLevel > 3)
+   - 商人秘密：testMode（测试模式下解锁）
+   - 古城守护者：testMode（测试模式下解锁）
+   - 虚无之雾：testMode（测试模式下解锁）
+
+3. **测试按钮功能**
+   ```javascript
+   this.game.data.set('amyDefeated', true)
+   this.game.data.set('testUnlockAll', true)  // 设置测试模式
+   ```
+
+**问题2：新加入的角色没有跟随**
+
+- **问题：** 击败艾米后，艾米加入队伍，但在野外探索时不跟随主角
+- **原因：** `_initFollowers()`只在构造函数中调用一次，不会动态更新
+- **解决：** 添加`_checkNewFollowers()`方法，在战斗结果检查时自动检测新角色
+
+**实现细节：**
+1. **新方法：_checkNewFollowers()**
+   ```javascript
+   _checkNewFollowers() {
+     const allChars = charStateManager.getAllCharacters()
+     const currentFollowerIds = this.followers.map(f => f.character.id)
+     
+     // 找出新加入的角色
+     for (let i = 1; i < allChars.length; i++) {
+       const char = allChars[i]
+       if (!currentFollowerIds.includes(char.id)) {
+         // 添加到followers列表
+         this.followers.push({
+           character: char,
+           x: this.playerX - (this.followers.length + 1) * this.followerDistance,
+           y: this.playerY,
+           // ... 动画状态
+         })
+       }
+     }
+   }
+   ```
+
+2. **调用时机**
+   - 在`_checkBattleResult()`中调用
+   - 每次战斗结束后都会检查是否有新角色加入
+
+3. **动态更新**
+   - 自动检测队伍变化
+   - 新角色立即开始跟随
+   - 保持主角和队友的正确位置关系
+
+**测试验证：**
+- ✅ 点击测试按钮，所有副本解锁
+- ✅ 击败艾米后，艾米加入队伍并开始跟随
+- ✅ 新角色跟随位置正确，动画正常
+
+**文件修改：**
+- `scripts/scenes/town-scene.js` - 测试解锁功能
+- `scripts/scenes/field-scene.js` - 新角色跟随逻辑
+
+---
+
+**提交记录：**
 - 提交ID：3dfccd2
 - 提交信息：feat: 添加明显的返回城镇按钮
 - 提交时间：2026-04-05 11:40
