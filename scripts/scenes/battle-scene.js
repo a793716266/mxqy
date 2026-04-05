@@ -30,6 +30,9 @@ export class BattleScene {
     this.selectedSkill = null
     this.actionQueue = []
 
+    // 行动跟踪系统
+    this.actedHeroes = new Set()  // 已行动的角色ID集合
+
     // 动画
     this.shakeAmount = 0
     this.damageTexts = []
@@ -124,6 +127,7 @@ export class BattleScene {
     // 1.5秒后进入玩家回合
     setTimeout(() => {
       this.phase = 'select_hero'
+      this.actedHeroes.clear()  // 重置行动状态
       this._initHeroAreas()
     }, 1500)
   }
@@ -447,6 +451,7 @@ export class BattleScene {
               this.enemyAttackQueue = []
               this.currentEnemyIndex = 0
               this.turn++
+              this.actedHeroes.clear()  // 重置行动状态
               this._addLog(`--- 第 ${this.turn} 回合 ---`)
               this.phase = 'select_hero'
             }
@@ -653,6 +658,9 @@ export class BattleScene {
     hero.mp -= skill.mpCost
     this._addLog(`${hero.name} 使用了「${skill.name}」！`)
 
+    // 标记角色为已行动
+    this.actedHeroes.add(hero.id)
+
     // 根据技能类型执行
     if (skill.type === 'attack' || skill.type === 'magic') {
       // 攻击技能 - 启动动画
@@ -664,7 +672,13 @@ export class BattleScene {
           // 动画完成，检查战斗结束
           setTimeout(() => {
             if (this.phase !== 'victory' && this.phase !== 'defeat') {
-              this.phase = 'enemy_turn'
+              // 检查是否所有角色都已行动
+              if (this._allHeroesActed()) {
+                this.phase = 'enemy_turn'
+              } else {
+                this.phase = 'select_hero'
+                this._addLog(`继续选择角色行动`)
+              }
             }
           }, 300)
           return true
@@ -677,7 +691,13 @@ export class BattleScene {
         this._executeHeal(hero, skill, target)
         setTimeout(() => {
           if (this.phase !== 'victory' && this.phase !== 'defeat') {
-            this.phase = 'enemy_turn'
+            // 检查是否所有角色都已行动
+            if (this._allHeroesActed()) {
+              this.phase = 'enemy_turn'
+            } else {
+              this.phase = 'select_hero'
+              this._addLog(`继续选择角色行动`)
+            }
           }
         }, 400)
       }, 300)
@@ -687,11 +707,25 @@ export class BattleScene {
         this._executeBuff(hero, skill, target)
         setTimeout(() => {
           if (this.phase !== 'victory' && this.phase !== 'defeat') {
-            this.phase = 'enemy_turn'
+            // 检查是否所有角色都已行动
+            if (this._allHeroesActed()) {
+              this.phase = 'enemy_turn'
+            } else {
+              this.phase = 'select_hero'
+              this._addLog(`继续选择角色行动`)
+            }
           }
         }, 400)
       }, 300)
     }
+  }
+
+  /**
+   * 检查是否所有存活的角色都已行动
+   */
+  _allHeroesActed() {
+    const aliveHeroes = this.party.filter(h => h.hp > 0)
+    return aliveHeroes.every(h => this.actedHeroes.has(h.id))
   }
 
   _executeHeal(hero, skill, target) {
@@ -912,7 +946,7 @@ export class BattleScene {
     if (this.totalHeroPages <= 1 || this.heroAreas.length === 0) return false
 
     const dpr = this.dpr
-    const btnSize = 35 * dpr
+    const btnSize = 40 * dpr  // 与渲染尺寸一致
     const btnRadius = btnSize / 2
 
     const firstArea = this.heroAreas[0]
@@ -1480,7 +1514,7 @@ export class BattleScene {
    */
   _renderPageButtons(ctx) {
     const dpr = this.dpr
-    const btnSize = 35 * dpr
+    const btnSize = 40 * dpr  // 增大按钮尺寸
 
     // 获取角色卡片区域的位置
     if (this.heroAreas.length === 0) return
@@ -1494,20 +1528,30 @@ export class BattleScene {
     const prevBtnY = cardCenterY - btnSize / 2
 
     if (this.heroPage > 0) {
-      // 按钮背景
-      ctx.fillStyle = 'rgba(255, 255, 255, 0.2)'
+      // 外发光效果
+      ctx.shadowColor = '#ff9f43'
+      ctx.shadowBlur = 10 * dpr
+      ctx.shadowOffsetX = 0
+      ctx.shadowOffsetY = 0
+
+      // 按钮背景（更明显的背景）
+      ctx.fillStyle = 'rgba(255, 159, 67, 0.8)'
       ctx.beginPath()
       ctx.arc(prevBtnX + btnSize / 2, prevBtnY + btnSize / 2, btnSize / 2, 0, Math.PI * 2)
       ctx.fill()
 
+      // 重置阴影
+      ctx.shadowColor = 'transparent'
+      ctx.shadowBlur = 0
+
       // 按钮边框
-      ctx.strokeStyle = '#ff9f43'
+      ctx.strokeStyle = '#fff'
       ctx.lineWidth = 2 * dpr
       ctx.stroke()
 
       // 箭头
-      ctx.fillStyle = '#ff9f43'
-      ctx.font = `bold ${18 * dpr}px sans-serif`
+      ctx.fillStyle = '#fff'
+      ctx.font = `bold ${20 * dpr}px sans-serif`
       ctx.textAlign = 'center'
       ctx.textBaseline = 'middle'
       ctx.fillText('◀', prevBtnX + btnSize / 2, prevBtnY + btnSize / 2)
@@ -1518,20 +1562,35 @@ export class BattleScene {
     const nextBtnY = cardCenterY - btnSize / 2
 
     if (this.heroPage < this.totalHeroPages - 1) {
-      // 按钮背景
-      ctx.fillStyle = 'rgba(255, 255, 255, 0.2)'
+      // 外发光效果
+      ctx.shadowColor = '#ff9f43'
+      ctx.shadowBlur = 10 * dpr
+      ctx.shadowOffsetX = 0
+      ctx.shadowOffsetY = 0
+
+      // 按钮背景（更明显的背景）
+      ctx.fillStyle = 'rgba(255, 159, 67, 0.8)'
       ctx.beginPath()
       ctx.arc(nextBtnX + btnSize / 2, nextBtnY + btnSize / 2, btnSize / 2, 0, Math.PI * 2)
       ctx.fill()
+
+      // 重置阴影
+      ctx.shadowColor = 'transparent'
+      ctx.shadowBlur = 0
 
       // 按钮边框
       ctx.strokeStyle = '#ff9f43'
       ctx.lineWidth = 2 * dpr
       ctx.stroke()
 
+      // 按钮边框
+      ctx.strokeStyle = '#fff'
+      ctx.lineWidth = 2 * dpr
+      ctx.stroke()
+
       // 箭头
-      ctx.fillStyle = '#ff9f43'
-      ctx.font = `bold ${18 * dpr}px sans-serif`
+      ctx.fillStyle = '#fff'
+      ctx.font = `bold ${20 * dpr}px sans-serif`
       ctx.textAlign = 'center'
       ctx.textBaseline = 'middle'
       ctx.fillText('▶', nextBtnX + btnSize / 2, nextBtnY + btnSize / 2)
