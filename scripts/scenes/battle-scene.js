@@ -179,9 +179,6 @@ export class BattleScene {
       this._addLog(`→ 第 ${this.heroPage + 1}/${this.totalHeroPages} 页`)
     }
   }
-      this._showHeroSelection()
-    }, 1500)
-  }
 
   _addLog(text) {
     this.log.push({ text, time: this.time })
