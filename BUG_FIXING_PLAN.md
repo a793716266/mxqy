@@ -5,6 +5,80 @@
 ### 2026-04-05
 
 **提交记录：**
+- 提交ID：TBD
+- 提交信息：fix: 修复魔法塔BOSS被击败后其他区域BOSS消失的问题
+- 提交时间：2026-04-05 12:45
+
+**问题：魔法塔危机中打死任意BOSS后所有区域BOSS都消失**
+
+**问题现象：**
+1. 在魔法塔危机区域击败水晶法师（BOSS）
+2. 返回野外地图后，所有区域的BOSS都消失了
+3. 包括阳光草原、迷雾森林等其他区域的BOSS
+
+**根本原因：**
+
+`battle-scene.js` 中 BOSS 击败标记硬编码为 `'ch1_boss_defeated'`，但 `field-scene.js` 中使用的是 `${areaId}_${bossId}_defeated`：
+
+```javascript
+// ❌ 错误代码（battle-scene.js）
+if (this.enemy.isBoss) {
+  this.game.data.addFlag('ch1_boss_defeated')  // 硬编码！
+}
+
+// ✅ 正确逻辑（field-scene.js）
+const bossFlag = `${this.areaId}_${bossId}_defeated`  // 例如：magic_tower_crystal_mage_defeated
+if (!this.game.data.hasFlag(bossFlag) && bossData) {
+  // 生成BOSS
+}
+```
+
+**问题分析：**
+
+```
+场景1：魔法塔危机
+  BOSS：水晶法师 (crystal_mage)
+  击败后标记：ch1_boss_defeated  ❌ 错误！
+
+场景2：阳光草原
+  BOSS：迷失治愈猫 (lost_healer_cat)
+  检查标记：grassland_lost_healer_cat_defeated  ✅ 未被标记
+  但是... field-scene.js 检查的是正确的标记
+  所以这个BOSS应该还存在
+
+实际问题：battle-scene.js 标记了错误的 flag
+→ 任何区域BOSS被击败都标记同一个 flag
+→ 影响后续BOSS解锁判断逻辑
+```
+
+**修复方案：**
+
+使用正确的 BOSS 标记格式，与 `field-scene.js` 保持一致：
+
+```javascript
+// ✅ 修复后
+if (this.enemy.isBoss) {
+  const bossFlag = `${this.nodeId}_${this.enemy.id}_defeated`
+  this.game.data.addFlag(bossFlag)
+  console.log(`[Battle] Boss已击败，标记: ${bossFlag}`)
+}
+```
+
+**BOSS标记格式：**
+
+| 区域 | 区域ID | BOSS ID | 标记Flag |
+|------|--------|---------|----------|
+| 阳光草原 | grassland | lost_healer_cat | grassland_lost_healer_cat_defeated |
+| 魔法塔 | magic_tower | crystal_mage | magic_tower_crystal_mage_defeated |
+| 迷雾森林 | forest | stray_leader | forest_stray_leader_defeated |
+| 暗影洞穴 | cave | dark_cat_king | cave_dark_cat_king_defeated |
+
+**文件修改：**
+- `scripts/scenes/battle-scene.js` - 修复BOSS击败标记格式
+
+---
+
+**提交记录：**
 - 提交ID：694bd60
 - 提交信息：fix: 修复第二页角色无法攻击和翻页卡死的问题
 - 提交时间：2026-04-05 12:38

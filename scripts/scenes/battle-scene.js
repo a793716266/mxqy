@@ -954,9 +954,11 @@ export class BattleScene {
         this.game.data.set('droppedEquipment', droppedEquipment)
       }
 
-      // 标记 Boss 已击败
+      // 标记 Boss 已击败（使用区域ID + 敌人ID作为唯一标识）
       if (this.enemy.isBoss) {
-        this.game.data.addFlag('ch1_boss_defeated')
+        const bossFlag = `${this.nodeId}_${this.enemy.id}_defeated`
+        this.game.data.addFlag(bossFlag)
+        console.log(`[Battle] Boss已击败，标记: ${bossFlag}`)
       }
     }
 
