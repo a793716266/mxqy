@@ -63,6 +63,11 @@ export class BattleScene {
     // 多敌人攻击队列
     this.enemyAttackQueue = []
     this.currentEnemyIndex = 0
+    
+    // 角色分页系统
+    this.heroPage = 0  // 当前页码
+    this.heroPerPage = 3  // 每页显示3个角色
+    this.totalHeroPages = Math.ceil((this.party.length || 0) / this.heroPerPage)
   }
 
   init() {
@@ -98,21 +103,13 @@ export class BattleScene {
     console.log('[Battle] 处理后的 party:', this.party)
     console.log('[Battle] 处理后的 enemies:', this.enemies)
     
-    // 初始化角色位置区域（根据队伍人数动态调整布局）
-    const cardHeight = 70 * this.dpr
-    const cardSpacing = 75 * this.dpr
-    const logHeight = 330 * this.dpr
-    const availableHeight = this.height - logHeight - 50 * this.dpr
-    const totalHeight = this.party.length * cardSpacing
-    const startY = Math.max(80 * this.dpr, (availableHeight - totalHeight) / 2 + 80 * this.dpr)
+    // 初始化角色位置区域（分页系统）
+    this._initHeroAreas()
 
-    this.heroAreas = this.party.map((h, i) => ({
-      hero: h,
-      x: 20 * this.dpr,
-      y: startY + i * cardSpacing,
-      w: 150 * this.dpr,
-      h: cardHeight,
-      index: i
+    // 初始化角色基础位置（用于攻击动画）
+    this.heroBasePositions = this.heroAreas.map((area, i) => ({
+      x: area.x + 6 * this.dpr + 22.5 * this.dpr, // 头像中心
+      y: area.y + area.h / 2
     }))
 
     // 初始化角色基础位置（用于攻击动画）
@@ -127,6 +124,61 @@ export class BattleScene {
     // 1.5秒后进入玩家回合
     setTimeout(() => {
       this.phase = 'select_hero'
+      this._initHeroAreas()
+    }, 1500)
+  }
+
+  /**
+   * 初始化角色卡片区域（分页）
+   */
+  _initHeroAreas() {
+    const cardHeight = 70 * this.dpr
+    const cardSpacing = 75 * this.dpr
+    const logHeight = 330 * this.dpr
+    const availableHeight = this.height - logHeight - 50 * this.dpr
+    
+    // 计算当前页的角色
+    const startIdx = this.heroPage * this.heroPerPage
+    const endIdx = Math.min(startIdx + this.heroPerPage, this.party.length)
+    const pageHeroes = this.party.slice(startIdx, endIdx)
+    
+    const totalHeight = pageHeroes.length * cardSpacing
+    const startY = Math.max(80 * this.dpr, (availableHeight - totalHeight) / 2 + 80 * this.dpr)
+
+    this.heroAreas = pageHeroes.map((h, i) => ({
+      hero: h,
+      x: 20 * this.dpr,
+      y: startY + i * cardSpacing,
+      w: 150 * this.dpr,
+      h: cardHeight,
+      index: startIdx + i  // 全局索引
+    }))
+
+    // 更新角色基础位置
+    this.heroBasePositions = this.heroAreas.map((area) => ({
+      x: area.x + 6 * this.dpr + 22.5 * this.dpr,
+      y: area.y + area.h / 2
+    }))
+  }
+
+  /**
+   * 翻页
+   */
+  _prevHeroPage() {
+    if (this.heroPage > 0) {
+      this.heroPage--
+      this._initHeroAreas()
+      this._addLog(`← 第 ${this.heroPage + 1}/${this.totalHeroPages} 页`)
+    }
+  }
+
+  _nextHeroPage() {
+    if (this.heroPage < this.totalHeroPages - 1) {
+      this.heroPage++
+      this._initHeroAreas()
+      this._addLog(`→ 第 ${this.heroPage + 1}/${this.totalHeroPages} 页`)
+    }
+  }
       this._showHeroSelection()
     }, 1500)
   }
@@ -484,6 +536,29 @@ export class BattleScene {
    * 处理角色选择
    */
   _handleHeroSelect(tx, ty) {
+    // 检查翻页按钮（优先）
+    if (this.totalHeroPages > 1) {
+      const dpr = this.dpr
+      const btnSize = 40 * dpr
+      const btnRadius = btnSize / 2
+      
+      // 上一页按钮（左上角）
+      const prevBtnX = 10 * dpr + btnRadius
+      const prevBtnY = 40 * dpr + btnRadius
+      if (this.heroPage > 0 && this._isInCircle(tx, ty, prevBtnX, prevBtnY, btnRadius)) {
+        this._prevHeroPage()
+        return
+      }
+      
+      // 下一页按钮（左下角）
+      const nextBtnX = 10 * dpr + btnRadius
+      const nextBtnY = this.height - 350 * dpr + btnRadius
+      if (this.heroPage < this.totalHeroPages - 1 && this._isInCircle(tx, ty, nextBtnX, nextBtnY, btnRadius)) {
+        this._nextHeroPage()
+        return
+      }
+    }
+    
     // 检查点击的角色卡片
     for (const area of this.heroAreas) {
       if (area.hero && area.hero.hp > 0 && this._isInRect(tx, ty, area.x, area.y, area.w, area.h)) {
@@ -542,6 +617,29 @@ export class BattleScene {
   }
 
   _handleTargetSelect(tx, ty) {
+    // 检查翻页按钮（优先）
+    if (this.totalHeroPages > 1) {
+      const dpr = this.dpr
+      const btnSize = 40 * dpr
+      const btnRadius = btnSize / 2
+      
+      // 上一页按钮（左上角）
+      const prevBtnX = 10 * dpr + btnRadius
+      const prevBtnY = 40 * dpr + btnRadius
+      if (this.heroPage > 0 && this._isInCircle(tx, ty, prevBtnX, prevBtnY, btnRadius)) {
+        this._prevHeroPage()
+        return
+      }
+      
+      // 下一页按钮（左下角）
+      const nextBtnX = 10 * dpr + btnRadius
+      const nextBtnY = this.height - 350 * dpr + btnRadius
+      if (this.heroPage < this.totalHeroPages - 1 && this._isInCircle(tx, ty, nextBtnX, nextBtnY, btnRadius)) {
+        this._nextHeroPage()
+        return
+      }
+    }
+    
     // 安全检查：确保 heroAreas 存在
     if (!this.heroAreas || !Array.isArray(this.heroAreas)) {
       this.phase = 'select_hero'
@@ -824,6 +922,12 @@ export class BattleScene {
 
   _isInRect(x, y, rx, ry, rw, rh) {
     return x >= rx && x <= rx + rw && y >= ry && y <= ry + rh
+  }
+
+  _isInCircle(x, y, cx, cy, r) {
+    const dx = x - cx
+    const dy = y - cy
+    return dx * dx + dy * dy <= r * r
   }
 
   // ======== 渲染 ========
@@ -1236,8 +1340,9 @@ export class BattleScene {
       return
     }
 
-    for (let i = 0; i < this.party.length; i++) {
-      const hero = this.party[i]
+    // 渲染当前页的角色
+    for (const area of this.heroAreas) {
+      const hero = area.hero
       
       // 安全检查：确保 hero 存在
       if (!hero) {
@@ -1356,6 +1461,77 @@ export class BattleScene {
       this._drawBar(ctx, barX, y + 55 * dpr, barW, 12 * dpr,
         hero.mp / hero.maxMp, '#4ecdc4', `MP ${hero.mp}/${hero.maxMp}`)
     }
+
+    // 渲染翻页按钮（如果有多页）
+    if (this.totalHeroPages > 1) {
+      this._renderPageButtons(ctx)
+    }
+  }
+
+  /**
+   * 渲染翻页按钮
+   */
+  _renderPageButtons(ctx) {
+    const dpr = this.dpr
+    const btnSize = 40 * dpr
+    
+    // 上一页按钮（左上角）
+    const prevBtnX = 10 * dpr
+    const prevBtnY = 40 * dpr
+    
+    if (this.heroPage > 0) {
+      // 按钮背景
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.2)'
+      ctx.beginPath()
+      ctx.arc(prevBtnX + btnSize / 2, prevBtnY + btnSize / 2, btnSize / 2, 0, Math.PI * 2)
+      ctx.fill()
+      
+      // 按钮边框
+      ctx.strokeStyle = '#ff9f43'
+      ctx.lineWidth = 2 * dpr
+      ctx.stroke()
+      
+      // 箭头
+      ctx.fillStyle = '#ff9f43'
+      ctx.font = `bold ${20 * dpr}px sans-serif`
+      ctx.textAlign = 'center'
+      ctx.textBaseline = 'middle'
+      ctx.fillText('◀', prevBtnX + btnSize / 2, prevBtnY + btnSize / 2)
+    }
+    
+    // 下一页按钮（左下角）
+    const nextBtnX = 10 * dpr
+    const nextBtnY = this.height - 350 * dpr
+    
+    if (this.heroPage < this.totalHeroPages - 1) {
+      // 按钮背景
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.2)'
+      ctx.beginPath()
+      ctx.arc(nextBtnX + btnSize / 2, nextBtnY + btnSize / 2, btnSize / 2, 0, Math.PI * 2)
+      ctx.fill()
+      
+      // 按钮边框
+      ctx.strokeStyle = '#ff9f43'
+      ctx.lineWidth = 2 * dpr
+      ctx.stroke()
+      
+      // 箭头
+      ctx.fillStyle = '#ff9f43'
+      ctx.font = `bold ${20 * dpr}px sans-serif`
+      ctx.textAlign = 'center'
+      ctx.textBaseline = 'middle'
+      ctx.fillText('▶', nextBtnX + btnSize / 2, nextBtnY + btnSize / 2)
+    }
+    
+    // 页码指示器（左中）
+    const pageX = 30 * dpr
+    const pageY = this.height / 2
+    
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.5)'
+    ctx.font = `bold ${14 * dpr}px sans-serif`
+    ctx.textAlign = 'center'
+    ctx.textBaseline = 'middle'
+    ctx.fillText(`${this.heroPage + 1}/${this.totalHeroPages}`, pageX, pageY)
   }
 
   _renderSkillPanel(ctx) {
