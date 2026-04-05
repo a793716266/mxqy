@@ -5,6 +5,171 @@
 ### 2026-04-05
 
 **提交记录：**
+- 提交ID：d46a6a1
+- 提交信息：fix: 修复角色重复攻击和翻页按钮显示问题
+- 提交时间：2026-04-05 12:22
+
+**问题1：1个角色可以重复攻击多次**
+
+**问题现象：**
+1. 选择臻宝攻击
+2. 攻击完成后，还能再次选择臻宝
+3. 同一个角色可以无限次攻击
+
+**根本原因：**
+
+选择角色时没有检查该角色是否已经行动过：
+
+```javascript
+_handleHeroSelect(tx, ty) {
+  // 检查翻页按钮（优先）
+  if (this._checkPageButtons(tx, ty)) return
+
+  // 检查点击的角色卡片
+  for (const area of this.heroAreas) {
+    if (area.hero && area.hero.hp > 0 && this._isInRect(tx, ty, area.x, area.y, area.w, area.h)) {
+      // ❌ 没有检查角色是否已行动
+      this.selectedHero = area.hero
+      this.phase = 'select_skill'
+      this._addLog(`选择 ${area.hero.name} 的技能`)
+      return
+    }
+  }
+}
+```
+
+**修复方案：**
+
+添加已行动检查：
+
+```javascript
+_handleHeroSelect(tx, ty) {
+  // 检查翻页按钮（优先）
+  if (this._checkPageButtons(tx, ty)) return
+
+  // 检查点击的角色卡片
+  for (const area of this.heroAreas) {
+    if (area.hero && area.hero.hp > 0 && this._isInRect(tx, ty, area.x, area.y, area.w, area.h)) {
+      // ✅ 检查角色是否已行动
+      if (this.actedHeroes.has(area.hero.id)) {
+        this._addLog(`⚠️ ${area.hero.name} 本回合已行动`)
+        return
+      }
+      this.selectedHero = area.hero
+      this.phase = 'select_skill'
+      this._addLog(`选择 ${area.hero.name} 的技能`)
+      return
+    }
+  }
+}
+```
+
+**问题2：翻页按钮看不到**
+
+**问题现象：**
+1. 队伍有4个角色，只看到前3个
+2. 找不到翻页按钮在哪里
+3. 虽然有翻页提示，但按钮不明显
+
+**根本原因：**
+
+翻页按钮的位置设计不合理：
+
+```javascript
+// 旧设计：按钮在卡片左右两侧
+const prevBtnX = firstArea.x - btnSize - 15 * dpr
+const cardCenterY = firstArea.y + firstArea.h / 2
+const prevBtnY = cardCenterY - btnSize / 2
+```
+
+问题：
+1. 按钮在卡片两侧，可能被战斗日志遮挡
+2. 按钮位置不够突出
+3. 与卡片同一水平线，视觉上不够明显
+
+**修复方案：**
+
+重新设计按钮位置和样式：
+
+1. **位置调整**：移到卡片上方，更加醒目
+
+```javascript
+// 新设计：按钮在卡片上方
+const prevBtnX = firstArea.x - btnSize - 5 * dpr
+const prevBtnY = firstArea.y - 5 * dpr  // 上方
+```
+
+2. **样式增强**：
+   - 按钮尺寸：40px（更大）
+   - 背景颜色：橙色 rgba(255, 159, 67, 0.9)（更明显）
+   - 外发光效果：15px blur（更突出）
+   - 白色边框：3px width（更清晰）
+   - 箭头大小：22px（更大）
+
+3. **页码显示**：卡片下方居中显示当前页/总页数
+
+```javascript
+// 页码显示位置（卡片下方）
+const pageX = this.width / 2
+const pageY = firstArea.y + firstArea.h + 15 * dpr
+
+// 页码背景
+ctx.fillStyle = 'rgba(0, 0, 0, 0.6)'
+const pageText = `${this.heroPage + 1}/${this.totalHeroPages}`
+ctx.fillText(pageText, pageX, pageY)
+```
+
+4. **点击检测更新**：
+
+```javascript
+_checkPageButtons(tx, ty) {
+  // 上一页按钮（左侧卡片上方）
+  if (this.heroPage > 0) {
+    const prevBtnX = firstArea.x - btnSize - 5 * dpr + btnRadius
+    const prevBtnY = firstArea.y - 5 * dpr + btnRadius
+    if (this._isInCircle(tx, ty, prevBtnX, prevBtnY, btnRadius)) {
+      this._prevHeroPage()
+      return true
+    }
+  }
+  // ...
+}
+```
+
+**视觉效果对比：**
+
+```
+旧设计：
+┌─────────────────────────────────┐
+│                                 │
+│  [卡片1] [卡片2] [卡片3]        │  ← 按钮在这里，不明显
+│   ◀      ...      ▶             │
+│                                 │
+└─────────────────────────────────┘
+
+新设计：
+┌─────────────────────────────────┐
+│  ◀                            ▶ │  ← 按钮在上方，醒目
+│  [卡片1] [卡片2] [卡片3]        │
+│       1/2                       │  ← 页码显示
+│                                 │
+└─────────────────────────────────┘
+```
+
+**测试验证：**
+- ✅ 已行动角色点击时显示警告
+- ✅ 角色无法重复攻击
+- ✅ 翻页按钮清晰可见
+- ✅ 按钮在卡片上方，不会被遮挡
+- ✅ 页码显示清晰
+- ✅ 可以翻页查看所有角色
+
+**文件修改：**
+- `scripts/scenes/battle-scene.js` - 添加已行动检查、重新设计翻页按钮
+
+---
+
+**提交记录：**
 - 提交ID：aafc21b
 - 提交信息：fix: 修复敌人不攻击和角色显示问题
 - 提交时间：2026-04-05 12:18
