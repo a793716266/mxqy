@@ -776,14 +776,26 @@ export class BattleScene {
       if (amyEnemy) {
         // 标记艾米已被击败
         this.game.data.set('amyDefeated', true)
-        console.log('[Battle] 艾米被击败，已解锁魔法塔')
-        
         this.phase = 'purify'
         this.purifyStep = 0
         this.purifyTimer = 0
         this._addLog(`✨ ${amyEnemy.name} 被打败了...`)
         this._addLog(`一道温暖的光芒涌现...`)
         console.log(`[Battle] 艾米Boss被击败，开始感化剧情`)
+        return
+      }
+      
+      // 特殊处理：安妮Boss感化剧情
+      const annieEnemy = this.enemies.find(e => e.isAnnie)
+      if (annieEnemy) {
+        // 标记安妮已被击败
+        this.game.data.set('annieDefeated', true)
+        this.phase = 'purify'
+        this.purifyStep = 0
+        this.purifyTimer = 0
+        this._addLog(`✨ ${annieEnemy.name} 被打败了...`)
+        this._addLog(`一道神秘的光芒涌现...`)
+        console.log(`[Battle] 安妮Boss被击败，开始感化剧情`)
         return
       }
       
@@ -1953,9 +1965,20 @@ export class BattleScene {
     ctx.fillStyle = gradient
     ctx.fillRect(0, 0, w, h)
 
-    // 艾米的头像（逐渐显现）
-    const amyImgKey = 'CAT_AMY'
-    const amyImg = this.game.assets.get(amyImgKey)
+    // 头像（根据Boss类型动态显示）
+    let charImgKey, charName
+    if (this.enemy.isAmy) {
+      charImgKey = 'CAT_AMY'
+      charName = '艾米'
+    } else if (this.enemy.isAnnie) {
+      charImgKey = 'CAT_ANNIE'
+      charName = '安妮'
+    } else {
+      charImgKey = 'CAT_AMY'  // 默认
+      charName = this.enemy.name
+    }
+    
+    const charImg = this.game.assets.get(charImgKey)
     const avatarSize = 120 * dpr
     const avatarY = h * 0.35
     
@@ -1970,11 +1993,11 @@ export class BattleScene {
     ctx.stroke()
     
     // 头像
-    if (amyImg) {
+    if (charImg) {
       ctx.beginPath()
       ctx.arc(w / 2, avatarY, avatarSize / 2, 0, Math.PI * 2)
       ctx.clip()
-      ctx.drawImage(amyImg, w / 2 - avatarSize / 2, avatarY - avatarSize / 2, avatarSize, avatarSize)
+      ctx.drawImage(charImg, w / 2 - avatarSize / 2, avatarY - avatarSize / 2, avatarSize, avatarSize)
     } else {
       // 备用：显示角色名
       ctx.font = `bold ${30 * dpr}px sans-serif`
@@ -1988,7 +2011,7 @@ export class BattleScene {
     ctx.font = `bold ${28 * dpr}px sans-serif`
     ctx.fillStyle = '#2d3436'
     ctx.textAlign = 'center'
-    ctx.fillText('艾米', w / 2, avatarY + avatarSize / 2 + 35 * dpr)
+    ctx.fillText(charName, w / 2, avatarY + avatarSize / 2 + 35 * dpr)
 
     // 对话框
     const dialogues = this.enemy.purifyDialogue || [
@@ -2074,11 +2097,21 @@ export class BattleScene {
         // 标记战斗胜利
         this.game.data.set('battleVictory', true)
 
-        // 解锁艾米角色
-        const unlocked = charStateManager.unlockCharacter('amy')
-        if (unlocked) {
-          console.log('[Battle] 艾米成功加入队伍！')
-          this._addLog(`✨ 艾米加入了队伍！`)
+        // 解锁角色（根据Boss类型）
+        if (this.enemy.isAmy) {
+          // 解锁艾米角色
+          const unlocked = charStateManager.unlockCharacter('amy')
+          if (unlocked) {
+            console.log('[Battle] 艾米成功加入队伍！')
+            this._addLog(`✨ 艾米加入了队伍！`)
+          }
+        } else if (this.enemy.isAnnie) {
+          // 解锁安妮角色
+          const unlocked = charStateManager.unlockCharacter('annie')
+          if (unlocked) {
+            console.log('[Battle] 安妮成功加入队伍！')
+            this._addLog(`✨ 安妮加入了队伍！`)
+          }
         }
 
         // 标记Boss已击败

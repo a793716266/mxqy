@@ -299,7 +299,7 @@ export const ENEMIES_CH2 = {
   crystal_mage: {
     id: 'crystal_mage',
     name: '水晶法师',
-    level: 7,
+    level: 15,  // 修改为15级（原7级）
     maxHp: 400,
     atk: 35,
     def: 18,
@@ -308,6 +308,7 @@ export const ENEMIES_CH2 = {
     exp: 180,
     gold: 100,
     isBoss: true,
+    isAnnie: true,  // 特殊标记：这是安妮的Boss形态
     equipment: {
       name: '水晶法杖',
       type: 'weapon',
@@ -324,6 +325,11 @@ export const ENEMIES_CH2 = {
       '你们也是来抢夺水晶之力的吗？',
       '我绝不会让任何人接近塔顶！',
       '这股力量...超出了我的想象...'
+    ],
+    purifyDialogue: [
+      '水晶之力...原来不只是力量...',
+      '我一直在追求强大的魔法，却忘记了魔法的真谛...',
+      '请让我加入你们，用魔法守护这片大地！'
     ]
   }
 }
