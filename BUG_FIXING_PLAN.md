@@ -5,6 +5,141 @@
 ### 2026-04-05
 
 **提交记录：**
+- 提交ID：aafc21b
+- 提交信息：fix: 修复敌人不攻击和角色显示问题
+- 提交时间：2026-04-05 12:18
+
+**问题1：怪物现在不会攻击了**
+
+**问题现象：**
+1. 所有角色行动完毕后进入敌人回合
+2. 敌人没有任何攻击动作
+3. 战斗卡住，无法继续
+
+**根本原因：**
+
+`update()`方法每帧都会执行，导致敌人回合的初始化逻辑被重复执行：
+
+```javascript
+update(dt) {
+  // 敌人回合
+  if (this.phase === 'enemy_turn') {
+    // ❌ 每帧都会重新创建攻击队列
+    this.enemyAttackQueue = this.enemies.filter(e => e.hp > 0)
+    this.currentEnemyIndex = 0
+    setTimeout(() => this._enemyAction(), 800)
+    this.phase = 'animating'
+  }
+}
+```
+
+**问题流程：**
+
+```
+第1帧：
+  1. phase === 'enemy_turn' → true
+  2. 创建攻击队列：enemyAttackQueue = [敌人]
+  3. setTimeout(..., 800)
+  4. phase = 'animating'
+
+第2帧（约16ms后）：
+  1. phase === 'animating' → false，不进入if块
+  2. 但setTimeout还没执行（还有784ms）
+  3. 代码正常运行
+
+...但是如果phase被意外重置...
+
+第N帧：
+  1. phase === 'enemy_turn' → true（意外重置）
+  2. ❌ 重新创建攻击队列，清空currentEnemyIndex
+  3. setTimeout(..., 800)
+  4. 之前的setTimeout还在等待，新的setTimeout又创建了
+  5. 攻击队列被重复初始化，攻击逻辑混乱
+```
+
+**修复方案：**
+
+添加标志位防止重复初始化：
+
+```javascript
+// 构造函数中
+this.enemyTurnStarted = false  // 敌人回合是否已开始标志
+
+// update()中
+if (this.phase === 'enemy_turn' && !this.enemyTurnStarted) {
+  this.enemyAttackQueue = this.enemies.filter(e => e.hp > 0)
+  this.currentEnemyIndex = 0
+  this.enemyTurnStarted = true  // 标记敌人回合已开始
+  setTimeout(() => this._enemyAction(), 800)
+  this.phase = 'animating'
+}
+
+// 敌人回合结束时
+this.enemyTurnStarted = false  // 重置敌人回合标志
+```
+
+**修复后的流程：**
+
+```
+第1帧：
+  1. phase === 'enemy_turn' → true
+  2. enemyTurnStarted === false → 进入if块
+  3. 创建攻击队列
+  4. enemyTurnStarted = true
+  5. setTimeout(..., 800)
+  6. phase = 'animating'
+
+第2-50帧：
+  1. phase === 'enemy_turn' → false（已经是animating）
+  2. 不进入if块
+
+即使phase被意外重置：
+  1. phase === 'enemy_turn' → true
+  2. enemyTurnStarted === true → 不进入if块 ✅
+  3. 避免重复初始化
+```
+
+**问题2：超过3个角色看不到后面的**
+
+**问题现象：**
+1. 队伍有4个角色，只显示前3个
+2. 用户不知道可以翻页
+3. 翻页按钮虽然存在，但用户可能没注意到
+
+**修复方案：**
+
+添加明确的提示信息：
+
+```javascript
+setTimeout(() => {
+  this.phase = 'select_hero'
+  this.actedHeroes.clear()
+  this._initHeroAreas()
+  // 提示翻页
+  if (this.totalHeroPages > 1) {
+    this._addLog(`💡 点击左右按钮可翻页查看所有角色`)
+  }
+}, 1500)
+```
+
+结合上一次提交的翻页按钮优化（橙色背景、发光效果、白色边框），现在用户可以：
+1. ✅ 看到明显的翻页按钮
+2. ✅ 看到战斗日志中的提示信息
+3. ✅ 点击左右按钮查看所有角色
+
+**测试验证：**
+- ✅ 敌人会正常攻击
+- ✅ 敌人攻击动画正常播放
+- ✅ 战斗流程正常循环
+- ✅ 用户能看到翻页提示
+- ✅ 可以翻页查看所有角色
+
+**文件修改：**
+- `scripts/scenes/battle-scene.js` - 添加enemyTurnStarted标志位、翻页提示
+
+---
+
+**提交记录：**
 - 提交ID：b4f3399
 - 提交信息：fix: 修复多角色战斗卡住和翻页按钮问题
 - 提交时间：2026-04-05 12:15
