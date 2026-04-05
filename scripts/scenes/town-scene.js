@@ -319,6 +319,7 @@ export class TownScene {
     // 检查解锁条件
     const partyLevel = Math.max(...this.party.map(char => char.level))
     const amyDefeated = this.game.data.get('amyDefeated') || false
+    const testMode = this.game.data.get('testUnlockAll') || false  // 测试模式标志
     
     // 探索副本列表
     const dungeons = [
@@ -335,7 +336,7 @@ export class TownScene {
         name: '探索魔法塔危机',
         desc: `等级 4-6 | ${amyDefeated ? '已击败艾米' : '需击败艾米'} ${partyLevel > 3 ? '✓' : `需等级>3 (${partyLevel})`}`,
         area: 'magic_tower',
-        unlocked: amyDefeated && partyLevel > 3,  // 需要击败艾米且等级>3
+        unlocked: testMode || (amyDefeated && partyLevel > 3),  // 测试模式或满足条件
         requirement: `需要：等级>3 且 击败艾米`,
         color: '#9b59b6'
       },
@@ -344,7 +345,8 @@ export class TownScene {
         name: '探索商人的秘密',
         desc: '等级 7-9 | 未解锁',
         area: 'merchant_secret',
-        unlocked: false,
+        unlocked: testMode,  // 测试模式下解锁
+        requirement: '需要：完成魔法塔危机',
         color: '#f39c12'
       },
       {
@@ -352,7 +354,8 @@ export class TownScene {
         name: '探索古城守护者',
         desc: '等级 10-12 | 未解锁',
         area: 'ancient_guardian',
-        unlocked: false,
+        unlocked: testMode,  // 测试模式下解锁
+        requirement: '需要：完成商人的秘密',
         color: '#3498db'
       },
       {
@@ -360,7 +363,8 @@ export class TownScene {
         name: '决战虚无之雾',
         desc: '最终决战 | 未解锁',
         area: 'void_mist',
-        unlocked: false,
+        unlocked: testMode,  // 测试模式下解锁
+        requirement: '需要：完成古城守护者',
         color: '#e74c3c'
       }
     ]
@@ -371,7 +375,7 @@ export class TownScene {
       height: Math.min(500 * this.dpr, this.height * 0.85)  // 增加高度用于测试按钮
     }
     
-    console.log('[Town] 打开探索菜单', { partyLevel, amyDefeated })
+    console.log('[Town] 打开探索菜单', { partyLevel, amyDefeated, testMode })
   }
   
   /**
@@ -405,6 +409,7 @@ export class TownScene {
     if (this._isInRect(tx, ty, testBtnX, testBtnY, testBtnW, testBtnH)) {
       // 解锁所有副本并设置艾米已击败
       this.game.data.set('amyDefeated', true)
+      this.game.data.set('testUnlockAll', true)  // 设置测试模式标志
       console.log('[Town] 测试模式：解锁所有副本')
       this._addLog('[测试] 已解锁所有副本')
       this.exploreMenu = null

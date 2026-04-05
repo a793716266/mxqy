@@ -408,6 +408,41 @@ export class FieldScene {
       // 保存怪物状态
       this.game.data.set('fieldMonsters', this.mapMonsters)
     }
+    
+    // 检查是否有新角色加入队伍
+    this._checkNewFollowers()
+  }
+  
+  /**
+   * 检查并添加新加入的队友
+   */
+  _checkNewFollowers() {
+    const allChars = charStateManager.getAllCharacters()
+    const currentFollowerIds = this.followers.map(f => f.character.id)
+    
+    // 找出新加入的角色
+    for (let i = 1; i < allChars.length; i++) {
+      const char = allChars[i]
+      if (!currentFollowerIds.includes(char.id)) {
+        // 新角色加入，添加到followers
+        this.followers.push({
+          character: char,
+          x: this.playerX - (this.followers.length + 1) * this.followerDistance,
+          y: this.playerY,
+          animFrame: 0,
+          animTimer: 0,
+          isMoving: false,
+          facingLeft: this.facingLeft
+        })
+        console.log(`[Field] 新角色加入跟随: ${char.name}`)
+      }
+    }
+    
+    // 更新主角色（第一个角色）
+    if (allChars.length > 0 && this.mainCharacter?.id !== allChars[0].id) {
+      this.mainCharacter = allChars[0]
+      console.log(`[Field] 主角切换为: ${this.mainCharacter.name}`)
+    }
   }
   
   destroy() {
