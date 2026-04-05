@@ -82,8 +82,8 @@ export class FieldScene {
     // 战斗触发标志（防止重复触发）
     this.isEnteringBattle = false
 
-    // 地图怪物（尝试恢复保存的状态）
-    const savedMonsters = this.game.data.get('fieldMonsters')
+    // 地图怪物（尝试恢复保存的状态，每个副本独立保存）
+    const savedMonsters = this.game.data.get(`fieldMonsters_${this.areaId}`)
     if (savedMonsters && Array.isArray(savedMonsters) && savedMonsters.length > 0) {
       this.mapMonsters = savedMonsters
       console.log(`[Field] 恢复了 ${this.mapMonsters.filter(m => m.alive).length} 只怪物`)
@@ -405,8 +405,8 @@ export class FieldScene {
       this.game.data.delete('currentBattleMonsterId')
       this.game.data.delete('battleVictory')
 
-      // 保存怪物状态
-      this.game.data.set('fieldMonsters', this.mapMonsters)
+      // 保存怪物状态（每个副本独立保存）
+      this.game.data.set(`fieldMonsters_${this.areaId}`, this.mapMonsters)
     }
     
     // 检查是否有新角色加入队伍
@@ -446,8 +446,8 @@ export class FieldScene {
   }
   
   destroy() {
-    // 保存怪物状态
-    this.game.data.set('fieldMonsters', this.mapMonsters)
+    // 保存怪物状态（每个副本独立保存）
+    this.game.data.set(`fieldMonsters_${this.areaId}`, this.mapMonsters)
     
     // 保存角色状态
     const charData = charStateManager.serialize()
@@ -693,8 +693,8 @@ export class FieldScene {
 
     console.log(`[Field] 补充了 ${count} 只怪物`)
 
-    // 保存怪物状态
-    this.game.data.set('fieldMonsters', this.mapMonsters)
+    // 保存怪物状态（每个副本独立保存）
+    this.game.data.set(`fieldMonsters_${this.areaId}`, this.mapMonsters)
   }
   
   _updateCamera() {
