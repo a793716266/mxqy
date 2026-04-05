@@ -109,17 +109,8 @@ export class BattleScene {
     // 初始化角色位置区域（分页系统）
     this._initHeroAreas()
 
-    // 初始化角色基础位置（用于攻击动画）
-    this.heroBasePositions = this.heroAreas.map((area, i) => ({
-      x: area.x + 6 * this.dpr + 22.5 * this.dpr, // 头像中心
-      y: area.y + area.h / 2
-    }))
-
-    // 初始化角色基础位置（用于攻击动画）
-    this.heroBasePositions = this.heroAreas.map((area, i) => ({
-      x: area.x + 6 * this.dpr + 22.5 * this.dpr, // 头像中心
-      y: area.y + area.h / 2
-    }))
+    // 初始化角色基础位置（用于攻击动画）- 包含所有角色的位置
+    this._initAllHeroPositions()
 
     this._addLog(`第 ${this.turn} 回合开始！`)
     this._addLog(`野生的 ${this.enemy.name} 出现了！`)
@@ -166,12 +157,45 @@ export class BattleScene {
       h: cardH,
       index: startIdx + i  // 全局索引
     }))
+  }
 
-    // 更新角色基础位置
-    this.heroBasePositions = this.heroAreas.map((area) => ({
-      x: area.x + 6 * this.dpr + 22.5 * this.dpr,
-      y: area.y + area.h / 2
-    }))
+  /**
+   * 初始化所有角色的基础位置（用于攻击动画）
+   * 注意：这个方法计算所有角色的位置，而不仅仅是当前页
+   */
+  _initAllHeroPositions() {
+    const cardW = 120 * this.dpr
+    const cardH = 70 * this.dpr
+    const cardSpacing = 10 * this.dpr
+    const logHeight = 330 * this.dpr
+
+    // 角色卡片在战斗日志上方
+    const logY = this.height - logHeight
+    const cardY = logY - cardH - 15 * this.dpr
+
+    // 计算所有角色的位置
+    this.heroBasePositions = this.party.map((hero, globalIndex) => {
+      // 计算该角色所在的页和在该页中的索引
+      const page = Math.floor(globalIndex / this.heroPerPage)
+      const indexInPage = globalIndex % this.heroPerPage
+
+      // 计算该页的角色数量
+      const pageStart = page * this.heroPerPage
+      const pageEnd = Math.min(pageStart + this.heroPerPage, this.party.length)
+      const pageHeroesCount = pageEnd - pageStart
+
+      // 计算该页卡片的起始X位置
+      const totalWidth = pageHeroesCount * cardW + (pageHeroesCount - 1) * cardSpacing
+      const startX = (this.width - totalWidth) / 2
+
+      // 计算该角色的位置
+      const cardX = startX + indexInPage * (cardW + cardSpacing)
+
+      return {
+        x: cardX + 6 * this.dpr + 22.5 * this.dpr, // 头像中心
+        y: cardY + cardH / 2
+      }
+    })
   }
 
   /**
@@ -181,6 +205,7 @@ export class BattleScene {
     if (this.heroPage > 0) {
       this.heroPage--
       this._initHeroAreas()
+      this._initAllHeroPositions()  // 重新计算所有角色位置
       this._addLog(`← 第 ${this.heroPage + 1}/${this.totalHeroPages} 页`)
     }
   }
@@ -189,6 +214,7 @@ export class BattleScene {
     if (this.heroPage < this.totalHeroPages - 1) {
       this.heroPage++
       this._initHeroAreas()
+      this._initAllHeroPositions()  // 重新计算所有角色位置
       this._addLog(`→ 第 ${this.heroPage + 1}/${this.totalHeroPages} 页`)
     }
   }
