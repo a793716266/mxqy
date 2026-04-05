@@ -129,6 +129,10 @@ export class BattleScene {
       this.phase = 'select_hero'
       this.actedHeroes.clear()  // 重置行动状态
       this._initHeroAreas()
+      // 提示翻页
+      if (this.totalHeroPages > 1) {
+        this._addLog(`💡 点击左右按钮可翻页查看所有角色`)
+      }
     }, 1500)
   }
 
@@ -357,10 +361,11 @@ export class BattleScene {
     }
 
     // 敌人回合
-    if (this.phase === 'enemy_turn') {
+    if (this.phase === 'enemy_turn' && !this.enemyTurnStarted) {
       // 创建敌人攻击队列（所有存活的敌人）
       this.enemyAttackQueue = this.enemies.filter(e => e.hp > 0)
       this.currentEnemyIndex = 0
+      this.enemyTurnStarted = true  // 标记敌人回合已开始
       setTimeout(() => this._enemyAction(), 800)
       this.phase = 'animating'
     }
@@ -450,6 +455,7 @@ export class BattleScene {
               // 所有敌人攻击完毕，进入玩家回合
               this.enemyAttackQueue = []
               this.currentEnemyIndex = 0
+              this.enemyTurnStarted = false  // 重置敌人回合标志
               this.turn++
               this.actedHeroes.clear()  // 重置行动状态
               this._addLog(`--- 第 ${this.turn} 回合 ---`)
@@ -769,6 +775,7 @@ export class BattleScene {
       // 所有敌人攻击完毕，进入下一回合
       this.enemyAttackQueue = []
       this.currentEnemyIndex = 0
+      this.enemyTurnStarted = false  // 重置敌人回合标志
       this.turn++
       this.phase = 'player_turn'
       return
