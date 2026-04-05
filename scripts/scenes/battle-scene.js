@@ -1556,7 +1556,7 @@ export class BattleScene {
       ctx.fillStyle = grad
       
       ctx.beginPath()
-      ctx.roundRect(prevBtnX, prevBtnY, btnW, btnH, 8 * dpr)
+      this._roundRect(ctx, prevBtnX, prevBtnY, btnW, btnH, 8 * dpr)
       ctx.fill()
 
       // 重置阴影
@@ -1597,7 +1597,7 @@ export class BattleScene {
       ctx.fillStyle = grad
       
       ctx.beginPath()
-      ctx.roundRect(nextBtnX, nextBtnY, btnW, btnH, 8 * dpr)
+      this._roundRect(ctx, nextBtnX, nextBtnY, btnW, btnH, 8 * dpr)
       ctx.fill()
 
       // 重置阴影
