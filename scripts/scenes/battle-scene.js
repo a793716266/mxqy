@@ -555,6 +555,11 @@ export class BattleScene {
     // 检查点击的角色卡片
     for (const area of this.heroAreas) {
       if (area.hero && area.hero.hp > 0 && this._isInRect(tx, ty, area.x, area.y, area.w, area.h)) {
+        // 检查角色是否已行动
+        if (this.actedHeroes.has(area.hero.id)) {
+          this._addLog(`⚠️ ${area.hero.name} 本回合已行动`)
+          return
+        }
         this.selectedHero = area.hero
         this.phase = 'select_skill'
         this._addLog(`选择 ${area.hero.name} 的技能`)
@@ -953,27 +958,30 @@ export class BattleScene {
     if (this.totalHeroPages <= 1 || this.heroAreas.length === 0) return false
 
     const dpr = this.dpr
-    const btnSize = 40 * dpr  // 与渲染尺寸一致
+    const btnSize = 40 * dpr
     const btnRadius = btnSize / 2
 
     const firstArea = this.heroAreas[0]
     const lastArea = this.heroAreas[this.heroAreas.length - 1]
-    const cardCenterY = firstArea.y + firstArea.h / 2
 
-    // 上一页按钮（左侧）
-    const prevBtnX = firstArea.x - btnSize - 15 * dpr + btnRadius
-    const prevBtnY = cardCenterY
-    if (this.heroPage > 0 && this._isInCircle(tx, ty, prevBtnX, prevBtnY, btnRadius)) {
-      this._prevHeroPage()
-      return true
+    // 上一页按钮（左侧卡片上方）
+    if (this.heroPage > 0) {
+      const prevBtnX = firstArea.x - btnSize - 5 * dpr + btnRadius
+      const prevBtnY = firstArea.y - 5 * dpr + btnRadius
+      if (this._isInCircle(tx, ty, prevBtnX, prevBtnY, btnRadius)) {
+        this._prevHeroPage()
+        return true
+      }
     }
 
-    // 下一页按钮（右侧）
-    const nextBtnX = lastArea.x + lastArea.w + 15 * dpr + btnRadius
-    const nextBtnY = cardCenterY
-    if (this.heroPage < this.totalHeroPages - 1 && this._isInCircle(tx, ty, nextBtnX, nextBtnY, btnRadius)) {
-      this._nextHeroPage()
-      return true
+    // 下一页按钮（右侧卡片上方）
+    if (this.heroPage < this.totalHeroPages - 1) {
+      const nextBtnX = lastArea.x + lastArea.w + 5 * dpr + btnRadius
+      const nextBtnY = firstArea.y - 5 * dpr + btnRadius
+      if (this._isInCircle(tx, ty, nextBtnX, nextBtnY, btnRadius)) {
+        this._nextHeroPage()
+        return true
+      }
     }
 
     return false
@@ -1521,28 +1529,41 @@ export class BattleScene {
    */
   _renderPageButtons(ctx) {
     const dpr = this.dpr
-    const btnSize = 40 * dpr  // 增大按钮尺寸
+    const btnSize = 40 * dpr
 
     // 获取角色卡片区域的位置
     if (this.heroAreas.length === 0) return
 
     const firstArea = this.heroAreas[0]
     const lastArea = this.heroAreas[this.heroAreas.length - 1]
-    const cardCenterY = firstArea.y + firstArea.h / 2
+    
+    // 页码显示位置（卡片下方）
+    const pageX = this.width / 2
+    const pageY = firstArea.y + firstArea.h + 15 * dpr
 
-    // 上一页按钮（左侧）
-    const prevBtnX = firstArea.x - btnSize - 15 * dpr
-    const prevBtnY = cardCenterY - btnSize / 2
+    // 页码背景
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.6)'
+    const pageText = `${this.heroPage + 1}/${this.totalHeroPages}`
+    ctx.font = `bold ${14 * dpr}px sans-serif`
+    const textWidth = ctx.measureText(pageText).width
+    ctx.fillRect(pageX - textWidth / 2 - 10 * dpr, pageY - 12 * dpr, textWidth + 20 * dpr, 24 * dpr)
+    
+    ctx.fillStyle = '#fff'
+    ctx.textAlign = 'center'
+    ctx.textBaseline = 'middle'
+    ctx.fillText(pageText, pageX, pageY)
 
+    // 上一页按钮（左侧，卡片左上方）
     if (this.heroPage > 0) {
+      const prevBtnX = firstArea.x - btnSize - 5 * dpr
+      const prevBtnY = firstArea.y - 5 * dpr
+
       // 外发光效果
       ctx.shadowColor = '#ff9f43'
-      ctx.shadowBlur = 10 * dpr
-      ctx.shadowOffsetX = 0
-      ctx.shadowOffsetY = 0
+      ctx.shadowBlur = 15 * dpr
 
-      // 按钮背景（更明显的背景）
-      ctx.fillStyle = 'rgba(255, 159, 67, 0.8)'
+      // 按钮背景
+      ctx.fillStyle = 'rgba(255, 159, 67, 0.9)'
       ctx.beginPath()
       ctx.arc(prevBtnX + btnSize / 2, prevBtnY + btnSize / 2, btnSize / 2, 0, Math.PI * 2)
       ctx.fill()
@@ -1553,30 +1574,28 @@ export class BattleScene {
 
       // 按钮边框
       ctx.strokeStyle = '#fff'
-      ctx.lineWidth = 2 * dpr
+      ctx.lineWidth = 3 * dpr
       ctx.stroke()
 
       // 箭头
       ctx.fillStyle = '#fff'
-      ctx.font = `bold ${20 * dpr}px sans-serif`
+      ctx.font = `bold ${22 * dpr}px sans-serif`
       ctx.textAlign = 'center'
       ctx.textBaseline = 'middle'
       ctx.fillText('◀', prevBtnX + btnSize / 2, prevBtnY + btnSize / 2)
     }
 
-    // 下一页按钮（右侧）
-    const nextBtnX = lastArea.x + lastArea.w + 15 * dpr
-    const nextBtnY = cardCenterY - btnSize / 2
-
+    // 下一页按钮（右侧，卡片右上方）
     if (this.heroPage < this.totalHeroPages - 1) {
+      const nextBtnX = lastArea.x + lastArea.w + 5 * dpr
+      const nextBtnY = firstArea.y - 5 * dpr
+
       // 外发光效果
       ctx.shadowColor = '#ff9f43'
-      ctx.shadowBlur = 10 * dpr
-      ctx.shadowOffsetX = 0
-      ctx.shadowOffsetY = 0
+      ctx.shadowBlur = 15 * dpr
 
-      // 按钮背景（更明显的背景）
-      ctx.fillStyle = 'rgba(255, 159, 67, 0.8)'
+      // 按钮背景
+      ctx.fillStyle = 'rgba(255, 159, 67, 0.9)'
       ctx.beginPath()
       ctx.arc(nextBtnX + btnSize / 2, nextBtnY + btnSize / 2, btnSize / 2, 0, Math.PI * 2)
       ctx.fill()
@@ -1586,32 +1605,17 @@ export class BattleScene {
       ctx.shadowBlur = 0
 
       // 按钮边框
-      ctx.strokeStyle = '#ff9f43'
-      ctx.lineWidth = 2 * dpr
-      ctx.stroke()
-
-      // 按钮边框
       ctx.strokeStyle = '#fff'
-      ctx.lineWidth = 2 * dpr
+      ctx.lineWidth = 3 * dpr
       ctx.stroke()
 
       // 箭头
       ctx.fillStyle = '#fff'
-      ctx.font = `bold ${20 * dpr}px sans-serif`
+      ctx.font = `bold ${22 * dpr}px sans-serif`
       ctx.textAlign = 'center'
       ctx.textBaseline = 'middle'
       ctx.fillText('▶', nextBtnX + btnSize / 2, nextBtnY + btnSize / 2)
     }
-
-    // 页码指示器（卡片下方居中）
-    const pageX = this.width / 2
-    const pageY = firstArea.y + firstArea.h + 12 * dpr
-
-    ctx.fillStyle = 'rgba(0, 0, 0, 0.5)'
-    ctx.font = `bold ${12 * dpr}px sans-serif`
-    ctx.textAlign = 'center'
-    ctx.textBaseline = 'middle'
-    ctx.fillText(`${this.heroPage + 1}/${this.totalHeroPages}`, pageX, pageY)
   }
 
   _renderSkillPanel(ctx) {
