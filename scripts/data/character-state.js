@@ -231,7 +231,9 @@ export class CharacterStateManager {
             EQUIPMENT_CH1.sunlight_pendant  // 阳光吊坠（饰品）
           ]
           
+          // 先添加到背包，再穿戴
           for (const equip of bestEquipments) {
+            equipmentManager.addItem(equip.id)
             equipmentManager.equip(state, equip)
           }
           
