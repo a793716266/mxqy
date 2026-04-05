@@ -5,6 +5,128 @@
 ### 2026-04-05
 
 **提交记录：**
+- 提交ID：a87f45a
+- 提交信息：fix: 修复角色升级后装备属性丢失的问题
+- 提交时间：2026-04-05 11:58
+
+**问题：角色升级之后装备的属性没了**
+
+**问题现象：**
+1. 角色穿戴装备（例如武器+20攻击力）
+2. 角色升级
+3. 发现攻击力反而降低了
+4. 装备加成消失了
+
+**根本原因：**
+
+`_applyLevelUp()` 方法中只重新计算了基础属性，但没有重新应用装备加成。
+
+**错误代码：**
+
+```javascript
+_applyLevelUp() {
+  // 属性成长（基于基础属性计算）
+  this.maxHp = Math.floor(this.baseMaxHp * (1 + growth.hp * (this.level - 1)))
+  this.atk = Math.floor(this.baseAtk * (1 + growth.atk * (this.level - 1)))
+  // ...
+  
+  // ❌ 缺少：重新应用装备属性
+  // 注释中说明了需要调用，但实际代码缺失
+}
+```
+
+**问题流程：**
+
+```
+升级前的属性：
+  基础攻击力：50
+  武器加成：+20
+  最终攻击力：70
+
+升级过程：
+  1. 调用_applyLevelUp()
+  2. 重新计算基础属性：50 → 55（升级成长）
+  3. ❌ 没有重新应用装备加成
+  4. 最终攻击力：55（丢失了武器加成）
+
+升级后的属性：
+  基础攻击力：55
+  武器加成：丢失 ❌
+  最终攻击力：55（应该75）
+```
+
+**修复方案：**
+
+在 `_applyLevelUp()` 方法最后调用 `equipmentManager.recalculateEquipmentStats(this)`：
+
+```javascript
+_applyLevelUp() {
+  // ... 属性成长计算
+  
+  // 升级时恢复满状态
+  this.hp = this.maxHp
+  this.mp = this.maxMp
+  
+  // ✅ 重新应用装备属性
+  equipmentManager.recalculateEquipmentStats(this)
+}
+```
+
+**修复后的流程：**
+
+```
+升级前的属性：
+  基础攻击力：50
+  武器加成：+20
+  最终攻击力：70
+
+升级过程：
+  1. 调用_applyLevelUp()
+  2. 重新计算基础属性：50 → 55
+  3. ✅ 调用recalculateEquipmentStats()
+  4. 重新应用装备加成：+20
+  5. 最终攻击力：75
+
+升级后的属性：
+  基础攻击力：55
+  武器加成：+20 ✅
+  最终攻击力：75 ✅
+```
+
+**recalculateEquipmentStats()原理：**
+
+```javascript
+recalculateEquipmentStats(character) {
+  // 1. 先移除所有装备属性
+  for (const slot in character.equipment) {
+    const equipment = character.equipment[slot]
+    if (equipment) {
+      this._removeStats(character, equipment)
+    }
+  }
+  
+  // 2. 再重新应用所有装备属性
+  for (const slot in character.equipment) {
+    const equipment = character.equipment[slot]
+    if (equipment) {
+      this._applyStats(character, equipment)
+    }
+  }
+}
+```
+
+**测试验证：**
+- ✅ 角色穿戴装备（武器+20攻击）
+- ✅ 角色升级
+- ✅ 装备属性正确保留
+- ✅ 最终属性 = 基础属性 + 装备属性
+
+**文件修改：**
+- `scripts/data/character-state.js` - `_applyLevelUp()` 方法
+
+---
+
+**提交记录：**
 - 提交ID：085c0a5
 - 提交信息：fix: 修复不同副本怪物状态互相覆盖的问题
 - 提交时间：2026-04-05 11:56
