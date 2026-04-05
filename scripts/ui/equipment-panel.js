@@ -61,10 +61,16 @@ export class EquipmentPanel {
   handleTap(tx, ty) {
     if (!this.active) return false
     
-    // 检查关闭按钮
-    const closeBtnX = this.panelX + this.panelWidth - 50 * this.dpr
-    const closeBtnY = this.panelY + 15 * this.dpr
-    if (this._isInRect(tx, ty, closeBtnX, closeBtnY, 40 * this.dpr, 40 * this.dpr)) {
+    // 检查关闭按钮（圆形按钮）
+    const closeBtnCenterX = this.panelX + this.panelWidth - 30 * this.dpr
+    const closeBtnCenterY = this.panelY + 35 * this.dpr
+    const closeBtnRadius = 20 * this.dpr
+    const dist = Math.sqrt((tx - closeBtnCenterX) ** 2 + (ty - closeBtnCenterY) ** 2)
+    
+    console.log(`[EquipmentPanel] 点击检测 - 位置: (${tx.toFixed(0)}, ${ty.toFixed(0)}), 关闭按钮圆心: (${closeBtnCenterX.toFixed(0)}, ${closeBtnCenterY.toFixed(0)}), 距离: ${dist.toFixed(0)}, 半径: ${closeBtnRadius.toFixed(0)}`)
+    
+    if (dist <= closeBtnRadius) {
+      console.log('[EquipmentPanel] 关闭按钮被点击')
       this.close()
       return true
     }

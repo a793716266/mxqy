@@ -2,7 +2,7 @@
  * field-scene.js - 野外探索场景（可移动大地图）
  */
 
-import { ENEMIES_CH1 } from '../data/enemies.js'
+import { ENEMIES_CH1, ENEMIES_CH2, getEnemyByLevel } from '../data/enemies.js'
 import { HEROES } from '../data/heroes.js'
 import { getMapCollisions } from '../data/map_collisions.js'
 import { charStateManager } from '../data/character-state.js'
@@ -111,7 +111,22 @@ export class FieldScene {
         battleBg: 'BG_GRASSLAND', // 战斗背景
         enemies: ['wild_cat', 'slime_cat', 'shadow_mouse'],
         bossEnemy: 'lost_healer_cat',  // 添加Boss
-        color: '#7bed9f'
+        enemyData: ENEMIES_CH1,  // 敌人数据源
+        color: '#7bed9f',
+        minEnemies: 1,  // 最少敌人数量
+        maxEnemies: 2   // 最多敌人数量
+      },
+      magic_tower: {
+        name: '魔法塔',
+        fieldBg: 'FIELD_GRASSLAND', // 暂用草原背景，后期替换
+        battleBg: 'BG_GRASSLAND',
+        enemies: ['magic_sprite', 'stone_golem', 'ghost_cat'],
+        bossEnemy: 'crystal_mage',
+        eliteEnemy: 'tower_guardian',
+        enemyData: ENEMIES_CH2,  // 第二章敌人数据
+        color: '#9b59b6',
+        minEnemies: 1,
+        maxEnemies: 3  // 魔法塔敌人数量更多
       },
       forest: {
         name: '迷雾森林',
@@ -119,7 +134,10 @@ export class FieldScene {
         battleBg: 'BG_FOREST',
         enemies: ['slime_cat', 'shadow_mouse', 'wild_cat'],
         bossEnemy: 'stray_leader',
-        color: '#2ed573'
+        enemyData: ENEMIES_CH1,
+        color: '#2ed573',
+        minEnemies: 1,
+        maxEnemies: 2
       },
       cave: {
         name: '暗影洞穴',
@@ -127,7 +145,10 @@ export class FieldScene {
         battleBg: 'BG_CAVE',
         enemies: ['shadow_mouse', 'slime_cat', 'wild_cat'],
         bossEnemy: 'dark_cat_king',
-        color: '#636e72'
+        enemyData: ENEMIES_CH1,
+        color: '#636e72',
+        minEnemies: 1,
+        maxEnemies: 2
       }
     }
     return areas[this.areaId] || areas.grassland
@@ -897,14 +918,62 @@ export class FieldScene {
     if (this.isEnteringBattle) return
     this.isEnteringBattle = true
     
-    const enemy = ENEMIES_CH1[monster.enemyId]
-    if (!enemy) {
+    const enemyBase = (this.areaInfo.enemyData || ENEMIES_CH1)[monster.enemyId]
+    if (!enemyBase) {
       console.error(`[Field] 敌人数据不存在: ${monster.enemyId}`)
       this.isEnteringBattle = false
       return
     }
 
-    console.log(`[Field] 遭遇怪物: ${monster.name}`, enemy)
+    // 计算敌人等级
+    // Boss和精英使用设定等级
+    // 普通怪物基于设定等级上下浮动
+    let enemyLevel
+    
+    if (enemyBase.isBoss) {
+      // Boss使用固定等级
+      enemyLevel = enemyBase.level || 10
+    } else if (enemyBase.isElite) {
+      // 精英使用固定等级
+      enemyLevel = enemyBase.level || 5
+    } else {
+      // 普通怪物：基于设定等级上下浮动2级
+      const baseLevel = enemyBase.level || 1
+      const levelVariation = Math.floor(Math.random() * 5) - 2 // -2 到 +2
+      enemyLevel = Math.max(1, baseLevel + levelVariation)
+    }
+
+    // 生成敌人队伍（支持多只怪物）
+    const enemies = []
+    
+    // Boss和精英单独战斗
+    if (enemyBase.isBoss || enemyBase.isElite) {
+      const enemy = getEnemyByLevel(enemyBase, enemyLevel)
+      enemies.push(enemy)
+      console.log(`[Field] 遭遇${enemyBase.isBoss ? 'Boss' : '精英'}: ${enemy.name} Lv.${enemyLevel}`)
+    } else {
+      // 普通怪物：随机1-3只
+      const minEnemies = this.areaInfo.minEnemies || 1
+      const maxEnemies = this.areaInfo.maxEnemies || 2
+      const enemyCount = Math.floor(Math.random() * (maxEnemies - minEnemies + 1)) + minEnemies
+      
+      for (let i = 0; i < enemyCount; i++) {
+        // 随机选择敌人类型
+        const enemyTypes = this.areaInfo.enemies
+        const randomType = enemyTypes[Math.floor(Math.random() * enemyTypes.length)]
+        const randomEnemyBase = (this.areaInfo.enemyData || ENEMIES_CH1)[randomType]
+        
+        if (randomEnemyBase) {
+          // 每只怪物等级略有差异（基于设定等级）
+          const baseLevel = randomEnemyBase.level || 1
+          const individualLevel = Math.max(1, baseLevel + Math.floor(Math.random() * 3) - 1)
+          const enemy = getEnemyByLevel(randomEnemyBase, individualLevel)
+          enemies.push(enemy)
+        }
+      }
+      
+      console.log(`[Field] 遭遇怪物群: ${enemies.map(e => `${e.name} Lv.${e.level}`).join(', ')}`)
+    }
 
     // 不在这里标记怪物死亡，等战斗结束后根据结果决定
     // 只保存当前正在战斗的怪物ID
@@ -916,7 +985,7 @@ export class FieldScene {
     // 进入战斗
     this.game.changeScene('battle', {
       party: this.party,
-      enemy: enemy,
+      enemies: enemies,  // 传递敌人队伍
       bg: this.areaInfo.battleBg,
       nodeId: this.areaId,
       monsterId: monster.id

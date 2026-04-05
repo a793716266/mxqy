@@ -17,7 +17,9 @@ export class BattleScene {
 
     // 战斗数据
     this.party = data.party || []
-    this.enemy = data.enemy || {}
+    // 支持多敌人：优先使用 enemies 数组，兼容旧的 enemy 单数
+    this.enemies = data.enemies || (data.enemy ? [data.enemy] : [])
+    this.enemy = this.enemies[0] || {}  // 主敌人（兼容现有代码）
     this.bgKey = data.bg || 'BG_GRASSLAND' // 直接使用资源 key
     this.nodeId = data.nodeId
 
@@ -57,12 +59,16 @@ export class BattleScene {
     this.enemyAttacking = false
     this.enemyAttackAnim = null
     this.enemyAttackTarget = null
+    
+    // 多敌人攻击队列
+    this.enemyAttackQueue = []
+    this.currentEnemyIndex = 0
   }
 
   init() {
     console.log('[Battle] 初始化战斗场景')
     console.log('[Battle] party:', this.party)
-    console.log('[Battle] enemy:', this.enemy)
+    console.log('[Battle] enemies:', this.enemies)
     
     // 安全检查：确保 party 存在
     if (!this.party || !Array.isArray(this.party)) {
@@ -70,10 +76,16 @@ export class BattleScene {
       this.party = []
     }
     
-    // 初始化敌人当前HP
-    if (!this.enemy.hp) {
-      this.enemy.hp = this.enemy.maxHp
-    }
+    // 初始化所有敌人的当前HP
+    this.enemies = this.enemies.map(enemy => {
+      if (!enemy.hp) {
+        enemy.hp = enemy.maxHp
+      }
+      return enemy
+    })
+    
+    // 更新主敌人引用
+    this.enemy = this.enemies[0] || {}
     
     // 确保队伍成员有当前HP和MP
     this.party = this.party.map(h => ({
@@ -84,6 +96,7 @@ export class BattleScene {
     }))
     
     console.log('[Battle] 处理后的 party:', this.party)
+    console.log('[Battle] 处理后的 enemies:', this.enemies)
     
     // 初始化角色位置区域
     this.heroAreas = this.party.map((h, i) => ({
@@ -206,7 +219,9 @@ export class BattleScene {
     let damage = Math.floor(hero.atk * skill.power - (target.def || 0) * 0.5)
     damage = Math.max(1, damage + Math.floor(Math.random() * 5) - 2)
 
-    const isCrit = Math.random() < 0.15
+    // 使用角色的暴击率（而不是硬编码 0.15）
+    const heroCritRate = hero.crit || 0
+    const isCrit = Math.random() < heroCritRate
     if (isCrit) {
       damage = Math.floor(damage * 1.5)
       this._addLog(`💥 暴击！`)
@@ -278,6 +293,9 @@ export class BattleScene {
 
     // 敌人回合
     if (this.phase === 'enemy_turn') {
+      // 创建敌人攻击队列（所有存活的敌人）
+      this.enemyAttackQueue = this.enemies.filter(e => e.hp > 0)
+      this.currentEnemyIndex = 0
       setTimeout(() => this._enemyAction(), 800)
       this.phase = 'animating'
     }
@@ -354,12 +372,23 @@ export class BattleScene {
         this.enemyAttackAnim = null
         this.enemyAttackTarget = null
 
-        // 进入下一回合
+        // 检查是否还有敌人需要攻击
+        this.currentEnemyIndex++
+        
+        // 延迟后继续下一个敌人或结束敌人回合
         setTimeout(() => {
           if (this.phase !== 'victory' && this.phase !== 'defeat') {
-            this.turn++
-            this._addLog(`--- 第 ${this.turn} 回合 ---`)
-            this.phase = 'select_hero'
+            if (this.currentEnemyIndex < this.enemyAttackQueue.length) {
+              // 还有敌人需要攻击，继续下一个
+              this._enemyAction()
+            } else {
+              // 所有敌人攻击完毕，进入玩家回合
+              this.enemyAttackQueue = []
+              this.currentEnemyIndex = 0
+              this.turn++
+              this._addLog(`--- 第 ${this.turn} 回合 ---`)
+              this.phase = 'select_hero'
+            }
           }
         }, 300)
       } else {
@@ -394,6 +423,15 @@ export class BattleScene {
 
     let damage = Math.floor(this.enemy.atk * (skill.power || 1.0) - target.def * 0.4)
     damage = Math.max(1, damage + Math.floor(Math.random() * 4) - 1)
+
+    // 敌人暴击判定
+    const enemyCritRate = this.enemy.crit || 0
+    const isCrit = Math.random() < enemyCritRate
+    if (isCrit) {
+      damage = Math.floor(damage * 1.5)
+      this._addLog(`💥 ${this.enemy.name} 暴击！`)
+    }
+
     target.hp = Math.max(0, target.hp - damage)
 
     this.shakeAmount = 8
@@ -406,7 +444,7 @@ export class BattleScene {
       text: `-${damage}`,
       x: targetPos ? targetPos.x : 80 * this.dpr,
       y: targetPos ? targetPos.y - 40 * this.dpr : this.height * 0.5,
-      color: '#ff6b6b',
+      color: isCrit ? '#ff4757' : '#ff6b6b',  // 暴击时使用更亮的红色
       life: 1.5
     })
 
@@ -625,11 +663,29 @@ export class BattleScene {
 
   // ======== 敌人回合 ========
   _enemyAction() {
-    if (this.enemy.hp <= 0) return
-
+    // 如果队列为空或所有敌人已攻击完，结束敌人回合
+    if (this.enemyAttackQueue.length === 0 || this.currentEnemyIndex >= this.enemyAttackQueue.length) {
+      // 所有敌人攻击完毕，进入下一回合
+      this.enemyAttackQueue = []
+      this.currentEnemyIndex = 0
+      this.turn++
+      this.phase = 'player_turn'
+      return
+    }
+    
+    // 获取当前攻击的敌人
+    const currentEnemy = this.enemyAttackQueue[this.currentEnemyIndex]
+    
+    // 更新主敌人引用（用于攻击动画）
+    this.enemy = currentEnemy
+    
     // 选择目标（随机存活角色）
     const alive = this.party.filter(h => h.hp > 0)
-    if (alive.length === 0) return
+    if (alive.length === 0) {
+      // 所有角色死亡，战斗失败
+      this.phase = 'defeat'
+      return
+    }
 
     const target = alive[Math.floor(Math.random() * alive.length)]
 
@@ -643,27 +699,42 @@ export class BattleScene {
       return
     }
     
-    if (this.enemy.hp <= 0) {
+    // 检查是否所有敌人都被击败
+    const aliveEnemies = this.enemies.filter(e => e.hp > 0)
+    
+    if (aliveEnemies.length === 0) {
+      // 所有敌人被击败，战斗胜利
       // 特殊处理：艾米Boss感化剧情
-      if (this.enemy.isAmy) {
+      const amyEnemy = this.enemies.find(e => e.isAmy)
+      if (amyEnemy) {
+        // 标记艾米已被击败
+        this.game.data.set('amyDefeated', true)
+        console.log('[Battle] 艾米被击败，已解锁魔法塔')
+        
         this.phase = 'purify'
         this.purifyStep = 0
         this.purifyTimer = 0
-        this._addLog(`✨ ${this.enemy.name} 被打败了...`)
+        this._addLog(`✨ ${amyEnemy.name} 被打败了...`)
         this._addLog(`一道温暖的光芒涌现...`)
         console.log(`[Battle] 艾米Boss被击败，开始感化剧情`)
         return
       }
       
       this.phase = 'victory'
-      this._addLog(`🎉 ${this.enemy.name} 被击败了！`)
-      this._addLog(`获得 ${this.enemy.exp || 0} 经验，${this.enemy.gold || 0} 金币`)
+      this._addLog(`🎉 所有敌人被击败！`)
+      
+      // 计算总奖励（所有敌人）
+      let totalExp = 0
+      let totalGold = 0
+      for (const enemy of this.enemies) {
+        totalExp += enemy.exp || 0
+        totalGold += enemy.gold || 0
+      }
+      
+      this._addLog(`获得 ${totalExp} 经验，${totalGold} 金币`)
 
       // 给所有参战角色增加经验
-      const expReward = this.enemy.exp || 10
-      const goldReward = this.enemy.gold || 5
-      
-      console.log(`[Battle] 击败 ${this.enemy.name}，获得 ${expReward} 经验，${goldReward} 金币`)
+      console.log(`[Battle] 击败所有敌人，获得 ${totalExp} 经验，${totalGold} 金币`)
       
       // 更新角色状态
       const allChars = charStateManager.getAllCharacters()
@@ -678,7 +749,7 @@ export class BattleScene {
           console.log(`[Battle] ${charState.name} 当前状态: Lv.${charState.level}, EXP:${charState.exp}/${charState.maxExp}`)
           
           // 然后给予经验
-          const levelUpCount = charState.gainExp(expReward)
+          const levelUpCount = charState.gainExp(totalExp)
           if (levelUpCount > 0) {
             this._addLog(`✨ ${charState.name} 升级了！(Lv.${charState.level})`)
           }
@@ -849,19 +920,32 @@ export class BattleScene {
       ctx.fill()
     }
 
-    // 敌人名称
+    // 敌人名称和等级
     ctx.font = `bold ${22 * dpr}px sans-serif`
     ctx.fillStyle = this.enemy.isBoss ? '#ff4757' : '#ffffff'
     ctx.textAlign = 'center'
 
     const title = this.enemy.isBoss ? `👑 ${this.enemy.name}` : this.enemy.name
+    const levelText = `Lv.${this.enemy.level || 1}`
     ctx.fillText(title, ex, ey - 70 * dpr)
+    
+    // 等级显示
+    ctx.font = `${16 * dpr}px sans-serif`
+    ctx.fillStyle = '#f39c12'
+    ctx.fillText(levelText, ex, ey - 50 * dpr)
+    
+    // 暴击率显示（如果有）
+    if (this.enemy.crit && this.enemy.crit > 0) {
+      ctx.font = `${12 * dpr}px sans-serif`
+      ctx.fillStyle = '#ff6b6b'
+      ctx.fillText(`暴击 ${(this.enemy.crit * 100).toFixed(0)}%`, ex, ey - 35 * dpr)
+    }
 
     // 敌人 HP 条背景
     const hpBarW = 160 * dpr
     const hpBarH = 20 * dpr
     const hpBarX = ex - hpBarW / 2
-    const hpBarY = ey - 55 * dpr
+    const hpBarY = ey - 15 * dpr  // 调整到敌人头像上方
 
     // HP 条外框
     ctx.fillStyle = 'rgba(0, 0, 0, 0.5)'

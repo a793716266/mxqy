@@ -36,8 +36,17 @@ export class TownScene {
     const savedEquipData = this.game.data.get('equipmentData')
     equipmentManager.init(savedEquipData)
     
+    // 初始化队伍
+    this.party = charStateManager.getAllCharacters()
+    
     // 装备面板
-    this.equipmentPanel = new EquipmentPanel(game, charStateManager.getAllCharacters()[0])
+    this.equipmentPanel = new EquipmentPanel(game, this.party[0])
+    
+    // 探索菜单
+    this.exploreMenu = null
+    
+    // 测试日志
+    this.testLogs = []
     
     // NPC列表
     this.npcs = this._initNPCs(mapWidth, mapHeight)
@@ -72,7 +81,7 @@ export class TownScene {
         id: 'shop_keeper',
         name: '商店老板',
         x: mapWidth * 0.7,
-        y: mapHeight * 0.3,
+        y: mapHeight * 0.8,
         sprite: '🏪',
         color: '#54a0ff',
         dialogues: [
@@ -97,8 +106,8 @@ export class TownScene {
       {
         id: 'quest_giver',
         name: '冒险者公会',
-        x: mapWidth * 0.5,
-        y: mapHeight * 0.6,
+        x: mapWidth * 0.6,
+        y: mapHeight * 0.8,
         sprite: '📜',
         color: '#ff9f43',
         dialogues: [
@@ -146,6 +155,17 @@ export class TownScene {
   
   update(dt) {
     this.time += dt
+    
+    // 如果探索菜单打开，只处理菜单输入
+    if (this.exploreMenu) {
+      if (this.game.input.taps.length > 0) {
+        const tap = this.game.input.consumeTap()
+        if (tap) {
+          this._handleExploreMenuTap(tap.x, tap.y)
+        }
+      }
+      return
+    }
     
     // 如果装备面板打开，只处理面板输入
     if (this.equipmentPanel.active) {
@@ -255,7 +275,10 @@ export class TownScene {
       if (item.action) {
         switch (item.action) {
           case 'open_explore_menu':
-            this.game.changeScene('field', { area: 'grassland' })
+            this.dialogue = null
+            this.currentDialogueNPC = null
+            // 打开探索菜单
+            this._openExploreMenu()
             return
           case 'save_game':
             this.game.data.save()
@@ -281,6 +304,129 @@ export class TownScene {
     }
   }
   
+  /**
+   * 打开探索菜单
+   */
+  _openExploreMenu() {
+    // 检查解锁条件
+    const partyLevel = Math.max(...this.party.map(char => char.level))
+    const amyDefeated = this.game.data.get('amyDefeated') || false
+    
+    // 探索副本列表
+    const dungeons = [
+      {
+        id: 'grassland',
+        name: '探索阳光草原',
+        desc: '等级 1-3 | 已解锁艾米',
+        area: 'grassland',
+        unlocked: true,
+        color: '#2ecc71'
+      },
+      {
+        id: 'magic_tower',
+        name: '探索魔法塔危机',
+        desc: `等级 4-6 | ${amyDefeated ? '已击败艾米' : '需击败艾米'} ${partyLevel > 3 ? '✓' : `需等级>3 (${partyLevel})`}`,
+        area: 'magic_tower',
+        unlocked: amyDefeated && partyLevel > 3,  // 需要击败艾米且等级>3
+        requirement: `需要：等级>3 且 击败艾米`,
+        color: '#9b59b6'
+      },
+      {
+        id: 'merchant_secret',
+        name: '探索商人的秘密',
+        desc: '等级 7-9 | 未解锁',
+        area: 'merchant_secret',
+        unlocked: false,
+        color: '#f39c12'
+      },
+      {
+        id: 'ancient_guardian',
+        name: '探索古城守护者',
+        desc: '等级 10-12 | 未解锁',
+        area: 'ancient_guardian',
+        unlocked: false,
+        color: '#3498db'
+      },
+      {
+        id: 'void_mist',
+        name: '决战虚无之雾',
+        desc: '最终决战 | 未解锁',
+        area: 'void_mist',
+        unlocked: false,
+        color: '#e74c3c'
+      }
+    ]
+    
+    this.exploreMenu = {
+      dungeons: dungeons,
+      width: Math.min(500 * this.dpr, this.width * 0.9),
+      height: Math.min(500 * this.dpr, this.height * 0.85)  // 增加高度用于测试按钮
+    }
+    
+    console.log('[Town] 打开探索菜单', { partyLevel, amyDefeated })
+  }
+  
+  /**
+   * 处理探索菜单点击
+   */
+  _handleExploreMenuTap(tx, ty) {
+    if (!this.exploreMenu) return
+    
+    const menu = this.exploreMenu
+    const menuX = (this.width - menu.width) / 2
+    const menuY = (this.height - menu.height) / 2
+    const btnW = menu.width - 40 * this.dpr
+    const btnH = 60 * this.dpr
+    const startY = menuY + 60 * this.dpr
+    
+    // 检查关闭按钮
+    const closeBtnX = menuX + menu.width - 50 * this.dpr
+    const closeBtnY = menuY + 15 * this.dpr
+    const closeBtnRadius = 20 * this.dpr
+    const dist = Math.sqrt((tx - closeBtnX - 20 * this.dpr) ** 2 + (ty - closeBtnY - 20 * this.dpr) ** 2)
+    if (dist <= closeBtnRadius) {
+      this.exploreMenu = null
+      return
+    }
+    
+    // 检查测试解锁按钮（底部）
+    const testBtnX = menuX + 20 * this.dpr
+    const testBtnY = menuY + menu.height - 50 * this.dpr
+    const testBtnW = menu.width - 40 * this.dpr
+    const testBtnH = 35 * this.dpr
+    if (this._isInRect(tx, ty, testBtnX, testBtnY, testBtnW, testBtnH)) {
+      // 解锁所有副本并设置艾米已击败
+      this.game.data.set('amyDefeated', true)
+      console.log('[Town] 测试模式：解锁所有副本')
+      this._addLog('[测试] 已解锁所有副本')
+      this.exploreMenu = null
+      this._openExploreMenu()  // 重新打开菜单刷新状态
+      return
+    }
+    
+    // 检查副本按钮
+    for (let i = 0; i < menu.dungeons.length; i++) {
+      const dungeon = menu.dungeons[i]
+      const btnX = menuX + 20 * this.dpr
+      const btnY = startY + i * (btnH + 10 * this.dpr)
+      
+      if (this._isInRect(tx, ty, btnX, btnY, btnW, btnH)) {
+        if (dungeon.unlocked) {
+          console.log(`[Town] 选择副本: ${dungeon.name}`)
+          this.exploreMenu = null
+          this.game.changeScene('field', { area: dungeon.area })
+        } else {
+          console.log(`[Town] 副本未解锁: ${dungeon.name}`)
+          // 显示解锁条件
+          if (dungeon.requirement) {
+            this._addLog(`❌ ${dungeon.requirement}`)
+          }
+        }
+        return
+      }
+    }
+  }
+  
   render(ctx) {
     this._renderBackground(ctx)
     this._renderNPCs(ctx)
@@ -291,7 +437,7 @@ export class TownScene {
     // 渲染摇杆
     this.movement.renderJoystick(ctx)
     
-    if (this.nearbyNPC && !this.dialogue && !this.equipmentPanel.active) {
+    if (this.nearbyNPC && !this.dialogue && !this.equipmentPanel.active && !this.exploreMenu) {
       this._renderInteractionTip(ctx)
     }
     
@@ -301,6 +447,11 @@ export class TownScene {
     
     // 渲染装备面板
     this.equipmentPanel.render(ctx)
+    
+    // 渲染探索菜单
+    if (this.exploreMenu) {
+      this._renderExploreMenu(ctx)
+    }
   }
   
   _renderBackground(ctx) {
@@ -395,6 +546,144 @@ export class TownScene {
     ctx.fillStyle = 'rgba(255, 255, 255, 0.5)'
     ctx.textAlign = 'right'
     ctx.fillText('点击继续', this.width - 30 * this.dpr, y + boxH - 15 * this.dpr)
+  }
+  
+  /**
+   * 渲染探索菜单
+   */
+  _renderExploreMenu(ctx) {
+    const menu = this.exploreMenu
+    if (!menu) return
+    
+    // 半透明背景
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.8)'
+    ctx.fillRect(0, 0, this.width, this.height)
+    
+    // 菜单面板
+    const menuX = (this.width - menu.width) / 2
+    const menuY = (this.height - menu.height) / 2
+    
+    // 面板背景
+    const panelGrad = ctx.createLinearGradient(menuX, menuY, menuX, menuY + menu.height)
+    panelGrad.addColorStop(0, '#2c3e50')
+    panelGrad.addColorStop(1, '#34495e')
+    
+    ctx.fillStyle = panelGrad
+    ctx.beginPath()
+    this._roundRect(ctx, menuX, menuY, menu.width, menu.height, 20 * this.dpr)
+    ctx.fill()
+    
+    ctx.strokeStyle = '#f39c12'
+    ctx.lineWidth = 3 * this.dpr
+    ctx.stroke()
+    
+    // 标题
+    ctx.font = `bold ${24 * this.dpr}px sans-serif`
+    ctx.fillStyle = '#ffffff'
+    ctx.textAlign = 'center'
+    ctx.fillText('选择探索区域', menuX + menu.width / 2, menuY + 40 * this.dpr)
+    
+    // 关闭按钮
+    const closeBtnX = menuX + menu.width - 50 * this.dpr
+    const closeBtnY = menuY + 15 * this.dpr
+    ctx.fillStyle = '#e74c3c'
+    ctx.beginPath()
+    ctx.arc(closeBtnX + 20 * this.dpr, closeBtnY + 20 * this.dpr, 18 * this.dpr, 0, Math.PI * 2)
+    ctx.fill()
+    ctx.font = `bold ${24 * this.dpr}px sans-serif`
+    ctx.fillStyle = '#ffffff'
+    ctx.textAlign = 'center'
+    ctx.fillText('×', closeBtnX + 20 * this.dpr, closeBtnY + 28 * this.dpr)
+    
+    // 副本按钮
+    const btnW = menu.width - 40 * this.dpr
+    const btnH = 60 * this.dpr
+    const startY = menuY + 60 * this.dpr
+    
+    for (let i = 0; i < menu.dungeons.length; i++) {
+      const dungeon = menu.dungeons[i]
+      const btnX = menuX + 20 * this.dpr
+      const btnY = startY + i * (btnH + 10 * this.dpr)
+      
+      // 按钮背景
+      if (dungeon.unlocked) {
+        const btnGrad = ctx.createLinearGradient(btnX, btnY, btnX, btnY + btnH)
+        btnGrad.addColorStop(0, dungeon.color)
+        btnGrad.addColorStop(1, dungeon.color + 'aa')
+        ctx.fillStyle = btnGrad
+      } else {
+        ctx.fillStyle = 'rgba(100, 100, 100, 0.5)'
+      }
+      
+      ctx.beginPath()
+      this._roundRect(ctx, btnX, btnY, btnW, btnH, 10 * this.dpr)
+      ctx.fill()
+      
+      // 边框
+      ctx.strokeStyle = dungeon.unlocked ? dungeon.color : 'rgba(255, 255, 255, 0.2)'
+      ctx.lineWidth = 2 * this.dpr
+      ctx.stroke()
+      
+      // 副本名称
+      ctx.font = `bold ${18 * this.dpr}px sans-serif`
+      ctx.fillStyle = dungeon.unlocked ? '#ffffff' : 'rgba(255, 255, 255, 0.5)'
+      ctx.textAlign = 'left'
+      ctx.fillText(dungeon.name, btnX + 15 * this.dpr, btnY + 25 * this.dpr)
+      
+      // 副本描述
+      ctx.font = `${14 * this.dpr}px sans-serif`
+      ctx.fillStyle = dungeon.unlocked ? 'rgba(255, 255, 255, 0.8)' : 'rgba(255, 255, 255, 0.3)'
+      ctx.fillText(dungeon.desc, btnX + 15 * this.dpr, btnY + 45 * this.dpr)
+      
+      // 锁定图标
+      if (!dungeon.unlocked) {
+        ctx.font = `${24 * this.dpr}px sans-serif`
+        ctx.textAlign = 'right'
+        ctx.fillText('🔒', btnX + btnW - 15 * this.dpr, btnY + 38 * this.dpr)
+      }
+    }
+    
+    // 测试解锁按钮（底部）
+    const testBtnX = menuX + 20 * this.dpr
+    const testBtnY = menuY + menu.height - 50 * this.dpr
+    const testBtnW = menu.width - 40 * this.dpr
+    const testBtnH = 35 * this.dpr
+    
+    ctx.fillStyle = 'rgba(231, 76, 60, 0.8)'
+    ctx.beginPath()
+    this._roundRect(ctx, testBtnX, testBtnY, testBtnW, testBtnH, 8 * this.dpr)
+    ctx.fill()
+    
+    ctx.font = `bold ${14 * this.dpr}px sans-serif`
+    ctx.fillStyle = '#ffffff'
+    ctx.textAlign = 'center'
+    ctx.fillText('🧪 测试：解锁所有副本', testBtnX + testBtnW / 2, testBtnY + testBtnH / 2 + 5 * this.dpr)
+  }
+  
+  /**
+   * 渲染测试日志
+   */
+  _renderTestLogs(ctx) {
+    const logY = 200 * this.dpr
+    ctx.font = `bold ${16 * this.dpr}px sans-serif`
+    ctx.textAlign = 'center'
+    
+    for (let i = 0; i < this.testLogs.length; i++) {
+      const log = this.testLogs[i]
+      const alpha = Math.min(1, log.time)
+      ctx.fillStyle = `rgba(255, 255, 255, ${alpha})`
+      ctx.strokeStyle = `rgba(0, 0, 0, ${alpha * 0.5})`
+      ctx.lineWidth = 2
+      ctx.strokeText(log.text, this.width / 2, logY + i * 25 * this.dpr)
+      ctx.fillText(log.text, this.width / 2, logY + i * 25 * this.dpr)
+    }
+  }
+  
+  /**
+   * 辅助方法：检测点是否在矩形内
+   */
+  _isInRect(px, py, rx, ry, rw, rh) {
+    return px >= rx && px <= rx + rw && py >= ry && py <= ry + rh
   }
   
   _roundRect(ctx, x, y, w, h, r) {

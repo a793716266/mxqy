@@ -221,6 +221,23 @@ export class CharacterStateManager {
         const heroData = HEROES[i]
         const state = new CharacterState(heroData)
         this.characters.set(heroData.id, state)
+        
+        // ========== 测试用：给臻宝添加最佳装备（上线前删除）==========
+        if (heroData.id === 'zhenbao') {
+          // 添加传说级别装备
+          const bestEquipments = [
+            EQUIPMENT_CH1.sunlight_blade,   // 阳光之刃（武器）
+            EQUIPMENT_CH1.sunlight_armor,   // 阳光圣甲（防具）
+            EQUIPMENT_CH1.sunlight_pendant  // 阳光吊坠（饰品）
+          ]
+          
+          for (const equip of bestEquipments) {
+            equipmentManager.equip(state, equip)
+          }
+          
+          console.log(`[CharacterState][测试] ${state.name} 已装备最佳装备`)
+        }
+        // ============================================================
       }
     }
     
