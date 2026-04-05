@@ -958,27 +958,28 @@ export class BattleScene {
     if (this.totalHeroPages <= 1 || this.heroAreas.length === 0) return false
 
     const dpr = this.dpr
-    const btnSize = 40 * dpr
-    const btnRadius = btnSize / 2
+    const btnW = 50 * dpr
+    const btnH = 80 * dpr
 
     const firstArea = this.heroAreas[0]
     const lastArea = this.heroAreas[this.heroAreas.length - 1]
+    const cardCenterY = firstArea.y + firstArea.h / 2
 
-    // 上一页按钮（左侧卡片上方）
+    // 上一页按钮（左侧卡片旁边）
     if (this.heroPage > 0) {
-      const prevBtnX = firstArea.x - btnSize - 5 * dpr + btnRadius
-      const prevBtnY = firstArea.y - 5 * dpr + btnRadius
-      if (this._isInCircle(tx, ty, prevBtnX, prevBtnY, btnRadius)) {
+      const prevBtnX = Math.max(10 * dpr, firstArea.x - btnW - 5 * dpr)
+      const prevBtnY = cardCenterY - btnH / 2
+      if (this._isInRect(tx, ty, prevBtnX, prevBtnY, btnW, btnH)) {
         this._prevHeroPage()
         return true
       }
     }
 
-    // 下一页按钮（右侧卡片上方）
+    // 下一页按钮（右侧卡片旁边）
     if (this.heroPage < this.totalHeroPages - 1) {
-      const nextBtnX = lastArea.x + lastArea.w + 5 * dpr + btnRadius
-      const nextBtnY = firstArea.y - 5 * dpr + btnRadius
-      if (this._isInCircle(tx, ty, nextBtnX, nextBtnY, btnRadius)) {
+      const nextBtnX = Math.min(this.width - btnW - 10 * dpr, lastArea.x + lastArea.w + 5 * dpr)
+      const nextBtnY = cardCenterY - btnH / 2
+      if (this._isInRect(tx, ty, nextBtnX, nextBtnY, btnW, btnH)) {
         this._nextHeroPage()
         return true
       }
@@ -1529,93 +1530,112 @@ export class BattleScene {
    */
   _renderPageButtons(ctx) {
     const dpr = this.dpr
-    const btnSize = 40 * dpr
+    const btnW = 50 * dpr
+    const btnH = 80 * dpr
 
     // 获取角色卡片区域的位置
     if (this.heroAreas.length === 0) return
 
     const firstArea = this.heroAreas[0]
     const lastArea = this.heroAreas[this.heroAreas.length - 1]
+    const cardCenterY = firstArea.y + firstArea.h / 2
     
-    // 页码显示位置（卡片下方）
-    const pageX = this.width / 2
-    const pageY = firstArea.y + firstArea.h + 15 * dpr
+    // 上一页按钮（左侧卡片旁边）
+    if (this.heroPage > 0) {
+      const prevBtnX = Math.max(10 * dpr, firstArea.x - btnW - 5 * dpr)
+      const prevBtnY = cardCenterY - btnH / 2
 
-    // 页码背景
-    ctx.fillStyle = 'rgba(0, 0, 0, 0.6)'
-    const pageText = `${this.heroPage + 1}/${this.totalHeroPages}`
-    ctx.font = `bold ${14 * dpr}px sans-serif`
-    const textWidth = ctx.measureText(pageText).width
-    ctx.fillRect(pageX - textWidth / 2 - 10 * dpr, pageY - 12 * dpr, textWidth + 20 * dpr, 24 * dpr)
+      // 外发光效果
+      ctx.shadowColor = '#ff9f43'
+      ctx.shadowBlur = 20 * dpr
+
+      // 按钮背景 - 使用渐变
+      const grad = ctx.createLinearGradient(prevBtnX, prevBtnY, prevBtnX + btnW, prevBtnY)
+      grad.addColorStop(0, 'rgba(255, 159, 67, 0.9)')
+      grad.addColorStop(1, 'rgba(255, 107, 107, 0.9)')
+      ctx.fillStyle = grad
+      
+      ctx.beginPath()
+      ctx.roundRect(prevBtnX, prevBtnY, btnW, btnH, 8 * dpr)
+      ctx.fill()
+
+      // 重置阴影
+      ctx.shadowColor = 'transparent'
+      ctx.shadowBlur = 0
+
+      // 按钮边框
+      ctx.strokeStyle = '#fff'
+      ctx.lineWidth = 3 * dpr
+      ctx.stroke()
+
+      // 箭头 - 更大更明显
+      ctx.fillStyle = '#fff'
+      ctx.font = `bold ${32 * dpr}px sans-serif`
+      ctx.textAlign = 'center'
+      ctx.textBaseline = 'middle'
+      ctx.fillText('◀', prevBtnX + btnW / 2, prevBtnY + btnH / 2)
+      
+      // "上一页"文字提示
+      ctx.font = `bold ${10 * dpr}px sans-serif`
+      ctx.fillStyle = '#fff'
+      ctx.fillText('上一页', prevBtnX + btnW / 2, prevBtnY + btnH - 12 * dpr)
+    }
+
+    // 下一页按钮（右侧卡片旁边）
+    if (this.heroPage < this.totalHeroPages - 1) {
+      const nextBtnX = Math.min(this.width - btnW - 10 * dpr, lastArea.x + lastArea.w + 5 * dpr)
+      const nextBtnY = cardCenterY - btnH / 2
+
+      // 外发光效果
+      ctx.shadowColor = '#ff9f43'
+      ctx.shadowBlur = 20 * dpr
+
+      // 按钮背景 - 使用渐变
+      const grad = ctx.createLinearGradient(nextBtnX, nextBtnY, nextBtnX + btnW, nextBtnY)
+      grad.addColorStop(0, 'rgba(255, 107, 107, 0.9)')
+      grad.addColorStop(1, 'rgba(255, 159, 67, 0.9)')
+      ctx.fillStyle = grad
+      
+      ctx.beginPath()
+      ctx.roundRect(nextBtnX, nextBtnY, btnW, btnH, 8 * dpr)
+      ctx.fill()
+
+      // 重置阴影
+      ctx.shadowColor = 'transparent'
+      ctx.shadowBlur = 0
+
+      // 按钮边框
+      ctx.strokeStyle = '#fff'
+      ctx.lineWidth = 3 * dpr
+      ctx.stroke()
+
+      // 箭头 - 更大更明显
+      ctx.fillStyle = '#fff'
+      ctx.font = `bold ${32 * dpr}px sans-serif`
+      ctx.textAlign = 'center'
+      ctx.textBaseline = 'middle'
+      ctx.fillText('▶', nextBtnX + btnW / 2, nextBtnY + btnH / 2)
+      
+      // "下一页"文字提示
+      ctx.font = `bold ${10 * dpr}px sans-serif`
+      ctx.fillStyle = '#fff'
+      ctx.fillText('下一页', nextBtnX + btnW / 2, nextBtnY + btnH - 12 * dpr)
+    }
     
-    ctx.fillStyle = '#fff'
+    // 页码显示（卡片区域上方）
+    const pageX = this.width / 2
+    const pageY = firstArea.y - 20 * dpr
+    
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.7)'
+    ctx.font = `bold ${14 * dpr}px sans-serif`
+    const pageText = `第 ${this.heroPage + 1}/${this.totalHeroPages} 页`
+    const textWidth = ctx.measureText(pageText).width
+    ctx.fillRect(pageX - textWidth / 2 - 15 * dpr, pageY - 10 * dpr, textWidth + 30 * dpr, 24 * dpr)
+    
+    ctx.fillStyle = '#ff9f43'
     ctx.textAlign = 'center'
     ctx.textBaseline = 'middle'
-    ctx.fillText(pageText, pageX, pageY)
-
-    // 上一页按钮（左侧，卡片左上方）
-    if (this.heroPage > 0) {
-      const prevBtnX = firstArea.x - btnSize - 5 * dpr
-      const prevBtnY = firstArea.y - 5 * dpr
-
-      // 外发光效果
-      ctx.shadowColor = '#ff9f43'
-      ctx.shadowBlur = 15 * dpr
-
-      // 按钮背景
-      ctx.fillStyle = 'rgba(255, 159, 67, 0.9)'
-      ctx.beginPath()
-      ctx.arc(prevBtnX + btnSize / 2, prevBtnY + btnSize / 2, btnSize / 2, 0, Math.PI * 2)
-      ctx.fill()
-
-      // 重置阴影
-      ctx.shadowColor = 'transparent'
-      ctx.shadowBlur = 0
-
-      // 按钮边框
-      ctx.strokeStyle = '#fff'
-      ctx.lineWidth = 3 * dpr
-      ctx.stroke()
-
-      // 箭头
-      ctx.fillStyle = '#fff'
-      ctx.font = `bold ${22 * dpr}px sans-serif`
-      ctx.textAlign = 'center'
-      ctx.textBaseline = 'middle'
-      ctx.fillText('◀', prevBtnX + btnSize / 2, prevBtnY + btnSize / 2)
-    }
-
-    // 下一页按钮（右侧，卡片右上方）
-    if (this.heroPage < this.totalHeroPages - 1) {
-      const nextBtnX = lastArea.x + lastArea.w + 5 * dpr
-      const nextBtnY = firstArea.y - 5 * dpr
-
-      // 外发光效果
-      ctx.shadowColor = '#ff9f43'
-      ctx.shadowBlur = 15 * dpr
-
-      // 按钮背景
-      ctx.fillStyle = 'rgba(255, 159, 67, 0.9)'
-      ctx.beginPath()
-      ctx.arc(nextBtnX + btnSize / 2, nextBtnY + btnSize / 2, btnSize / 2, 0, Math.PI * 2)
-      ctx.fill()
-
-      // 重置阴影
-      ctx.shadowColor = 'transparent'
-      ctx.shadowBlur = 0
-
-      // 按钮边框
-      ctx.strokeStyle = '#fff'
-      ctx.lineWidth = 3 * dpr
-      ctx.stroke()
-
-      // 箭头
-      ctx.fillStyle = '#fff'
-      ctx.font = `bold ${22 * dpr}px sans-serif`
-      ctx.textAlign = 'center'
-      ctx.textBaseline = 'middle'
-      ctx.fillText('▶', nextBtnX + btnSize / 2, nextBtnY + btnSize / 2)
-    }
+    ctx.fillText(pageText, pageX, pageY + 2 * dpr)
   }
 
   _renderSkillPanel(ctx) {
