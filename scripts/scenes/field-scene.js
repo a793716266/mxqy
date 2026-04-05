@@ -238,7 +238,7 @@ export class FieldScene {
     // 先生成Boss（如果该区域有Boss且未被击败）
     if (this.areaInfo.bossEnemy) {
       const bossId = this.areaInfo.bossEnemy
-      const bossData = ENEMIES_CH1[bossId]
+      const bossData = (this.areaInfo.enemyData || ENEMIES_CH1)[bossId]  // 使用对应章节的敌人数据
       
       // 检查Boss是否已被击败
       const bossFlag = `${this.areaId}_${bossId}_defeated`
@@ -308,7 +308,7 @@ export class FieldScene {
       if (validPosition) {
         // 随机选择敌人类型
         const enemyId = this.areaInfo.enemies[Math.floor(Math.random() * this.areaInfo.enemies.length)]
-        const enemyData = ENEMIES_CH1[enemyId]
+        const enemyData = (this.areaInfo.enemyData || ENEMIES_CH1)[enemyId]  // 使用对应章节的敌人数据
 
         monsters.push({
           id: `monster_${i}`,
@@ -665,7 +665,7 @@ export class FieldScene {
 
       if (validPosition) {
         const enemyId = this.areaInfo.enemies[Math.floor(Math.random() * this.areaInfo.enemies.length)]
-        const enemyData = ENEMIES_CH1[enemyId]
+        const enemyData = (this.areaInfo.enemyData || ENEMIES_CH1)[enemyId]  // 使用对应章节的敌人数据
 
         this.mapMonsters.push({
           id: `monster_${Date.now()}_${i}`,
