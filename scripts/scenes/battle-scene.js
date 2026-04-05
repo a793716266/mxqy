@@ -1340,17 +1340,16 @@ export class BattleScene {
     // 渲染当前页的角色
     for (const area of this.heroAreas) {
       const hero = area.hero
-      
+
       // 安全检查：确保 hero 存在
       if (!hero) {
-        console.error(`[Battle] party[${i}] 不存在`)
+        console.error(`[Battle] hero 不存在`)
         continue
       }
 
       // 跳过正在攻击的角色
       if (this.attackingHero === hero && this.attackAnim) continue
-      
-      const area = this.heroAreas[i]
+
       const x = area.x
       const y = area.y
       const cardW = area.w
