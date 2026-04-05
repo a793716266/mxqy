@@ -141,11 +141,11 @@ export class EquipmentManager {
     if (stats.def) character.def += stats.def
     if (stats.maxHp) {
       character.maxHp += stats.maxHp
-      character.hp = Math.min(character.hp, character.maxHp)
+      character.hp = character.maxHp  // 穿戴装备时回满血
     }
     if (stats.maxMp) {
       character.maxMp += stats.maxMp
-      character.mp = Math.min(character.mp, character.maxMp)
+      character.mp = character.maxMp  // 穿戴装备时回满魔力
     }
     if (stats.spd) character.spd += stats.spd
     if (stats.crit) character.crit = (character.crit || 0) + stats.crit
