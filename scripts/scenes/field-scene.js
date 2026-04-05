@@ -23,6 +23,11 @@ export class FieldScene {
     this.areaId = data?.area || 'grassland'
     this.areaInfo = this._getAreaInfo()
     
+    // 清理旧的临时数据（战斗相关）
+    this.game.data.delete('currentBattleMonsterId')
+    this.game.data.delete('battleVictory')
+    this.game.data.delete('droppedEquipment')
+    
     // 地图尺寸（大地图）
     this.mapWidth = 2000 * this.dpr // 地图宽度
     this.mapHeight = 1500 * this.dpr // 地图高度
@@ -84,9 +89,28 @@ export class FieldScene {
 
     // 地图怪物（尝试恢复保存的状态，每个副本独立保存）
     const savedMonsters = this.game.data.get(`fieldMonsters_${this.areaId}`)
+    console.log(`[Field] 尝试恢复区域 ${this.areaId} 的怪物状态, 已保存: ${!!savedMonsters}`)
+    
     if (savedMonsters && Array.isArray(savedMonsters) && savedMonsters.length > 0) {
-      this.mapMonsters = savedMonsters
-      console.log(`[Field] 恢复了 ${this.mapMonsters.filter(m => m.alive).length} 只怪物`)
+      // 验证怪物数据是否属于当前区域
+      const validMonsters = savedMonsters.filter(m => m.id && m.id.startsWith(`${this.areaId}_`))
+      
+      if (validMonsters.length === savedMonsters.length) {
+        // 所有怪物都属于当前区域
+        this.mapMonsters = savedMonsters
+        const aliveCount = this.mapMonsters.filter(m => m.alive).length
+        const bossCount = this.mapMonsters.filter(m => m.isBoss && m.alive).length
+        console.log(`[Field] 恢复了 ${aliveCount} 只怪物，其中 ${bossCount} 只BOSS`)
+        if (bossCount > 0) {
+          const bossNames = this.mapMonsters.filter(m => m.isBoss && m.alive).map(m => m.name).join(', ')
+          console.log(`[Field] 存活的BOSS: ${bossNames}`)
+        }
+      } else {
+        // 数据不属于当前区域，重新生成
+        console.log(`[Field] 数据不属于当前区域，重新生成怪物`)
+        console.log(`[Field] 预期前缀: ${this.areaId}_, 实际: ${savedMonsters[0]?.id}`)
+        this.mapMonsters = this._generateMonsters()
+      }
     } else {
       this.mapMonsters = this._generateMonsters()
     }
@@ -248,7 +272,7 @@ export class FieldScene {
         const bossY = this.mapHeight * 0.25
         
         monsters.push({
-          id: `boss_${bossId}`,
+          id: `${this.areaId}_boss_${bossId}`,  // 包含区域ID前缀
           enemyId: bossId,
           x: bossX,
           y: bossY,
@@ -311,7 +335,7 @@ export class FieldScene {
         const enemyData = (this.areaInfo.enemyData || ENEMIES_CH1)[enemyId]  // 使用对应章节的敌人数据
 
         monsters.push({
-          id: `monster_${i}`,
+          id: `${this.areaId}_monster_${i}`,  // 包含区域ID前缀
           enemyId: enemyId,
           x: x,
           y: y,
@@ -376,11 +400,16 @@ export class FieldScene {
     const battleVictory = this.game.data.get('battleVictory')
     const droppedEquipment = this.game.data.get('droppedEquipment')
 
+    console.log(`[Field] 检查战斗结果 - 区域: ${this.areaId}, 战斗怪物ID: ${battleMonsterId}, 胜利: ${battleVictory}`)
+    console.log(`[Field] 当前区域怪物数量: ${this.mapMonsters?.length}, 其中存活: ${this.mapMonsters?.filter(m => m.alive).length}`)
+
     if (battleMonsterId) {
       // 找到对应怪物
       const monster = this.mapMonsters.find(m => m.id === battleMonsterId)
 
       if (monster) {
+        console.log(`[Field] 找到战斗怪物 - ID: ${monster.id}, 名称: ${monster.name}, 类型: ${monster.enemyId}, 是否BOSS: ${monster.isBoss}`)
+        
         if (battleVictory) {
           // 战斗胜利，标记怪物死亡
           monster.alive = false
@@ -399,6 +428,9 @@ export class FieldScene {
           // 战斗失败，怪物保持存活
           console.log(`[Field] 战斗失败，怪物 ${monster.name} 仍然存活`)
         }
+      } else {
+        console.error(`[Field] 未找到战斗怪物！ID: ${battleMonsterId}`)
+        console.log(`[Field] 当前所有怪物ID: ${this.mapMonsters.map(m => `${m.id}(${m.name})`).join(', ')}`)
       }
 
       // 清除临时数据
@@ -407,6 +439,7 @@ export class FieldScene {
 
       // 保存怪物状态（每个副本独立保存）
       this.game.data.set(`fieldMonsters_${this.areaId}`, this.mapMonsters)
+      console.log(`[Field] 已保存区域 ${this.areaId} 的怪物状态`)
     }
     
     // 检查是否有新角色加入队伍
@@ -668,7 +701,7 @@ export class FieldScene {
         const enemyData = (this.areaInfo.enemyData || ENEMIES_CH1)[enemyId]  // 使用对应章节的敌人数据
 
         this.mapMonsters.push({
-          id: `monster_${Date.now()}_${i}`,
+          id: `${this.areaId}_monster_${Date.now()}_${i}`,  // 包含区域ID前缀
           enemyId: enemyId,
           x: x,
           y: y,
@@ -952,6 +985,8 @@ export class FieldScene {
     // 标记正在进入战斗，防止重复触发
     if (this.isEnteringBattle) return
     this.isEnteringBattle = true
+    
+    console.log(`[Field] 触发战斗 - 怪物ID: ${monster.id}, 名称: ${monster.name}, 类型: ${monster.enemyId}, 是否BOSS: ${monster.isBoss}`)
     
     const enemyBase = (this.areaInfo.enemyData || ENEMIES_CH1)[monster.enemyId]
     if (!enemyBase) {

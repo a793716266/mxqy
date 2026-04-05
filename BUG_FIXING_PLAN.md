@@ -6,6 +6,126 @@
 
 **提交记录：**
 - 提交ID：TBD
+- 提交信息：refactor: 实现副本怪物数据完全隔离方案
+- 提交时间：2026-04-05 12:55
+
+**问题：打死任意怪物后BOSS消失**
+
+**问题现象：**
+1. 在魔法塔击败普通怪物（幽灵猫、石像守卫）
+2. 战斗胜利后，该区域的BOSS（水晶法师）也消失了
+3. 日志显示战斗怪物ID与被标记死亡的怪物ID不匹配
+
+**根本原因：**
+
+怪物ID生成和存储没有区域隔离：
+```javascript
+// ❌ 旧设计
+// 普通怪物ID：monster_0, monster_1, monster_2...
+// BOSS ID：boss_crystal_mage, boss_lost_healer_cat...
+// 存储key：fieldMonsters_grassland, fieldMonsters_magic_tower...
+
+// 问题：
+// 1. 怪物ID不包含区域标识，容易混淆
+// 2. 虽然存储key不同，但恢复数据时可能错误匹配
+// 3. 战斗结果保存时找不到正确的怪物
+```
+
+**解决方案：完全隔离（方案一）**
+
+所有怪物ID都包含区域前缀，确保数据完全隔离：
+
+```javascript
+// ✅ 新设计
+// 普通怪物ID：${areaId}_monster_${index}
+//   例如：magic_tower_monster_0, grassland_monster_5
+// 
+// BOSS ID：${areaId}_boss_${bossId}
+//   例如：magic_tower_boss_crystal_mage, grassland_boss_lost_healer_cat
+//
+// 补充怪物ID：${areaId}_monster_${timestamp}_${index}
+//   例如：magic_tower_monster_1712345678_0
+
+// 验证逻辑：恢复数据时检查ID前缀
+const validMonsters = savedMonsters.filter(m => 
+  m.id && m.id.startsWith(`${this.areaId}_`)
+)
+```
+
+**实现细节：**
+
+1. **怪物ID生成：**
+   ```javascript
+   // field-scene.js
+   
+   // BOSS
+   id: `${this.areaId}_boss_${bossId}`
+   
+   // 普通怪物
+   id: `${this.areaId}_monster_${i}`
+   
+   // 补充怪物
+   id: `${this.areaId}_monster_${Date.now()}_${i}`
+   ```
+
+2. **数据验证：**
+   ```javascript
+   // 恢复怪物数据时验证区域
+   const validMonsters = savedMonsters.filter(m => 
+     m.id.startsWith(`${this.areaId}_`)
+   )
+   
+   if (validMonsters.length !== savedMonsters.length) {
+     // 数据不匹配，重新生成
+     this.mapMonsters = this._generateMonsters()
+   }
+   ```
+
+3. **清理临时数据：**
+   ```javascript
+   // 进入新副本时清理旧的战斗数据
+   constructor(game, data) {
+     this.areaId = data?.area || 'grassland'
+     
+     // 清理旧的临时数据
+     this.game.data.delete('currentBattleMonsterId')
+     this.game.data.delete('battleVictory')
+     this.game.data.delete('droppedEquipment')
+   }
+   ```
+
+**数据结构示例：**
+
+```
+阳光草原（grassland）：
+├─ 怪物：grassland_monster_0, grassland_monster_1...
+├─ BOSS：grassland_boss_lost_healer_cat
+└─ 存储：fieldMonsters_grassland
+
+魔法塔（magic_tower）：
+├─ 怪物：magic_tower_monster_0, magic_tower_monster_1...
+├─ BOSS：magic_tower_boss_crystal_mage
+└─ 存储：fieldMonsters_magic_tower
+
+迷雾森林（forest）：
+├─ 怪物：forest_monster_0, forest_monster_1...
+├─ BOSS：forest_boss_stray_leader
+└─ 存储：fieldMonsters_forest
+```
+
+**优点：**
+- ✅ 每个副本数据完全隔离
+- ✅ 不会混淆不同区域的怪物
+- ✅ 支持多副本同时保存进度
+- ✅ 易于调试和追踪
+
+**文件修改：**
+- `scripts/scenes/field-scene.js` - 怪物ID生成、数据验证、临时数据清理
+
+---
+
+**提交记录：**
+- 提交ID：218e5d6
 - 提交信息：fix: 修复魔法塔BOSS被击败后其他区域BOSS消失的问题
 - 提交时间：2026-04-05 12:45
 
