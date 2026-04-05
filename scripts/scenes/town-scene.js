@@ -156,6 +156,14 @@ export class TownScene {
   update(dt) {
     this.time += dt
     
+    // 更新测试日志衰减
+    for (let i = this.testLogs.length - 1; i >= 0; i--) {
+      this.testLogs[i].time -= dt
+      if (this.testLogs[i].time <= 0) {
+        this.testLogs.splice(i, 1)
+      }
+    }
+    
     // 如果探索菜单打开，只处理菜单输入
     if (this.exploreMenu) {
       if (this.game.input.taps.length > 0) {
@@ -452,6 +460,9 @@ export class TownScene {
     if (this.exploreMenu) {
       this._renderExploreMenu(ctx)
     }
+    
+    // 渲染测试日志
+    this._renderTestLogs(ctx)
   }
   
   _renderBackground(ctx) {
@@ -676,6 +687,21 @@ export class TownScene {
       ctx.lineWidth = 2
       ctx.strokeText(log.text, this.width / 2, logY + i * 25 * this.dpr)
       ctx.fillText(log.text, this.width / 2, logY + i * 25 * this.dpr)
+    }
+  }
+  
+  /**
+   * 添加测试日志
+   */
+  _addLog(text) {
+    this.testLogs.push({
+      text: text,
+      time: 3.0  // 显示3秒
+    })
+    
+    // 最多保留5条日志
+    if (this.testLogs.length > 5) {
+      this.testLogs.shift()
     }
   }
   
