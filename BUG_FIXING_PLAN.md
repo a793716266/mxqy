@@ -6,6 +6,102 @@
 
 **提交记录：**
 - 提交ID：TBD
+- 提交信息：fix: 修复战斗返回后区域ID错误导致怪物数据丢失的问题
+- 提交时间：2026-04-05 13:05
+
+**问题：战斗后普通怪物死亡，BOSS也消失**
+
+**问题现象：**
+1. 在魔法塔击败普通怪物（幽灵猫）
+2. 战斗胜利返回野外地图
+3. 该区域的BOSS（水晶法师）也消失了
+
+**根本原因：**
+
+发现了两个严重的逻辑错误：
+
+**错误1：构造函数中过早清除数据**
+```javascript
+// ❌ 错误代码
+constructor(game, data) {
+  this.areaId = data?.area || 'grassland'
+  
+  // 清除数据 - 太早了！
+  this.game.data.delete('currentBattleMonsterId')
+  this.game.data.delete('battleVictory')
+  this.game.data.delete('droppedEquipment')
+}
+
+// init() 执行时数据已经被清除
+_checkBattleResult() {
+  const battleMonsterId = this.game.data.get('currentBattleMonsterId')  // undefined!
+  const battleVictory = this.game.data.get('battleVictory')  // undefined!
+}
+```
+
+**错误2：参数名称不匹配**
+```javascript
+// battle-scene.js 返回时
+this.game.changeScene('field', { nodeId: this.nodeId })
+
+// field-scene.js 期望
+this.areaId = data?.area || 'grassland'  // data.area 是 undefined！
+
+// 导致 this.areaId 变成 'grassland'（默认值）
+// 恢复了 grassland 的怪物数据，而不是 magic_tower 的
+```
+
+**修复方案：**
+
+**修复1：移除构造函数中的清除逻辑**
+```javascript
+// ✅ 不在构造函数中清除
+constructor(game, data) {
+  this.areaId = data?.area || data?.nodeId || 'grassland'
+  // 不清除数据
+}
+
+// 在处理完战斗结果后再清除
+_checkBattleResult() {
+  // ... 处理战斗结果 ...
+  
+  // 清除临时数据
+  this.game.data.delete('currentBattleMonsterId')
+  this.game.data.delete('battleVictory')
+  this.game.data.delete('droppedEquipment')
+}
+```
+
+**修复2：兼容两种参数名**
+```javascript
+// ✅ 兼容 nodeId 和 area
+this.areaId = data?.area || data?.nodeId || 'grassland'
+console.log(`[Field] 区域ID: ${this.areaId} (来源: ${data?.area ? 'area' : data?.nodeId ? 'nodeId' : '默认'})`)
+```
+
+**执行流程对比：**
+
+```
+❌ 错误流程：
+战斗结束 → 设置 battleVictory=true
+返回野外 → 构造函数执行 → 清除所有战斗数据
+init() → _checkBattleResult() → 拿到 undefined
+→ 无法找到战斗怪物 → BOSS数据丢失
+
+✅ 正确流程：
+战斗结束 → 设置 battleVictory=true, currentBattleMonsterId
+返回野外 → 构造函数执行 → 不清除数据
+init() → _checkBattleResult() → 拿到正确数据
+→ 找到战斗怪物 → 标记死亡 → 保存状态 → 清除临时数据
+```
+
+**文件修改：**
+- `scripts/scenes/field-scene.js` - 移除构造函数中的清除逻辑，兼容 nodeId 参数
+
+---
+
+**提交记录：**
+- 提交ID：9f212a0
 - 提交信息：refactor: 实现副本怪物数据完全隔离方案
 - 提交时间：2026-04-05 12:55
 

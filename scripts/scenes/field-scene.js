@@ -19,14 +19,10 @@ export class FieldScene {
     this.dpr = game.dpr
     this.time = 0
     
-    // 区域信息
-    this.areaId = data?.area || 'grassland'
+    // 区域信息（兼容 nodeId 和 area 两种参数名）
+    this.areaId = data?.area || data?.nodeId || 'grassland'
+    console.log(`[Field] 区域ID: ${this.areaId} (来源: ${data?.area ? 'area' : data?.nodeId ? 'nodeId' : '默认'})`)
     this.areaInfo = this._getAreaInfo()
-    
-    // 清理旧的临时数据（战斗相关）
-    this.game.data.delete('currentBattleMonsterId')
-    this.game.data.delete('battleVictory')
-    this.game.data.delete('droppedEquipment')
     
     // 地图尺寸（大地图）
     this.mapWidth = 2000 * this.dpr // 地图宽度
