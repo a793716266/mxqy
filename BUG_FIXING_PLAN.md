@@ -5,6 +5,124 @@
 ### 2026-04-05
 
 **提交记录：**
+- 提交ID：085c0a5
+- 提交信息：fix: 修复不同副本怪物状态互相覆盖的问题
+- 提交时间：2026-04-05 11:56
+
+**问题：击败艾米后，去魔法塔副本发现没有Boss**
+
+**问题现象：**
+1. 在阳光草原击败艾米Boss
+2. 离开阳光草原，进入魔法塔副本
+3. 发现魔法塔地图上没有水晶法师Boss
+4. 只有普通怪物，Boss消失了
+
+**根本原因：**
+
+所有副本使用同一个key `fieldMonsters` 保存怪物状态，导致不同副本的怪物数据互相覆盖。
+
+**问题流程分析：**
+
+```
+1. 进入阳光草原
+   └─ 生成怪物（包括艾米Boss）
+   
+2. 击败艾米Boss
+   └─ Boss标记为dead
+   
+3. 离开阳光草原
+   └─ 保存怪物状态到 fieldMonsters
+   └─ 数据：阳光草原的怪物列表（包括死亡的艾米）
+   
+4. 进入魔法塔
+   └─ 读取 fieldMonsters
+   └─ 获得数据：阳光草原的怪物列表
+   └─ 问题：没有魔法塔的水晶法师！
+   
+5. 结果
+   └─ 魔法塔地图上没有Boss
+   └─ 因为读取的是阳光草原的数据
+```
+
+**错误代码：**
+
+```javascript
+// ❌ 错误：所有副本共用一个key
+const savedMonsters = this.game.data.get('fieldMonsters')
+this.game.data.set('fieldMonsters', this.mapMonsters)
+```
+
+**修复方案：**
+
+为每个副本使用独立的保存key，格式为 `fieldMonsters_${areaId}`：
+
+```javascript
+// ✅ 正确：每个副本独立保存
+const savedMonsters = this.game.data.get(`fieldMonsters_${this.areaId}`)
+this.game.data.set(`fieldMonsters_${this.areaId}`, this.mapMonsters)
+```
+
+**保存key示例：**
+
+| 副本 | areaId | 保存key |
+|------|--------|---------|
+| 阳光草原 | grassland | fieldMonsters_grassland |
+| 魔法塔 | magic_tower | fieldMonsters_magic_tower |
+| 迷雾森林 | forest | fieldMonsters_forest |
+| 暗影洞穴 | cave | fieldMonsters_cave |
+
+**修改位置：**
+
+1. **构造函数** - 读取怪物状态
+   ```javascript
+   const savedMonsters = this.game.data.get(`fieldMonsters_${this.areaId}`)
+   ```
+
+2. **_checkBattleResult()** - 战斗后保存
+   ```javascript
+   this.game.data.set(`fieldMonsters_${this.areaId}`, this.mapMonsters)
+   ```
+
+3. **destroy()** - 离开时保存
+   ```javascript
+   this.game.data.set(`fieldMonsters_${this.areaId}`, this.mapMonsters)
+   ```
+
+4. **_respawnMonsters()** - 补充怪物后保存
+   ```javascript
+   this.game.data.set(`fieldMonsters_${this.areaId}`, this.mapMonsters)
+   ```
+
+**修复效果：**
+
+- ✅ 每个副本的怪物状态独立保存
+- ✅ 不会互相覆盖
+- ✅ 击败艾米后，魔法塔的Boss正常存在
+- ✅ 可以在多个副本间自由切换，不会丢失Boss
+
+**设计改进：**
+
+之前的存储设计：
+```
+fieldMonsters → 阳光草原的怪物数据
+             → 魔法塔的怪物数据（覆盖！）
+             → 迷雾森林的怪物数据（覆盖！）
+```
+
+修复后的存储设计：
+```
+fieldMonsters_grassland → 阳光草原的怪物数据
+fieldMonsters_magic_tower → 魔法塔的怪物数据
+fieldMonsters_forest → 迷雾森林的怪物数据
+fieldMonsters_cave → 暗影洞穴的怪物数据
+```
+
+**文件修改：**
+- `scripts/scenes/field-scene.js` - 4处保存/读取逻辑
+
+---
+
+**提交记录：**
 - 提交ID：1b69c08
 - 提交信息：fix: 修复水晶法师等级和解锁安妮功能
 - 提交时间：2026-04-05 11:52
