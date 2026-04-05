@@ -5,6 +5,70 @@
 ### 2026-04-05
 
 **提交记录：**
+- 提交ID：2abfd1b
+- 提交信息：fix: 修复魔法塔敌人数据错误和Boss生成问题
+- 提交时间：2026-04-05 11:48
+
+**问题描述：**
+1. 魔法塔遇怪报错：`[Field] 敌人数据不存在: shadow_mouse`
+2. 魔法塔地图中没有生成Boss（水晶法师）
+
+**根本原因：**
+- 代码硬编码使用 `ENEMIES_CH1` 获取敌人数据
+- 魔法塔危机是第二章副本，应该使用 `ENEMIES_CH2` 的敌人数据
+- Boss生成、普通怪物生成、怪物补充都使用了错误的数据源
+
+**错误代码示例：**
+```javascript
+// ❌ 错误：硬编码使用ENEMIES_CH1
+const bossData = ENEMIES_CH1[bossId]
+const enemyData = ENEMIES_CH1[enemyId]
+```
+
+**修复方案：**
+使用 `this.areaInfo.enemyData` 动态获取对应章节的敌人数据：
+
+```javascript
+// ✅ 正确：使用areaInfo.enemyData
+const bossData = (this.areaInfo.enemyData || ENEMIES_CH1)[bossId]
+const enemyData = (this.areaInfo.enemyData || ENEMIES_CH1)[enemyId]
+```
+
+**修复位置：**
+1. `_generateMonsters()` - Boss生成（第241行）
+2. `_generateMonsters()` - 普通怪物生成（第311行）
+3. `_respawnMonsters()` - 怪物补充（第668行）
+
+**数据配置验证：**
+- 阳光草原：`enemyData: ENEMIES_CH1` ✅
+- 魔法塔危机：`enemyData: ENEMIES_CH2` ✅
+- 迷雾森林：`enemyData: ENEMIES_CH1` ✅
+- 暗影洞穴：`enemyData: ENEMIES_CH1` ✅
+
+**敌人数据对比：**
+```
+ENEMIES_CH1（第一章）：
+- wild_cat, slime_cat, shadow_mouse
+- stray_leader（精英）
+- lost_healer_cat, dark_cat_king（Boss）
+
+ENEMIES_CH2（第二章）：
+- magic_sprite, stone_golem, ghost_cat
+- tower_guardian（精英）
+- crystal_mage（Boss）
+```
+
+**测试验证：**
+- ✅ 魔法塔遇怪正常（魔法精灵、石像守卫、幽灵猫）
+- ✅ 魔法塔Boss正常生成（水晶法师）
+- ✅ 阳光草原等其他副本不受影响
+
+**文件修改：**
+- `scripts/scenes/field-scene.js` - 三处敌人数据获取逻辑
+
+---
+
+**提交记录：**
 - 提交ID：12f1ca4
 - 提交信息：fix: 修复测试解锁副本和新角色跟随问题
 - 提交时间：2026-04-05 11:45
