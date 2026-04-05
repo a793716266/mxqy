@@ -5,6 +5,92 @@
 ### 2026-04-05
 
 **提交记录：**
+- 提交ID：1b69c08
+- 提交信息：fix: 修复水晶法师等级和解锁安妮功能
+- 提交时间：2026-04-05 11:52
+
+**问题1：水晶法师等级太低**
+
+- **问题：** 水晶法师等级只有7级，应该更符合第二章Boss的难度
+- **原因：** 初始配置时等级设置过低
+- **修复：** 将 `crystal_mage` 的 `level` 从 7 改为 15
+
+**问题2：击败水晶法师后没有解锁安妮**
+
+- **问题：** 击败艾米后能解锁艾米，但击败水晶法师后没有解锁安妮
+- **原因：** 缺少安妮Boss的特殊标记和感化逻辑
+
+**修复方案：**
+
+1. **敌人数据配置（enemies.js）**
+   ```javascript
+   crystal_mage: {
+     // ... 其他属性
+     isAnnie: true,  // 特殊标记：这是安妮的Boss形态
+     purifyDialogue: [
+       '水晶之力...原来不只是力量...',
+       '我一直在追求强大的魔法，却忘记了魔法的真谛...',
+       '请让我加入你们，用魔法守护这片大地！'
+     ]
+   }
+   ```
+
+2. **战斗逻辑（battle-scene.js）**
+   
+   **Boss击败触发感化：**
+   ```javascript
+   const annieEnemy = this.enemies.find(e => e.isAnnie)
+   if (annieEnemy) {
+     this.game.data.set('annieDefeated', true)
+     this.phase = 'purify'
+     this.purifyStep = 0
+     this.purifyTimer = 0
+     // ... 触发感化剧情
+   }
+   ```
+   
+   **感化完成解锁角色：**
+   ```javascript
+   if (this.enemy.isAnnie) {
+     const unlocked = charStateManager.unlockCharacter('annie')
+     if (unlocked) {
+       console.log('[Battle] 安妮成功加入队伍！')
+       this._addLog(`✨ 安妮加入了队伍！`)
+     }
+   }
+   ```
+
+3. **感化剧情渲染**
+   - 支持动态显示不同角色的名称和头像
+   - 根据 `isAmy` 和 `isAnnie` 标记切换显示内容
+
+**对比：艾米 vs 安妮**
+
+| Boss | 标记 | 角色ID | 等级 | 章节 |
+|------|------|--------|------|------|
+| 迷途的治愈猫 | isAmy | amy | 8 | 第一章 |
+| 水晶法师 | isAnnie | annie | 15 | 第二章 |
+
+**感化流程对比：**
+1. Boss血量归零 → 触发感化剧情
+2. 感化对话（3段） → 显示角色头像和对话
+3. 点击"继续冒险" → 解锁角色加入队伍
+4. 返回野外场景 → 新角色自动跟随
+
+**测试验证：**
+- ✅ 水晶法师等级显示为15级
+- ✅ 击败水晶法师后进入感化剧情
+- ✅ 感化对话正常显示安妮的台词
+- ✅ 安妮成功解锁并加入队伍
+- ✅ 返回野外后安妮自动跟随
+
+**文件修改：**
+- `scripts/data/enemies.js` - 水晶法师配置
+- `scripts/scenes/battle-scene.js` - 感化和解锁逻辑
+
+---
+
+**提交记录：**
 - 提交ID：2abfd1b
 - 提交信息：fix: 修复魔法塔敌人数据错误和Boss生成问题
 - 提交时间：2026-04-05 11:48
