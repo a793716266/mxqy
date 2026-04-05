@@ -5,7 +5,30 @@
 ### 2026-04-05
 
 **提交记录：**
-- 提交ID：（待提交）
+- 提交ID：787ac1d
+- 提交信息：fix: 修复臻宝默认装备穿戴流程报错问题
+- 提交时间：2026-04-05 11:05
+
+**BUG修复：**
+- **问题：** 穿戴默认装备时报错 `[EquipmentManager] 背包中没有装备: sunlight_blade`
+- **原因：** `equip()` 方法会从背包移除装备，但直接穿戴时装备不在背包
+- **修复：** 优化装备流程，先添加到背包，再穿戴
+  ```javascript
+  // 修改前：直接穿戴（报错）
+  equipmentManager.equip(state, equip)
+  
+  // 修改后：先添加到背包，再穿戴
+  equipmentManager.addItem(equip.id)
+  equipmentManager.equip(state, equip)
+  ```
+
+**文件修改：**
+- `scripts/data/character-state.js` - 优化臻宝默认装备穿戴逻辑
+
+---
+
+**提交记录：**
+- 提交ID：557372c
 - 提交信息：fix: 修复城镇场景测试日志系统缺失问题
 - 提交时间：2026-04-05 11:02
 
