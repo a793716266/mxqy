@@ -98,20 +98,27 @@ export class BattleScene {
     console.log('[Battle] 处理后的 party:', this.party)
     console.log('[Battle] 处理后的 enemies:', this.enemies)
     
-    // 初始化角色位置区域
+    // 初始化角色位置区域（根据队伍人数动态调整布局）
+    const cardHeight = 70 * this.dpr
+    const cardSpacing = 75 * this.dpr
+    const logHeight = 330 * this.dpr
+    const availableHeight = this.height - logHeight - 50 * this.dpr
+    const totalHeight = this.party.length * cardSpacing
+    const startY = Math.max(80 * this.dpr, (availableHeight - totalHeight) / 2 + 80 * this.dpr)
+
     this.heroAreas = this.party.map((h, i) => ({
       hero: h,
-      x: 30 * this.dpr,
-      y: this.height * 0.45 + i * 90 * this.dpr,
-      w: 160 * this.dpr,
-      h: 80 * this.dpr,
+      x: 20 * this.dpr,
+      y: startY + i * cardSpacing,
+      w: 150 * this.dpr,
+      h: cardHeight,
       index: i
     }))
 
     // 初始化角色基础位置（用于攻击动画）
-    this.heroBasePositions = this.party.map((h, i) => ({
-      x: 20 * this.dpr + 8 * this.dpr + 27.5 * this.dpr, // 头像中心
-      y: this.height * 0.42 + i * 95 * this.dpr + 42.5 * this.dpr
+    this.heroBasePositions = this.heroAreas.map((area, i) => ({
+      x: area.x + 6 * this.dpr + 22.5 * this.dpr, // 头像中心
+      y: area.y + area.h / 2
     }))
 
     this._addLog(`第 ${this.turn} 回合开始！`)
@@ -1241,10 +1248,11 @@ export class BattleScene {
       // 跳过正在攻击的角色
       if (this.attackingHero === hero && this.attackAnim) continue
       
-      const x = 20 * dpr
-      const y = this.height * 0.42 + i * 95 * dpr
-      const cardW = 180 * dpr
-      const cardH = 85 * dpr
+      const area = this.heroAreas[i]
+      const x = area.x
+      const y = area.y
+      const cardW = area.w
+      const cardH = area.h
 
       const isActive = (this.phase === 'select_target' || this.phase === 'select_hero') && hero.hp > 0
       const isDead = hero.hp <= 0
@@ -1292,16 +1300,16 @@ export class BattleScene {
       // 角色立绘
       const heroImgKey = this._getHeroImageKey(hero.id)
       const heroImg = this.game.assets.get(heroImgKey)
-      const avatarSize = 55 * dpr
-      const avatarX = x + 8 * dpr
+      const avatarSize = 45 * dpr  // 缩小头像
+      const avatarX = x + 6 * dpr
       const avatarY = y + (cardH - avatarSize) / 2
 
       // 头像背景
       ctx.fillStyle = isDead ? 'rgba(0, 0, 0, 0.5)' : 'rgba(255, 255, 255, 0.1)'
       ctx.beginPath()
-      ctx.arc(avatarX + avatarSize / 2, avatarY + avatarSize / 2, avatarSize / 2 + 3 * dpr, 0, Math.PI * 2)
+      ctx.arc(avatarX + avatarSize / 2, avatarY + avatarSize / 2, avatarSize / 2 + 2 * dpr, 0, Math.PI * 2)
       ctx.fill()
-      
+
       if (heroImg) {
         ctx.save()
         ctx.beginPath()
@@ -1309,43 +1317,43 @@ export class BattleScene {
         ctx.clip()
         ctx.drawImage(heroImg, avatarX, avatarY, avatarSize, avatarSize)
         ctx.restore()
-        
+
         // 头像边框
         ctx.strokeStyle = isActive ? '#ff9f43' : 'rgba(255, 255, 255, 0.3)'
-        ctx.lineWidth = 2 * dpr
+        ctx.lineWidth = 1.5 * dpr
         ctx.beginPath()
         ctx.arc(avatarX + avatarSize / 2, avatarY + avatarSize / 2, avatarSize / 2, 0, Math.PI * 2)
         ctx.stroke()
       } else {
         // 备用：职业图标
-        ctx.font = `${28 * dpr}px sans-serif`
+        ctx.font = `${24 * dpr}px sans-serif`
         ctx.textAlign = 'center'
         ctx.textBaseline = 'middle'
         ctx.fillText(hero.role === 'warrior' ? '⚔️' : '🔮', avatarX + avatarSize / 2, avatarY + avatarSize / 2)
       }
 
       // 角色名字和等级
-      ctx.font = `bold ${16 * dpr}px sans-serif`
+      ctx.font = `bold ${14 * dpr}px sans-serif`
       ctx.fillStyle = isDead ? '#666' : '#fff'
       ctx.textAlign = 'left'
       ctx.textBaseline = 'alphabetic'
       const nameText = hero.name
       const levelText = hero.level ? ` Lv.${hero.level}` : ''
-      ctx.fillText(nameText + levelText, avatarX + avatarSize + 10 * dpr, y + 22 * dpr)
+      ctx.fillText(nameText + levelText, avatarX + avatarSize + 8 * dpr, y + 18 * dpr)
 
       // 职业
-      ctx.font = `${11 * dpr}px sans-serif`
+      ctx.font = `${10 * dpr}px sans-serif`
       ctx.fillStyle = isDead ? '#444' : 'rgba(255, 255, 255, 0.6)'
-      ctx.fillText(this._roleLabel(hero.role), avatarX + avatarSize + 10 * dpr, y + 38 * dpr)
+      ctx.fillText(this._roleLabel(hero.role), avatarX + avatarSize + 8 * dpr, y + 31 * dpr)
 
       // HP 条
-      const barX = avatarX + avatarSize + 8 * dpr
-      const barW = cardW - avatarSize - 24 * dpr
-      this._drawBar(ctx, barX, y + 48 * dpr, barW, 14 * dpr,
+      const barX = avatarX + avatarSize + 6 * dpr
+      const barW = cardW - avatarSize - 20 * dpr
+      this._drawBar(ctx, barX, y + 40 * dpr, barW, 12 * dpr,
         hero.hp / hero.maxHp, '#ff6b6b', `HP ${hero.hp}/${hero.maxHp}`)
 
       // MP 条
-      this._drawBar(ctx, barX, y + 66 * dpr, barW, 14 * dpr,
+      this._drawBar(ctx, barX, y + 55 * dpr, barW, 12 * dpr,
         hero.mp / hero.maxMp, '#4ecdc4', `MP ${hero.mp}/${hero.maxMp}`)
     }
   }
