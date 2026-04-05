@@ -121,7 +121,8 @@ export class CharacterState {
     console.log(`${this.name} 升级到 Lv.${this.level}!`)
     
     // 重新应用装备属性（因为基础属性改变了）
-    // 注意：这里需要在外部调用 equipmentManager.recalculateEquipmentStats(this)
+    equipmentManager.recalculateEquipmentStats(this)
+    console.log(`[CharacterState] 重新应用装备属性`)
   }
   
   /**
