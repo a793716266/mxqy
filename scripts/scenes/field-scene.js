@@ -795,8 +795,8 @@ export class FieldScene {
       }
     }
     
-    // 返回按钮
-    const backBtn = { x: this.width - 50 * this.dpr, y: 20 * this.dpr, w: 40 * this.dpr, h: 40 * this.dpr }
+    // 返回按钮（左上角）
+    const backBtn = { x: 20 * this.dpr, y: 20 * this.dpr, w: 90 * this.dpr, h: 40 * this.dpr }
     if (tap.x >= backBtn.x && tap.x <= backBtn.x + backBtn.w &&
         tap.y >= backBtn.y && tap.y <= backBtn.y + backBtn.h) {
       this.game.changeScene('town')
@@ -1027,11 +1027,29 @@ export class FieldScene {
     // 摇杆
     this._renderJoystick(ctx)
     
-    // 返回按钮
-    ctx.font = `${24 * this.dpr}px sans-serif`
-    ctx.fillStyle = '#ffffff'
-    ctx.textAlign = 'right'
-    ctx.fillText('✕', this.width - 20 * this.dpr, 50 * this.dpr)
+    // 返回按钮（左上角）
+    const backBtnX = 20 * this.dpr
+    const backBtnY = 20 * this.dpr
+    const backBtnW = 90 * this.dpr
+    const backBtnH = 40 * this.dpr
+    
+    // 按钮背景
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.9)'
+    ctx.beginPath()
+    this._roundRect(ctx, backBtnX, backBtnY, backBtnW, backBtnH, 8 * this.dpr)
+    ctx.fill()
+    
+    // 按钮边框
+    ctx.strokeStyle = 'rgba(100, 149, 237, 0.8)'
+    ctx.lineWidth = 2 * this.dpr
+    ctx.stroke()
+    
+    // 按钮文字
+    ctx.font = `bold ${16 * this.dpr}px sans-serif`
+    ctx.fillStyle = '#333333'
+    ctx.textAlign = 'center'
+    ctx.textBaseline = 'middle'
+    ctx.fillText('🏠 城镇', backBtnX + backBtnW / 2, backBtnY + backBtnH / 2)
     
     // 角色信息卡片（左上角，顶部UI下方）
     if (this.charInfoPanel && this.mainCharacter) {
