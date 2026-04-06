@@ -112,9 +112,12 @@ export class BattleScene {
 
     // 初始化角色基础位置（用于攻击动画）- 包含所有角色的位置
     this._initAllHeroPositions()
+    
+    // 初始化所有敌人的位置
+    this._initEnemyPositions()
 
     this._addLog(`第 ${this.turn} 回合开始！`)
-    this._addLog(`野生的 ${this.enemy.name} 出现了！`)
+    this._addLog(`野生的 ${this.enemies.map(e => e.name).join('、')} 出现了！`)
 
     // 1.5秒后进入玩家回合
     setTimeout(() => {
@@ -200,6 +203,37 @@ export class BattleScene {
   }
 
   /**
+   * 初始化所有敌人的位置（横向排列）
+   */
+  _initEnemyPositions() {
+    const enemyCount = this.enemies.length
+    if (enemyCount === 0) {
+      this.enemyPositions = []
+      return
+    }
+
+    const dpr = this.dpr
+    const enemySpacing = 140 * dpr  // 敌人之间的间距
+    const enemySize = 110 * dpr     // 每个敌人的占用空间
+
+    // 计算所有敌人的总宽度
+    const totalWidth = (enemyCount - 1) * enemySpacing + enemySize
+
+    // 起始位置（居中）
+    const startX = this.width * 0.7 - totalWidth / 2
+
+    // 为每个敌人计算位置
+    this.enemyPositions = this.enemies.map((enemy, index) => {
+      return {
+        x: startX + index * enemySpacing,
+        y: this.height * 0.28
+      }
+    })
+
+    console.log(`[Battle] 初始化 ${enemyCount} 个敌人的位置`)
+  }
+
+  /**
    * 翻页
    */
   _prevHeroPage() {
@@ -235,8 +269,13 @@ export class BattleScene {
     if (heroIndex === -1 || !this.heroBasePositions[heroIndex]) return
 
     const basePos = this.heroBasePositions[heroIndex]
-    const targetX = this.enemyBaseX - 60 * this.dpr // 攻击位置（敌人左侧）
-    const targetY = this.enemyBaseY
+
+    // 获取目标敌人的位置
+    const targetEnemyIndex = this.enemies.indexOf(target)
+    const targetEnemyPos = this.enemyPositions[targetEnemyIndex] || { x: this.enemyBaseX, y: this.enemyBaseY }
+
+    const targetX = targetEnemyPos.x - 60 * this.dpr // 攻击位置（敌人左侧）
+    const targetY = targetEnemyPos.y
 
     this.attackingHero = hero
     this.attackAnimSkill = skill  // 保存技能引用
@@ -325,13 +364,17 @@ export class BattleScene {
 
     target.hp = Math.max(0, target.hp - damage)
 
+    // 获取目标敌人的位置
+    const targetEnemyIndex = this.enemies.indexOf(target)
+    const targetEnemyPos = this.enemyPositions[targetEnemyIndex] || { x: this.enemyBaseX, y: this.enemyBaseY }
+
     // 动画效果
     this.shakeAmount = 12
     this.flashAlpha = 0.6
     this.damageTexts.push({
       text: `-${damage}`,
-      x: this.enemyBaseX,
-      y: this.enemyBaseY - 50 * this.dpr,
+      x: targetEnemyPos.x,
+      y: targetEnemyPos.y - 50 * this.dpr,
       color: isCrit ? '#ff4757' : '#ffffff',
       life: 1.5
     })
@@ -419,17 +462,22 @@ export class BattleScene {
 
     const targetPos = this.heroBasePositions[targetIndex]
 
+    // 获取当前攻击敌人的位置
+    const enemyIndex = this.enemies.indexOf(this.enemy)
+    const enemyPos = this.enemyPositions[enemyIndex] || { x: this.enemyBaseX, y: this.enemyBaseY }
+
     this.enemyAttacking = true
     this.enemyAttackTarget = target
     this.enemyAttackAnim = {
       phase: 'jump',
       progress: 0,
-      baseX: this.enemyBaseX,
-      baseY: this.enemyBaseY,
+      baseX: enemyPos.x,
+      baseY: enemyPos.y,
       targetX: targetPos.x + 40 * this.dpr, // 攻击位置（角色右侧）
       targetY: targetPos.y,
-      currentX: this.enemyBaseX,
-      currentY: this.enemyBaseY
+      currentX: enemyPos.x,
+      currentY: enemyPos.y,
+      enemy: this.enemy  // 保存当前攻击的敌人
     }
   }
 
@@ -506,15 +554,19 @@ export class BattleScene {
     if (skill.type === 'heal_self') {
       const healAmount = skill.healAmount || 30
       this.enemy.hp = Math.min(this.enemy.maxHp, this.enemy.hp + healAmount)
-      
+
+      // 获取当前敌人的位置
+      const enemyIndex = this.enemies.indexOf(this.enemy)
+      const enemyPos = this.enemyPositions[enemyIndex] || { x: this.enemyBaseX, y: this.enemyBaseY }
+
       this.damageTexts.push({
         text: `+${healAmount}`,
-        x: this.enemyBaseX,
-        y: this.enemyBaseY - 50 * this.dpr,
+        x: enemyPos.x,
+        y: enemyPos.y - 50 * this.dpr,
         color: '#2ed573',
         life: 1.5
       })
-      
+
       this._addLog(`${this.enemy.name} 使用「${skill.name}」！`)
       this._addLog(`恢复了 ${healAmount} 点生命！`)
       return
@@ -1106,62 +1158,73 @@ export class BattleScene {
 
   _renderEnemy(ctx) {
     const dpr = this.dpr
-    const ex = this.enemyBaseX
-    const ey = this.enemyBaseY
 
-    // 敌人光环效果
-    if (this.enemy.isBoss) {
-      const glowSize = 80 * dpr + Math.sin(this.time * 2) * 5 * dpr
-      ctx.fillStyle = 'rgba(255, 71, 87, 0.15)'
+    // 渲染所有敌人
+    if (!this.enemyPositions || this.enemyPositions.length === 0) {
+      return
+    }
+
+    this.enemies.forEach((enemy, index) => {
+      const pos = this.enemyPositions[index]
+      if (!pos || enemy.hp <= 0) return  // 跳过死亡敌人
+
+      const ex = pos.x
+      const ey = pos.y
+
+      // 敌人光环效果
+      if (enemy.isBoss) {
+        const glowSize = 80 * dpr + Math.sin(this.time * 2) * 5 * dpr
+        ctx.fillStyle = 'rgba(255, 71, 87, 0.15)'
+        ctx.beginPath()
+        ctx.arc(ex, ey, glowSize, 0, Math.PI * 2)
+        ctx.fill()
+      }
+
+      // 敌人名称和等级
+      ctx.font = `bold ${22 * dpr}px sans-serif`
+      ctx.fillStyle = enemy.isBoss ? '#ff4757' : '#ffffff'
+      ctx.textAlign = 'center'
+
+      const title = enemy.isBoss ? `👑 ${enemy.name}` : enemy.name
+      const levelText = `Lv.${enemy.level || 1}`
+      ctx.fillText(title, ex, ey - 70 * dpr)
+
+      // 等级显示
+      ctx.font = `${16 * dpr}px sans-serif`
+      ctx.fillStyle = '#f39c12'
+      ctx.fillText(levelText, ex, ey - 50 * dpr)
+
+      // 暴击率显示（如果有）
+      if (enemy.crit && enemy.crit > 0) {
+        ctx.font = `${12 * dpr}px sans-serif`
+        ctx.fillStyle = '#ff6b6b'
+        ctx.fillText(`暴击 ${(enemy.crit * 100).toFixed(0)}%`, ex, ey - 35 * dpr)
+      }
+
+      // 敌人 HP 条背景
+      const hpBarW = 160 * dpr
+      const hpBarH = 20 * dpr
+      const hpBarX = ex - hpBarW / 2
+      const hpBarY = ey - 15 * dpr  // 调整到敌人头像上方
+
+      // HP 条外框
+      ctx.fillStyle = 'rgba(0, 0, 0, 0.5)'
       ctx.beginPath()
-      ctx.arc(ex, ey, glowSize, 0, Math.PI * 2)
+      this._roundRect(ctx, hpBarX - 3 * dpr, hpBarY - 3 * dpr, hpBarW + 6 * dpr, hpBarH + 6 * dpr, 12 * dpr)
       ctx.fill()
-    }
 
-    // 敌人名称和等级
-    ctx.font = `bold ${22 * dpr}px sans-serif`
-    ctx.fillStyle = this.enemy.isBoss ? '#ff4757' : '#ffffff'
-    ctx.textAlign = 'center'
+      // HP 条
+      this._drawBar(ctx, hpBarX, hpBarY, hpBarW, hpBarH,
+        enemy.hp / enemy.maxHp,
+        enemy.isBoss ? '#ff4757' : '#ff6b6b',
+        `${enemy.hp}/${enemy.maxHp}`)
 
-    const title = this.enemy.isBoss ? `👑 ${this.enemy.name}` : this.enemy.name
-    const levelText = `Lv.${this.enemy.level || 1}`
-    ctx.fillText(title, ex, ey - 70 * dpr)
-    
-    // 等级显示
-    ctx.font = `${16 * dpr}px sans-serif`
-    ctx.fillStyle = '#f39c12'
-    ctx.fillText(levelText, ex, ey - 50 * dpr)
-    
-    // 暴击率显示（如果有）
-    if (this.enemy.crit && this.enemy.crit > 0) {
-      ctx.font = `${12 * dpr}px sans-serif`
-      ctx.fillStyle = '#ff6b6b'
-      ctx.fillText(`暴击 ${(this.enemy.crit * 100).toFixed(0)}%`, ex, ey - 35 * dpr)
-    }
-
-    // 敌人 HP 条背景
-    const hpBarW = 160 * dpr
-    const hpBarH = 20 * dpr
-    const hpBarX = ex - hpBarW / 2
-    const hpBarY = ey - 15 * dpr  // 调整到敌人头像上方
-
-    // HP 条外框
-    ctx.fillStyle = 'rgba(0, 0, 0, 0.5)'
-    ctx.beginPath()
-    this._roundRect(ctx, hpBarX - 3 * dpr, hpBarY - 3 * dpr, hpBarW + 6 * dpr, hpBarH + 6 * dpr, 12 * dpr)
-    ctx.fill()
-
-    // HP 条
-    this._drawBar(ctx, hpBarX, hpBarY, hpBarW, hpBarH,
-      this.enemy.hp / this.enemy.maxHp, 
-      this.enemy.isBoss ? '#ff4757' : '#ff6b6b', 
-      `${this.enemy.hp}/${this.enemy.maxHp}`)
-
-    // 敌人形象
-    this._drawEnemySprite(ctx, ex, ey)
+      // 敌人形象
+      this._drawEnemySprite(ctx, ex, ey, enemy)
+    })
   }
 
-  _drawEnemySprite(ctx, x, y) {
+  _drawEnemySprite(ctx, x, y, enemy) {
     const dpr = this.dpr
     const size = 55 * dpr
     const bounce = Math.sin(this.time * 2) * 3 * dpr // 呼吸动画
@@ -1176,8 +1239,8 @@ export class BattleScene {
     ctx.fill()
 
     // 身体颜色
-    const bodyColor = this.enemy.isBoss ? '#ff4757' : 
-                      this.enemy.isElite ? '#a55eea' : '#7c5ce0'
+    const bodyColor = enemy.isBoss ? '#ff4757' : 
+                      enemy.isElite ? '#a55eea' : '#7c5ce0'
 
     // 身体渐变
     const bodyGrad = ctx.createRadialGradient(-size * 0.2, -size * 0.2, 0, 0, 0, size * 0.7)
@@ -1277,7 +1340,7 @@ export class BattleScene {
     ctx.stroke()
 
     // Boss 特效：角
-    if (this.enemy.isBoss) {
+    if (enemy.isBoss) {
       ctx.fillStyle = '#2d3436'
       ctx.beginPath()
       ctx.moveTo(-size * 0.3, -size * 0.35)
@@ -1377,13 +1440,14 @@ export class BattleScene {
 
     const anim = this.enemyAttackAnim
     const dpr = this.dpr
+    const attackingEnemy = anim.enemy || this.enemy  // 使用动画中的敌人或主敌人
 
     // 攻击状态特效
     if (anim.phase === 'jump') {
       ctx.globalAlpha = 0.3
       ctx.beginPath()
       ctx.arc(anim.baseX, anim.baseY, 50 * dpr, 0, Math.PI * 2)
-      ctx.fillStyle = this.enemy.isBoss ? 'rgba(255, 71, 87, 0.3)' : 'rgba(124, 92, 224, 0.3)'
+      ctx.fillStyle = attackingEnemy.isBoss ? 'rgba(255, 71, 87, 0.3)' : 'rgba(124, 92, 224, 0.3)'
       ctx.fill()
       ctx.globalAlpha = 1
     } else if (anim.phase === 'hit') {
@@ -1403,14 +1467,14 @@ export class BattleScene {
     }
 
     // 调用敌人绘制
-    this._drawEnemySprite(ctx, 0, 0)
+    this._drawEnemySprite(ctx, 0, 0, attackingEnemy)
 
     ctx.restore()
 
     // 攻击特效
     if (anim.phase === 'hit') {
       const impactSize = 45 * dpr + Math.sin(this.time * 10) * 10 * dpr
-      ctx.strokeStyle = this.enemy.isBoss ? 'rgba(255, 71, 87, 0.8)' : 'rgba(124, 92, 224, 0.8)'
+      ctx.strokeStyle = attackingEnemy.isBoss ? 'rgba(255, 71, 87, 0.8)' : 'rgba(124, 92, 224, 0.8)'
       ctx.lineWidth = 3 * dpr
       ctx.beginPath()
       ctx.arc(anim.currentX - 30 * dpr, anim.currentY, impactSize, 0, Math.PI * 2)

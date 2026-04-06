@@ -2,10 +2,138 @@
 
 ## 📅 更新日志
 
-### 2026-04-05
+### 2026-04-06
 
 **提交记录：**
 - 提交ID：TBD
+- 提交信息：feat: 实现多敌人横向排列显示和独立位置系统
+- 提交时间：2026-04-06 22:30
+
+**问题：多个怪物重叠显示**
+
+**问题现象：**
+1. 遭遇多个怪物时（如3个魔法精灵）
+2. 所有怪物重叠在一起显示
+3. 看不出有多少个敌人
+4. 无法区分不同敌人的状态
+
+**根本原因：**
+
+战斗场景只渲染了第一个敌人，所有敌人使用相同的位置：
+
+```javascript
+// ❌ 旧代码：只渲染主敌人
+_renderEnemy(ctx) {
+  const ex = this.enemyBaseX  // 固定位置
+  const ey = this.enemyBaseY
+  
+  // 只绘制 this.enemy（第一个敌人）
+  this._drawEnemySprite(ctx, ex, ey)
+}
+
+// 问题：
+// 1. 只有一个位置（enemyBaseX, enemyBaseY）
+// 2. 只渲染 this.enemy（第一个敌人）
+// 3. 其他敌人被忽略
+```
+
+**解决方案：实现多敌人横向排列**
+
+**1. 初始化所有敌人的位置**
+```javascript
+_initEnemyPositions() {
+  const enemyCount = this.enemies.length
+  const enemySpacing = 140 * dpr  // 敌人之间的间距
+
+  // 计算总宽度并居中
+  const totalWidth = (enemyCount - 1) * enemySpacing + enemySize
+  const startX = this.width * 0.7 - totalWidth / 2
+
+  // 为每个敌人计算位置
+  this.enemyPositions = this.enemies.map((enemy, index) => {
+    return {
+      x: startX + index * enemySpacing,
+      y: this.height * 0.28
+    }
+  })
+}
+```
+
+**2. 渲染所有敌人**
+```javascript
+_renderEnemy(ctx) {
+  // 渲染所有敌人
+  this.enemies.forEach((enemy, index) => {
+    const pos = this.enemyPositions[index]
+    if (!pos || enemy.hp <= 0) return  // 跳过死亡敌人
+
+    // 绘制敌人形象、名称、HP条等
+    this._drawEnemySprite(ctx, pos.x, pos.y, enemy)
+  })
+}
+```
+
+**3. 更新攻击动画位置**
+```javascript
+// 角色攻击敌人
+_startAttackAnimation(hero, skill, target) {
+  const targetEnemyIndex = this.enemies.indexOf(target)
+  const targetEnemyPos = this.enemyPositions[targetEnemyIndex]
+
+  const targetX = targetEnemyPos.x - 60 * dpr
+  const targetY = targetEnemyPos.y
+}
+
+// 敌人攻击角色
+_startEnemyAttackAnimation(target) {
+  const enemyIndex = this.enemies.indexOf(this.enemy)
+  const enemyPos = this.enemyPositions[enemyIndex]
+
+  this.enemyAttackAnim = {
+    baseX: enemyPos.x,
+    baseY: enemyPos.y,
+    enemy: this.enemy  // 保存攻击敌人
+  }
+}
+```
+
+**4. 更新伤害数字位置**
+```javascript
+// 伤害数字显示在对应敌人上方
+this.damageTexts.push({
+  text: `-${damage}`,
+  x: targetEnemyPos.x,
+  y: targetEnemyPos.y - 50 * dpr
+})
+```
+
+**显示效果：**
+
+```
+单个敌人：
+        👹 BOSS名称
+      [====HP====]
+         敌人形象
+
+多个敌人（横向排列）：
+    👹 敌人1    👹 敌人2    👹 敌人3
+  [==HP==]   [==HP==]   [==HP==]
+   敌人形象    敌人形象    敌人形象
+```
+
+**优点：**
+- ✅ 多个敌人清晰可见
+- ✅ 每个敌人独立显示HP和状态
+- ✅ 攻击动画针对正确的敌人
+- ✅ 伤害数字显示在对应敌人上方
+
+**文件修改：**
+- `scripts/scenes/battle-scene.js` - 新增_initEnemyPositions()，更新渲染和动画逻辑
+
+---
+
+**提交记录：**
+- 提交ID：8b09588
 - 提交信息：fix: 修复感化剧情后BOSS消失和怪物状态丢失的问题
 - 提交时间：2026-04-05 13:10
 
