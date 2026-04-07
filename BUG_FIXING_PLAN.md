@@ -2,6 +2,66 @@
 
 ## 📅 更新日志
 
+### 2026-04-08
+
+**提交记录：**
+- 提交ID：61a2a02
+- 提交信息：fix: 修复雷击术全体攻击和特效问题
+- 提交时间：2026-04-08 00:25
+
+**问题：雷击术未对所有敌人造成伤害**
+
+**问题现象：**
+1. 李小宝的雷击术技能配置为全体攻击（target: 'all'）
+2. 但实际只对一个目标造成伤害
+3. 其他敌人未受到伤害
+
+**根本原因：**
+
+`_executeRangedAttack` 方法只处理单体攻击，未实现全体攻击逻辑：
+
+```javascript
+// ❌ 旧代码：只攻击一个目标
+_executeRangedAttack(hero, skill, target, heroPos) {
+  // 只对 target 造成伤害
+  this._applyMagicDamage(hero, skill, target, targetEnemyPos)
+}
+```
+
+**解决方案：**
+
+**1. 添加全体攻击判断**
+```javascript
+// ✅ 新代码：支持全体攻击
+if (skill.target === 'all') {
+  // 对所有存活的敌人造成伤害
+  const aliveEnemies = this.enemies.filter(e => e.hp > 0)
+  aliveEnemies.forEach((enemy, index) => {
+    // 每个敌人间隔200ms播放击中特效
+    setTimeout(() => {
+      this._playHitEffect(hero, skill, enemyPos)
+      this._applyMagicDamage(hero, skill, enemy, enemyPos)
+    }, index * 200)
+  })
+}
+```
+
+**2. 更新雷击术特效资源**
+- 施法特效：30帧（1.5秒）
+- 击中特效：23帧（1.5秒，去除绿色背景）
+- 缩放比例：0.8（更合适的大小）
+
+**3. 优化视觉效果**
+- 全体攻击时，每个敌人的击中特效错开200ms播放
+- 更流畅的动画表现
+
+**修复效果：**
+- ✅ 雷击术现在会对所有敌人造成伤害
+- ✅ 特效资源更新，视觉效果更好
+- ✅ 特效大小更合适
+
+---
+
 ### 2026-04-06
 
 **提交记录：**
