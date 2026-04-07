@@ -163,18 +163,41 @@ export class FieldMovement {
 
     // 动画帧更新
     this.animTimer += dt
-    const currentFrameDuration = this.isMoving ? this.frameDuration : this.frameDuration * 3
 
-    if (this.animTimer >= currentFrameDuration) {
-      this.animTimer = 0
+    // 根据主角类型确定帧率和帧数（1秒循环）
+    const heroId = this.mainCharacter?.id || 'zhenbao'
+    const isCat = heroId.toLowerCase().includes('cat') || heroId === 'mao'
 
-      if (this.isMoving) {
-        // 走路动画：8帧
-        this.animFrame = (this.animFrame + 1) % 8
+    let frameDuration, totalFrames
+    if (this.isMoving) {
+      // 走路动画
+      if (heroId === 'zhenbao') {
+        frameDuration = 0.053 // 臻宝19帧，53ms/帧 ≈ 1秒循环
+        totalFrames = 19
+      } else if (isCat) {
+        frameDuration = 0.042 // 猫咪24帧，42ms/帧 ≈ 1秒循环
+        totalFrames = 24
       } else {
-        // 待机动画：2帧循环
-        this.animFrame = (this.animFrame + 1) % 2
+        frameDuration = 0.125 // 其他8帧，125ms/帧 = 1秒循环
+        totalFrames = 8
       }
+    } else {
+      // 待机动画（1秒循环）
+      if (heroId === 'zhenbao') {
+        frameDuration = 0.100 // 臻宝10帧，100ms/帧 = 1秒循环
+        totalFrames = 10
+      } else if (isCat) {
+        frameDuration = 0.063 // 猫咪16帧，63ms/帧 ≈ 1秒循环
+        totalFrames = 16
+      } else {
+        frameDuration = 0.500 // 其他2帧，500ms/帧 = 1秒循环
+        totalFrames = 2
+      }
+    }
+
+    if (this.animTimer >= frameDuration) {
+      this.animTimer = 0
+      this.animFrame = (this.animFrame + 1) % totalFrames
     }
   }
   
@@ -288,16 +311,41 @@ export class FieldMovement {
       
       // 更新队友动画
       follower.animTimer += dt
-      const frameDuration = follower.isMoving ? this.frameDuration : this.frameDuration * 3
-      
+
+      // 根据角色类型确定帧率和帧数（1秒循环）
+      const heroId = follower.character.id
+      const isCat = heroId.toLowerCase().includes('cat') || heroId === 'mao'
+
+      let frameDuration, totalFrames
+      if (follower.isMoving) {
+        // 走路动画
+        if (heroId === 'zhenbao') {
+          frameDuration = 0.053
+          totalFrames = 19
+        } else if (isCat) {
+          frameDuration = 0.042
+          totalFrames = 24
+        } else {
+          frameDuration = 0.125
+          totalFrames = 8
+        }
+      } else {
+        // 待机动画
+        if (heroId === 'zhenbao') {
+          frameDuration = 0.100
+          totalFrames = 10
+        } else if (isCat) {
+          frameDuration = 0.063
+          totalFrames = 16
+        } else {
+          frameDuration = 0.500
+          totalFrames = 2
+        }
+      }
+
       if (follower.animTimer >= frameDuration) {
         follower.animTimer = 0
-        
-        if (follower.isMoving) {
-          follower.animFrame = (follower.animFrame + 1) % 8
-        } else {
-          follower.animFrame = (follower.animFrame + 1) % 2
-        }
+        follower.animFrame = (follower.animFrame + 1) % totalFrames
       }
     }
   }
@@ -342,15 +390,34 @@ export class FieldMovement {
     }
     
     const heroId = character.id || 'zhenbao'
+    const isCat = heroId.toLowerCase().includes('cat') || heroId === 'mao'
     
     // 获取动画帧
-    const frameType = isMoving ? 'WALK' : 'IDLE'
-    const frameKey = `HERO_${heroId.toUpperCase()}_${frameType}_${animFrame}`
+    let frameKey = null
+    
+    if (heroId === 'zhenbao') {
+      // 臻宝使用新版动画（HERO_ZHENBAO_WALK_01格式，索引从1开始）
+      const frameType = isMoving ? 'WALK' : 'IDLE'
+      frameKey = `HERO_ZHENBAO_${frameType}_${(animFrame + 1).toString().padStart(2, '0')}`
+    } else if (isCat) {
+      // 猫咪使用特殊动画（CAT_WALK_01格式，索引从1开始）
+      const frameType = isMoving ? 'WALK' : 'IDLE'
+      frameKey = `CAT_${frameType}_${(animFrame + 1).toString().padStart(2, '0')}`
+    } else {
+      // 普通英雄使用标准动画（HERO_XXX_WALK_0格式，索引从0开始）
+      const frameType = isMoving ? 'WALK' : 'IDLE'
+      frameKey = `HERO_${heroId.toUpperCase()}_${frameType}_${animFrame}`
+    }
+    
     let img = this.game.assets.get(frameKey)
     
     // 如果没有动画帧，使用静态立绘
     if (!img) {
-      img = this.game.assets.get(`HERO_${heroId.toUpperCase()}`)
+      if (isCat) {
+        img = this.game.assets.get(`CAT_${heroId.toUpperCase()}`)
+      } else {
+        img = this.game.assets.get(`HERO_${heroId.toUpperCase()}`)
+      }
     }
     
     if (img) {

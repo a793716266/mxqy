@@ -279,6 +279,8 @@ export class FieldScene {
           // Boss特殊动画
           bobOffset: 0,
           bobSpeed: 1.5,
+          animTimer: 0, // 动画计时器
+          animFrame: 0, // 动画帧索引
           // Boss不巡逻，只在原地小范围移动
           homeX: bossX,
           homeY: bossY,
@@ -342,6 +344,8 @@ export class FieldScene {
           // 怪物动画
           bobOffset: Math.random() * Math.PI * 2, // 随机浮动偏移
           bobSpeed: 2 + Math.random(), // 随机浮动速度
+          animTimer: 0, // 动画计时器
+          animFrame: 0, // 动画帧索引
           // 怪物巡逻移动
           homeX: x, // 出生点（巡逻中心）
           homeY: y,
@@ -557,18 +561,41 @@ export class FieldScene {
 
     // 动画帧更新
     this.animTimer += dt
-    const currentFrameDuration = this.isMoving ? this.frameDuration : this.frameDuration * 3 // 待机动画更慢
 
-    if (this.animTimer >= currentFrameDuration) {
-      this.animTimer = 0
+    // 根据主角类型确定帧率和帧数（1秒循环）
+    const heroId = this.mainCharacter?.id || 'zhenbao'
+    const isCat = heroId.toLowerCase().includes('cat') || heroId === 'mao' // 猫咪角色
 
-      if (this.isMoving) {
-        // 走路动画：所有角色都是8帧
-        this.animFrame = (this.animFrame + 1) % 8
+    let frameDuration, totalFrames
+    if (this.isMoving) {
+      // 走路动画
+      if (heroId === 'zhenbao') {
+        frameDuration = 0.053 // 臻宝19帧，53ms/帧 ≈ 1秒循环
+        totalFrames = 19
+      } else if (isCat) {
+        frameDuration = 0.042 // 猫咪24帧，42ms/帧 ≈ 1秒循环
+        totalFrames = 24
       } else {
-        // 待机动画：2帧循环
-        this.animFrame = (this.animFrame + 1) % 2
+        frameDuration = 0.125 // 其他8帧，125ms/帧 = 1秒循环
+        totalFrames = 8
       }
+    } else {
+      // 待机动画（1秒循环）
+      if (heroId === 'zhenbao') {
+        frameDuration = 0.100 // 臻宝10帧，100ms/帧 = 1秒循环
+        totalFrames = 10
+      } else if (isCat) {
+        frameDuration = 0.063 // 猫咪16帧，63ms/帧 ≈ 1秒循环
+        totalFrames = 16
+      } else {
+        frameDuration = 0.500 // 其他2帧，500ms/帧 = 1秒循环
+        totalFrames = 2
+      }
+    }
+
+    if (this.animTimer >= frameDuration) {
+      this.animTimer = 0
+      this.animFrame = (this.animFrame + 1) % totalFrames
     }
 
     // 点击处理
@@ -597,7 +624,29 @@ export class FieldScene {
     for (const monster of this.mapMonsters) {
       if (!monster.alive) continue
 
-      // 暂停计时器
+      // 初始化猫咪动画属性
+      const isCatMonster = monster.enemyId && monster.enemyId.toLowerCase().includes('cat')
+      if (isCatMonster && monster.animTimer === undefined) {
+        monster.animTimer = 0
+        monster.animFrame = 0
+      }
+
+      // 更新猫咪动画（无论是否暂停）
+      if (isCatMonster) {
+        monster.animTimer += dt
+        const frameDuration = monster.isMoving ? 0.08 : 0.15
+
+        if (monster.animTimer >= frameDuration) {
+          monster.animTimer = 0
+          if (monster.isMoving) {
+            monster.animFrame = (monster.animFrame + 1) % 24
+          } else {
+            monster.animFrame = (monster.animFrame + 1) % 16
+          }
+        }
+      }
+
+      // 暂停计时器（只暂停移动，不暂停动画）
       if (monster.pauseTimer > 0) {
         monster.pauseTimer -= dt
         continue
@@ -707,6 +756,8 @@ export class FieldScene {
           alive: true,
           bobOffset: Math.random() * Math.PI * 2,
           bobSpeed: 2 + Math.random(),
+          animTimer: 0, // 动画计时器
+          animFrame: 0, // 动画帧索引
           // 怪物巡逻移动
           homeX: x,
           homeY: y,
@@ -803,16 +854,41 @@ export class FieldScene {
       
       // 更新队友动画
       follower.animTimer += dt
-      const frameDuration = follower.isMoving ? this.frameDuration : this.frameDuration * 3
-      
+
+      // 根据角色类型确定帧率和帧数（1秒循环）
+      const heroId = follower.character.id
+      const isCat = heroId.toLowerCase().includes('cat') || heroId === 'mao'
+
+      let frameDuration, totalFrames
+      if (follower.isMoving) {
+        // 走路动画
+        if (heroId === 'zhenbao') {
+          frameDuration = 0.053
+          totalFrames = 19
+        } else if (isCat) {
+          frameDuration = 0.042
+          totalFrames = 24
+        } else {
+          frameDuration = 0.125
+          totalFrames = 8
+        }
+      } else {
+        // 待机动画
+        if (heroId === 'zhenbao') {
+          frameDuration = 0.100
+          totalFrames = 10
+        } else if (isCat) {
+          frameDuration = 0.063
+          totalFrames = 16
+        } else {
+          frameDuration = 0.500
+          totalFrames = 2
+        }
+      }
+
       if (follower.animTimer >= frameDuration) {
         follower.animTimer = 0
-        
-        if (follower.isMoving) {
-          follower.animFrame = (follower.animFrame + 1) % 8
-        } else {
-          follower.animFrame = (follower.animFrame + 1) % 2
-        }
+        follower.animFrame = (follower.animFrame + 1) % totalFrames
       }
     }
   }
@@ -1203,13 +1279,35 @@ export class FieldScene {
       // 获取当前动画帧图片
       let frameImg = null
       const heroId = follower.character.id
+      const isCat = heroId.toLowerCase().includes('cat') || heroId === 'mao' // 猫咪角色
 
-      if (follower.isMoving) {
-        const walkKey = `HERO_${heroId.toUpperCase()}_WALK_${follower.animFrame}`
-        frameImg = this.game.assets.get(walkKey)
+      if (heroId === 'zhenbao') {
+        // 臻宝使用新版动画
+        if (follower.isMoving) {
+          const walkKey = `HERO_ZHENBAO_WALK_${(follower.animFrame + 1).toString().padStart(2, '0')}`
+          frameImg = this.game.assets.get(walkKey)
+        } else {
+          const idleKey = `HERO_ZHENBAO_IDLE_${(follower.animFrame + 1).toString().padStart(2, '0')}`
+          frameImg = this.game.assets.get(idleKey)
+        }
+      } else if (isCat) {
+        // 猫咪使用特殊的动画资源
+        if (follower.isMoving) {
+          const walkKey = `CAT_WALK_${(follower.animFrame + 1).toString().padStart(2, '0')}`
+          frameImg = this.game.assets.get(walkKey)
+        } else {
+          const idleKey = `CAT_IDLE_${(follower.animFrame + 1).toString().padStart(2, '0')}`
+          frameImg = this.game.assets.get(idleKey)
+        }
       } else {
-        const idleKey = `HERO_${heroId.toUpperCase()}_IDLE_${follower.animFrame}`
-        frameImg = this.game.assets.get(idleKey)
+        // 普通英雄使用标准动画资源
+        if (follower.isMoving) {
+          const walkKey = `HERO_${heroId.toUpperCase()}_WALK_${follower.animFrame}`
+          frameImg = this.game.assets.get(walkKey)
+        } else {
+          const idleKey = `HERO_${heroId.toUpperCase()}_IDLE_${follower.animFrame}`
+          frameImg = this.game.assets.get(idleKey)
+        }
       }
 
       // 如果动画帧不存在，尝试使用静态立绘
@@ -1268,15 +1366,35 @@ export class FieldScene {
     // 获取当前动画帧图片
     let frameImg = null
     const heroId = this.mainCharacter?.id || 'zhenbao'
+    const isCat = heroId.toLowerCase().includes('cat') || heroId === 'mao' // 猫咪角色
 
-    if (this.isMoving) {
-      // 走路动画帧
-      const walkKey = `HERO_${heroId.toUpperCase()}_WALK_${this.animFrame}`
-      frameImg = this.game.assets.get(walkKey)
+    if (heroId === 'zhenbao') {
+      // 臻宝使用新版动画（HERO_ZHENBAO_WALK_01格式，索引从1开始）
+      if (this.isMoving) {
+        const walkKey = `HERO_ZHENBAO_WALK_${(this.animFrame + 1).toString().padStart(2, '0')}`
+        frameImg = this.game.assets.get(walkKey)
+      } else {
+        const idleKey = `HERO_ZHENBAO_IDLE_${(this.animFrame + 1).toString().padStart(2, '0')}`
+        frameImg = this.game.assets.get(idleKey)
+      }
+    } else if (isCat) {
+      // 猫咪使用特殊的动画资源（CAT_IDLE_01格式，索引从1开始）
+      if (this.isMoving) {
+        const walkKey = `CAT_WALK_${(this.animFrame + 1).toString().padStart(2, '0')}`
+        frameImg = this.game.assets.get(walkKey)
+      } else {
+        const idleKey = `CAT_IDLE_${(this.animFrame + 1).toString().padStart(2, '0')}`
+        frameImg = this.game.assets.get(idleKey)
+      }
     } else {
-      // 待机动画帧
-      const idleKey = `HERO_${heroId.toUpperCase()}_IDLE_${this.animFrame}`
-      frameImg = this.game.assets.get(idleKey)
+      // 普通英雄使用标准动画资源（HERO_XXX_WALK_0格式，索引从0开始）
+      if (this.isMoving) {
+        const walkKey = `HERO_${heroId.toUpperCase()}_WALK_${this.animFrame}`
+        frameImg = this.game.assets.get(walkKey)
+      } else {
+        const idleKey = `HERO_${heroId.toUpperCase()}_IDLE_${this.animFrame}`
+        frameImg = this.game.assets.get(idleKey)
+      }
     }
 
     // 如果动画帧不存在，尝试使用静态立绘
@@ -1400,54 +1518,161 @@ export class FieldScene {
       const screenY = monster.y - this.cameraY
 
       // 只绘制在屏幕内的怪物
-      if (screenX < -60 || screenX > this.width + 60 ||
-          screenY < -60 || screenY > this.height + 60) {
+      if (screenX < -100 || screenX > this.width + 100 ||
+          screenY < -100 || screenY > this.height + 100) {
         continue
       }
 
-      // 怪物浮动效果
-      const bob = Math.sin(this.time * monster.bobSpeed + monster.bobOffset) * 5 * this.dpr
+      // 判断是否是猫类怪物
+      const isCatMonster = monster.enemyId && monster.enemyId.toLowerCase().includes('cat')
 
-      // 怪物阴影
-      ctx.beginPath()
-      ctx.ellipse(screenX, screenY + 25 * this.dpr, 20 * this.dpr, 6 * this.dpr, 0, 0, Math.PI * 2)
-      ctx.fillStyle = 'rgba(0,0,0,0.3)'
-      ctx.fill()
+      if (isCatMonster) {
+        // 使用猫咪动画渲染
+        this._renderCatMonster(ctx, monster, screenX, screenY)
+      } else {
+        // 使用emoji渲染（Boss、精英等）
+        this._renderEmojiMonster(ctx, monster, screenX, screenY)
+      }
+    }
+  }
 
-      // 怪物光环（Boss/精英）
+  /**
+   * 渲染猫咪怪物（使用动画帧）
+   */
+  _renderCatMonster(ctx, monster, screenX, screenY) {
+    const targetHeight = 80 * this.dpr // 猫咪怪物尺寸（比主角小一点）
+
+    // 获取动画帧图片
+    let frameImg = null
+    if (monster.isMoving) {
+      const walkKey = `CAT_WALK_${(monster.animFrame + 1).toString().padStart(2, '0')}`
+      frameImg = this.game.assets.get(walkKey)
+    } else {
+      const idleKey = `CAT_IDLE_${(monster.animFrame + 1).toString().padStart(2, '0')}`
+      frameImg = this.game.assets.get(idleKey)
+    }
+
+    if (frameImg) {
+      const imgWidth = frameImg.width
+      const imgHeight = frameImg.height
+      const scale = targetHeight / imgHeight
+      const renderWidth = imgWidth * scale
+      const renderHeight = targetHeight
+
+      // 根据移动方向决定朝向
+      const facingLeft = monster.moveAngle !== undefined ? Math.cos(monster.moveAngle) < 0 : true
+
+      ctx.save()
+
+      // Boss/精英光环
       if (monster.isBoss || monster.isElite) {
         ctx.beginPath()
-        ctx.arc(screenX, screenY + bob, 35 * this.dpr, 0, Math.PI * 2)
+        ctx.arc(screenX, screenY, 45 * this.dpr, 0, Math.PI * 2)
         ctx.fillStyle = monster.isBoss ? 'rgba(255, 71, 87, 0.3)' : 'rgba(124, 92, 224, 0.3)'
         ctx.fill()
       }
 
-      // 怪物图标（根据类型）
-      ctx.font = `${32 * this.dpr}px sans-serif`
+      // 绘制猫咪（带方向翻转）
+      if (!facingLeft) {
+        ctx.translate(screenX, screenY)
+        ctx.scale(-1, 1)
+        ctx.drawImage(
+          frameImg,
+          -renderWidth / 2,
+          -renderHeight / 2,
+          renderWidth,
+          renderHeight
+        )
+      } else {
+        ctx.drawImage(
+          frameImg,
+          screenX - renderWidth / 2,
+          screenY - renderHeight / 2,
+          renderWidth,
+          renderHeight
+        )
+      }
+
+      ctx.restore()
+
+      // 底部阴影
+      ctx.beginPath()
+      ctx.ellipse(screenX, screenY + renderHeight / 2 + 5 * this.dpr, renderWidth / 2.5, 8 * this.dpr, 0, 0, Math.PI * 2)
+      ctx.fillStyle = 'rgba(0,0,0,0.3)'
+      ctx.fill()
+    } else {
+      // 备用：如果动画帧加载失败，使用emoji
+      this._renderEmojiMonster(ctx, monster, screenX, screenY)
+      return
+    }
+
+    // 怪物名称
+    ctx.font = `${12 * this.dpr}px sans-serif`
+    ctx.fillStyle = monster.isBoss ? '#ff4757' :
+                   monster.isElite ? '#a55eea' : '#ffffff'
+    ctx.textAlign = 'center'
+    ctx.textBaseline = 'middle'
+    ctx.fillText(monster.name, screenX, screenY + targetHeight / 2 + 25 * this.dpr)
+
+    // 靠近警告
+    this._renderMonsterWarning(ctx, monster, screenX, screenY, targetHeight)
+  }
+
+  /**
+   * 渲染emoji怪物（Boss、精英等非猫类）
+   */
+  _renderEmojiMonster(ctx, monster, screenX, screenY) {
+    // 怪物浮动效果
+    const bob = Math.sin(this.time * monster.bobSpeed + monster.bobOffset) * 5 * this.dpr
+
+    // 怪物阴影
+    ctx.beginPath()
+    ctx.ellipse(screenX, screenY + 25 * this.dpr, 20 * this.dpr, 6 * this.dpr, 0, 0, Math.PI * 2)
+    ctx.fillStyle = 'rgba(0,0,0,0.3)'
+    ctx.fill()
+
+    // 怪物光环（Boss/精英）
+    if (monster.isBoss || monster.isElite) {
+      ctx.beginPath()
+      ctx.arc(screenX, screenY + bob, 35 * this.dpr, 0, Math.PI * 2)
+      ctx.fillStyle = monster.isBoss ? 'rgba(255, 71, 87, 0.3)' : 'rgba(124, 92, 224, 0.3)'
+      ctx.fill()
+    }
+
+    // 怪物图标
+    ctx.font = `${32 * this.dpr}px sans-serif`
+    ctx.textAlign = 'center'
+    ctx.textBaseline = 'middle'
+
+    const monsterIcon = monster.isBoss ? '👹' :
+                       monster.isElite ? '👿' : '🐱'
+    ctx.fillText(monsterIcon, screenX, screenY + bob)
+
+    // 怪物名称
+    ctx.font = `${12 * this.dpr}px sans-serif`
+    ctx.fillStyle = monster.isBoss ? '#ff4757' :
+                   monster.isElite ? '#a55eea' : '#ffffff'
+    ctx.fillText(monster.name, screenX, screenY + 40 * this.dpr)
+
+    // 靠近警告
+    this._renderMonsterWarning(ctx, monster, screenX, screenY, 32)
+  }
+
+  /**
+   * 渲染怪物警告指示器
+   */
+  _renderMonsterWarning(ctx, monster, screenX, screenY, monsterHeight) {
+    const dist = Math.sqrt(
+      (this.playerX - monster.x) ** 2 + (this.playerY - monster.y) ** 2
+    )
+
+    if (dist < 200 * this.dpr) {
+      ctx.font = `${20 * this.dpr}px sans-serif`
+      ctx.fillStyle = '#ff9f43'
       ctx.textAlign = 'center'
       ctx.textBaseline = 'middle'
-
-      const monsterIcon = monster.isBoss ? '👹' :
-                         monster.isElite ? '👿' : '🐱'
-      ctx.fillText(monsterIcon, screenX, screenY + bob)
-
-      // 怪物名称
-      ctx.font = `${12 * this.dpr}px sans-serif`
-      ctx.fillStyle = monster.isBoss ? '#ff4757' :
-                     monster.isElite ? '#a55eea' : '#ffffff'
-      ctx.fillText(monster.name, screenX, screenY + 40 * this.dpr)
-
-      // 怪物指示器（感叹号）
-      const dist = Math.sqrt(
-        (this.playerX - monster.x) ** 2 + (this.playerY - monster.y) ** 2
-      )
-      if (dist < 200 * this.dpr) {
-        // 靠近时显示警告
-        ctx.font = `${20 * this.dpr}px sans-serif`
-        ctx.fillStyle = '#ff9f43'
-        const warningBob = Math.sin(this.time * 5) * 3 * this.dpr
-        ctx.fillText('⚠️', screenX, screenY - 35 * this.dpr + warningBob)
-      }
+      const warningBob = Math.sin(this.time * 5) * 3 * this.dpr
+      ctx.fillText('⚠️', screenX, screenY - monsterHeight / 2 - 15 * this.dpr + warningBob)
     }
   }
   

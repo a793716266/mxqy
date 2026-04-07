@@ -34,6 +34,12 @@ export class BattleScene {
     // 行动跟踪系统
     this.actedHeroes = new Set()  // 已行动的角色ID集合
 
+    // 状态效果系统
+    this.statusEffects = {
+      enemies: {}  // 敌人的状态效果，key是敌人索引，value是效果数组
+      // 格式: { type: 'burn'|'freeze', duration: number, data: {...} }
+    }
+
     // 动画
     this.shakeAmount = 0
     this.damageTexts = []
@@ -391,6 +397,134 @@ export class BattleScene {
     this.attackAnimSkill = null
   }
 
+  /**
+   * 播放技能施法特效
+   * @param {Object} hero - 施法角色
+   * @param {Object} skill - 技能对象
+   * @param {Object} heroPos - 角色位置
+   */
+  _playCastEffect(hero, skill, heroPos) {
+    // 根据技能ID播放对应特效
+    if (skill.id === 'fireball' && hero.id === 'lixiaobao') {
+      // 🔥 李小宝 - 火球术施法特效
+      this.game.effects.createEffect({
+        type: 'fireball_cast',
+        x: heroPos.x,
+        y: heroPos.y,
+        frameCount: 11,
+        frameDuration: 135, // 135ms一帧，总共约1.5秒
+        loop: false,
+        scale: 1.0,
+        alpha: 1.0,
+        onComplete: (effect) => {
+          console.log('[Battle] 火球术施法特效播放完成')
+        }
+      })
+      
+      console.log(`[Battle] 播放火球术施法特效 - 位置: (${heroPos.x}, ${heroPos.y}), 时长: 1.5秒`)
+    }
+    else if (skill.id === 'ice_shard' && hero.id === 'lixiaobao') {
+      // ❄️ 李小宝 - 冰晶术施法特效
+      this.game.effects.createEffect({
+        type: 'ice_shard_cast',
+        x: heroPos.x,
+        y: heroPos.y,
+        frameCount: 16,
+        frameDuration: 94, // 94ms一帧，总共约1.5秒
+        loop: false,
+        scale: 1.0,
+        alpha: 1.0,
+        onComplete: (effect) => {
+          console.log('[Battle] 冰晶术施法特效播放完成')
+        }
+      })
+
+      console.log(`[Battle] 播放冰晶术施法特效 - 位置: (${heroPos.x}, ${heroPos.y}), 时长: 1.5秒`)
+    }
+    else if (skill.id === 'thunder' && hero.id === 'lixiaobao') {
+      // ⚡ 李小宝 - 雷击术施法特效
+      this.game.effects.createEffect({
+        type: 'lightning_cast',
+        x: heroPos.x,
+        y: heroPos.y,
+        frameCount: 30,  // 更新为30帧
+        frameDuration: 50, // 50ms一帧，总共1.5秒
+        loop: false,
+        scale: 0.8, // 缩小到0.8倍，与击中特效一致
+        alpha: 1.0,
+        onComplete: (effect) => {
+          console.log('[Battle] 雷击术施法特效播放完成')
+        }
+      })
+
+      console.log(`[Battle] 播放雷击术施法特效 - 位置: (${heroPos.x}, ${heroPos.y}), 时长: 1.5秒`)
+    }
+  }
+
+  /**
+   * 播放技能击中特效
+   * @param {Object} hero - 施法角色
+   * @param {Object} skill - 技能对象
+   * @param {Object} targetPos - 目标位置
+   */
+  _playHitEffect(hero, skill, targetPos) {
+    // 根据技能ID播放对应特效
+    if (skill.id === 'fireball' && hero.id === 'lixiaobao') {
+      // 🔥 李小宝 - 火球术击中特效
+      this.game.effects.createEffect({
+        type: 'fireball_hit',
+        x: targetPos.x,
+        y: targetPos.y,
+        frameCount: 47,
+        frameDuration: 40, // 40ms一帧，总共约1.9秒
+        loop: false,
+        scale: 1.2, // 稍微放大，让击中效果更明显
+        alpha: 1.0,
+        onComplete: (effect) => {
+          console.log('[Battle] 火球术击中特效播放完成')
+        }
+      })
+      
+      console.log(`[Battle] 播放火球术击中特效 - 位置: (${targetPos.x}, ${targetPos.y}), 时长: 1.9秒`)
+    }
+    else if (skill.id === 'ice_shard' && hero.id === 'lixiaobao') {
+      // ❄️ 李小宝 - 冰晶术击中特效
+      this.game.effects.createEffect({
+        type: 'ice_shard_hit',
+        x: targetPos.x,
+        y: targetPos.y,
+        frameCount: 21,
+        frameDuration: 71, // 71ms一帧，总共约1.5秒
+        loop: false,
+        scale: 1.2, // 稍微放大，让击中效果更明显
+        alpha: 1.0,
+        onComplete: (effect) => {
+          console.log('[Battle] 冰晶术击中特效播放完成')
+        }
+      })
+
+      console.log(`[Battle] 播放冰晶术击中特效 - 位置: (${targetPos.x}, ${targetPos.y}), 时长: 1.5秒`)
+    }
+    else if (skill.id === 'thunder' && hero.id === 'lixiaobao') {
+      // ⚡ 李小宝 - 雷击术击中特效
+      this.game.effects.createEffect({
+        type: 'lightning_hit',
+        x: targetPos.x,
+        y: targetPos.y,
+        frameCount: 23,  // 更新为23帧
+        frameDuration: 65, // 65ms一帧，总共约1.5秒
+        loop: false,
+        scale: 1.5, // 缩小到0.8倍，更合适的大小
+        alpha: 1.0,
+        onComplete: (effect) => {
+          console.log('[Battle] 雷击术击中特效播放完成')
+        }
+      })
+
+      console.log(`[Battle] 播放雷击术击中特效 - 位置: (${targetPos.x}, ${targetPos.y}), 时长: 1.5秒`)
+    }
+  }
+
   // ======== 更新 ========
   update(dt) {
     this.time += dt
@@ -430,6 +564,9 @@ export class BattleScene {
       setTimeout(() => action(), 500)
     }
 
+    // ⚠️ 先检查战斗结束，再处理敌人回合（修复死亡敌人还能攻击的问题）
+    this._checkBattleEnd()
+
     // 敌人回合
     if (this.phase === 'enemy_turn' && !this.enemyTurnStarted) {
       // 创建敌人攻击队列（所有存活的敌人）
@@ -450,9 +587,6 @@ export class BattleScene {
 
     // 感化剧情更新
     this._updatePurifyScene(dt)
-
-    // 检查战斗结束
-    this._checkBattleEnd()
   }
 
   // ======== 敌人攻击动画 ========
@@ -614,6 +748,9 @@ export class BattleScene {
       case 'select_target':
         this._handleTargetSelect(tx, ty)
         break
+      case 'select_enemy_target':
+        this._handleEnemyTargetSelect(tx, ty)
+        break
       case 'victory':
       case 'defeat':
         this._handleEndTap(tx, ty)
@@ -677,8 +814,19 @@ export class BattleScene {
             // 全体技能 - 直接执行
             this._executeSkill(this.selectedHero, skill, null)
           } else {
-            // 单体攻击 - 目标是敌人
-            this._executeSkill(this.selectedHero, skill, this.enemy)
+            // 单体攻击 - 检查是否需要选择敌人目标
+            const aliveEnemies = this.enemies.filter(e => e.hp > 0)
+            if (aliveEnemies.length > 1) {
+              // 多个存活敌人 - 进入目标选择阶段
+              this.phase = 'select_enemy_target'
+              this._addLog(`${this.selectedHero.name} 使用 ${skill.name}，选择攻击目标`)
+            } else if (aliveEnemies.length === 1) {
+              // 只有一个存活敌人 - 直接攻击
+              this._executeSkill(this.selectedHero, skill, aliveEnemies[0])
+            } else {
+              // 没有存活敌人（不应该发生）
+              this._addLog(`没有可攻击的目标`)
+            }
           }
           return
         } else {
@@ -718,6 +866,45 @@ export class BattleScene {
     this.selectedSkill = null
   }
 
+  /**
+   * 处理敌人目标选择
+   */
+  _handleEnemyTargetSelect(tx, ty) {
+    // 检查点击的敌人
+    this.enemies.forEach((enemy, index) => {
+      if (enemy.hp <= 0) return  // 跳过死亡敌人
+
+      const pos = this.enemyPositions[index]
+      if (!pos) return
+
+      // 检测点击范围（使用较大的点击区域）
+      const dpr = this.dpr
+      const hitRadius = 60 * dpr
+      if (this._isInCircle(tx, ty, pos.x, pos.y, hitRadius)) {
+        // 选中敌人，执行技能
+        this._executeSkill(this.selectedHero, this.selectedSkill, enemy)
+        return
+      }
+    })
+
+    // 点击空白取消，返回选择角色
+    // 检查是否点击在敌人区域外
+    const clickedEnemy = this.enemies.some((enemy, index) => {
+      if (enemy.hp <= 0) return false
+      const pos = this.enemyPositions[index]
+      if (!pos) return false
+      const dpr = this.dpr
+      const hitRadius = 60 * dpr
+      return this._isInCircle(tx, ty, pos.x, pos.y, hitRadius)
+    })
+
+    if (!clickedEnemy) {
+      this.phase = 'select_hero'
+      this.selectedHero = null
+      this.selectedSkill = null
+    }
+  }
+
   _handleEndTap(tx, ty) {
     const dpr = this.dpr
     const w = this.width
@@ -751,63 +938,258 @@ export class BattleScene {
     // 标记角色为已行动
     this.actedHeroes.add(hero.id)
 
-    // 根据技能类型执行
-    if (skill.type === 'attack' || skill.type === 'magic') {
-      // 攻击技能 - 启动动画
-      this._startAttackAnimation(hero, skill, target)
-      // 动画完成后会在 _applyAttackDamage 中处理伤害
-      // 设置一个检查动画完成的状态
-      this._waitForAttackComplete = () => {
-        if (!this.attackAnim && !this.attackingHero) {
-          // 动画完成，检查战斗结束
-          setTimeout(() => {
-            if (this.phase !== 'victory' && this.phase !== 'defeat') {
-              // 检查是否所有角色都已行动
-              if (this._allHeroesActed()) {
-                this.phase = 'enemy_turn'
-              } else {
-                this.phase = 'select_hero'
-                this._addLog(`继续选择角色行动`)
-              }
-            }
-          }, 300)
-          return true
-        }
-        return false
-      }
-    } else if (skill.type === 'heal') {
-      // 治疗技能 - 直接执行
-      setTimeout(() => {
-        this._executeHeal(hero, skill, target)
-        setTimeout(() => {
-          if (this.phase !== 'victory' && this.phase !== 'defeat') {
-            // 检查是否所有角色都已行动
-            if (this._allHeroesActed()) {
-              this.phase = 'enemy_turn'
-            } else {
-              this.phase = 'select_hero'
-              this._addLog(`继续选择角色行动`)
-            }
-          }
-        }, 400)
-      }, 300)
-    } else if (skill.type === 'buff') {
-      // 增益技能
-      setTimeout(() => {
-        this._executeBuff(hero, skill, target)
-        setTimeout(() => {
-          if (this.phase !== 'victory' && this.phase !== 'defeat') {
-            // 检查是否所有角色都已行动
-            if (this._allHeroesActed()) {
-              this.phase = 'enemy_turn'
-            } else {
-              this.phase = 'select_hero'
-              this._addLog(`继续选择角色行动`)
-            }
-          }
-        }, 400)
-      }, 300)
+    // 获取角色位置
+    const heroIndex = this.party.indexOf(hero)
+    const heroPos = this.heroBasePositions[heroIndex] || { x: this.width * 0.2, y: this.height * 0.5 }
+
+    // 🎯 区分近战和远程攻击
+    const isRangedAttack = hero.role === 'mage' || skill.type === 'magic'
+
+    if (isRangedAttack) {
+      // 🧙‍♂️ 法师远程施法流程
+      this._executeRangedAttack(hero, skill, target, heroPos)
+    } else {
+      // ⚔️ 战士近战攻击流程
+      this._executeMeleeAttack(hero, skill, target, heroPos)
     }
+  }
+
+  /**
+   * 执行近战攻击（战士等）
+   */
+  _executeMeleeAttack(hero, skill, target, heroPos) {
+    // 播放施法特效（如果有）
+    this._playCastEffect(hero, skill, heroPos)
+
+    // 延迟启动攻击动画
+    setTimeout(() => {
+      this._startAttackAnimation(hero, skill, target)
+    }, 600)
+
+    // 设置完成检查
+    this._waitForAttackComplete = () => {
+      if (!this.attackAnim && !this.attackingHero) {
+        setTimeout(() => {
+          if (this.phase !== 'victory' && this.phase !== 'defeat') {
+            if (this._allHeroesActed()) {
+              this.phase = 'enemy_turn'
+            } else {
+              this.phase = 'select_hero'
+              this._addLog(`继续选择角色行动`)
+            }
+          }
+        }, 300)
+        return true
+      }
+      return false
+    }
+  }
+
+  /**
+   * 执行远程攻击（法师等）
+   */
+  _executeRangedAttack(hero, skill, target, heroPos) {
+    // 🎆 1. 播放施法特效
+    this._playCastEffect(hero, skill, heroPos)
+
+    // ⏱️ 2. 延迟播放击中特效并造成伤害
+    setTimeout(() => {
+      // 判断是否是全体攻击
+      if (skill.target === 'all') {
+        // 🌟 全体攻击 - 对所有存活的敌人造成伤害
+        const aliveEnemies = this.enemies.filter(e => e.hp > 0)
+        
+        // 为每个敌人播放击中特效并造成伤害
+        aliveEnemies.forEach((enemy, index) => {
+          const enemyIndex = this.enemies.indexOf(enemy)
+          const enemyPos = this.enemyPositions[enemyIndex] || { x: this.enemyBaseX, y: this.enemyBaseY }
+          
+          // 延迟播放每个敌人的击中特效（错开效果）
+          setTimeout(() => {
+            this._playHitEffect(hero, skill, enemyPos)
+            this._applyMagicDamage(hero, skill, enemy, enemyPos)
+          }, index * 200) // 每个敌人间隔200ms
+        })
+
+        // 等待所有特效播放完成
+        setTimeout(() => {
+          if (this.phase !== 'victory' && this.phase !== 'defeat') {
+            if (this._allHeroesActed()) {
+              this.phase = 'enemy_turn'
+            } else {
+              this.phase = 'select_hero'
+              this._addLog(`继续选择角色行动`)
+            }
+          }
+        }, 1500 + (aliveEnemies.length - 1) * 200 + 1900) // 施法时长 + 最后一个敌人延迟 + 击中特效时长
+
+      } else {
+        // 单体攻击
+        const targetEnemyIndex = this.enemies.indexOf(target)
+        const targetEnemyPos = this.enemyPositions[targetEnemyIndex] || { x: this.enemyBaseX, y: this.enemyBaseY }
+
+        // 播放击中特效
+        this._playHitEffect(hero, skill, targetEnemyPos)
+
+        // 造成伤害
+        this._applyMagicDamage(hero, skill, target, targetEnemyPos)
+
+        // 等待击中特效播放完成后进入下一阶段
+        setTimeout(() => {
+          if (this.phase !== 'victory' && this.phase !== 'defeat') {
+            if (this._allHeroesActed()) {
+              this.phase = 'enemy_turn'
+            } else {
+              this.phase = 'select_hero'
+              this._addLog(`继续选择角色行动`)
+            }
+          }
+        }, 1900) // 击中特效时长
+      }
+
+    }, 1500) // 施法特效时长
+  }
+
+  /**
+   * 应用魔法伤害
+   */
+  _applyMagicDamage(hero, skill, target, targetPos) {
+    // 计算伤害
+    let damage = Math.floor(hero.atk * skill.power - (target.def || 0) * 0.5)
+    damage = Math.max(1, damage + Math.floor(Math.random() * 5) - 2)
+
+    // 暴击判定
+    const heroCritRate = hero.crit || 0
+    const isCrit = Math.random() < heroCritRate
+    if (isCrit) {
+      damage = Math.floor(damage * 1.5)
+      this._addLog(`💥 暴击！`)
+    }
+
+    target.hp = Math.max(0, target.hp - damage)
+
+    // 动画效果
+    this.shakeAmount = 12
+    this.flashAlpha = 0.6
+    this.damageTexts.push({
+      text: `-${damage}`,
+      x: targetPos.x,
+      y: targetPos.y - 50 * this.dpr,
+      color: isCrit ? '#ff4757' : '#ffffff',
+      life: 1.5
+    })
+
+    this._addLog(`造成 ${damage} 点伤害！`)
+
+    // 吸血效果
+    if (skill.effect === 'drain') {
+      const heal = Math.floor(damage * 0.3)
+      hero.hp = Math.min(hero.maxHp, hero.hp + heal)
+      this._addLog(`恢复了 ${heal} 点生命`)
+    }
+
+    // 应用状态效果
+    if (skill.statusEffect && target.hp > 0) {
+      this._applyStatusEffect(target, skill.statusEffect, targetPos)
+    }
+
+    // 检查战斗结束
+    if (target.hp <= 0) {
+      // 目标死亡
+    }
+  }
+
+  /**
+   * 应用状态效果
+   */
+  _applyStatusEffect(target, effectConfig, targetPos) {
+    const enemyIndex = this.enemies.indexOf(target)
+    if (enemyIndex === -1) return
+
+    // 初始化敌人的状态效果数组
+    if (!this.statusEffects.enemies[enemyIndex]) {
+      this.statusEffects.enemies[enemyIndex] = []
+    }
+
+    const effectType = effectConfig.type
+
+    // 🔥 灼烧效果
+    if (effectType === 'burn') {
+      // 检查是否已有灼烧效果
+      const existingBurn = this.statusEffects.enemies[enemyIndex].find(e => e.type === 'burn')
+      if (existingBurn) {
+        // 刷新持续时间和伤害
+        existingBurn.duration = effectConfig.duration
+        existingBurn.baseDamage = effectConfig.baseDamage
+        existingBurn.turnsRemaining = effectConfig.duration
+        this._addLog(`🔥 ${target.name} 的灼烧效果已刷新！`)
+      } else {
+        // 添加新的灼烧效果
+        this.statusEffects.enemies[enemyIndex].push({
+          type: 'burn',
+          duration: effectConfig.duration,
+          baseDamage: effectConfig.baseDamage,
+          turnsRemaining: effectConfig.duration
+        })
+        this._addLog(`🔥 ${target.name} 被灼烧了！持续 ${effectConfig.duration} 回合`)
+
+        // 添加视觉效果
+        this.damageTexts.push({
+          text: `灼烧${effectConfig.duration}回合`,
+          label: '灼烧',
+          duration: effectConfig.duration,
+          x: targetPos.x,
+          y: targetPos.y - 100 * this.dpr,
+          color: '#ff9f43',
+          life: 2.5,
+          type: 'burn_effect'  // 灼烧效果提示
+        })
+      }
+    }
+
+    // ❄️ 冰冻效果
+    if (effectType === 'freeze') {
+      // 概率判定
+      if (Math.random() < effectConfig.probability) {
+        // 检查是否已被冻结
+        const existingFreeze = this.statusEffects.enemies[enemyIndex].find(e => e.type === 'freeze')
+        if (!existingFreeze) {
+          this.statusEffects.enemies[enemyIndex].push({
+            type: 'freeze',
+            duration: 1  // 冻结1回合
+          })
+          this._addLog(`❄️ ${target.name} 被冻结了！`)
+
+          // 添加视觉效果
+          this.damageTexts.push({
+            text: '冻结1回合',
+            label: '冻结',
+            x: targetPos.x,
+            y: targetPos.y - 80 * this.dpr,
+            color: '#74b9ff',
+            life: 2.5,
+            type: 'freeze_effect'  // 冰冻效果提示
+          })
+        }
+      } else {
+        this._addLog(`${target.name} 抵抗了冰冻效果`)
+      }
+    }
+  }
+
+  _executeHeal(hero, skill, target) {
+    // 治疗逻辑（待实现）
+    setTimeout(() => {
+      // 治疗效果
+      if (this.phase !== 'victory' && this.phase !== 'defeat') {
+        if (this._allHeroesActed()) {
+          this.phase = 'enemy_turn'
+        } else {
+          this.phase = 'select_hero'
+          this._addLog(`继续选择角色行动`)
+        }
+      }
+    }, 400)
   }
 
   /**
@@ -861,16 +1243,48 @@ export class BattleScene {
       this.currentEnemyIndex = 0
       this.enemyTurnStarted = false  // 重置敌人回合标志
       this.turn++
-      this.phase = 'player_turn'
+      this.actedHeroes.clear()  // 重置行动状态
+      this.phase = 'select_hero'  // 进入玩家选择角色阶段
+      this._addLog(`--- 第 ${this.turn} 回合 ---`)
+      console.log(`[Battle] 敌人回合结束，进入第 ${this.turn} 回合`)
       return
     }
-    
+
     // 获取当前攻击的敌人
     const currentEnemy = this.enemyAttackQueue[this.currentEnemyIndex]
-    
+
+    // ⚠️ 检查敌人是否还活着（可能在回合中被反击或其他效果杀死）
+    if (!currentEnemy || currentEnemy.hp <= 0) {
+      console.log(`[Battle] 敌人 ${currentEnemy?.name || 'Unknown'} 已死亡，跳过攻击`)
+      this.currentEnemyIndex++
+      // 递归调用处理下一个敌人
+      this._enemyAction()
+      return
+    }
+
     // 更新主敌人引用（用于攻击动画）
     this.enemy = currentEnemy
-    
+
+    // 🔥 处理灼烧伤害
+    this._processBurnDamage(currentEnemy)
+
+    // 检查灼烧是否杀死敌人
+    if (currentEnemy.hp <= 0) {
+      console.log(`[Battle] 敌人 ${currentEnemy.name} 被灼烧伤害杀死`)
+      this._checkBattleEnd()
+      this.currentEnemyIndex++
+      setTimeout(() => this._enemyAction(), 500)
+      return
+    }
+
+    // ❄️ 检查是否被冻结
+    if (this._checkFrozen(currentEnemy)) {
+      // 被冻结，跳过行动
+      this.currentEnemyIndex++
+      setTimeout(() => this._enemyAction(), 500)
+      return
+    }
+
     // 选择目标（随机存活角色）
     const alive = this.party.filter(h => h.hp > 0)
     if (alive.length === 0) {
@@ -883,6 +1297,105 @@ export class BattleScene {
 
     // 启动攻击动画
     this._startEnemyAttackAnimation(target)
+  }
+
+  /**
+   * 处理灼烧伤害
+   */
+  _processBurnDamage(enemy) {
+    const enemyIndex = this.enemies.indexOf(enemy)
+    if (enemyIndex === -1 || !this.statusEffects.enemies[enemyIndex]) return
+
+    const effects = this.statusEffects.enemies[enemyIndex]
+    const burnEffect = effects.find(e => e.type === 'burn')
+
+    if (!burnEffect) return
+
+    // 计算灼烧伤害（递减）
+    const elapsedTurns = burnEffect.duration - burnEffect.turnsRemaining
+    const damageReduction = elapsedTurns / burnEffect.duration  // 0 -> 1
+    const burnDamage = Math.floor(burnEffect.baseDamage * (1 - damageReduction * 0.7))  // 递减30%
+
+    console.log(`[Battle] 灼烧伤害计算 - 敌人: ${enemy.name}, 基础伤害: ${burnEffect.baseDamage}, ` +
+                `已过回合: ${elapsedTurns}, 递减比例: ${(damageReduction * 0.7 * 100).toFixed(0)}%, ` +
+                `最终伤害: ${burnDamage}, 剩余回合: ${burnEffect.turnsRemaining}`)
+
+    // 应用伤害
+    enemy.hp = Math.max(0, enemy.hp - burnDamage)
+
+    // 获取敌人位置
+    const enemyPosIndex = this.enemies.indexOf(enemy)
+    const enemyPos = this.enemyPositions[enemyPosIndex] || { x: this.enemyBaseX, y: this.enemyBaseY }
+
+    // 显示灼烧伤害（特殊样式）
+    this.damageTexts.push({
+      text: burnDamage.toString(),
+      label: '灼烧',  // 特殊标签
+      x: enemyPos.x,
+      y: enemyPos.y - 70 * this.dpr,
+      color: '#ff9f43',  // 橙色
+      life: 2.0,
+      type: 'burn'  // 灼烧类型
+    })
+
+    const turnsText = burnEffect.turnsRemaining > 1 ? `（剩余${burnEffect.turnsRemaining}回合）` : '（最后一回合）'
+    this._addLog(`🔥 ${enemy.name} 受到 ${burnDamage} 点灼烧伤害！${turnsText}`)
+
+    // 减少剩余回合
+    burnEffect.turnsRemaining--
+
+    // 检查灼烧是否结束
+    if (burnEffect.turnsRemaining <= 0) {
+      this.statusEffects.enemies[enemyIndex] = effects.filter(e => e.type !== 'burn')
+      this._addLog(`🔥 ${enemy.name} 的灼烧效果已结束`)
+    }
+  }
+
+  /**
+   * 检查敌人是否被冻结
+   */
+  _checkFrozen(enemy) {
+    const enemyIndex = this.enemies.indexOf(enemy)
+    if (enemyIndex === -1 || !this.statusEffects.enemies[enemyIndex]) return false
+
+    const effects = this.statusEffects.enemies[enemyIndex]
+    const freezeEffect = effects.find(e => e.type === 'freeze')
+
+    if (!freezeEffect) return false
+
+    // 被冻结，跳过行动
+    this._addLog(`❄️ ${enemy.name} 被冻结了，无法行动！`)
+
+    // 移除冻结效果
+    this.statusEffects.enemies[enemyIndex] = effects.filter(e => e.type !== 'freeze')
+
+    return true
+  }
+
+  /**
+   * 获取敌人的状态效果图标
+   */
+  _getEnemyStatusIcons(enemyIndex) {
+    const icons = []
+    const effects = this.statusEffects.enemies[enemyIndex]
+
+    if (!effects) return icons
+
+    effects.forEach(effect => {
+      if (effect.type === 'burn') {
+        icons.push({
+          emoji: '🔥',
+          turns: effect.turnsRemaining
+        })
+      } else if (effect.type === 'freeze') {
+        icons.push({
+          emoji: '❄️',
+          turns: 1
+        })
+      }
+    })
+
+    return icons
   }
 
   _checkBattleEnd() {
@@ -1115,7 +1628,8 @@ export class BattleScene {
     this._renderAttackingHero(ctx)
 
     // 技能面板
-    if (this.phase === 'select_hero' || this.phase === 'select_skill' || this.phase === 'select_target') {
+    if (this.phase === 'select_hero' || this.phase === 'select_skill' || 
+        this.phase === 'select_target' || this.phase === 'select_enemy_target') {
       this._renderSkillPanel(ctx)
     }
 
@@ -1125,10 +1639,22 @@ export class BattleScene {
     // 伤害数字（安全检查）
     if (this.damageTexts && Array.isArray(this.damageTexts)) {
       for (const dt of this.damageTexts) {
-        ctx.font = `bold ${28 * dpr}px sans-serif`
-        ctx.fillStyle = dt.color
-        ctx.textAlign = 'center'
-        ctx.fillText(dt.text, dt.x, dt.y)
+        if (dt.type === 'burn') {
+          // 🔥 灼烧伤害 - 特殊显示样式
+          this._renderBurnDamage(ctx, dt, dpr)
+        } else if (dt.type === 'burn_effect') {
+          // 🔥 灼烧效果提示
+          this._renderStatusEffect(ctx, dt, dpr, 'burn')
+        } else if (dt.type === 'freeze_effect') {
+          // ❄️ 冰冻效果提示
+          this._renderStatusEffect(ctx, dt, dpr, 'freeze')
+        } else {
+          // 普通伤害/治疗
+          ctx.font = `bold ${28 * dpr}px sans-serif`
+          ctx.fillStyle = dt.color
+          ctx.textAlign = 'center'
+          ctx.fillText(dt.text, dt.x, dt.y)
+        }
       }
     }
 
@@ -1171,6 +1697,23 @@ export class BattleScene {
       const ex = pos.x
       const ey = pos.y
 
+      // 敌人目标选择提示
+      const isSelectable = this.phase === 'select_enemy_target'
+      if (isSelectable) {
+        // 脉冲高亮效果
+        const pulseAlpha = 0.3 + Math.sin(this.time * 4) * 0.15
+        ctx.fillStyle = `rgba(255, 159, 67, ${pulseAlpha})`
+        ctx.beginPath()
+        ctx.arc(ex, ey, 70 * dpr, 0, Math.PI * 2)
+        ctx.fill()
+
+        // 选择提示文字
+        ctx.font = `bold ${14 * dpr}px sans-serif`
+        ctx.fillStyle = '#ff9f43'
+        ctx.textAlign = 'center'
+        ctx.fillText('👆 点击选择', ex, ey - 110 * dpr)
+      }
+
       // 敌人光环效果
       if (enemy.isBoss) {
         const glowSize = 80 * dpr + Math.sin(this.time * 2) * 5 * dpr
@@ -1199,6 +1742,37 @@ export class BattleScene {
         ctx.font = `${12 * dpr}px sans-serif`
         ctx.fillStyle = '#ff6b6b'
         ctx.fillText(`暴击 ${(enemy.crit * 100).toFixed(0)}%`, ex, ey - 35 * dpr)
+      }
+
+      // 状态效果图标显示
+      const statusIcons = this._getEnemyStatusIcons(index)
+      if (statusIcons.length > 0) {
+        const iconY = ey - 95 * dpr
+        const iconSpacing = 30 * dpr
+        const startX = ex - (statusIcons.length - 1) * iconSpacing / 2
+
+        statusIcons.forEach((icon, i) => {
+          const iconX = startX + i * iconSpacing
+
+          // 图标背景
+          ctx.fillStyle = 'rgba(0, 0, 0, 0.6)'
+          ctx.beginPath()
+          ctx.arc(iconX, iconY, 12 * dpr, 0, Math.PI * 2)
+          ctx.fill()
+
+          // 图标
+          ctx.font = `${16 * dpr}px sans-serif`
+          ctx.textAlign = 'center'
+          ctx.textBaseline = 'middle'
+          ctx.fillText(icon.emoji, iconX, iconY)
+
+          // 剩余回合数（如果有）
+          if (icon.turns) {
+            ctx.font = `bold ${10 * dpr}px sans-serif`
+            ctx.fillStyle = '#fff'
+            ctx.fillText(icon.turns.toString(), iconX + 10 * dpr, iconY + 8 * dpr)
+          }
+        })
       }
 
       // 敌人 HP 条背景
@@ -1770,6 +2344,21 @@ export class BattleScene {
       ctx.fillText('👆 选择治疗目标', 20 * dpr, panelY + 25 * dpr)
       return
     }
+
+    if (this.phase === 'select_enemy_target') {
+      // 选择敌人目标提示
+      ctx.font = `bold ${16 * dpr}px sans-serif`
+      ctx.fillStyle = '#ff9f43'
+      ctx.textAlign = 'left'
+      ctx.fillText('🎯 选择攻击目标', 20 * dpr, panelY + 25 * dpr)
+
+      // 提示文字
+      ctx.font = `${12 * dpr}px sans-serif`
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.6)'
+      ctx.fillText('点击上方敌人选择攻击目标', 20 * dpr, panelY + 45 * dpr)
+      ctx.fillText(`当前技能：${this.selectedSkill?.name || '未知'}`, 20 * dpr, panelY + 65 * dpr)
+      return
+    }
     
     if (this.phase === 'select_hero') {
       // 角色选择阶段
@@ -1980,6 +2569,105 @@ export class BattleScene {
       ctx.fillStyle = 'rgba(255, 255, 255, 0.6)'
       ctx.fillText(phaseText, w / 2, infoY + infoH + 15 * dpr)
     }
+  }
+
+  /**
+   * 渲染灼烧伤害（特殊样式）
+   */
+  _renderBurnDamage(ctx, dt, dpr) {
+    const x = dt.x
+    const y = dt.y
+
+    // 背景框
+    const boxW = 100 * dpr
+    const boxH = 40 * dpr
+    const boxX = x - boxW / 2
+    const boxY = y - boxH / 2
+
+    // 火焰渐变背景
+    const bgGrad = ctx.createLinearGradient(boxX, boxY, boxX, boxY + boxH)
+    bgGrad.addColorStop(0, 'rgba(255, 107, 107, 0.9)')
+    bgGrad.addColorStop(1, 'rgba(255, 159, 67, 0.9)')
+    ctx.fillStyle = bgGrad
+    ctx.beginPath()
+    this._roundRect(ctx, boxX, boxY, boxW, boxH, 8 * dpr)
+    ctx.fill()
+
+    // 外框发光效果
+    ctx.shadowColor = '#ff9f43'
+    ctx.shadowBlur = 10 * dpr
+    ctx.strokeStyle = '#fff'
+    ctx.lineWidth = 2 * dpr
+    ctx.beginPath()
+    this._roundRect(ctx, boxX, boxY, boxW, boxH, 8 * dpr)
+    ctx.stroke()
+    ctx.shadowBlur = 0
+
+    // 标签文字（灼烧）
+    ctx.font = `bold ${12 * dpr}px sans-serif`
+    ctx.fillStyle = '#fff'
+    ctx.textAlign = 'center'
+    ctx.textBaseline = 'middle'
+    ctx.fillText('🔥 灼烧', x, y - 8 * dpr)
+
+    // 伤害数值
+    ctx.font = `bold ${18 * dpr}px sans-serif`
+    ctx.fillStyle = '#fff'
+    ctx.fillText(`-${dt.text}`, x, y + 10 * dpr)
+  }
+
+  /**
+   * 渲染状态效果提示（灼烧/冰冻）
+   */
+  _renderStatusEffect(ctx, dt, dpr, effectType) {
+    const x = dt.x
+    const y = dt.y
+
+    // 根据效果类型设置颜色和图标
+    const config = {
+      burn: {
+        gradient: ['rgba(255, 107, 107, 0.9)', 'rgba(255, 159, 67, 0.9)'],
+        glow: '#ff9f43',
+        icon: '🔥'
+      },
+      freeze: {
+        gradient: ['rgba(116, 185, 255, 0.9)', 'rgba(162, 155, 254, 0.9)'],
+        glow: '#74b9ff',
+        icon: '❄️'
+      }
+    }[effectType]
+
+    // 背景框
+    const boxW = 120 * dpr
+    const boxH = 35 * dpr
+    const boxX = x - boxW / 2
+    const boxY = y - boxH / 2
+
+    // 渐变背景
+    const bgGrad = ctx.createLinearGradient(boxX, boxY, boxX, boxY + boxH)
+    bgGrad.addColorStop(0, config.gradient[0])
+    bgGrad.addColorStop(1, config.gradient[1])
+    ctx.fillStyle = bgGrad
+    ctx.beginPath()
+    this._roundRect(ctx, boxX, boxY, boxW, boxH, 8 * dpr)
+    ctx.fill()
+
+    // 外框发光效果
+    ctx.shadowColor = config.glow
+    ctx.shadowBlur = 12 * dpr
+    ctx.strokeStyle = '#fff'
+    ctx.lineWidth = 2 * dpr
+    ctx.beginPath()
+    this._roundRect(ctx, boxX, boxY, boxW, boxH, 8 * dpr)
+    ctx.stroke()
+    ctx.shadowBlur = 0
+
+    // 文字
+    ctx.font = `bold ${16 * dpr}px sans-serif`
+    ctx.fillStyle = '#fff'
+    ctx.textAlign = 'center'
+    ctx.textBaseline = 'middle'
+    ctx.fillText(`${config.icon} ${dt.text}`, x, y)
   }
 
   _renderEndScreen(ctx, title, color, hint) {

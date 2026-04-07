@@ -11,6 +11,7 @@ import { DataManager } from './core/data-manager.js'
 import { InputManager } from './core/input-manager.js'
 import { AudioManager } from './core/audio-manager.js'
 import { AssetManager, ASSETS } from './core/asset-manager.js'
+import { SkillEffectManager } from './core/skill-effect-manager.js'
 
 // 场景类型
 const SCENE = {
@@ -48,6 +49,7 @@ export class Game {
     this.input = new InputManager(this.dpr)
     this.audio = new AudioManager()
     this.assets = new AssetManager()
+    this.effects = new SkillEffectManager(this)
 
     // 场景切换动画
     this._fadeAlpha = 0
@@ -179,6 +181,7 @@ export class Game {
     // 更新
     this._updateFade()
     this.input.update()
+    this.effects.update(this.deltaTime * 1000) // 更新特效（毫秒）
 
     if (this.currentScene) {
       this.currentScene.update(this.deltaTime)
@@ -198,6 +201,9 @@ export class Game {
     if (this.currentScene) {
       this.currentScene.render(ctx)
     }
+
+    // 渲染特效（在场景上层）
+    this.effects.render(ctx)
 
     // 渲染淡入淡出
     if (this._fadeAlpha > 0) {

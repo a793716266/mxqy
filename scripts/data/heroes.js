@@ -33,8 +33,31 @@ export const HEROES = [
     spd: 11,
     avatar: 'images/characters/hero_lixiaobao.png',
     skills: [
-      { id: 'fireball', name: '火球术', type: 'magic', power: 1.5, mpCost: 8, desc: '强力火焰魔法' },
-      { id: 'ice_shard', name: '冰晶', type: 'magic', power: 1.0, mpCost: 6, desc: '冰系攻击，减速敌人', effect: 'slow' },
+      {
+        id: 'fireball',
+        name: '火球术',
+        type: 'magic',
+        power: 1.5,
+        mpCost: 8,
+        desc: '强力火焰魔法，灼烧敌人3回合',
+        statusEffect: {
+          type: 'burn',
+          duration: 3,
+          baseDamage: 15
+        }
+      },
+      {
+        id: 'ice_shard',
+        name: '冰晶术',
+        type: 'magic',
+        power: 1.0,
+        mpCost: 6,
+        desc: '冰系攻击，30%概率冻结敌人1回合',
+        statusEffect: {
+          type: 'freeze',
+          probability: 0.3
+        }
+      },
       { id: 'thunder', name: '雷击', type: 'magic', power: 2.0, mpCost: 15, desc: '强力雷电攻击全体', target: 'all' },
       { id: 'mana_shield', name: '魔力护盾', type: 'buff', mpCost: 10, desc: '提升全体防御', effect: 'def_up', turns: 3, value: 0.3 }
     ]
