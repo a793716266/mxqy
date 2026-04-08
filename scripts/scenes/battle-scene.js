@@ -701,38 +701,66 @@ export class BattleScene {
     // 检查敌人是否有帧动画
     const animState = this.enemyAnimStates[enemyIndex]
 
+    // 判断是否是群体技能
+    const currentSkill = this._currentEnemySkill
+    const isAoeSkill = currentSkill && (currentSkill.target === 'all' || currentSkill.aoe === true)
+
     if (animState) {
-      // 有帧动画的敌人：原地播放攻击动画，不跳跃
       this.enemyAttacking = true
       this.enemyAttackTarget = target
-      this.enemyAttackAnim = null  // 不使用跳跃动画
 
-      animState.state = 'attack'
-      animState.frame = 8  // 攻击从第8帧开始
-      animState.frameTimer = 0
-      animState.attackDamageApplied = false
+      if (isAoeSkill) {
+        // 群体技能：原地播放skill帧动画，不跳跃
+        this.enemyAttackAnim = null
+        animState.state = 'skill'
+        animState.frame = 50  // skill从第50帧开始
+        animState.frameTimer = 0
+        animState.attackDamageApplied = false
+      } else {
+        // 普通攻击/单体技能：跳跃到敌人旁边，到达后播放attack帧动画
+        this.enemyAttackAnim = {
+          phase: 'jump',       // jump → anim_attack → return
+          progress: 0,
+          baseX: enemyPos.x,
+          baseY: enemyPos.y,
+          targetX: targetPos.x + 40 * this.dpr,
+          targetY: targetPos.y,
+          currentX: enemyPos.x,
+          currentY: enemyPos.y,
+          enemy: this.enemy,
+          hasFrameAnim: true    // 标记有帧动画，跳到目标后播放帧动画
+        }
+        // 暂时不启动帧动画，等跳跃到目标后再启动
+      }
 
-      // 设置攻击完成回调
+      // 设置攻击完成回调（帧动画播放完毕后触发）
       animState.onAttackComplete = () => {
-        this.enemyAttacking = false
-        this.enemyAttackTarget = null
-        this.currentEnemyIndex++
+        // 如果是跳跃攻击（非AOE），跳跃回原位后再完成
+        if (!isAoeSkill && this.enemyAttackAnim) {
+          this.enemyAttackAnim.phase = 'return'
+          this.enemyAttackAnim.progress = 0
+        } else {
+          // AOE技能直接完成
+          this.enemyAttacking = false
+          this.enemyAttackTarget = null
+          this.currentEnemyIndex++
 
-        setTimeout(() => {
-          if (this.phase !== 'victory' && this.phase !== 'defeat') {
-            if (this.currentEnemyIndex < this.enemyAttackQueue.length) {
-              this._enemyAction()
-            } else {
-              this.enemyAttackQueue = []
-              this.currentEnemyIndex = 0
-              this.enemyTurnStarted = false
-              this.turn++
-              this.actedHeroes.clear()
-              this._addLog(`--- 第 ${this.turn} 回合 ---`)
-              this.phase = 'select_hero'
+          setTimeout(() => {
+            if (this.phase !== 'victory' && this.phase !== 'defeat') {
+              if (this.currentEnemyIndex < this.enemyAttackQueue.length) {
+                this._enemyAction()
+              } else {
+                this.enemyAttackQueue = []
+                this.currentEnemyIndex = 0
+                this.enemyTurnStarted = false
+                this.turn++
+                this.actedHeroes.clear()
+                this._addLog(`--- 第 ${this.turn} 回合 ---`)
+                this.phase = 'select_hero'
+              }
             }
-          }
-        }, 300)
+          }, 300)
+        }
       }
     } else {
       // 无帧动画的敌人：使用原有跳跃攻击动画
@@ -756,17 +784,30 @@ export class BattleScene {
     if (!this.enemyAttackAnim || !this.enemyAttacking) return
 
     const anim = this.enemyAttackAnim
-    const speed = 4.0 // 敌人稍微快一点
+    const speed = 4.0
+    const enemyIndex = this.enemies.indexOf(this.enemy)
+    const animState = this.enemyAnimStates[enemyIndex]
 
     if (anim.phase === 'jump') {
       anim.progress += dt * speed
       if (anim.progress >= 1) {
-        anim.progress = 0
-        anim.phase = 'hit'
-        anim.currentX = anim.targetX
-        anim.currentY = anim.targetY
-        // 触发攻击效果
-        this._applyEnemyAttackDamage(this.enemyAttackTarget)
+        if (anim.hasFrameAnim && animState) {
+          // 有帧动画：到达目标后启动attack帧动画
+          anim.phase = 'anim_attack'
+          anim.currentX = anim.targetX
+          anim.currentY = anim.targetY
+          animState.state = 'attack'
+          animState.frame = 8
+          animState.frameTimer = 0
+          animState.attackDamageApplied = false
+        } else {
+          // 无帧动画：到达目标后直接结算伤害
+          anim.progress = 0
+          anim.phase = 'hit'
+          anim.currentX = anim.targetX
+          anim.currentY = anim.targetY
+          this._applyEnemyAttackDamage(this.enemyAttackTarget)
+        }
       } else {
         const t = this._easeOutQuad(anim.progress)
         anim.currentX = anim.baseX + (anim.targetX - anim.baseX) * t
@@ -774,6 +815,11 @@ export class BattleScene {
         const jumpHeight = Math.sin(anim.progress * Math.PI) * 50 * this.dpr
         anim.currentY -= jumpHeight
       }
+    } else if (anim.phase === 'anim_attack') {
+      // 帧动画播放阶段：等待帧动画播放完毕（由 _updateEnemyAnimations 的 onAttackComplete 回调触发 return 阶段）
+      // 更新位置保持在目标位置
+      anim.currentX = anim.targetX
+      anim.currentY = anim.targetY
     } else if (anim.phase === 'hit') {
       anim.progress += dt * speed * 2
       if (anim.progress >= 0.25) {
@@ -818,8 +864,8 @@ export class BattleScene {
   }
 
   _applyEnemyAttackDamage(target) {
-    const skills = this.enemy.skills || []
-    const skill = skills[Math.floor(Math.random() * skills.length)] || { name: '攻击', power: 1.0 }
+    // 使用预选的技能（攻击动画启动前已决定）
+    const skill = this._currentEnemySkill || { name: '攻击', power: 1.0, type: 'attack' }
 
     // 特殊技能类型：自我治愈
     if (skill.type === 'heal_self') {
@@ -1431,6 +1477,10 @@ export class BattleScene {
     }
 
     const target = alive[Math.floor(Math.random() * alive.length)]
+
+    // 提前选择技能，供攻击动画判断AOE等属性
+    const skills = currentEnemy.skills || []
+    this._currentEnemySkill = skills[Math.floor(Math.random() * skills.length)] || { name: '攻击', power: 1.0, type: 'attack' }
 
     // 启动攻击动画
     this._startEnemyAttackAnimation(target)
