@@ -106,7 +106,12 @@ export class Game {
     this.sceneName = sceneName
 
     // 淡出 → 切换 → 淡入
-    this._fadeTo(() => {
+    this._fadeTo(async () => {
+      // 进入战斗场景前加载battle分包
+      if (sceneName === SCENE.BATTLE) {
+        await this._loadSubpackage('battle')
+      }
+
       switch (sceneName) {
         case SCENE.MAIN_MENU:
           this.currentScene = new MainMenuScene(this)
@@ -123,14 +128,34 @@ export class Game {
         case SCENE.COLLECTION:
           this.currentScene = new CollectionScene(this)
           break
-          break
-        case SCENE.BATTLE:
-          this.currentScene = new BattleScene(this, data)
-          break
       }
 
       if (this.currentScene) {
         this.currentScene.init()
+      }
+    })
+  }
+
+  /**
+   * 加载分包
+   */
+  _loadSubpackage(name) {
+    return new Promise((resolve) => {
+      const task = wx.loadSubpackage({
+        name: name,
+        success: () => {
+          console.log(`[Game] 分包 ${name} 加载完成`)
+          resolve()
+        },
+        fail: (err) => {
+          console.error(`[Game] 分包 ${name} 加载失败:`, err)
+          resolve() // 失败也继续
+        }
+      })
+      if (task && task.onProgressUpdate) {
+        task.onProgressUpdate((res) => {
+          console.log(`[Game] 分包 ${name} 加载进度: ${res.progress}%`)
+        })
       }
     })
   }

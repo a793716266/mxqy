@@ -24,6 +24,9 @@ __pycache__/
 # 未使用文件备份
 images/characters_anim/_未使用文件_备份/
 
+# 源素材备份（不打包进游戏）
+_source_backup/
+
 # 临时文件
 *.tmp
 *.log

@@ -172,11 +172,11 @@ export class FieldMovement {
     if (this.isMoving) {
       // 走路动画
       if (heroId === 'zhenbao') {
-        frameDuration = 0.053 // 臻宝19帧，53ms/帧 ≈ 1秒循环
-        totalFrames = 19
+        frameDuration = 0.100 // 臻宝10帧（减帧版），100ms/帧 ≈ 1秒循环
+        totalFrames = 10
       } else if (isCat) {
-        frameDuration = 0.042 // 猫咪24帧，42ms/帧 ≈ 1秒循环
-        totalFrames = 24
+        frameDuration = 0.083 // 猫咪12帧（减帧版），83ms/帧 ≈ 1秒循环
+        totalFrames = 12
       } else {
         frameDuration = 0.125 // 其他8帧，125ms/帧 = 1秒循环
         totalFrames = 8
@@ -184,11 +184,11 @@ export class FieldMovement {
     } else {
       // 待机动画（1秒循环）
       if (heroId === 'zhenbao') {
-        frameDuration = 0.100 // 臻宝10帧，100ms/帧 = 1秒循环
-        totalFrames = 10
+        frameDuration = 0.200 // 臻宝5帧（减帧版），200ms/帧 = 1秒循环
+        totalFrames = 5
       } else if (isCat) {
-        frameDuration = 0.063 // 猫咪16帧，63ms/帧 ≈ 1秒循环
-        totalFrames = 16
+        frameDuration = 0.125 // 猫咪8帧（减帧版），125ms/帧 ≈ 1秒循环
+        totalFrames = 8
       } else {
         frameDuration = 0.500 // 其他2帧，500ms/帧 = 1秒循环
         totalFrames = 2
@@ -320,11 +320,11 @@ export class FieldMovement {
       if (follower.isMoving) {
         // 走路动画
         if (heroId === 'zhenbao') {
-          frameDuration = 0.053
-          totalFrames = 19
+          frameDuration = 0.100
+          totalFrames = 10
         } else if (isCat) {
-          frameDuration = 0.042
-          totalFrames = 24
+          frameDuration = 0.083
+          totalFrames = 12
         } else {
           frameDuration = 0.125
           totalFrames = 8
@@ -332,11 +332,11 @@ export class FieldMovement {
       } else {
         // 待机动画
         if (heroId === 'zhenbao') {
-          frameDuration = 0.100
-          totalFrames = 10
+          frameDuration = 0.200
+          totalFrames = 5
         } else if (isCat) {
-          frameDuration = 0.063
-          totalFrames = 16
+          frameDuration = 0.125
+          totalFrames = 8
         } else {
           frameDuration = 0.500
           totalFrames = 2
