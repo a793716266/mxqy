@@ -1034,6 +1034,16 @@ export class BattleScene {
   }
 
   _handleTap(tx, ty) {
+    // 撤退按钮检测（玩家回合阶段通用）
+    const playerPhases = ['select_hero', 'select_skill', 'select_target', 'select_enemy_target']
+    if (playerPhases.includes(this.phase) && this._fleeButtonArea) {
+      const btn = this._fleeButtonArea
+      if (tx >= btn.x && tx <= btn.x + btn.w && ty >= btn.y && ty <= btn.y + btn.h) {
+        this._flee()
+        return
+      }
+    }
+
     switch (this.phase) {
       case 'select_hero':
         this._handleHeroSelect(tx, ty)
@@ -1055,6 +1065,20 @@ export class BattleScene {
         this._handlePurifyTap(tx, ty)
         break
     }
+  }
+
+  /**
+   * 撤退（逃跑）- 返回地图，不获得任何奖励，怪物保持存活
+   */
+  _flee() {
+    this._addLog(`🏃 撤退成功！`)
+    // 确保 currentBattleMonsterId 保留（字段场景需要它来查找怪物）
+    // 不设置 battleVictory，字段场景会走"战斗失败/撤退"分支，怪物保持存活
+    if (this.monsterId) {
+      this.game.data.set('currentBattleMonsterId', this.monsterId)
+    }
+    console.log(`[Battle] 撤退 - 怪物ID: ${this.monsterId}, 区域: ${this.nodeId}`)
+    this.game.changeScene('field', { nodeId: this.nodeId })
   }
   
   /**
@@ -1937,6 +1961,7 @@ export class BattleScene {
     if (this.phase === 'select_hero' || this.phase === 'select_skill' || 
         this.phase === 'select_target' || this.phase === 'select_enemy_target') {
       this._renderSkillPanel(ctx)
+      this._renderFleeButton(ctx)
     }
 
     // 战斗日志
@@ -3099,6 +3124,42 @@ export class BattleScene {
     ctx.textAlign = 'center'
     ctx.textBaseline = 'middle'
     ctx.fillText(`${config.icon} ${dt.text}`, x, y)
+  }
+
+  /**
+   * 渲染撤退按钮（玩家回合阶段显示）
+   */
+  _renderFleeButton(ctx) {
+    const dpr = this.dpr
+    const w = this.width
+    const btnW = 60 * dpr
+    const btnH = 28 * dpr
+    const btnX = 12 * dpr
+    const btnY = 12 * dpr
+
+    // 保存按钮区域用于点击检测
+    this._fleeButtonArea = { x: btnX, y: btnY, w: btnW, h: btnH }
+
+    // 按钮背景
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.5)'
+    ctx.beginPath()
+    this._roundRect(ctx, btnX, btnY, btnW, btnH, 6 * dpr)
+    ctx.fill()
+
+    // 边框
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.4)'
+    ctx.lineWidth = 1 * dpr
+    ctx.beginPath()
+    this._roundRect(ctx, btnX, btnY, btnW, btnH, 6 * dpr)
+    ctx.stroke()
+
+    // 文字
+    ctx.font = `bold ${13 * dpr}px sans-serif`
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.8)'
+    ctx.textAlign = 'center'
+    ctx.textBaseline = 'middle'
+    ctx.fillText('撤退', btnX + btnW / 2, btnY + btnH / 2)
+    ctx.textBaseline = 'alphabetic'
   }
 
   _renderEndScreen(ctx, title, color, hint) {

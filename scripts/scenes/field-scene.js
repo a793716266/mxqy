@@ -403,6 +403,11 @@ export class FieldScene {
     console.log(`[Field] 检查战斗结果 - 区域: ${this.areaId}, 战斗怪物ID: ${battleMonsterId}, 胜利: ${battleVictory}`)
     console.log(`[Field] 当前区域怪物数量: ${this.mapMonsters?.length}, 其中存活: ${this.mapMonsters?.filter(m => m.alive).length}`)
 
+    if (!battleMonsterId) {
+      console.log(`[Field] 无战斗结果需要处理`)
+      return
+    }
+
     if (battleMonsterId) {
       // 找到对应怪物
       const monster = this.mapMonsters.find(m => m.id === battleMonsterId)
@@ -425,8 +430,8 @@ export class FieldScene {
             this.game.data.set('equipmentData', equipmentManager.serialize())
           }
         } else {
-          // 战斗失败，怪物保持存活
-          console.log(`[Field] 战斗失败，怪物 ${monster.name} 仍然存活`)
+          // 战斗失败/撤退，怪物保持存活
+          console.log(`[Field] 战斗未胜利（失败或撤退），怪物 ${monster.name} 仍然存活`)
         }
       } else {
         console.error(`[Field] 未找到战斗怪物！ID: ${battleMonsterId}`)
