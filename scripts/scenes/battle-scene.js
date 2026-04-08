@@ -96,7 +96,9 @@ export class BattleScene {
           state: 'idle',  // idle, attack, skill
           frame: 1,
           frameTimer: 0,
-          frameDuration: 150  // 150ms一帧
+          frameDuration: 100,  // 100ms一帧（更流畅）
+          attackDamageApplied: false,  // 攻击伤害是否已结算
+          onAttackComplete: null  // 攻击完成回调
         }
       }
     })
@@ -624,38 +626,61 @@ export class BattleScene {
       
       if (!animState) return
 
+      // 非动画播放状态不更新帧
+      if (animState.state === 'idle') {
+        animState.frameTimer += dt * 1000
+        if (animState.frameTimer >= animState.frameDuration) {
+          animState.frameTimer = 0
+          animState.frame++
+          if (animState.frame > 7) animState.frame = 1
+        }
+        return
+      }
+
       // 更新帧计时器
       animState.frameTimer += dt * 1000
-
-      // 根据状态获取帧数
-      let frameCount = 7  // idle默认7帧
-      if (animState.state === 'idle') {
-        frameCount = 7
-      } else if (animState.state === 'attack') {
-        frameCount = 16
-      } else if (animState.state === 'skill') {
-        frameCount = 31
-      }
 
       // 检查是否需要切换帧
       if (animState.frameTimer >= animState.frameDuration) {
         animState.frameTimer = 0
         animState.frame++
         
-        // 循环播放
-        if (animState.state === 'idle') {
-          if (animState.frame > 7) animState.frame = 1
-        } else if (animState.state === 'attack') {
-          // 攻击动画播放完毕后回到idle
+        if (animState.state === 'attack') {
+          // 攻击动画打击帧：第15帧时结算伤害
+          if (animState.frame === 15 && !animState.attackDamageApplied) {
+            animState.attackDamageApplied = true
+            if (this.enemyAttackTarget) {
+              this._applyEnemyAttackDamage(this.enemyAttackTarget)
+            }
+          }
+          // 攻击动画播放完毕（第23帧后）回到idle
           if (animState.frame > 23) {
             animState.frame = 1
             animState.state = 'idle'
+            animState.attackDamageApplied = false
+            // 触发攻击完成回调
+            if (animState.onAttackComplete) {
+              animState.onAttackComplete()
+              animState.onAttackComplete = null
+            }
           }
         } else if (animState.state === 'skill') {
-          // 技能动画播放完毕后回到idle
+          // 技能动画打击帧：第65帧时结算伤害
+          if (animState.frame === 65 && !animState.attackDamageApplied) {
+            animState.attackDamageApplied = true
+            if (this.enemyAttackTarget) {
+              this._applyEnemyAttackDamage(this.enemyAttackTarget)
+            }
+          }
+          // 技能动画播放完毕（第80帧后）回到idle
           if (animState.frame > 80) {
             animState.frame = 1
             animState.state = 'idle'
+            animState.attackDamageApplied = false
+            if (animState.onAttackComplete) {
+              animState.onAttackComplete()
+              animState.onAttackComplete = null
+            }
           }
         }
       }
@@ -673,26 +698,57 @@ export class BattleScene {
     const enemyIndex = this.enemies.indexOf(this.enemy)
     const enemyPos = this.enemyPositions[enemyIndex] || { x: this.enemyBaseX, y: this.enemyBaseY }
 
-    // 触发敌人攻击动画（史莱姆猫）
+    // 检查敌人是否有帧动画
     const animState = this.enemyAnimStates[enemyIndex]
+
     if (animState) {
+      // 有帧动画的敌人：原地播放攻击动画，不跳跃
+      this.enemyAttacking = true
+      this.enemyAttackTarget = target
+      this.enemyAttackAnim = null  // 不使用跳跃动画
+
       animState.state = 'attack'
       animState.frame = 8  // 攻击从第8帧开始
       animState.frameTimer = 0
-    }
+      animState.attackDamageApplied = false
 
-    this.enemyAttacking = true
-    this.enemyAttackTarget = target
-    this.enemyAttackAnim = {
-      phase: 'jump',
-      progress: 0,
-      baseX: enemyPos.x,
-      baseY: enemyPos.y,
-      targetX: targetPos.x + 40 * this.dpr, // 攻击位置（角色右侧）
-      targetY: targetPos.y,
-      currentX: enemyPos.x,
-      currentY: enemyPos.y,
-      enemy: this.enemy  // 保存当前攻击的敌人
+      // 设置攻击完成回调
+      animState.onAttackComplete = () => {
+        this.enemyAttacking = false
+        this.enemyAttackTarget = null
+        this.currentEnemyIndex++
+
+        setTimeout(() => {
+          if (this.phase !== 'victory' && this.phase !== 'defeat') {
+            if (this.currentEnemyIndex < this.enemyAttackQueue.length) {
+              this._enemyAction()
+            } else {
+              this.enemyAttackQueue = []
+              this.currentEnemyIndex = 0
+              this.enemyTurnStarted = false
+              this.turn++
+              this.actedHeroes.clear()
+              this._addLog(`--- 第 ${this.turn} 回合 ---`)
+              this.phase = 'select_hero'
+            }
+          }
+        }, 300)
+      }
+    } else {
+      // 无帧动画的敌人：使用原有跳跃攻击动画
+      this.enemyAttacking = true
+      this.enemyAttackTarget = target
+      this.enemyAttackAnim = {
+        phase: 'jump',
+        progress: 0,
+        baseX: enemyPos.x,
+        baseY: enemyPos.y,
+        targetX: targetPos.x + 40 * this.dpr,
+        targetY: targetPos.y,
+        currentX: enemyPos.x,
+        currentY: enemyPos.y,
+        enemy: this.enemy
+      }
     }
   }
 
