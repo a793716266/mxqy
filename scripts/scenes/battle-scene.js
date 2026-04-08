@@ -82,6 +82,17 @@ export class BattleScene {
     // 敌人动画系统
     this.enemyAnimStates = {}  // 敌人动画状态
     this._initEnemyAnimations()
+
+    // 敌人HP延迟过渡动画（DNF风格多段血条）
+    this.enemyHpDelay = this.enemies.map(e => {
+      const currentSegment = e.hp <= 0 ? 0 : Math.floor((e.hp - 1) / 100)
+      return { delay: 1.0, lastSegment: currentSegment }
+    })
+    // 敌人退场动画（渐渐透明）
+    this.enemyDeathAnim = this.enemies.map(() => ({ alpha: 1.0, fading: false, timer: 0 }))
+    // 己方HP/MP延迟过渡动画
+    this.heroHpDelay = this.party.map(h => h.hp / h.maxHp)
+    this.heroMpDelay = this.party.map(h => h.mp / h.maxMp)
   }
 
   /**
@@ -418,8 +429,9 @@ export class BattleScene {
     this.damageTexts.push({
       text: `-${damage}`,
       x: targetEnemyPos.x,
-      y: targetEnemyPos.y - 50 * this.dpr,
-      color: isCrit ? '#ff4757' : '#ffffff',
+      y: targetEnemyPos.y - 80 * this.dpr,
+      color: '#ff4757',  // 物理伤害：红色
+      isCrit: isCrit,
       life: 1.5
     })
 
@@ -626,6 +638,12 @@ export class BattleScene {
     // 敌人动画更新
     this._updateEnemyAnimations(dt)
 
+    // HP/MP延迟过渡动画更新
+    this._updateHpDelay(dt)
+
+    // 敌人退场动画更新
+    this._updateEnemyDeathAnim(dt)
+
     // 感化剧情更新
     this._updatePurifyScene(dt)
   }
@@ -693,6 +711,85 @@ export class BattleScene {
             animState.onAttackComplete = null
           }
         }
+      }
+    })
+  }
+
+  /**
+   * 更新HP/MP延迟过渡动画
+   */
+  _updateHpDelay(dt) {
+    const speed = 1.0  // 延迟追赶速度（越小越慢）
+
+    // 敌人HP延迟（DNF风格：只追踪当前段的延迟，跨段时重置）
+    const SEGMENT_HP = 100
+    this.enemies.forEach((enemy, i) => {
+      if (!this.enemyHpDelay[i]) {
+        this.enemyHpDelay[i] = { delay: 1.0, lastSegment: 0 }
+      }
+      const delayInfo = this.enemyHpDelay[i]
+
+      // 计算当前段
+      const currentSegment = enemy.hp <= 0 ? 0 : Math.floor((enemy.hp - 1) / SEGMENT_HP)
+      const segStartHp = currentSegment * SEGMENT_HP
+      const segEndHp = Math.min((currentSegment + 1) * SEGMENT_HP, enemy.maxHp)
+      const segMaxHp = segEndHp - segStartHp
+      const segCurrentHp = Math.max(0, enemy.hp - segStartHp)
+      const target = enemy.hp <= 0 ? 0 : segCurrentHp / segMaxHp
+
+      // 跨段时重置延迟为满血（新段从满血开始扣）
+      if (currentSegment !== delayInfo.lastSegment) {
+        delayInfo.delay = 1.0
+        delayInfo.lastSegment = currentSegment
+      }
+
+      if (delayInfo.delay > target) {
+        delayInfo.delay = Math.max(target, delayInfo.delay - dt * speed)
+      } else {
+        delayInfo.delay = target  // 回血时立即跟上
+      }
+    })
+
+    // 己方HP/MP延迟
+    this.party.forEach((hero, i) => {
+      if (!this.heroHpDelay[i]) this.heroHpDelay[i] = hero.hp / hero.maxHp
+      if (!this.heroMpDelay[i]) this.heroMpDelay[i] = hero.mp / hero.maxMp
+      const hpTarget = Math.max(0, hero.hp / hero.maxHp)
+      const mpTarget = Math.max(0, hero.mp / hero.maxMp)
+      if (this.heroHpDelay[i] > hpTarget) {
+        this.heroHpDelay[i] = Math.max(hpTarget, this.heroHpDelay[i] - dt * speed)
+      } else {
+        this.heroHpDelay[i] = hpTarget
+      }
+      if (this.heroMpDelay[i] > mpTarget) {
+        this.heroMpDelay[i] = Math.max(mpTarget, this.heroMpDelay[i] - dt * speed)
+      } else {
+        this.heroMpDelay[i] = mpTarget
+      }
+    })
+  }
+
+  /**
+   * 更新敌人退场动画（渐渐透明）
+   */
+  _updateEnemyDeathAnim(dt) {
+    const fadeSpeed = 0.8  // 淡出速度（越大越快）
+    this.enemies.forEach((enemy, i) => {
+      if (!this.enemyDeathAnim[i]) {
+        this.enemyDeathAnim[i] = { alpha: 1.0, fading: false, timer: 0 }
+      }
+      const anim = this.enemyDeathAnim[i]
+
+      // 检测敌人刚死亡，启动退场动画
+      if (enemy.hp <= 0 && !anim.fading && anim.alpha > 0) {
+        anim.fading = true
+        anim.timer = 0
+      }
+
+      // 退场动画进行中
+      if (anim.fading && anim.alpha > 0) {
+        anim.timer += dt
+        anim.alpha = Math.max(0, 1.0 - anim.timer * fadeSpeed)
       }
     })
   }
@@ -927,7 +1024,8 @@ export class BattleScene {
       text: `-${damage}`,
       x: targetPos ? targetPos.x : 80 * this.dpr,
       y: targetPos ? targetPos.y - 40 * this.dpr : this.height * 0.5,
-      color: isCrit ? '#ff4757' : '#ff6b6b',  // 暴击时使用更亮的红色
+      color: '#ff4757',  // 敌人物理伤害：红色
+      isCrit: isCrit,
       life: 1.5
     })
 
@@ -1272,8 +1370,9 @@ export class BattleScene {
     this.damageTexts.push({
       text: `-${damage}`,
       x: targetPos.x,
-      y: targetPos.y - 50 * this.dpr,
-      color: isCrit ? '#ff4757' : '#ffffff',
+      y: targetPos.y - 1 * this.dpr,
+      color: '#5f9fff',  // 法系伤害：蓝色
+      isCrit: isCrit,
       life: 1.5
     })
 
@@ -1856,10 +1955,16 @@ export class BattleScene {
           // ❄️ 冰冻效果提示
           this._renderStatusEffect(ctx, dt, dpr, 'freeze')
         } else {
-          // 普通伤害/治疗
-          ctx.font = `bold ${28 * dpr}px sans-serif`
+          // 普通伤害/治疗 - 暴击放大字体
+          const isCrit = dt.isCrit || false
+          const fontSize = isCrit ? 38 : 28
+          ctx.font = `bold ${fontSize * dpr}px sans-serif`
           ctx.fillStyle = dt.color
           ctx.textAlign = 'center'
+          // 描边增强可读性（蓝色等浅色字体尤其需要）
+          ctx.strokeStyle = 'rgba(0, 0, 0, 0.7)'
+          ctx.lineWidth = (isCrit ? 3 : 2) * dpr
+          ctx.strokeText(dt.text, dt.x, dt.y)
           ctx.fillText(dt.text, dt.x, dt.y)
         }
       }
@@ -1899,13 +2004,23 @@ export class BattleScene {
 
     this.enemies.forEach((enemy, index) => {
       const pos = this.enemyPositions[index]
-      if (!pos || enemy.hp <= 0) return
+      if (!pos) return
+
+      // 死亡退场动画：alpha<=0 时才跳过
+      const deathAnim = this.enemyDeathAnim[index]
+      const isDead = enemy.hp <= 0
+      if (isDead && (!deathAnim || deathAnim.alpha <= 0)) return
+
+      // 退场动画时设置透明度
+      if (isDead && deathAnim) {
+        ctx.globalAlpha = deathAnim.alpha
+      }
 
       const ex = pos.x
       const ey = pos.y
 
-      // 敌人目标选择提示
-      const isSelectable = this.phase === 'select_enemy_target'
+      // 敌人目标选择提示（死亡敌人不显示）
+      const isSelectable = !isDead && this.phase === 'select_enemy_target'
       if (isSelectable) {
         const pulseAlpha = 0.3 + Math.sin(this.time * 4) * 0.15
         ctx.fillStyle = `rgba(255, 159, 67, ${pulseAlpha})`
@@ -1916,11 +2031,11 @@ export class BattleScene {
         ctx.font = `bold ${14 * dpr}px sans-serif`
         ctx.fillStyle = '#ff9f43'
         ctx.textAlign = 'center'
-        ctx.fillText('👆 点击选择', ex, ey - 110 * dpr)
+        ctx.fillText('👆 点击选择', ex, ey - 125 * dpr)
       }
 
-      // 敌人光环效果
-      if (enemy.isBoss) {
+      // 敌人光环效果（死亡不显示）
+      if (!isDead && enemy.isBoss) {
         const glowSize = 80 * dpr + Math.sin(this.time * 2) * 5 * dpr
         ctx.fillStyle = 'rgba(255, 71, 87, 0.15)'
         ctx.beginPath()
@@ -1928,28 +2043,78 @@ export class BattleScene {
         ctx.fill()
       }
 
-      // 敌人名称和等级
-      ctx.font = `bold ${22 * dpr}px sans-serif`
+      // HP 血条（DNF风格：只显示当前段，打空自动切下一段，颜色不同）
+      const SEGMENT_HP = 100
+      const totalSegments = Math.ceil(enemy.maxHp / SEGMENT_HP)
+      // 当前HP所在段（从0开始，0=最底层段）
+      // 特殊处理：当hp正好是段边界时，显示下一段（满血），而非当前段（空血）
+      let currentSegment = enemy.hp <= 0 ? 0 : Math.floor((enemy.hp - 1) / SEGMENT_HP)
+      // 边界：hp=0时currentSegment=-1，修正为0
+      if (currentSegment < 0) currentSegment = 0
+      // 当前段内剩余HP
+      const segStartHp = currentSegment * SEGMENT_HP
+      const segEndHp = Math.min((currentSegment + 1) * SEGMENT_HP, enemy.maxHp)
+      const segMaxHp = segEndHp - segStartHp
+      const segCurrentHp = Math.max(0, enemy.hp - segStartHp)
+      const segRatio = enemy.hp <= 0 ? 0 : segCurrentHp / segMaxHp
+
+      // 延迟动画
+      const delayInfo = this.enemyHpDelay[index]
+      const segDelayRatio = delayInfo ? delayInfo.delay : 1.0
+
+      // 血条颜色（DNF风格：当前在第几段就用对应颜色）
+      const SEGMENT_COLORS = [
+        '#ff4757',  // 第1段 红
+        '#ff9f43',  // 第2段 橙
+        '#feca57',  // 第3段 黄
+        '#2ed573',  // 第4段 绿
+        '#1e90ff',  // 第5段 蓝
+        '#a55eea',  // 第6段 紫
+      ]
+      const barColor = SEGMENT_COLORS[currentSegment % SEGMENT_COLORS.length]
+
+      const hpBarW = 100 * dpr
+      const hpBarH = 16 * dpr
+      const hpBarX = ex - hpBarW / 2
+      const hpBarY = ey - 75 * dpr
+
+      // 背景
+      ctx.fillStyle = 'rgba(0, 0, 0, 0.5)'
+      ctx.beginPath()
+      this._roundRect(ctx, hpBarX - 3 * dpr, hpBarY - 3 * dpr, hpBarW + 6 * dpr, hpBarH + 6 * dpr, 10 * dpr)
+      ctx.fill()
+
+      // 段数标记（多段时显示 ×N，N=剩余段数）
+      const remainSegments = currentSegment + 1
+      const barText = totalSegments > 1
+        ? `×${remainSegments}`
+        : `${enemy.hp}/${enemy.maxHp}`
+      this._drawBar(ctx, hpBarX, hpBarY, hpBarW, hpBarH,
+        segRatio, barColor,
+        barText,
+        segDelayRatio)
+
+      // 敌人名称和等级（在HP条上方）
+      ctx.font = `bold ${16 * dpr}px sans-serif`
       ctx.fillStyle = enemy.isBoss ? '#ff4757' : '#ffffff'
       ctx.textAlign = 'center'
-
       const title = enemy.isBoss ? `👑 ${enemy.name}` : enemy.name
-      ctx.fillText(title, ex, ey - 70 * dpr)
+      ctx.fillText(title, ex, hpBarY - 18 * dpr)
 
-      ctx.font = `${16 * dpr}px sans-serif`
+      ctx.font = `${12 * dpr}px sans-serif`
       ctx.fillStyle = '#f39c12'
-      ctx.fillText(`Lv.${enemy.level || 1}`, ex, ey - 50 * dpr)
+      ctx.fillText(`Lv.${enemy.level || 1}`, ex, hpBarY - 34 * dpr)
 
       if (enemy.crit && enemy.crit > 0) {
-        ctx.font = `${12 * dpr}px sans-serif`
+        ctx.font = `${10 * dpr}px sans-serif`
         ctx.fillStyle = '#ff6b6b'
-        ctx.fillText(`暴击 ${(enemy.crit * 100).toFixed(0)}%`, ex, ey - 35 * dpr)
+        ctx.fillText(`暴击 ${(enemy.crit * 100).toFixed(0)}%`, ex, hpBarY - 48 * dpr)
       }
 
-      // 状态效果图标
+      // 状态效果图标（在等级上方）
       const statusIcons = this._getEnemyStatusIcons(index)
       if (statusIcons.length > 0) {
-        const iconY = ey - 95 * dpr
+        const iconY = hpBarY - 65 * dpr
         const iconSpacing = 30 * dpr
         const startX = ex - (statusIcons.length - 1) * iconSpacing / 2
 
@@ -1973,21 +2138,10 @@ export class BattleScene {
         })
       }
 
-      // HP 条
-      const hpBarW = 160 * dpr
-      const hpBarH = 20 * dpr
-      const hpBarX = ex - hpBarW / 2
-      const hpBarY = ey - 15 * dpr
-
-      ctx.fillStyle = 'rgba(0, 0, 0, 0.5)'
-      ctx.beginPath()
-      this._roundRect(ctx, hpBarX - 3 * dpr, hpBarY - 3 * dpr, hpBarW + 6 * dpr, hpBarH + 6 * dpr, 12 * dpr)
-      ctx.fill()
-
-      this._drawBar(ctx, hpBarX, hpBarY, hpBarW, hpBarH,
-        enemy.hp / enemy.maxHp,
-        enemy.isBoss ? '#ff4757' : '#ff6b6b',
-        `${enemy.hp}/${enemy.maxHp}`)
+      // 恢复透明度
+      if (isDead && deathAnim) {
+        ctx.globalAlpha = 1.0
+      }
     })
   }
 
@@ -1999,9 +2153,22 @@ export class BattleScene {
 
     this.enemies.forEach((enemy, index) => {
       const pos = this.enemyPositions[index]
-      if (!pos || enemy.hp <= 0) return
+      if (!pos) return
+
+      // 死亡退场动画
+      const deathAnim = this.enemyDeathAnim[index]
+      const isDead = enemy.hp <= 0
+      if (isDead && (!deathAnim || deathAnim.alpha <= 0)) return
+
+      if (isDead && deathAnim) {
+        ctx.globalAlpha = deathAnim.alpha
+      }
 
       this._drawEnemySprite(ctx, pos.x, pos.y, enemy)
+
+      if (isDead && deathAnim) {
+        ctx.globalAlpha = 1.0
+      }
     })
   }
 
@@ -2439,12 +2606,15 @@ export class BattleScene {
       // HP 条
       const barX = avatarX + avatarSize + 6 * dpr
       const barW = cardW - avatarSize - 20 * dpr
+      const heroIdx = this.party.indexOf(hero)
       this._drawBar(ctx, barX, y + 40 * dpr, barW, 12 * dpr,
-        hero.hp / hero.maxHp, '#ff6b6b', `HP ${hero.hp}/${hero.maxHp}`)
+        hero.hp / hero.maxHp, '#ff6b6b', `HP ${hero.hp}/${hero.maxHp}`,
+        heroIdx >= 0 ? this.heroHpDelay[heroIdx] : undefined)
 
       // MP 条
       this._drawBar(ctx, barX, y + 55 * dpr, barW, 12 * dpr,
-        hero.mp / hero.maxMp, '#4ecdc4', `MP ${hero.mp}/${hero.maxMp}`)
+        hero.mp / hero.maxMp, '#4ecdc4', `MP ${hero.mp}/${hero.maxMp}`,
+        heroIdx >= 0 ? this.heroMpDelay[heroIdx] : undefined)
     }
 
     // 渲染翻页按钮（如果有多页）
@@ -2999,13 +3169,23 @@ export class BattleScene {
   }
 
   // ======== 工具方法 ========
-  _drawBar(ctx, x, y, w, h, ratio, color, text) {
+  _drawBar(ctx, x, y, w, h, ratio, color, text, delayRatio) {
     ratio = Math.max(0, Math.min(1, ratio))
 
     ctx.fillStyle = 'rgba(0, 0, 0, 0.5)'
     ctx.beginPath()
     this._roundRect(ctx, x, y, w, h, h / 2)
     ctx.fill()
+
+    // 延迟残影条（用血条同色半透明，显示伤害前的血量）
+    if (delayRatio !== undefined && delayRatio > ratio) {
+      ctx.globalAlpha = 0.35
+      ctx.fillStyle = color
+      ctx.beginPath()
+      this._roundRect(ctx, x, y, w * delayRatio, h, h / 2)
+      ctx.fill()
+      ctx.globalAlpha = 1.0
+    }
 
     if (ratio > 0) {
       ctx.fillStyle = color
@@ -3014,11 +3194,13 @@ export class BattleScene {
       ctx.fill()
     }
 
-    ctx.font = `bold ${h * 0.75}px sans-serif`
-    ctx.fillStyle = '#ffffff'
-    ctx.textAlign = 'center'
-    ctx.textBaseline = 'middle'
-    ctx.fillText(text, x + w / 2, y + h / 2)
+    if (text) {
+      ctx.font = `bold ${h * 0.75}px sans-serif`
+      ctx.fillStyle = '#ffffff'
+      ctx.textAlign = 'center'
+      ctx.textBaseline = 'middle'
+      ctx.fillText(text, x + w / 2, y + h / 2)
+    }
     ctx.textBaseline = 'alphabetic'
   }
 

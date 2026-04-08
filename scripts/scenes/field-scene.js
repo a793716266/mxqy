@@ -624,15 +624,15 @@ export class FieldScene {
     for (const monster of this.mapMonsters) {
       if (!monster.alive) continue
 
-      // 初始化猫咪动画属性
-      const isCatMonster = monster.enemyId && monster.enemyId.toLowerCase().includes('cat')
-      if (isCatMonster && monster.animTimer === undefined) {
+      // 初始化猫咪动画属性（所有普通怪物都使用坏猫动画）
+      const useCatAnim = !monster.isBoss && !monster.isElite
+      if (useCatAnim && monster.animTimer === undefined) {
         monster.animTimer = 0
         monster.animFrame = 0
       }
 
       // 更新猫咪动画（无论是否暂停）
-      if (isCatMonster) {
+      if (useCatAnim) {
         monster.animTimer += dt
         const frameDuration = monster.isMoving ? 0.08 : 0.15
 
@@ -1523,10 +1523,10 @@ export class FieldScene {
         continue
       }
 
-      // 判断是否是猫类怪物
-      const isCatMonster = monster.enemyId && monster.enemyId.toLowerCase().includes('cat')
+      // 所有普通怪物使用坏猫动画，Boss/精英使用emoji
+      const useCatAnim = !monster.isBoss && !monster.isElite
 
-      if (isCatMonster) {
+      if (useCatAnim) {
         // 使用猫咪动画渲染
         this._renderCatMonster(ctx, monster, screenX, screenY)
       } else {
