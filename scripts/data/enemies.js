@@ -84,6 +84,7 @@ export const ENEMIES_CH1 = {
   },
   slime_cat: {
     id: 'slime_cat',
+    type: 'slime_cat',  // 添加类型标记，用于动画识别
     name: '史莱姆猫',
     level: 2,
     maxHp: 70,       // 40 → 70 (+75%)

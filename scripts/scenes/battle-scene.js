@@ -78,6 +78,28 @@ export class BattleScene {
     this.heroPage = 0  // 当前页码
     this.heroPerPage = 3  // 每页显示3个角色
     this.totalHeroPages = Math.ceil((this.party.length || 0) / this.heroPerPage)
+
+    // 敌人动画系统
+    this.enemyAnimStates = {}  // 敌人动画状态
+    this._initEnemyAnimations()
+  }
+
+  /**
+   * 初始化敌人动画
+   */
+  _initEnemyAnimations() {
+    this.enemies.forEach((enemy, index) => {
+      // 检查是否是史莱姆猫
+      if (enemy.id === 'slime_cat' || enemy.type === 'slime_cat') {
+        this.enemyAnimStates[index] = {
+          type: 'slime_cat',
+          state: 'idle',  // idle, attack, skill
+          frame: 1,
+          frameTimer: 0,
+          frameDuration: 150  // 150ms一帧
+        }
+      }
+    })
   }
 
   init() {
@@ -510,11 +532,11 @@ export class BattleScene {
       this.game.effects.createEffect({
         type: 'lightning_hit',
         x: targetPos.x,
-        y: targetPos.y,
+        y: targetPos.y-150,
         frameCount: 23,  // 更新为23帧
         frameDuration: 65, // 65ms一帧，总共约1.5秒
         loop: false,
-        scale: 1.5, // 缩小到0.8倍，更合适的大小
+        scale: 0.8, // 缩小到0.8倍，更合适的大小
         alpha: 1.0,
         onComplete: (effect) => {
           console.log('[Battle] 雷击术击中特效播放完成')
@@ -585,8 +607,59 @@ export class BattleScene {
     // 敌人攻击动画更新
     this._updateEnemyAttackAnimation(dt)
 
+    // 敌人动画更新
+    this._updateEnemyAnimations(dt)
+
     // 感化剧情更新
     this._updatePurifyScene(dt)
+  }
+
+  /**
+   * 更新敌人动画帧
+   */
+  _updateEnemyAnimations(dt) {
+    Object.keys(this.enemyAnimStates).forEach(indexStr => {
+      const index = parseInt(indexStr)
+      const animState = this.enemyAnimStates[index]
+      
+      if (!animState) return
+
+      // 更新帧计时器
+      animState.frameTimer += dt * 1000
+
+      // 根据状态获取帧数
+      let frameCount = 7  // idle默认7帧
+      if (animState.state === 'idle') {
+        frameCount = 7
+      } else if (animState.state === 'attack') {
+        frameCount = 16
+      } else if (animState.state === 'skill') {
+        frameCount = 31
+      }
+
+      // 检查是否需要切换帧
+      if (animState.frameTimer >= animState.frameDuration) {
+        animState.frameTimer = 0
+        animState.frame++
+        
+        // 循环播放
+        if (animState.state === 'idle') {
+          if (animState.frame > 7) animState.frame = 1
+        } else if (animState.state === 'attack') {
+          // 攻击动画播放完毕后回到idle
+          if (animState.frame > 23) {
+            animState.frame = 1
+            animState.state = 'idle'
+          }
+        } else if (animState.state === 'skill') {
+          // 技能动画播放完毕后回到idle
+          if (animState.frame > 80) {
+            animState.frame = 1
+            animState.state = 'idle'
+          }
+        }
+      }
+    })
   }
 
   // ======== 敌人攻击动画 ========
@@ -599,6 +672,14 @@ export class BattleScene {
     // 获取当前攻击敌人的位置
     const enemyIndex = this.enemies.indexOf(this.enemy)
     const enemyPos = this.enemyPositions[enemyIndex] || { x: this.enemyBaseX, y: this.enemyBaseY }
+
+    // 触发敌人攻击动画（史莱姆猫）
+    const animState = this.enemyAnimStates[enemyIndex]
+    if (animState) {
+      animState.state = 'attack'
+      animState.frame = 8  // 攻击从第8帧开始
+      animState.frameTimer = 0
+    }
 
     this.enemyAttacking = true
     this.enemyAttackTarget = target
@@ -1803,6 +1884,40 @@ export class BattleScene {
     const size = 55 * dpr
     const bounce = Math.sin(this.time * 2) * 3 * dpr // 呼吸动画
 
+    // 检查是否有动画状态（史莱姆猫）
+    const enemyIndex = this.enemies.indexOf(enemy)
+    const animState = this.enemyAnimStates[enemyIndex]
+
+    // 如果是史莱姆猫且有动画状态，使用动画帧
+    if ((enemy.id === 'slime_cat' || enemy.type === 'slime_cat') && animState) {
+      const frameKey = this._getSlimeCatFrameKey(animState)
+      const frameImg = this.game.assets.get(frameKey)
+
+      if (frameImg) {
+        ctx.save()
+        ctx.translate(x, y + bounce)
+
+        // 阴影
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.3)'
+        ctx.beginPath()
+        ctx.ellipse(0, size * 0.4, size * 0.5, size * 0.15, 0, 0, Math.PI * 2)
+        ctx.fill()
+
+        // 绘制动画帧（保持宽高比）
+        const frameWidth = 832
+        const frameHeight = 1072
+        const scale = (size * 2) / frameHeight
+        const drawWidth = frameWidth * scale
+        const drawHeight = frameHeight * scale
+
+        ctx.drawImage(frameImg, -drawWidth / 2, -drawHeight / 2, drawWidth, drawHeight)
+
+        ctx.restore()
+        return
+      }
+    }
+
+    // 默认绘制逻辑（其他敌人）
     ctx.save()
     ctx.translate(x, y + bounce)
 
@@ -1929,6 +2044,20 @@ export class BattleScene {
     }
 
     ctx.restore()
+  }
+
+  /**
+   * 获取史莱姆猫动画帧的资源key
+   */
+  _getSlimeCatFrameKey(animState) {
+    if (animState.state === 'idle') {
+      return `SLIME_CAT_IDLE_${animState.frame}`
+    } else if (animState.state === 'attack') {
+      return `SLIME_CAT_ATTACK_${animState.frame}`
+    } else if (animState.state === 'skill') {
+      return `SLIME_CAT_SKILL_${animState.frame}`
+    }
+    return 'SLIME_CAT_IDLE_1'
   }
 
   _lightenColor(hex, percent) {
