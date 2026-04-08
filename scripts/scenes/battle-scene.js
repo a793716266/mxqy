@@ -101,6 +101,18 @@ export class BattleScene {
           onAttackComplete: null  // 攻击完成回调
         }
       }
+      // 检查是否是野猫
+      if (enemy.id === 'wild_cat') {
+        this.enemyAnimStates[index] = {
+          type: 'wild_cat',
+          state: 'idle',  // 野猫只有idle帧动画，攻击用默认跳跃
+          frame: 1,
+          frameTimer: 0,
+          frameDuration: 120,  // 120ms一帧
+          attackDamageApplied: false,
+          onAttackComplete: null
+        }
+      }
     })
   }
 
@@ -309,6 +321,7 @@ export class BattleScene {
 
     this.attackingHero = hero
     this.attackAnimSkill = skill  // 保存技能引用
+    this.attackAnimTarget = target  // 保存攻击目标引用
     this.attackAnim = {
       phase: 'jump',  // jump -> hit -> return
       progress: 0,
@@ -336,7 +349,7 @@ export class BattleScene {
         anim.currentX = anim.targetX
         anim.currentY = anim.targetY
         // 触发攻击效果
-        this._applyAttackDamage(this.attackingHero, this.enemy)
+        this._applyAttackDamage(this.attackingHero, this.attackAnimTarget || this.enemy)
       } else {
         // 使用缓动函数
         const t = this._easeOutQuad(anim.progress)
@@ -360,6 +373,7 @@ export class BattleScene {
         // 动画完成
         this.attackingHero = null
         this.attackAnim = null
+        this.attackAnimTarget = null
       } else {
         const t = this._easeInQuad(anim.progress)
         anim.currentX = anim.targetX + (anim.baseX - anim.targetX) * t
@@ -632,55 +646,51 @@ export class BattleScene {
         if (animState.frameTimer >= animState.frameDuration) {
           animState.frameTimer = 0
           animState.frame++
-          if (animState.frame > 7) animState.frame = 1
+          // 根据类型确定idle总帧数
+          const idleFrames = animState.type === 'wild_cat' ? 16 : 7
+          if (animState.frame > idleFrames) animState.frame = 1
         }
         return
       }
 
-      // 更新帧计时器
+      // 攻击/技能动画：跳帧播放加速
+      // attack 帧号范围: 8-23 (16帧), skill 帧号范围: 50-80 (31帧)
+      const isAttack = animState.state === 'attack'
+      const startFrame = isAttack ? 8 : 50
+      const endFrame = isAttack ? 23 : 80
+      const totalFrames = endFrame - startFrame + 1  // attack 16帧, skill 31帧
+      const step = 2  // 每2帧取1帧，加速播放
+      const displayFrames = Math.ceil(totalFrames / step)  // 实际播放帧数: attack 8, skill 16
+      const damageDisplayFrame = isAttack ? 4 : 8  // 伤害结算的显示帧序号（约动画中段）
+
+      // 更新帧计时器（攻击/技能用更快帧率）
+      const animFrameDuration = 55  // 55ms一帧
       animState.frameTimer += dt * 1000
 
-      // 检查是否需要切换帧
-      if (animState.frameTimer >= animState.frameDuration) {
+      if (animState.frameTimer >= animFrameDuration) {
         animState.frameTimer = 0
-        animState.frame++
-        
-        if (animState.state === 'attack') {
-          // 攻击动画打击帧：第15帧时结算伤害
-          if (animState.frame === 15 && !animState.attackDamageApplied) {
-            animState.attackDamageApplied = true
-            if (this.enemyAttackTarget) {
-              this._applyEnemyAttackDamage(this.enemyAttackTarget)
-            }
+        animState.displayFrame = (animState.displayFrame || 0) + 1
+
+        // 计算实际图片帧号（跳帧）
+        animState.frame = startFrame + Math.min((animState.displayFrame - 1) * step, totalFrames - 1)
+
+        // 伤害结算
+        if (animState.displayFrame === damageDisplayFrame && !animState.attackDamageApplied) {
+          animState.attackDamageApplied = true
+          if (this.enemyAttackTarget) {
+            this._applyEnemyAttackDamage(this.enemyAttackTarget)
           }
-          // 攻击动画播放完毕（第23帧后）回到idle
-          if (animState.frame > 23) {
-            animState.frame = 1
-            animState.state = 'idle'
-            animState.attackDamageApplied = false
-            // 触发攻击完成回调
-            if (animState.onAttackComplete) {
-              animState.onAttackComplete()
-              animState.onAttackComplete = null
-            }
-          }
-        } else if (animState.state === 'skill') {
-          // 技能动画打击帧：第65帧时结算伤害
-          if (animState.frame === 65 && !animState.attackDamageApplied) {
-            animState.attackDamageApplied = true
-            if (this.enemyAttackTarget) {
-              this._applyEnemyAttackDamage(this.enemyAttackTarget)
-            }
-          }
-          // 技能动画播放完毕（第80帧后）回到idle
-          if (animState.frame > 80) {
-            animState.frame = 1
-            animState.state = 'idle'
-            animState.attackDamageApplied = false
-            if (animState.onAttackComplete) {
-              animState.onAttackComplete()
-              animState.onAttackComplete = null
-            }
+        }
+
+        // 动画播放完毕
+        if (animState.displayFrame > displayFrames) {
+          animState.frame = 1
+          animState.displayFrame = 0
+          animState.state = 'idle'
+          animState.attackDamageApplied = false
+          if (animState.onAttackComplete) {
+            animState.onAttackComplete()
+            animState.onAttackComplete = null
           }
         }
       }
@@ -705,7 +715,10 @@ export class BattleScene {
     const currentSkill = this._currentEnemySkill
     const isAoeSkill = currentSkill && (currentSkill.target === 'all' || currentSkill.aoe === true)
 
-    if (animState) {
+    // 检查敌人是否有攻击帧动画（只有史莱姆猫有attack/skill帧）
+    const hasAttackFrames = animState && (animState.type === 'slime_cat')
+
+    if (hasAttackFrames) {
       this.enemyAttacking = true
       this.enemyAttackTarget = target
 
@@ -714,6 +727,7 @@ export class BattleScene {
         this.enemyAttackAnim = null
         animState.state = 'skill'
         animState.frame = 50  // skill从第50帧开始
+        animState.displayFrame = 0
         animState.frameTimer = 0
         animState.attackDamageApplied = false
       } else {
@@ -723,7 +737,7 @@ export class BattleScene {
           progress: 0,
           baseX: enemyPos.x,
           baseY: enemyPos.y,
-          targetX: targetPos.x + 40 * this.dpr,
+          targetX: targetPos.x - 30 * this.dpr,
           targetY: targetPos.y,
           currentX: enemyPos.x,
           currentY: enemyPos.y,
@@ -771,7 +785,7 @@ export class BattleScene {
         progress: 0,
         baseX: enemyPos.x,
         baseY: enemyPos.y,
-        targetX: targetPos.x + 40 * this.dpr,
+        targetX: targetPos.x - 30 * this.dpr,
         targetY: targetPos.y,
         currentX: enemyPos.x,
         currentY: enemyPos.y,
@@ -798,6 +812,7 @@ export class BattleScene {
           anim.currentY = anim.targetY
           animState.state = 'attack'
           animState.frame = 8
+          animState.displayFrame = 0
           animState.frameTimer = 0
           animState.attackDamageApplied = false
         } else {
@@ -1803,9 +1818,6 @@ export class BattleScene {
     // 敌人区域（不含精灵）
     if (!this.enemyAttacking) {
       this._renderEnemyUI(ctx)
-    } else {
-      // 攻击中的敌人单独绘制
-      this._renderAttackingEnemy(ctx)
     }
 
     // 己方队伍
@@ -1814,6 +1826,9 @@ export class BattleScene {
     // 敌人精灵（绘制在角色之上）
     if (!this.enemyAttacking) {
       this._renderEnemySprites(ctx)
+    } else {
+      // 攻击中的敌人绘制在角色之上
+      this._renderAttackingEnemy(ctx)
     }
 
     // 攻击中的角色（绘制在敌人附近）
@@ -1995,13 +2010,13 @@ export class BattleScene {
     const size = 55 * dpr
     const bounce = Math.sin(this.time * 2) * 3 * dpr // 呼吸动画
 
-    // 检查是否有动画状态（史莱姆猫）
+    // 检查是否有动画状态
     const enemyIndex = this.enemies.indexOf(enemy)
     const animState = this.enemyAnimStates[enemyIndex]
 
-    // 如果是史莱姆猫且有动画状态，使用动画帧
-    if ((enemy.id === 'slime_cat' || enemy.type === 'slime_cat') && animState) {
-      const frameKey = this._getSlimeCatFrameKey(animState)
+    // 如果有帧动画状态，使用动画帧渲染
+    if (animState) {
+      const frameKey = this._getEnemyFrameKey(animState)
       const frameImg = this.game.assets.get(frameKey)
 
       if (frameImg) {
@@ -2015,8 +2030,8 @@ export class BattleScene {
         ctx.fill()
 
         // 绘制动画帧（保持宽高比）
-        const frameWidth = 832
-        const frameHeight = 1072
+        const frameWidth = animState.type === 'wild_cat' ? 816 : 832
+        const frameHeight = animState.type === 'wild_cat' ? 1120 : 1072
         const scale = (size * 2) / frameHeight
         const drawWidth = frameWidth * scale
         const drawHeight = frameHeight * scale
@@ -2158,9 +2173,15 @@ export class BattleScene {
   }
 
   /**
-   * 获取史莱姆猫动画帧的资源key
+   * 获取敌人动画帧的资源key
    */
-  _getSlimeCatFrameKey(animState) {
+  _getEnemyFrameKey(animState) {
+    if (animState.type === 'wild_cat') {
+      // 野猫：只有idle动画，帧号01-16
+      const frameNum = String(animState.frame).padStart(2, '0')
+      return `CAT_IDLE_${frameNum}`
+    }
+    // 史莱姆猫
     if (animState.state === 'idle') {
       return `SLIME_CAT_IDLE_${animState.frame}`
     } else if (animState.state === 'attack') {
