@@ -1800,9 +1800,9 @@ export class BattleScene {
       )
     }
 
-    // 敌人区域
+    // 敌人区域（不含精灵）
     if (!this.enemyAttacking) {
-      this._renderEnemy(ctx)
+      this._renderEnemyUI(ctx)
     } else {
       // 攻击中的敌人单独绘制
       this._renderAttackingEnemy(ctx)
@@ -1810,6 +1810,11 @@ export class BattleScene {
 
     // 己方队伍
     this._renderParty(ctx)
+
+    // 敌人精灵（绘制在角色之上）
+    if (!this.enemyAttacking) {
+      this._renderEnemySprites(ctx)
+    }
 
     // 攻击中的角色（绘制在敌人附近）
     this._renderAttackingHero(ctx)
@@ -1869,17 +1874,17 @@ export class BattleScene {
     }
   }
 
-  _renderEnemy(ctx) {
+  _renderEnemyUI(ctx) {
     const dpr = this.dpr
 
-    // 渲染所有敌人
+    // 渲染所有敌人UI（不含精灵）
     if (!this.enemyPositions || this.enemyPositions.length === 0) {
       return
     }
 
     this.enemies.forEach((enemy, index) => {
       const pos = this.enemyPositions[index]
-      if (!pos || enemy.hp <= 0) return  // 跳过死亡敌人
+      if (!pos || enemy.hp <= 0) return
 
       const ex = pos.x
       const ey = pos.y
@@ -1887,14 +1892,12 @@ export class BattleScene {
       // 敌人目标选择提示
       const isSelectable = this.phase === 'select_enemy_target'
       if (isSelectable) {
-        // 脉冲高亮效果
         const pulseAlpha = 0.3 + Math.sin(this.time * 4) * 0.15
         ctx.fillStyle = `rgba(255, 159, 67, ${pulseAlpha})`
         ctx.beginPath()
         ctx.arc(ex, ey, 70 * dpr, 0, Math.PI * 2)
         ctx.fill()
 
-        // 选择提示文字
         ctx.font = `bold ${14 * dpr}px sans-serif`
         ctx.fillStyle = '#ff9f43'
         ctx.textAlign = 'center'
@@ -1916,22 +1919,19 @@ export class BattleScene {
       ctx.textAlign = 'center'
 
       const title = enemy.isBoss ? `👑 ${enemy.name}` : enemy.name
-      const levelText = `Lv.${enemy.level || 1}`
       ctx.fillText(title, ex, ey - 70 * dpr)
 
-      // 等级显示
       ctx.font = `${16 * dpr}px sans-serif`
       ctx.fillStyle = '#f39c12'
-      ctx.fillText(levelText, ex, ey - 50 * dpr)
+      ctx.fillText(`Lv.${enemy.level || 1}`, ex, ey - 50 * dpr)
 
-      // 暴击率显示（如果有）
       if (enemy.crit && enemy.crit > 0) {
         ctx.font = `${12 * dpr}px sans-serif`
         ctx.fillStyle = '#ff6b6b'
         ctx.fillText(`暴击 ${(enemy.crit * 100).toFixed(0)}%`, ex, ey - 35 * dpr)
       }
 
-      // 状态效果图标显示
+      // 状态效果图标
       const statusIcons = this._getEnemyStatusIcons(index)
       if (statusIcons.length > 0) {
         const iconY = ey - 95 * dpr
@@ -1940,20 +1940,16 @@ export class BattleScene {
 
         statusIcons.forEach((icon, i) => {
           const iconX = startX + i * iconSpacing
-
-          // 图标背景
           ctx.fillStyle = 'rgba(0, 0, 0, 0.6)'
           ctx.beginPath()
           ctx.arc(iconX, iconY, 12 * dpr, 0, Math.PI * 2)
           ctx.fill()
 
-          // 图标
           ctx.font = `${16 * dpr}px sans-serif`
           ctx.textAlign = 'center'
           ctx.textBaseline = 'middle'
           ctx.fillText(icon.emoji, iconX, iconY)
 
-          // 剩余回合数（如果有）
           if (icon.turns) {
             ctx.font = `bold ${10 * dpr}px sans-serif`
             ctx.fillStyle = '#fff'
@@ -1962,26 +1958,35 @@ export class BattleScene {
         })
       }
 
-      // 敌人 HP 条背景
+      // HP 条
       const hpBarW = 160 * dpr
       const hpBarH = 20 * dpr
       const hpBarX = ex - hpBarW / 2
-      const hpBarY = ey - 15 * dpr  // 调整到敌人头像上方
+      const hpBarY = ey - 15 * dpr
 
-      // HP 条外框
       ctx.fillStyle = 'rgba(0, 0, 0, 0.5)'
       ctx.beginPath()
       this._roundRect(ctx, hpBarX - 3 * dpr, hpBarY - 3 * dpr, hpBarW + 6 * dpr, hpBarH + 6 * dpr, 12 * dpr)
       ctx.fill()
 
-      // HP 条
       this._drawBar(ctx, hpBarX, hpBarY, hpBarW, hpBarH,
         enemy.hp / enemy.maxHp,
         enemy.isBoss ? '#ff4757' : '#ff6b6b',
         `${enemy.hp}/${enemy.maxHp}`)
+    })
+  }
 
-      // 敌人形象
-      this._drawEnemySprite(ctx, ex, ey, enemy)
+  _renderEnemySprites(ctx) {
+    // 只渲染敌人精灵（绘制在角色之上）
+    if (!this.enemyPositions || this.enemyPositions.length === 0) {
+      return
+    }
+
+    this.enemies.forEach((enemy, index) => {
+      const pos = this.enemyPositions[index]
+      if (!pos || enemy.hp <= 0) return
+
+      this._drawEnemySprite(ctx, pos.x, pos.y, enemy)
     })
   }
 
