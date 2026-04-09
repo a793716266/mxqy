@@ -33,6 +33,7 @@ export const HEROES = [
     spd: 11,
     avatar: 'images/characters/hero_lixiaobao.png',
     skills: [
+      { id: 'staff_strike', name: '法杖敲击', type: 'attack', power: 0.8, mpCost: 0, desc: '用魔法杖敲击敌人' },
       {
         id: 'fireball',
         name: '火球术',
@@ -75,10 +76,11 @@ export const HEROES = [
     avatar: 'images/cats/team/cat_amy.png',
     unlockChapter: 1,
     skills: [
+      { id: 'cat_paw', name: '猫爪击', type: 'attack', power: 0.9, mpCost: 0, desc: '用猫爪挠敌人' },
       { id: 'heal', name: '治疗', type: 'heal', power: 30, mpCost: 8, desc: '恢复单体生命值', target: 'single_ally' },
       { id: 'group_heal', name: '群疗', type: 'heal', power: 20, mpCost: 15, desc: '恢复全体生命值', target: 'all_ally' },
       { id: 'purify', name: '净化', type: 'heal', power: 10, mpCost: 10, desc: '治愈异常状态', target: 'single_ally', effect: 'cleanse' },
-      { id: 'cat_paw', name: '猫爪击', type: 'attack', power: 0.9, mpCost: 3, desc: '用猫爪挠敌人' }
+      { id: 'smite', name: '圣光击', type: 'magic', power: 1.0, mpCost: 5, desc: '用圣光攻击敌人' }
     ]
   },
   {
@@ -94,6 +96,7 @@ export const HEROES = [
     avatar: 'images/cats/team/cat_annie.png',
     unlockChapter: 2,
     skills: [
+      { id: 'shadow_touch', name: '暗影触碰', type: 'attack', power: 0.8, mpCost: 0, desc: '用暗影之力触碰敌人' },
       { id: 'shadow_ball', name: '暗影球', type: 'magic', power: 1.4, mpCost: 7, desc: '暗属性魔法' },
       { id: 'curse', name: '诅咒', type: 'debuff', mpCost: 10, desc: '降低敌人属性', effect: 'atk_down', turns: 3, value: 0.3 },
       { id: 'drain', name: '吸命', type: 'magic', power: 1.0, mpCost: 12, desc: '攻击并恢复生命', effect: 'drain' },
@@ -113,6 +116,7 @@ export const HEROES = [
     avatar: 'images/cats/team/cat_qianduoduo.png',
     unlockChapter: 3,
     skills: [
+      { id: 'punch', name: '拳击', type: 'attack', power: 1.0, mpCost: 0, desc: '用拳头攻击' },
       { id: 'coin_throw', name: '金币投掷', type: 'attack', power: 1.1, mpCost: 5, desc: '投掷金币攻击' },
       { id: 'gold_shield', name: '金盾', type: 'buff', mpCost: 8, desc: '大幅提升自身防御', effect: 'def_up_self', turns: 3, value: 0.5 },
       { id: 'smash', name: '重击', type: 'attack', power: 1.6, mpCost: 12, desc: '强力物理攻击' },
@@ -132,6 +136,7 @@ export const HEROES = [
     avatar: 'images/cats/team/cat_xiaobei.png',
     unlockChapter: 4,
     skills: [
+      { id: 'shield_bash_xb', name: '盾击', type: 'attack', power: 0.9, mpCost: 0, desc: '用盾牌敲击敌人' },
       { id: 'taunt', name: '挑衅', type: 'buff', mpCost: 5, desc: '吸引敌人攻击自己', effect: 'taunt', turns: 2 },
       { id: 'iron_wall', name: '铁壁', type: 'buff', mpCost: 10, desc: '大幅提升全体防御', effect: 'def_up', turns: 3, value: 0.4 },
       { id: 'counter', name: '反击', type: 'attack', power: 1.0, mpCost: 8, desc: '受到攻击时反击', effect: 'counter' },

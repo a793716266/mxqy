@@ -116,6 +116,18 @@ export class BattleScene {
           onAttackComplete: null  // 攻击完成回调
         }
       }
+      // 检查是否是暗影鼠
+      if (enemy.id === 'shadow_mouse' || enemy.type === 'shadow_mouse') {
+        this.enemyAnimStates[index] = {
+          type: 'shadow_mouse',
+          state: 'idle',  // idle, attack, skill
+          frame: 1,
+          frameTimer: 0,
+          frameDuration: 100,  // 100ms一帧
+          attackDamageApplied: false,
+          onAttackComplete: null
+        }
+      }
       // 检查是否是野猫
       if (enemy.id === 'wild_cat') {
         this.enemyAnimStates[index] = {
@@ -668,21 +680,32 @@ export class BattleScene {
           animState.frameTimer = 0
           animState.frame++
           // 根据类型确定idle总帧数
-          const idleFrames = animState.type === 'wild_cat' ? 8 : 7
+          let idleFrames = 7
+          if (animState.type === 'wild_cat') idleFrames = 8
+          else if (animState.type === 'shadow_mouse') idleFrames = 6
           if (animState.frame > idleFrames) animState.frame = 1
         }
         return
       }
 
       // 攻击/技能动画：跳帧播放加速
-      // attack 帧号范围: 8-22 (8帧), skill 帧号范围: 50-80 (11帧，步长3)
-      const isAttack = animState.state === 'attack'
-      const startFrame = isAttack ? 8 : 50
-      const endFrame = isAttack ? 22 : 80
-      const step = isAttack ? 2 : 3  // attack每2帧取1帧，skill每3帧取1帧
-      const actualFrames = isAttack ? [8, 10, 12, 14, 16, 18, 20, 22] : [50, 53, 56, 59, 62, 65, 68, 71, 74, 77, 80]
-      const displayFrames = actualFrames.length  // attack 8帧, skill 11帧
-      const damageDisplayFrame = isAttack ? 4 : 6  // 伤害结算的显示帧序号（约动画中段）
+      let actualFrames, damageDisplayFrame
+      if (animState.type === 'shadow_mouse') {
+        // 暗影鼠帧号：attack 1-7, skill 1-12
+        const isAttack = animState.state === 'attack'
+        actualFrames = isAttack
+          ? [1, 2, 3, 4, 5, 6, 7]
+          : [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
+        damageDisplayFrame = isAttack ? 4 : 6
+      } else {
+        // 史莱姆猫帧号: attack 8-22, skill 50-80
+        const isAttack = animState.state === 'attack'
+        actualFrames = isAttack
+          ? [8, 10, 12, 14, 16, 18, 20, 22]
+          : [50, 53, 56, 59, 62, 65, 68, 71, 74, 77, 80]
+        damageDisplayFrame = isAttack ? 4 : 6
+      }
+      const displayFrames = actualFrames.length
 
       // 更新帧计时器（攻击/技能用更快帧率）
       const animFrameDuration = 55  // 55ms一帧
@@ -806,6 +829,39 @@ export class BattleScene {
           life: 0.8,
           age: 0,
           delay: 0.5,
+          type: 'ripple'
+        })
+      }
+    } else if (config.type === 'shadow_strike') {
+      // 暗影突袭：暗紫黑色能量爆发
+      effect.duration = 900
+      // 暗影碎片飞散
+      for (let i = 0; i < 16; i++) {
+        const angle = (Math.PI * 2 / 16) * i + Math.random() * 0.3
+        const speed = (70 + Math.random() * 90) * dpr
+        const shade = Math.random()
+        effect.particles.push({
+          x: 0, y: 0,
+          vx: Math.cos(angle) * speed,
+          vy: Math.sin(angle) * speed - 30 * dpr,
+          size: (3 + Math.random() * 5) * dpr,
+          color: shade > 0.5 ? '#4a0072' : '#2d004d',
+          gravity: 100 * dpr,
+          life: 0.4 + Math.random() * 0.4,
+          age: 0,
+          type: 'blob'
+        })
+      }
+      // 暗影冲击波
+      for (let i = 0; i < 6; i++) {
+        const angle = (Math.PI * 2 / 6) * i
+        effect.particles.push({
+          angle: angle,
+          maxRadius: (50 + Math.random() * 30) * dpr,
+          color: 'rgba(74, 0, 114, 0.4)',
+          life: 0.7,
+          age: 0,
+          delay: 0.2,
           type: 'ripple'
         })
       }
@@ -973,6 +1029,13 @@ export class BattleScene {
           y: targetPos.y
         })
       }
+    } else if (enemyId === 'shadow_mouse') {
+      // 暗影鼠技能特效
+      this._createCodeEffect({
+        type: 'shadow_strike',
+        x: targetPos.x,
+        y: targetPos.y
+      })
     }
   }
 
@@ -1203,8 +1266,8 @@ export class BattleScene {
     const currentSkill = this._currentEnemySkill
     const isAoeSkill = currentSkill && (currentSkill.target === 'all' || currentSkill.aoe === true)
 
-    // 检查敌人是否有攻击帧动画（只有史莱姆猫有attack/skill帧）
-    const hasAttackFrames = animState && (animState.type === 'slime_cat')
+    // 检查敌人是否有攻击帧动画（史莱姆猫、暗影鼠有attack/skill帧）
+    const hasAttackFrames = animState && (animState.type === 'slime_cat' || animState.type === 'shadow_mouse')
 
     if (hasAttackFrames) {
       this.enemyAttacking = true
@@ -1217,7 +1280,7 @@ export class BattleScene {
         // 群体技能或单体技能：原地播放skill帧动画，不跳跃
         this.enemyAttackAnim = null
         animState.state = 'skill'
-        animState.frame = 50  // skill从第50帧开始
+        animState.frame = animState.type === 'shadow_mouse' ? 1 : 50
         animState.displayFrame = 0
         animState.frameTimer = 0
         animState.attackDamageApplied = false
@@ -1302,7 +1365,7 @@ export class BattleScene {
           anim.currentX = anim.targetX
           anim.currentY = anim.targetY
           animState.state = 'attack'
-          animState.frame = 8
+          animState.frame = animState.type === 'shadow_mouse' ? 1 : 8
           animState.displayFrame = 0
           animState.frameTimer = 0
           animState.attackDamageApplied = false
@@ -1671,13 +1734,14 @@ export class BattleScene {
     const heroPos = this.heroBasePositions[heroIndex] || { x: this.width * 0.2, y: this.height * 0.5 }
 
     // 🎯 区分近战和远程攻击
-    const isRangedAttack = hero.role === 'mage' || skill.type === 'magic'
+    // 普通物理攻击（type: 'attack', mpCost: 0）走近战跳跃，魔法技能走远程施法
+    const isRangedAttack = skill.type === 'magic' || (hero.role === 'mage' && skill.type !== 'attack')
 
     if (isRangedAttack) {
       // 🧙‍♂️ 法师远程施法流程
       this._executeRangedAttack(hero, skill, target, heroPos)
     } else {
-      // ⚔️ 战士近战攻击流程
+      // ⚔️ 战士近战攻击流程（含法师普通攻击）
       this._executeMeleeAttack(hero, skill, target, heroPos)
     }
   }
@@ -2819,9 +2883,16 @@ export class BattleScene {
    */
   _getEnemyFrameKey(animState) {
     if (animState.type === 'wild_cat') {
-      // 野猫：只有idle动画，帧号01-08（减帧版）
       const frameNum = String(animState.frame).padStart(2, '0')
       return `CAT_IDLE_${frameNum}`
+    }
+    // 暗影鼠
+    if (animState.type === 'shadow_mouse') {
+      const frameNum = String(animState.frame).padStart(2, '0')
+      if (animState.state === 'idle') return `SHADOW_MOUSE_IDLE_${frameNum}`
+      if (animState.state === 'attack') return `SHADOW_MOUSE_ATTACK_${frameNum}`
+      if (animState.state === 'skill') return `SHADOW_MOUSE_SKILL_${frameNum}`
+      return 'SHADOW_MOUSE_IDLE_01'
     }
     // 史莱姆猫
     if (animState.state === 'idle') {

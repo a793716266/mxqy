@@ -261,6 +261,38 @@ export const ASSETS = {
   SLIME_CAT_SKILL_0077: BATTLE_PKG + 'images/characters_anim/transparent/slime_cat/skill/skill_0077.png',
   SLIME_CAT_SKILL_0080: BATTLE_PKG + 'images/characters_anim/transparent/slime_cat/skill/skill_0080.png',
 
+  // 暗影鼠动画（战斗场景敌人）
+  // idle: 6帧
+  SHADOW_MOUSE_IDLE_01: BATTLE_PKG + 'images/characters_anim/transparent/shadow_mouse/idle/idle_01.png',
+  SHADOW_MOUSE_IDLE_02: BATTLE_PKG + 'images/characters_anim/transparent/shadow_mouse/idle/idle_02.png',
+  SHADOW_MOUSE_IDLE_03: BATTLE_PKG + 'images/characters_anim/transparent/shadow_mouse/idle/idle_03.png',
+  SHADOW_MOUSE_IDLE_04: BATTLE_PKG + 'images/characters_anim/transparent/shadow_mouse/idle/idle_04.png',
+  SHADOW_MOUSE_IDLE_05: BATTLE_PKG + 'images/characters_anim/transparent/shadow_mouse/idle/idle_05.png',
+  SHADOW_MOUSE_IDLE_06: BATTLE_PKG + 'images/characters_anim/transparent/shadow_mouse/idle/idle_06.png',
+
+  // attack: 7帧
+  SHADOW_MOUSE_ATTACK_01: BATTLE_PKG + 'images/characters_anim/transparent/shadow_mouse/attack/attack_01.png',
+  SHADOW_MOUSE_ATTACK_02: BATTLE_PKG + 'images/characters_anim/transparent/shadow_mouse/attack/attack_02.png',
+  SHADOW_MOUSE_ATTACK_03: BATTLE_PKG + 'images/characters_anim/transparent/shadow_mouse/attack/attack_03.png',
+  SHADOW_MOUSE_ATTACK_04: BATTLE_PKG + 'images/characters_anim/transparent/shadow_mouse/attack/attack_04.png',
+  SHADOW_MOUSE_ATTACK_05: BATTLE_PKG + 'images/characters_anim/transparent/shadow_mouse/attack/attack_05.png',
+  SHADOW_MOUSE_ATTACK_06: BATTLE_PKG + 'images/characters_anim/transparent/shadow_mouse/attack/attack_06.png',
+  SHADOW_MOUSE_ATTACK_07: BATTLE_PKG + 'images/characters_anim/transparent/shadow_mouse/attack/attack_07.png',
+
+  // skill: 12帧
+  SHADOW_MOUSE_SKILL_01: BATTLE_PKG + 'images/characters_anim/transparent/shadow_mouse/skill/skill_01.png',
+  SHADOW_MOUSE_SKILL_02: BATTLE_PKG + 'images/characters_anim/transparent/shadow_mouse/skill/skill_02.png',
+  SHADOW_MOUSE_SKILL_03: BATTLE_PKG + 'images/characters_anim/transparent/shadow_mouse/skill/skill_03.png',
+  SHADOW_MOUSE_SKILL_04: BATTLE_PKG + 'images/characters_anim/transparent/shadow_mouse/skill/skill_04.png',
+  SHADOW_MOUSE_SKILL_05: BATTLE_PKG + 'images/characters_anim/transparent/shadow_mouse/skill/skill_05.png',
+  SHADOW_MOUSE_SKILL_06: BATTLE_PKG + 'images/characters_anim/transparent/shadow_mouse/skill/skill_06.png',
+  SHADOW_MOUSE_SKILL_07: BATTLE_PKG + 'images/characters_anim/transparent/shadow_mouse/skill/skill_07.png',
+  SHADOW_MOUSE_SKILL_08: BATTLE_PKG + 'images/characters_anim/transparent/shadow_mouse/skill/skill_08.png',
+  SHADOW_MOUSE_SKILL_09: BATTLE_PKG + 'images/characters_anim/transparent/shadow_mouse/skill/skill_09.png',
+  SHADOW_MOUSE_SKILL_10: BATTLE_PKG + 'images/characters_anim/transparent/shadow_mouse/skill/skill_10.png',
+  SHADOW_MOUSE_SKILL_11: BATTLE_PKG + 'images/characters_anim/transparent/shadow_mouse/skill/skill_11.png',
+  SHADOW_MOUSE_SKILL_12: BATTLE_PKG + 'images/characters_anim/transparent/shadow_mouse/skill/skill_12.png',
+
   // ⚡ 雷击术释放特效（15帧）
   EFFECT_LIGHTNING_CAST_01: BATTLE_PKG + 'images/effects/lightning_cast/lightning_cast_01.png',
   EFFECT_LIGHTNING_CAST_02: BATTLE_PKG + 'images/effects/lightning_cast/lightning_cast_02.png',
