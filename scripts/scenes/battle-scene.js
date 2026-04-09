@@ -461,7 +461,7 @@ export class BattleScene {
         type: 'fireball_cast',
         x: heroPos.x,
         y: heroPos.y,
-        frameDuration: 250, // 6帧×250ms≈1.5秒
+        frameDuration: 136, // 11帧×136ms≈1.5秒
         loop: false,
         scale: 1.0,
         alpha: 1.0,
@@ -497,7 +497,7 @@ export class BattleScene {
         y: heroPos.y,
         frameDuration: 100, // 15帧×100ms=1.5秒
         loop: false,
-        scale: 0.8,
+        scale: 2.0,
         alpha: 1.0,
         onComplete: (effect) => {
           console.log('[Battle] 雷击术施法特效播放完成')
@@ -555,10 +555,10 @@ export class BattleScene {
       this.game.effects.createEffect({
         type: 'lightning_hit',
         x: targetPos.x,
-        y: targetPos.y-150,
-        frameDuration: 125, // 12帧×125ms=1.5秒
+        y: targetPos.y-120,
+        frameDuration: 125, // 12帧×125ms≈1.5秒
         loop: false,
-        scale: 0.8,
+        scale: 2.0,
         alpha: 1.0,
         onComplete: (effect) => {
           console.log('[Battle] 雷击术击中特效播放完成')

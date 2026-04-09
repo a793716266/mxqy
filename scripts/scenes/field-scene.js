@@ -45,8 +45,8 @@ export class FieldScene {
     this.isMoving = false
     this.frameDuration = 0.15 // 每帧150ms
     
-    // 摇杆控制
-    this.joystick = { active: false, startX: 0, startY: 0, currentX: 0, currentY: 0 }
+    // 摇杆控制（固定位置摇杆）
+    this.joystick = { active: false, touchId: null, currentX: 0, currentY: 0 }
     
     // 初始化角色状态（必须在队伍初始化之前）
     const savedCharData = this.game.data.get('characterStates')
@@ -370,27 +370,63 @@ export class FieldScene {
     // 初始化相机位置
     this._updateCamera()
 
-    // 初始化摇杆区域
-    this.joystickArea = {
-      x: 50 * this.dpr,
-      y: this.height - 200 * this.dpr,
-      r: 80 * this.dpr
+    // 固定摇杆配置（底座在左下角固定位置）
+    const joystickCenterX = 130 * this.dpr
+    const joystickCenterY = this.height - 130 * this.dpr
+    this.joystickConfig = {
+      centerX: joystickCenterX,     // 底座中心X（固定）
+      centerY: joystickCenterY,     // 底座中心Y（固定）
+      baseRadius: 60 * this.dpr,    // 底座半径
+      handleRadius: 30 * this.dpr,  // 手柄半径
+      maxOffset: 50 * this.dpr,     // 手柄最大偏移
+      deadZone: 5 * this.dpr        // 死区阈值（降低提高灵敏度）
     }
 
-    // 注册触摸事件监听
-    this._onTouchMove = (e) => {
-      if (this.joystick.active && e.touches && Array.isArray(e.touches)) {
+    // 注册触摸事件监听（用touchIdentifier跟踪摇杆触摸点）
+    this._onTouchStart = (e) => {
+      if (!this.joystick.active && e.touches) {
         for (const t of e.touches) {
-          this.joystick.currentX = t.clientX * this.dpr
-          this.joystick.currentY = t.clientY * this.dpr
+          const tx = t.clientX * this.dpr
+          const ty = t.clientY * this.dpr
+          const dx = tx - this.joystickConfig.centerX
+          const dy = ty - this.joystickConfig.centerY
+          // 判断是否在摇杆底座范围内（宽松判定，1.5倍半径）
+          if (Math.sqrt(dx * dx + dy * dy) < this.joystickConfig.baseRadius * 1.5) {
+            this.joystick.active = true
+            this.joystick.touchId = t.identifier
+            this.joystick.currentX = tx
+            this.joystick.currentY = ty
+            break
+          }
+        }
+      }
+    }
+
+    this._onTouchMove = (e) => {
+      if (this.joystick.active && e.touches) {
+        for (const t of e.touches) {
+          if (t.identifier === this.joystick.touchId) {
+            this.joystick.currentX = t.clientX * this.dpr
+            this.joystick.currentY = t.clientY * this.dpr
+            break
+          }
         }
       }
     }
 
     this._onTouchEnd = (e) => {
-      this.joystick.active = false
+      if (this.joystick.active && e.changedTouches) {
+        for (const t of e.changedTouches) {
+          if (t.identifier === this.joystick.touchId) {
+            this.joystick.active = false
+            this.joystick.touchId = null
+            break
+          }
+        }
+      }
     }
 
+    wx.onTouchStart(this._onTouchStart)
     this.game.input.onMove(this._onTouchMove)
     this.game.input.onEnd(this._onTouchEnd)
   }
@@ -492,6 +528,7 @@ export class FieldScene {
     this.game.data.set('characterStates', charData)
 
     // 清理事件监听
+    wx.offTouchStart(this._onTouchStart)
     this.game.input.offMove(this._onTouchMove)
     this.game.input.offEnd(this._onTouchEnd)
   }
@@ -507,12 +544,12 @@ export class FieldScene {
     this.isMoving = false
 
     if (this.joystick.active) {
-      const dx = this.joystick.currentX - this.joystick.startX
-      const dy = this.joystick.currentY - this.joystick.startY
+      const dx = this.joystick.currentX - this.joystickConfig.centerX
+      const dy = this.joystick.currentY - this.joystickConfig.centerY
       const dist = Math.sqrt(dx * dx + dy * dy)
 
-      // 立即更新方向（无论是否移动）
-      if (dist > 5 * this.dpr) {
+      // 更新方向（偏移 > 死区）
+      if (dist > this.joystickConfig.deadZone) {
         // 根据水平移动分量更新朝向
         if (Math.abs(dx) > Math.abs(dy)) {
           this.playerDirection = dx > 0 ? 'right' : 'left'
@@ -523,7 +560,7 @@ export class FieldScene {
         }
       }
 
-      if (dist > 10 * this.dpr) {
+      if (dist > this.joystickConfig.deadZone) {
         this.isMoving = true
         const moveX = (dx / dist) * this.playerSpeed * dt
         const moveY = (dy / dist) * this.playerSpeed * dt
@@ -948,18 +985,7 @@ export class FieldScene {
       return
     }
     
-    // 摇杆区域
-    const ja = this.joystickArea
-    const dist = Math.sqrt((tap.x - ja.x) ** 2 + (tap.y - ja.y) ** 2)
-    if (dist <= ja.r * 1.5) {
-      // 开始摇杆控制
-      this.joystick.active = true
-      this.joystick.startX = tap.x
-      this.joystick.startY = tap.y
-      this.joystick.currentX = tap.x
-      this.joystick.currentY = tap.y
-      return
-    }
+    // 摇杆区域点击由touchStart事件处理，不再通过tap激活
     
     // 检查地图对象（安全检查）
     if (!this.mapObjects || !Array.isArray(this.mapObjects)) return
@@ -1707,43 +1733,64 @@ export class FieldScene {
   }
   
   _renderJoystick(ctx) {
-    const ja = this.joystickArea
+    const jc = this.joystickConfig
     
-    // 摇杆底座
-    ctx.beginPath()
-    ctx.arc(ja.x, ja.y, ja.r, 0, Math.PI * 2)
-    ctx.fillStyle = 'rgba(255,255,255,0.2)'
-    ctx.fill()
-    ctx.strokeStyle = 'rgba(255,255,255,0.4)'
-    ctx.lineWidth = 3
-    ctx.stroke()
+    // 固定底座位置
+    const baseX = jc.centerX
+    const baseY = jc.centerY
     
-    // 摇杆手柄
     if (this.joystick.active) {
-      const dx = this.joystick.currentX - this.joystick.startX
-      const dy = this.joystick.currentY - this.joystick.startY
+      const dx = this.joystick.currentX - jc.centerX
+      const dy = this.joystick.currentY - jc.centerY
       const dist = Math.sqrt(dx * dx + dy * dy)
-      const maxDist = ja.r * 0.7
       
-      let handleX = ja.x + (dx / dist) * Math.min(dist, maxDist)
-      let handleY = ja.y + (dy / dist) * Math.min(dist, maxDist)
+      // 计算手柄位置（限制在最大偏移范围内）
+      let handleX = baseX
+      let handleY = baseY
+      if (dist > 0) {
+        const clampedDist = Math.min(dist, jc.maxOffset)
+        handleX = baseX + (dx / dist) * clampedDist
+        handleY = baseY + (dy / dist) * clampedDist
+      }
       
+      // 底座
       ctx.beginPath()
-      ctx.arc(handleX, handleY, 25 * this.dpr, 0, Math.PI * 2)
+      ctx.arc(baseX, baseY, jc.baseRadius, 0, Math.PI * 2)
+      ctx.fillStyle = 'rgba(255,255,255,0.2)'
+      ctx.fill()
+      ctx.strokeStyle = 'rgba(255,255,255,0.4)'
+      ctx.lineWidth = 2 * this.dpr
+      ctx.stroke()
+      
+      // 手柄
+      ctx.beginPath()
+      ctx.arc(handleX, handleY, jc.handleRadius, 0, Math.PI * 2)
       ctx.fillStyle = 'rgba(255,255,255,0.6)'
       ctx.fill()
+      ctx.strokeStyle = 'rgba(255,255,255,0.8)'
+      ctx.lineWidth = 2 * this.dpr
+      ctx.stroke()
     } else {
+      // 未激活：显示半透明摇杆提示
       ctx.beginPath()
-      ctx.arc(ja.x, ja.y, 25 * this.dpr, 0, Math.PI * 2)
-      ctx.fillStyle = 'rgba(255,255,255,0.4)'
+      ctx.arc(baseX, baseY, jc.baseRadius, 0, Math.PI * 2)
+      ctx.fillStyle = 'rgba(255,255,255,0.1)'
       ctx.fill()
+      ctx.strokeStyle = 'rgba(255,255,255,0.25)'
+      ctx.lineWidth = 2 * this.dpr
+      ctx.stroke()
+      
+      ctx.beginPath()
+      ctx.arc(baseX, baseY, jc.handleRadius, 0, Math.PI * 2)
+      ctx.fillStyle = 'rgba(255,255,255,0.25)'
+      ctx.fill()
+      
+      ctx.font = `${14 * this.dpr}px sans-serif`
+      ctx.fillStyle = 'rgba(255,255,255,0.4)'
+      ctx.textAlign = 'center'
+      ctx.textBaseline = 'middle'
+      ctx.fillText('移动', baseX, baseY)
     }
-    
-    // 提示文字
-    ctx.font = `${12 * this.dpr}px sans-serif`
-    ctx.fillStyle = 'rgba(255,255,255,0.6)'
-    ctx.textAlign = 'center'
-    ctx.fillText('移动', ja.x, ja.y + ja.r + 20 * this.dpr)
   }
   
   _renderMinimap(ctx) {

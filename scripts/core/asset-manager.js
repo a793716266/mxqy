@@ -166,62 +166,67 @@ export const ASSETS = {
   // 地图
   MAP_WORLD: 'images/map_world.png',
   
-  // 技能特效 - 火球术施法（6帧 - 减帧版本，只保留奇数帧）
+  // 技能特效 - 火球术施法（11帧）
   EFFECT_FIREBALL_CAST_01: BATTLE_PKG + 'images/effects/fireball_cast/fireball_cast_01.png',
+  EFFECT_FIREBALL_CAST_02: BATTLE_PKG + 'images/effects/fireball_cast/fireball_cast_02.png',
   EFFECT_FIREBALL_CAST_03: BATTLE_PKG + 'images/effects/fireball_cast/fireball_cast_03.png',
+  EFFECT_FIREBALL_CAST_04: BATTLE_PKG + 'images/effects/fireball_cast/fireball_cast_04.png',
   EFFECT_FIREBALL_CAST_05: BATTLE_PKG + 'images/effects/fireball_cast/fireball_cast_05.png',
+  EFFECT_FIREBALL_CAST_06: BATTLE_PKG + 'images/effects/fireball_cast/fireball_cast_06.png',
   EFFECT_FIREBALL_CAST_07: BATTLE_PKG + 'images/effects/fireball_cast/fireball_cast_07.png',
+  EFFECT_FIREBALL_CAST_08: BATTLE_PKG + 'images/effects/fireball_cast/fireball_cast_08.png',
   EFFECT_FIREBALL_CAST_09: BATTLE_PKG + 'images/effects/fireball_cast/fireball_cast_09.png',
+  EFFECT_FIREBALL_CAST_10: BATTLE_PKG + 'images/effects/fireball_cast/fireball_cast_10.png',
   EFFECT_FIREBALL_CAST_11: BATTLE_PKG + 'images/effects/fireball_cast/fireball_cast_11.png',
-  
-  // 技能特效 - 火球术击中（24帧 - 减帧版本，只保留奇数帧）
+
+  // 技能特效 - 火球术击中（24帧）
   EFFECT_FIREBALL_HIT_01: BATTLE_PKG + 'images/effects/fireball_hit/fireball_hit_01.png',
+  EFFECT_FIREBALL_HIT_02: BATTLE_PKG + 'images/effects/fireball_hit/fireball_hit_02.png',
   EFFECT_FIREBALL_HIT_03: BATTLE_PKG + 'images/effects/fireball_hit/fireball_hit_03.png',
+  EFFECT_FIREBALL_HIT_04: BATTLE_PKG + 'images/effects/fireball_hit/fireball_hit_04.png',
   EFFECT_FIREBALL_HIT_05: BATTLE_PKG + 'images/effects/fireball_hit/fireball_hit_05.png',
+  EFFECT_FIREBALL_HIT_06: BATTLE_PKG + 'images/effects/fireball_hit/fireball_hit_06.png',
   EFFECT_FIREBALL_HIT_07: BATTLE_PKG + 'images/effects/fireball_hit/fireball_hit_07.png',
+  EFFECT_FIREBALL_HIT_08: BATTLE_PKG + 'images/effects/fireball_hit/fireball_hit_08.png',
   EFFECT_FIREBALL_HIT_09: BATTLE_PKG + 'images/effects/fireball_hit/fireball_hit_09.png',
+  EFFECT_FIREBALL_HIT_10: BATTLE_PKG + 'images/effects/fireball_hit/fireball_hit_10.png',
   EFFECT_FIREBALL_HIT_11: BATTLE_PKG + 'images/effects/fireball_hit/fireball_hit_11.png',
+  EFFECT_FIREBALL_HIT_12: BATTLE_PKG + 'images/effects/fireball_hit/fireball_hit_12.png',
   EFFECT_FIREBALL_HIT_13: BATTLE_PKG + 'images/effects/fireball_hit/fireball_hit_13.png',
+  EFFECT_FIREBALL_HIT_14: BATTLE_PKG + 'images/effects/fireball_hit/fireball_hit_14.png',
   EFFECT_FIREBALL_HIT_15: BATTLE_PKG + 'images/effects/fireball_hit/fireball_hit_15.png',
+  EFFECT_FIREBALL_HIT_16: BATTLE_PKG + 'images/effects/fireball_hit/fireball_hit_16.png',
   EFFECT_FIREBALL_HIT_17: BATTLE_PKG + 'images/effects/fireball_hit/fireball_hit_17.png',
+  EFFECT_FIREBALL_HIT_18: BATTLE_PKG + 'images/effects/fireball_hit/fireball_hit_18.png',
   EFFECT_FIREBALL_HIT_19: BATTLE_PKG + 'images/effects/fireball_hit/fireball_hit_19.png',
+  EFFECT_FIREBALL_HIT_20: BATTLE_PKG + 'images/effects/fireball_hit/fireball_hit_20.png',
   EFFECT_FIREBALL_HIT_21: BATTLE_PKG + 'images/effects/fireball_hit/fireball_hit_21.png',
+  EFFECT_FIREBALL_HIT_22: BATTLE_PKG + 'images/effects/fireball_hit/fireball_hit_22.png',
   EFFECT_FIREBALL_HIT_23: BATTLE_PKG + 'images/effects/fireball_hit/fireball_hit_23.png',
-  EFFECT_FIREBALL_HIT_25: BATTLE_PKG + 'images/effects/fireball_hit/fireball_hit_25.png',
-  EFFECT_FIREBALL_HIT_27: BATTLE_PKG + 'images/effects/fireball_hit/fireball_hit_27.png',
-  EFFECT_FIREBALL_HIT_29: BATTLE_PKG + 'images/effects/fireball_hit/fireball_hit_29.png',
-  EFFECT_FIREBALL_HIT_31: BATTLE_PKG + 'images/effects/fireball_hit/fireball_hit_31.png',
-  EFFECT_FIREBALL_HIT_33: BATTLE_PKG + 'images/effects/fireball_hit/fireball_hit_33.png',
-  EFFECT_FIREBALL_HIT_35: BATTLE_PKG + 'images/effects/fireball_hit/fireball_hit_35.png',
-  EFFECT_FIREBALL_HIT_37: BATTLE_PKG + 'images/effects/fireball_hit/fireball_hit_37.png',
-  EFFECT_FIREBALL_HIT_39: BATTLE_PKG + 'images/effects/fireball_hit/fireball_hit_39.png',
-  EFFECT_FIREBALL_HIT_41: BATTLE_PKG + 'images/effects/fireball_hit/fireball_hit_41.png',
-  EFFECT_FIREBALL_HIT_43: BATTLE_PKG + 'images/effects/fireball_hit/fireball_hit_43.png',
-  EFFECT_FIREBALL_HIT_45: BATTLE_PKG + 'images/effects/fireball_hit/fireball_hit_45.png',
-  EFFECT_FIREBALL_HIT_47: BATTLE_PKG + 'images/effects/fireball_hit/fireball_hit_47.png',
+  EFFECT_FIREBALL_HIT_24: BATTLE_PKG + 'images/effects/fireball_hit/fireball_hit_24.png',
 
-  // 技能特效 - 冰晶术施法（8帧 - 减帧版本，只保留奇数帧）
+  // 技能特效 - 冰晶术施法（8帧）
   EFFECT_ICE_SHARD_CAST_01: BATTLE_PKG + 'images/effects/ice_shard_cast/ice_shard_cast_01.png',
+  EFFECT_ICE_SHARD_CAST_02: BATTLE_PKG + 'images/effects/ice_shard_cast/ice_shard_cast_02.png',
   EFFECT_ICE_SHARD_CAST_03: BATTLE_PKG + 'images/effects/ice_shard_cast/ice_shard_cast_03.png',
+  EFFECT_ICE_SHARD_CAST_04: BATTLE_PKG + 'images/effects/ice_shard_cast/ice_shard_cast_04.png',
   EFFECT_ICE_SHARD_CAST_05: BATTLE_PKG + 'images/effects/ice_shard_cast/ice_shard_cast_05.png',
+  EFFECT_ICE_SHARD_CAST_06: BATTLE_PKG + 'images/effects/ice_shard_cast/ice_shard_cast_06.png',
   EFFECT_ICE_SHARD_CAST_07: BATTLE_PKG + 'images/effects/ice_shard_cast/ice_shard_cast_07.png',
-  EFFECT_ICE_SHARD_CAST_09: BATTLE_PKG + 'images/effects/ice_shard_cast/ice_shard_cast_09.png',
-  EFFECT_ICE_SHARD_CAST_11: BATTLE_PKG + 'images/effects/ice_shard_cast/ice_shard_cast_11.png',
-  EFFECT_ICE_SHARD_CAST_13: BATTLE_PKG + 'images/effects/ice_shard_cast/ice_shard_cast_13.png',
-  EFFECT_ICE_SHARD_CAST_15: BATTLE_PKG + 'images/effects/ice_shard_cast/ice_shard_cast_15.png',
+  EFFECT_ICE_SHARD_CAST_08: BATTLE_PKG + 'images/effects/ice_shard_cast/ice_shard_cast_08.png',
 
-  // 技能特效 - 冰晶术击中（11帧 - 减帧版本，只保留奇数帧）
+  // 技能特效 - 冰晶术击中（11帧）
   EFFECT_ICE_SHARD_HIT_01: BATTLE_PKG + 'images/effects/ice_shard_hit/ice_shard_hit_01.png',
+  EFFECT_ICE_SHARD_HIT_02: BATTLE_PKG + 'images/effects/ice_shard_hit/ice_shard_hit_02.png',
   EFFECT_ICE_SHARD_HIT_03: BATTLE_PKG + 'images/effects/ice_shard_hit/ice_shard_hit_03.png',
+  EFFECT_ICE_SHARD_HIT_04: BATTLE_PKG + 'images/effects/ice_shard_hit/ice_shard_hit_04.png',
   EFFECT_ICE_SHARD_HIT_05: BATTLE_PKG + 'images/effects/ice_shard_hit/ice_shard_hit_05.png',
+  EFFECT_ICE_SHARD_HIT_06: BATTLE_PKG + 'images/effects/ice_shard_hit/ice_shard_hit_06.png',
   EFFECT_ICE_SHARD_HIT_07: BATTLE_PKG + 'images/effects/ice_shard_hit/ice_shard_hit_07.png',
+  EFFECT_ICE_SHARD_HIT_08: BATTLE_PKG + 'images/effects/ice_shard_hit/ice_shard_hit_08.png',
   EFFECT_ICE_SHARD_HIT_09: BATTLE_PKG + 'images/effects/ice_shard_hit/ice_shard_hit_09.png',
+  EFFECT_ICE_SHARD_HIT_10: BATTLE_PKG + 'images/effects/ice_shard_hit/ice_shard_hit_10.png',
   EFFECT_ICE_SHARD_HIT_11: BATTLE_PKG + 'images/effects/ice_shard_hit/ice_shard_hit_11.png',
-  EFFECT_ICE_SHARD_HIT_13: BATTLE_PKG + 'images/effects/ice_shard_hit/ice_shard_hit_13.png',
-  EFFECT_ICE_SHARD_HIT_15: BATTLE_PKG + 'images/effects/ice_shard_hit/ice_shard_hit_15.png',
-  EFFECT_ICE_SHARD_HIT_17: BATTLE_PKG + 'images/effects/ice_shard_hit/ice_shard_hit_17.png',
-  EFFECT_ICE_SHARD_HIT_19: BATTLE_PKG + 'images/effects/ice_shard_hit/ice_shard_hit_19.png',
-  EFFECT_ICE_SHARD_HIT_21: BATTLE_PKG + 'images/effects/ice_shard_hit/ice_shard_hit_21.png',
 
   // 史莱姆猫动画（战斗场景敌人）
   // idle: 7帧
@@ -256,34 +261,34 @@ export const ASSETS = {
   SLIME_CAT_SKILL_0077: BATTLE_PKG + 'images/characters_anim/transparent/slime_cat/skill/skill_0077.png',
   SLIME_CAT_SKILL_0080: BATTLE_PKG + 'images/characters_anim/transparent/slime_cat/skill/skill_0080.png',
 
-  // ⚡ 雷击术释放特效（15帧 - 减帧版本，只保留奇数帧）
+  // ⚡ 雷击术释放特效（15帧）
   EFFECT_LIGHTNING_CAST_01: BATTLE_PKG + 'images/effects/lightning_cast/lightning_cast_01.png',
+  EFFECT_LIGHTNING_CAST_02: BATTLE_PKG + 'images/effects/lightning_cast/lightning_cast_02.png',
   EFFECT_LIGHTNING_CAST_03: BATTLE_PKG + 'images/effects/lightning_cast/lightning_cast_03.png',
+  EFFECT_LIGHTNING_CAST_04: BATTLE_PKG + 'images/effects/lightning_cast/lightning_cast_04.png',
   EFFECT_LIGHTNING_CAST_05: BATTLE_PKG + 'images/effects/lightning_cast/lightning_cast_05.png',
+  EFFECT_LIGHTNING_CAST_06: BATTLE_PKG + 'images/effects/lightning_cast/lightning_cast_06.png',
   EFFECT_LIGHTNING_CAST_07: BATTLE_PKG + 'images/effects/lightning_cast/lightning_cast_07.png',
+  EFFECT_LIGHTNING_CAST_08: BATTLE_PKG + 'images/effects/lightning_cast/lightning_cast_08.png',
   EFFECT_LIGHTNING_CAST_09: BATTLE_PKG + 'images/effects/lightning_cast/lightning_cast_09.png',
+  EFFECT_LIGHTNING_CAST_10: BATTLE_PKG + 'images/effects/lightning_cast/lightning_cast_10.png',
   EFFECT_LIGHTNING_CAST_11: BATTLE_PKG + 'images/effects/lightning_cast/lightning_cast_11.png',
+  EFFECT_LIGHTNING_CAST_12: BATTLE_PKG + 'images/effects/lightning_cast/lightning_cast_12.png',
   EFFECT_LIGHTNING_CAST_13: BATTLE_PKG + 'images/effects/lightning_cast/lightning_cast_13.png',
+  EFFECT_LIGHTNING_CAST_14: BATTLE_PKG + 'images/effects/lightning_cast/lightning_cast_14.png',
   EFFECT_LIGHTNING_CAST_15: BATTLE_PKG + 'images/effects/lightning_cast/lightning_cast_15.png',
-  EFFECT_LIGHTNING_CAST_17: BATTLE_PKG + 'images/effects/lightning_cast/lightning_cast_17.png',
-  EFFECT_LIGHTNING_CAST_19: BATTLE_PKG + 'images/effects/lightning_cast/lightning_cast_19.png',
-  EFFECT_LIGHTNING_CAST_21: BATTLE_PKG + 'images/effects/lightning_cast/lightning_cast_21.png',
-  EFFECT_LIGHTNING_CAST_23: BATTLE_PKG + 'images/effects/lightning_cast/lightning_cast_23.png',
-  EFFECT_LIGHTNING_CAST_25: BATTLE_PKG + 'images/effects/lightning_cast/lightning_cast_25.png',
-  EFFECT_LIGHTNING_CAST_27: BATTLE_PKG + 'images/effects/lightning_cast/lightning_cast_27.png',
-  EFFECT_LIGHTNING_CAST_29: BATTLE_PKG + 'images/effects/lightning_cast/lightning_cast_29.png',
 
-  // ⚡ 雷击术击中特效（12帧 - 减帧版本，只保留奇数帧）
+  // ⚡ 雷击术击中特效（12帧）
   EFFECT_LIGHTNING_HIT_01: BATTLE_PKG + 'images/effects/lightning_hit/lightning_hit_01.png',
+  EFFECT_LIGHTNING_HIT_02: BATTLE_PKG + 'images/effects/lightning_hit/lightning_hit_02.png',
   EFFECT_LIGHTNING_HIT_03: BATTLE_PKG + 'images/effects/lightning_hit/lightning_hit_03.png',
+  EFFECT_LIGHTNING_HIT_04: BATTLE_PKG + 'images/effects/lightning_hit/lightning_hit_04.png',
   EFFECT_LIGHTNING_HIT_05: BATTLE_PKG + 'images/effects/lightning_hit/lightning_hit_05.png',
+  EFFECT_LIGHTNING_HIT_06: BATTLE_PKG + 'images/effects/lightning_hit/lightning_hit_06.png',
   EFFECT_LIGHTNING_HIT_07: BATTLE_PKG + 'images/effects/lightning_hit/lightning_hit_07.png',
+  EFFECT_LIGHTNING_HIT_08: BATTLE_PKG + 'images/effects/lightning_hit/lightning_hit_08.png',
   EFFECT_LIGHTNING_HIT_09: BATTLE_PKG + 'images/effects/lightning_hit/lightning_hit_09.png',
+  EFFECT_LIGHTNING_HIT_10: BATTLE_PKG + 'images/effects/lightning_hit/lightning_hit_10.png',
   EFFECT_LIGHTNING_HIT_11: BATTLE_PKG + 'images/effects/lightning_hit/lightning_hit_11.png',
-  EFFECT_LIGHTNING_HIT_13: BATTLE_PKG + 'images/effects/lightning_hit/lightning_hit_13.png',
-  EFFECT_LIGHTNING_HIT_15: BATTLE_PKG + 'images/effects/lightning_hit/lightning_hit_15.png',
-  EFFECT_LIGHTNING_HIT_17: BATTLE_PKG + 'images/effects/lightning_hit/lightning_hit_17.png',
-  EFFECT_LIGHTNING_HIT_19: BATTLE_PKG + 'images/effects/lightning_hit/lightning_hit_19.png',
-  EFFECT_LIGHTNING_HIT_21: BATTLE_PKG + 'images/effects/lightning_hit/lightning_hit_21.png',
-  EFFECT_LIGHTNING_HIT_23: BATTLE_PKG + 'images/effects/lightning_hit/lightning_hit_23.png'
+  EFFECT_LIGHTNING_HIT_12: BATTLE_PKG + 'images/effects/lightning_hit/lightning_hit_12.png'
 }

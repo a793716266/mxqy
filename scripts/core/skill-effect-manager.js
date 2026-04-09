@@ -169,7 +169,7 @@ export class SkillEffectManager {
         ctx.rotate(effect.rotation)
       }
 
-      // 缩放
+      // 渲染尺寸：原始像素 × scale（特效图片已是高分辨率，直接缩放即可）
       const width = currentImage.width * effect.scale
       const height = currentImage.height * effect.scale
 

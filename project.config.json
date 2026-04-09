@@ -34,9 +34,11 @@
       { "type": "folder", "value": "__pycache__" },
       { "type": "folder", "value": "scripts/tools" },
       { "type": "folder", "value": "docs" },
+      { "type": "folder", "value": ".codebuddy" },
       { "type": "file", "value": "*.py" },
       { "type": "file", "value": "*.md" },
-      { "type": "file", "value": ".DS_Store" }
+      { "type": "file", "value": ".DS_Store" },
+      { "type": "file", "value": ".gitignore" }
     ],
     "include": []
   },
