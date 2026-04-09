@@ -23,12 +23,13 @@ export class SkillEffectManager {
    * @param {Function} config.onFrameChange - 帧变化回调
    */
   createEffect(config) {
+    const images = this._getEffectImages(config.type)
     const effect = {
       id: `effect_${Date.now()}_${Math.random()}`,
       type: config.type,
       x: config.x || 0,
       y: config.y || 0,
-      frameCount: config.frameCount || 11,
+      frameCount: images.length, // 使用实际加载的帧数
       currentFrame: 0,
       frameDuration: config.frameDuration || 50, // 默认50ms一帧（20fps）
       loop: config.loop || false,
@@ -39,7 +40,7 @@ export class SkillEffectManager {
       isPlaying: true,
       onComplete: config.onComplete,
       onFrameChange: config.onFrameChange,
-      images: this._getEffectImages(config.type, config.frameCount)
+      images: images
     }
 
     this.effects.push(effect)
@@ -51,19 +52,27 @@ export class SkillEffectManager {
 
   /**
    * 获取特效的所有帧图片
+   * 自动从已加载的资源中按前缀匹配所有帧
    */
   _getEffectImages(type, frameCount) {
     const images = []
     const prefix = this._getEffectPrefix(type)
     
-    for (let i = 1; i <= frameCount; i++) {
-      const key = `${prefix}_${i.toString().padStart(2, '0')}`
-      const img = this.game.assets.get(key)
+    // 从已加载的资源中按前缀收集所有匹配的帧
+    const allImages = this.game.assets.images
+    const frameKeys = Object.keys(allImages)
+      .filter(key => key.startsWith(prefix + '_'))
+      .sort()
+    
+    for (const key of frameKeys) {
+      const img = allImages[key]
       if (img) {
         images.push(img)
-      } else {
-        console.warn(`[SkillEffect] 找不到特效帧: ${key}`)
       }
+    }
+    
+    if (images.length === 0) {
+      console.warn(`[SkillEffect] 找不到特效帧: ${prefix}_*`)
     }
     
     return images

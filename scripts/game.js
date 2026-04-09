@@ -77,6 +77,10 @@ export class Game {
     // 加载存档
     this.data.load()
 
+    // 先加载分包，再加载资源（分包资源路径在ASSETS中引用）
+    console.log('[Game] 加载分包...')
+    await this._loadSubpackage('battle')
+
     // 加载资源
     console.log('[Game] 开始加载资源...')
     await this.assets.loadAll(ASSETS)
@@ -107,11 +111,6 @@ export class Game {
 
     // 淡出 → 切换 → 淡入
     this._fadeTo(async () => {
-      // 进入战斗场景前加载battle分包
-      if (sceneName === SCENE.BATTLE) {
-        await this._loadSubpackage('battle')
-      }
-
       switch (sceneName) {
         case SCENE.MAIN_MENU:
           this.currentScene = new MainMenuScene(this)

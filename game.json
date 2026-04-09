@@ -11,10 +11,6 @@
     {
       "name": "battle",
       "root": "subpackages/battle/"
-    },
-    {
-      "name": "map",
-      "root": "subpackages/map/"
     }
   ]
 }

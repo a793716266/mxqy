@@ -461,8 +461,7 @@ export class BattleScene {
         type: 'fireball_cast',
         x: heroPos.x,
         y: heroPos.y,
-        frameCount: 11,
-        frameDuration: 135, // 135ms一帧，总共约1.5秒
+        frameDuration: 250, // 6帧×250ms≈1.5秒
         loop: false,
         scale: 1.0,
         alpha: 1.0,
@@ -479,8 +478,7 @@ export class BattleScene {
         type: 'ice_shard_cast',
         x: heroPos.x,
         y: heroPos.y,
-        frameCount: 16,
-        frameDuration: 94, // 94ms一帧，总共约1.5秒
+        frameDuration: 188, // 8帧×188ms≈1.5秒
         loop: false,
         scale: 1.0,
         alpha: 1.0,
@@ -497,10 +495,9 @@ export class BattleScene {
         type: 'lightning_cast',
         x: heroPos.x,
         y: heroPos.y,
-        frameCount: 30,  // 更新为30帧
-        frameDuration: 50, // 50ms一帧，总共1.5秒
+        frameDuration: 100, // 15帧×100ms=1.5秒
         loop: false,
-        scale: 0.8, // 缩小到0.8倍，与击中特效一致
+        scale: 0.8,
         alpha: 1.0,
         onComplete: (effect) => {
           console.log('[Battle] 雷击术施法特效播放完成')
@@ -525,10 +522,9 @@ export class BattleScene {
         type: 'fireball_hit',
         x: targetPos.x,
         y: targetPos.y,
-        frameCount: 47,
-        frameDuration: 40, // 40ms一帧，总共约1.9秒
+        frameDuration: 80, // 24帧×80ms≈1.9秒
         loop: false,
-        scale: 1.2, // 稍微放大，让击中效果更明显
+        scale: 1.2,
         alpha: 1.0,
         onComplete: (effect) => {
           console.log('[Battle] 火球术击中特效播放完成')
@@ -543,10 +539,9 @@ export class BattleScene {
         type: 'ice_shard_hit',
         x: targetPos.x,
         y: targetPos.y,
-        frameCount: 21,
-        frameDuration: 71, // 71ms一帧，总共约1.5秒
+        frameDuration: 136, // 11帧×136ms≈1.5秒
         loop: false,
-        scale: 1.2, // 稍微放大，让击中效果更明显
+        scale: 1.2,
         alpha: 1.0,
         onComplete: (effect) => {
           console.log('[Battle] 冰晶术击中特效播放完成')
@@ -561,10 +556,9 @@ export class BattleScene {
         type: 'lightning_hit',
         x: targetPos.x,
         y: targetPos.y-150,
-        frameCount: 23,  // 更新为23帧
-        frameDuration: 65, // 65ms一帧，总共约1.5秒
+        frameDuration: 125, // 12帧×125ms=1.5秒
         loop: false,
-        scale: 0.8, // 缩小到0.8倍，更合适的大小
+        scale: 0.8,
         alpha: 1.0,
         onComplete: (effect) => {
           console.log('[Battle] 雷击术击中特效播放完成')
@@ -665,21 +659,21 @@ export class BattleScene {
           animState.frameTimer = 0
           animState.frame++
           // 根据类型确定idle总帧数
-          const idleFrames = animState.type === 'wild_cat' ? 16 : 7
+          const idleFrames = animState.type === 'wild_cat' ? 8 : 7
           if (animState.frame > idleFrames) animState.frame = 1
         }
         return
       }
 
       // 攻击/技能动画：跳帧播放加速
-      // attack 帧号范围: 8-23 (16帧), skill 帧号范围: 50-80 (31帧)
+      // attack 帧号范围: 8-22 (8帧), skill 帧号范围: 50-80 (11帧，步长3)
       const isAttack = animState.state === 'attack'
       const startFrame = isAttack ? 8 : 50
-      const endFrame = isAttack ? 23 : 80
-      const totalFrames = endFrame - startFrame + 1  // attack 16帧, skill 31帧
-      const step = 2  // 每2帧取1帧，加速播放
-      const displayFrames = Math.ceil(totalFrames / step)  // 实际播放帧数: attack 8, skill 16
-      const damageDisplayFrame = isAttack ? 4 : 8  // 伤害结算的显示帧序号（约动画中段）
+      const endFrame = isAttack ? 22 : 80
+      const step = isAttack ? 2 : 3  // attack每2帧取1帧，skill每3帧取1帧
+      const actualFrames = isAttack ? [8, 10, 12, 14, 16, 18, 20, 22] : [50, 53, 56, 59, 62, 65, 68, 71, 74, 77, 80]
+      const displayFrames = actualFrames.length  // attack 8帧, skill 11帧
+      const damageDisplayFrame = isAttack ? 4 : 6  // 伤害结算的显示帧序号（约动画中段）
 
       // 更新帧计时器（攻击/技能用更快帧率）
       const animFrameDuration = 55  // 55ms一帧
@@ -689,8 +683,9 @@ export class BattleScene {
         animState.frameTimer = 0
         animState.displayFrame = (animState.displayFrame || 0) + 1
 
-        // 计算实际图片帧号（跳帧）
-        animState.frame = startFrame + Math.min((animState.displayFrame - 1) * step, totalFrames - 1)
+        // 计算实际图片帧号（从实际帧列表中取）
+        const frameIdx = Math.min(animState.displayFrame - 1, actualFrames.length - 1)
+        animState.frame = actualFrames[frameIdx]
 
         // 伤害结算
         if (animState.displayFrame === damageDisplayFrame && !animState.attackDamageApplied) {
@@ -2369,7 +2364,7 @@ export class BattleScene {
    */
   _getEnemyFrameKey(animState) {
     if (animState.type === 'wild_cat') {
-      // 野猫：只有idle动画，帧号01-16
+      // 野猫：只有idle动画，帧号01-08（减帧版）
       const frameNum = String(animState.frame).padStart(2, '0')
       return `CAT_IDLE_${frameNum}`
     }
@@ -2377,9 +2372,9 @@ export class BattleScene {
     if (animState.state === 'idle') {
       return `SLIME_CAT_IDLE_${animState.frame}`
     } else if (animState.state === 'attack') {
-      return `SLIME_CAT_ATTACK_${animState.frame}`
+      return `SLIME_CAT_ATTACK_${String(animState.frame).padStart(4, '0')}`
     } else if (animState.state === 'skill') {
-      return `SLIME_CAT_SKILL_${animState.frame}`
+      return `SLIME_CAT_SKILL_${String(animState.frame).padStart(4, '0')}`
     }
     return 'SLIME_CAT_IDLE_1'
   }

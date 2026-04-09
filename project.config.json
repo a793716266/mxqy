@@ -26,7 +26,18 @@
   "compileType": "game",
   "simulatorPluginLibVersion": {},
   "packOptions": {
-    "ignore": [],
+    "ignore": [
+      { "type": "folder", "value": ".venv" },
+      { "type": "folder", "value": "venv" },
+      { "type": "folder", "value": ".git" },
+      { "type": "folder", "value": "_source_backup" },
+      { "type": "folder", "value": "__pycache__" },
+      { "type": "folder", "value": "scripts/tools" },
+      { "type": "folder", "value": "docs" },
+      { "type": "file", "value": "*.py" },
+      { "type": "file", "value": "*.md" },
+      { "type": "file", "value": ".DS_Store" }
+    ],
     "include": []
   },
   "appid": "wx1797da1097582e92",
