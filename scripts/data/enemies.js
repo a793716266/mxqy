@@ -95,8 +95,8 @@ export const ENEMIES_CH1 = {
     exp: 18,         // 奖励提升
     gold: 12,
     skills: [
-      { name: '黏液喷射', power: 1.1, type: 'attack', effect: 'slow' },  // 0.9 → 1.1
-      { name: '黏液包裹', power: 1.3, type: 'attack', effect: 'slow' }   // 新增技能
+      { name: '黏液喷射', power: 1.1, type: 'attack', effect: 'slime_spray' },
+      { name: '黏液包裹', power: 1.3, type: 'attack', effect: 'slime_wrap', restrictChance: 0.3 }
     ],
     drop: [{ id: 'gel', name: '黏液', chance: 0.2 }]
   },

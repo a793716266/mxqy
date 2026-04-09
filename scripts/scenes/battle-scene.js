@@ -36,8 +36,9 @@ export class BattleScene {
 
     // 状态效果系统
     this.statusEffects = {
-      enemies: {}  // 敌人的状态效果，key是敌人索引，value是效果数组
-      // 格式: { type: 'burn'|'freeze', duration: number, data: {...} }
+      enemies: {},  // 敌人的状态效果，key是敌人索引，value是效果数组
+      heroes: {}    // 己方角色的状态效果，key是角色索引，value是效果数组
+      // 格式: { type: 'burn'|'freeze'|'slimed'|'restricted', duration: number, data: {...} }
     }
 
     // 动画
@@ -93,6 +94,9 @@ export class BattleScene {
     // 己方HP/MP延迟过渡动画
     this.heroHpDelay = this.party.map(h => h.hp / h.maxHp)
     this.heroMpDelay = this.party.map(h => h.mp / h.maxMp)
+
+    // 代码特效系统（粒子/形状动画，无需图片资源）
+    this.codeEffects = []
   }
 
   /**
@@ -613,6 +617,8 @@ export class BattleScene {
 
     // 敌人回合
     if (this.phase === 'enemy_turn' && !this.enemyTurnStarted) {
+      // 玩家回合结束，更新己方角色状态效果（递减回合数）
+      this._updateHeroStatusEffects()
       // 创建敌人攻击队列（所有存活的敌人）
       this.enemyAttackQueue = this.enemies.filter(e => e.hp > 0)
       this.currentEnemyIndex = 0
@@ -640,6 +646,9 @@ export class BattleScene {
 
     // 感化剧情更新
     this._updatePurifyScene(dt)
+
+    // 代码特效更新
+    this._updateCodeEffects(dt)
   }
 
   /**
@@ -707,6 +716,393 @@ export class BattleScene {
           }
         }
       }
+    })
+  }
+
+  // ======== 代码特效系统 ========
+
+  /**
+   * 创建代码生成特效（无需图片资源的粒子/形状动画）
+   * @param {Object} config - 特效配置
+   * @param {string} config.type - 特效类型（slime_splash, slime_wrap, heal_self 等）
+   * @param {number} config.x - 目标X坐标
+   * @param {number} config.y - 目标Y坐标
+   * @param {Function} config.onComplete - 完成回调
+   */
+  _createCodeEffect(config) {
+    const dpr = this.dpr
+    const effect = {
+      id: `codefx_${Date.now()}_${Math.random()}`,
+      type: config.type,
+      x: config.x,
+      y: config.y,
+      elapsed: 0,
+      duration: config.duration || 800,
+      particles: [],
+      onComplete: config.onComplete,
+      isPlaying: true
+    }
+
+    // 根据类型生成粒子
+    if (config.type === 'slime_splash') {
+      // 黏液喷射：绿色黏液飞溅 + 溅射
+      effect.duration = 900
+      for (let i = 0; i < 18; i++) {
+        const angle = (Math.PI * 2 / 12) * i + Math.random() * 0.5
+        const speed = (60 + Math.random() * 80) * dpr
+        effect.particles.push({
+          x: 0, y: 0,
+          vx: Math.cos(angle) * speed,
+          vy: Math.sin(angle) * speed - 40 * dpr,
+          size: (4 + Math.random() * 6) * dpr,
+          color: this._randomSlimeColor(),
+          gravity: 180 * dpr,
+          life: 0.5 + Math.random() * 0.5,
+          age: 0,
+          type: 'blob'
+        })
+      }
+      // 添加几个大黏液滴
+      for (let i = 0; i < 5; i++) {
+        const angle = Math.random() * Math.PI * 2
+        const speed = (30 + Math.random() * 50) * dpr
+        effect.particles.push({
+          x: 0, y: 0,
+          vx: Math.cos(angle) * speed,
+          vy: Math.sin(angle) * speed - 60 * dpr,
+          size: (8 + Math.random() * 8) * dpr,
+          color: this._randomSlimeColor(),
+          gravity: 200 * dpr,
+          life: 0.6 + Math.random() * 0.4,
+          age: 0,
+          type: 'bigblob'
+        })
+      }
+    } else if (config.type === 'slime_wrap') {
+      // 黏液包裹：绿色黏液从四周包围目标，逐渐收拢
+      effect.duration = 1100
+      // 飞行黏液球（从四周飞向中心）
+      for (let i = 0; i < 12; i++) {
+        const angle = (Math.PI * 2 / 12) * i
+        const dist = (80 + Math.random() * 40) * dpr
+        effect.particles.push({
+          startX: Math.cos(angle) * dist,
+          startY: Math.sin(angle) * dist,
+          size: (6 + Math.random() * 5) * dpr,
+          color: this._randomSlimeColor(),
+          life: 0.6,
+          age: 0,
+          delay: i * 0.03,
+          type: 'converge'
+        })
+      }
+      // 包裹后的扩散波纹
+      for (let i = 0; i < 8; i++) {
+        const angle = (Math.PI * 2 / 8) * i
+        effect.particles.push({
+          angle: angle,
+          maxRadius: (60 + Math.random() * 30) * dpr,
+          color: 'rgba(46, 213, 115, 0.3)',
+          life: 0.8,
+          age: 0,
+          delay: 0.5,
+          type: 'ripple'
+        })
+      }
+    }
+
+    this.codeEffects.push(effect)
+    return effect.id
+  }
+
+  _randomSlimeColor() {
+    const colors = ['#2ed573', '#7bed9f', '#a3cb38', '#009432', '#6ab04c']
+    return colors[Math.floor(Math.random() * colors.length)]
+  }
+
+  _updateCodeEffects(dt) {
+    const toRemove = []
+    for (const effect of this.codeEffects) {
+      if (!effect.isPlaying) continue
+      effect.elapsed += dt * 1000
+
+      for (const p of effect.particles) {
+        const adjustedAge = (effect.elapsed / 1000 - (p.delay || 0))
+        if (adjustedAge < 0) continue
+        p.age = adjustedAge
+
+        if (p.type === 'blob' || p.type === 'bigblob') {
+          p.x += p.vx * dt
+          p.y += p.vy * dt
+          p.vy += p.gravity * dt
+        } else if (p.type === 'converge') {
+          const convergeProgress = Math.min(1, p.age / p.life)
+          const eased = 1 - Math.pow(1 - convergeProgress, 3)
+          p.currentX = p.startX * (1 - eased)
+          p.currentY = p.startY * (1 - eased)
+          p.alpha = convergeProgress < 0.8 ? 1 : (1 - convergeProgress) / 0.2
+        } else if (p.type === 'ripple') {
+          const rippleProgress = Math.min(1, p.age / p.life)
+          p.expandRadius = rippleProgress * p.maxRadius
+          p.alpha = Math.max(0, 1 - rippleProgress)
+        }
+      }
+
+      if (effect.elapsed / effect.duration >= 1) {
+        effect.isPlaying = false
+        toRemove.push(effect.id)
+        if (effect.onComplete) effect.onComplete()
+      }
+    }
+
+    for (const id of toRemove) {
+      const idx = this.codeEffects.findIndex(e => e.id === id)
+      if (idx !== -1) this.codeEffects.splice(idx, 1)
+    }
+  }
+
+  _renderCodeEffects(ctx) {
+    for (const effect of this.codeEffects) {
+      if (!effect.isPlaying) continue
+      ctx.save()
+      ctx.translate(effect.x, effect.y)
+
+      for (const p of effect.particles) {
+        const adjustedAge = (effect.elapsed / 1000 - (p.delay || 0))
+        if (adjustedAge < 0) continue
+
+        const lifeRatio = Math.min(1, p.age / (p.life || 1))
+
+        if (p.type === 'blob' || p.type === 'bigblob') {
+          const alpha = Math.max(0, (1 - lifeRatio) * 0.9)
+          ctx.globalAlpha = alpha
+          ctx.fillStyle = p.color
+          ctx.beginPath()
+          const stretch = Math.min(2, Math.abs(p.vy || 0) / (100 * this.dpr) + 1)
+          ctx.ellipse(p.x, p.y, p.size, p.size * stretch, 0, 0, Math.PI * 2)
+          ctx.fill()
+          if (p.type === 'bigblob') {
+            ctx.globalAlpha = alpha * 0.3
+            ctx.beginPath()
+            ctx.ellipse(p.x, p.y, p.size * 2, p.size * 2 * stretch, 0, 0, Math.PI * 2)
+            ctx.fill()
+          }
+        } else if (p.type === 'converge') {
+          const cx = p.currentX || 0
+          const cy = p.currentY || 0
+          const alpha = Math.max(0, (p.alpha !== undefined ? p.alpha : 1) * 0.9)
+          ctx.globalAlpha = alpha
+          ctx.fillStyle = p.color
+          ctx.beginPath()
+          ctx.arc(cx, cy, p.size, 0, Math.PI * 2)
+          ctx.fill()
+          // 拖尾
+          const dist = Math.sqrt(cx * cx + cy * cy)
+          if (dist > 2) {
+            const tailLen = Math.min(p.size * 4, dist * 0.6)
+            const tailAngle = Math.atan2(cy, cx)
+            const gradient = ctx.createLinearGradient(
+              cx, cy,
+              cx + Math.cos(tailAngle) * tailLen,
+              cy + Math.sin(tailAngle) * tailLen
+            )
+            gradient.addColorStop(0, p.color)
+            gradient.addColorStop(1, 'rgba(46, 213, 115, 0)')
+            ctx.globalAlpha = alpha * 0.4
+            ctx.strokeStyle = gradient
+            ctx.lineWidth = p.size * 1.5
+            ctx.lineCap = 'round'
+            ctx.beginPath()
+            ctx.moveTo(cx, cy)
+            ctx.lineTo(
+              cx + Math.cos(tailAngle) * tailLen,
+              cy + Math.sin(tailAngle) * tailLen
+            )
+            ctx.stroke()
+          }
+        } else if (p.type === 'ripple') {
+          ctx.globalAlpha = Math.max(0, (p.alpha || 0) * 0.5)
+          ctx.strokeStyle = p.color
+          ctx.lineWidth = 3 * this.dpr
+          ctx.beginPath()
+          ctx.arc(0, 0, p.expandRadius || 0, 0, Math.PI * 2)
+          ctx.stroke()
+        }
+      }
+
+      ctx.restore()
+    }
+    ctx.globalAlpha = 1
+  }
+
+  /**
+   * 播放敌人技能击中特效
+   * @param {Object} skill - 技能对象
+   * @param {Object} targetPos - 目标位置 {x, y}
+   */
+  _playEnemySkillEffect(skill, targetPos) {
+    if (!targetPos) return
+
+    // 根据敌人类型和技能选择特效
+    const enemyId = this.enemy.id || this.enemy.type
+
+    if (enemyId === 'slime_cat') {
+      // 史莱姆猫技能特效
+      if (skill.effect === 'slow') {
+        // 减速类技能：根据power区分喷射/包裹
+        if (skill.power >= 1.3) {
+          // 黏液包裹：从四周收拢
+          this._createCodeEffect({
+            type: 'slime_wrap',
+            x: targetPos.x,
+            y: targetPos.y
+          })
+        } else {
+          // 黏液喷射：飞溅
+          this._createCodeEffect({
+            type: 'slime_splash',
+            x: targetPos.x,
+            y: targetPos.y
+          })
+        }
+      } else {
+        // 默认：黏液飞溅
+        this._createCodeEffect({
+          type: 'slime_splash',
+          x: targetPos.x,
+          y: targetPos.y
+        })
+      }
+    }
+  }
+
+  /**
+   * 应用敌人技能的状态效果
+   * @param {Object} skill - 技能对象
+   * @param {Object} target - 目标角色
+   * @param {Object} targetPos - 目标位置
+   */
+  _applyEnemySkillStatus(skill, target, targetPos) {
+    if (!skill || !skill.effect) return
+
+    const targetIndex = this.party.indexOf(target)
+    if (targetIndex === -1) return
+
+    // 初始化角色的状态效果数组
+    if (!this.statusEffects.heroes[targetIndex]) {
+      this.statusEffects.heroes[targetIndex] = []
+    }
+
+    if (skill.effect === 'slime_spray') {
+      // 黏液喷射：给目标添加 slimed 标记（持续2回合）
+      console.log(`[Battle] 黏液喷射命中 ${target.name}, targetIndex=${targetIndex}`)
+      const existing = this.statusEffects.heroes[targetIndex].find(e => e.type === 'slimed')
+      if (existing) {
+        // 刷新持续时间
+        existing.turnsRemaining = 2
+        this._addLog(`🟢 ${target.name} 被黏液覆盖！效果已刷新（2回合）`)
+      } else {
+        this.statusEffects.heroes[targetIndex].push({
+          type: 'slimed',
+          turnsRemaining: 2
+        })
+        this._addLog(`🟢 ${target.name} 被黏液覆盖！持续2回合`)
+
+        // 视觉提示
+        this.damageTexts.push({
+          text: '黏液覆盖2回合',
+          x: targetPos ? targetPos.x : 0,
+          y: targetPos ? targetPos.y - 80 * this.dpr : 0,
+          color: '#2ed573',
+          life: 2.0,
+          type: 'slime_effect'
+        })
+      }
+    } else if (skill.effect === 'slime_wrap') {
+      // 黏液包裹：30%概率限制1回合，若已有slimed则概率提升50%
+      console.log(`[Battle] 黏液包裹命中 ${target.name}, targetIndex=${targetIndex}`)
+      let restrictChance = skill.restrictChance || 0.3
+      const hasSlimed = this.statusEffects.heroes[targetIndex].some(e => e.type === 'slimed')
+      if (hasSlimed) {
+        restrictChance = Math.min(1, restrictChance * 1.5)
+        this._addLog(`🟢 黏液覆盖加成！限制概率提升至 ${Math.round(restrictChance * 100)}%`)
+      }
+
+      if (Math.random() < restrictChance) {
+        const existing = this.statusEffects.heroes[targetIndex].find(e => e.type === 'restricted')
+        if (existing) {
+          existing.turnsRemaining = 1
+          this._addLog(`🔗 ${target.name} 再次被黏液包裹限制！`)
+        } else {
+          this.statusEffects.heroes[targetIndex].push({
+            type: 'restricted',
+            turnsRemaining: 1
+          })
+          this._addLog(`🔗 ${target.name} 被黏液包裹，无法行动1回合！`)
+
+          // 视觉提示
+          this.damageTexts.push({
+            text: '限制1回合',
+            x: targetPos ? targetPos.x : 0,
+            y: targetPos ? targetPos.y - 100 * this.dpr : 0,
+            color: '#6ab04c',
+            life: 2.0,
+            type: 'slime_effect'
+          })
+        }
+      } else {
+        this._addLog(`${target.name} 挣脱了黏液包裹！`)
+      }
+
+      // 黏液包裹会消耗掉slimed标记
+      if (hasSlimed) {
+        this.statusEffects.heroes[targetIndex] =
+          this.statusEffects.heroes[targetIndex].filter(e => e.type !== 'slimed')
+        this._addLog(`🟢 ${target.name} 的黏液覆盖效果被消耗`)
+      }
+    }
+  }
+
+  /**
+   * 检查角色是否被限制行动
+   */
+  _isHeroRestricted(heroIndex) {
+    const effects = this.statusEffects.heroes[heroIndex]
+    if (!effects) return false
+    const restricted = effects.some(e => e.type === 'restricted' && e.turnsRemaining > 0)
+    if (restricted) console.log(`[Battle] 角色索引 ${heroIndex} 被限制行动, effects:`, effects)
+    return restricted
+  }
+
+  /**
+   * 回合开始时更新己方角色状态效果
+   */
+  _updateHeroStatusEffects() {
+    Object.keys(this.statusEffects.heroes).forEach(indexStr => {
+      const index = parseInt(indexStr)
+      const effects = this.statusEffects.heroes[index]
+      if (!effects) return
+
+      const hero = this.party[index]
+      if (!hero) return
+
+      // 更新每个效果的剩余回合
+      effects.forEach(effect => {
+        if (effect.type === 'restricted') {
+          effect.turnsRemaining--
+          if (effect.turnsRemaining <= 0) {
+            this._addLog(`🔗 ${hero.name} 挣脱了黏液包裹！`)
+          }
+        } else if (effect.type === 'slimed') {
+          effect.turnsRemaining--
+          if (effect.turnsRemaining <= 0) {
+            this._addLog(`🟢 ${hero.name} 身上的黏液干涸了`)
+          }
+        }
+      })
+
+      // 移除已过期的效果
+      this.statusEffects.heroes[index] = effects.filter(e => e.turnsRemaining > 0)
     })
   }
 
@@ -814,8 +1210,11 @@ export class BattleScene {
       this.enemyAttacking = true
       this.enemyAttackTarget = target
 
-      if (isAoeSkill) {
-        // 群体技能：原地播放skill帧动画，不跳跃
+      // 判断是否是技能（非普通攻击）— power > 1.0 表示是技能而非普通攻击
+      const isSkill = currentSkill && currentSkill.power > 1.0
+      
+      if (isAoeSkill || isSkill) {
+        // 群体技能或单体技能：原地播放skill帧动画，不跳跃
         this.enemyAttackAnim = null
         animState.state = 'skill'
         animState.frame = 50  // skill从第50帧开始
@@ -823,7 +1222,7 @@ export class BattleScene {
         animState.frameTimer = 0
         animState.attackDamageApplied = false
       } else {
-        // 普通攻击/单体技能：跳跃到敌人旁边，到达后播放attack帧动画
+        // 普通攻击：跳跃到敌人旁边，到达后播放attack帧动画
         this.enemyAttackAnim = {
           phase: 'jump',       // jump → anim_attack → return
           progress: 0,
@@ -1026,6 +1425,14 @@ export class BattleScene {
 
     this._addLog(`${this.enemy.name} 使用「${skill.name}」！`)
     this._addLog(`${target.name} 受到 ${damage} 点伤害！`)
+
+    // 播放敌人技能特效（仅技能，普通攻击不播放）
+    if (skill.power > 1.0) {
+      this._playEnemySkillEffect(skill, targetPos)
+    }
+
+    // 敌人技能状态效果
+    this._applyEnemySkillStatus(skill, target, targetPos)
   }
 
   _handleTap(tx, ty) {
@@ -1089,6 +1496,12 @@ export class BattleScene {
         // 检查角色是否已行动
         if (this.actedHeroes.has(area.hero.id)) {
           this._addLog(`⚠️ ${area.hero.name} 本回合已行动`)
+          return
+        }
+        // 检查角色是否被限制行动（黏液包裹等）
+        const heroIndex = this.party.indexOf(area.hero)
+        if (heroIndex !== -1 && this._isHeroRestricted(heroIndex)) {
+          this._addLog(`🔗 ${area.hero.name} 被黏液包裹，无法行动！`)
           return
         }
         this.selectedHero = area.hero
@@ -1513,7 +1926,13 @@ export class BattleScene {
    */
   _allHeroesActed() {
     const aliveHeroes = this.party.filter(h => h.hp > 0)
-    return aliveHeroes.every(h => this.actedHeroes.has(h.id))
+    return aliveHeroes.every(h => {
+      if (this.actedHeroes.has(h.id)) return true
+      // 被限制的角色视为已行动
+      const heroIndex = this.party.indexOf(h)
+      if (heroIndex !== -1 && this._isHeroRestricted(heroIndex)) return true
+      return false
+    })
   }
 
   _executeHeal(hero, skill, target) {
@@ -1613,7 +2032,13 @@ export class BattleScene {
 
     // 提前选择技能，供攻击动画判断AOE等属性
     const skills = currentEnemy.skills || []
-    this._currentEnemySkill = skills[Math.floor(Math.random() * skills.length)] || { name: '攻击', power: 1.0, type: 'attack' }
+    const defaultAttack = { name: '攻击', power: 1.0, type: 'attack' }
+    // 有一定概率使用普通攻击，其余从技能列表随机选择
+    const useNormalAttack = Math.random() < 0.3  // 30%概率普通攻击
+    this._currentEnemySkill = (!useNormalAttack && skills.length > 0) 
+      ? skills[Math.floor(Math.random() * skills.length)] 
+      : defaultAttack
+    console.log(`[Battle] ${currentEnemy.name} 选择技能: ${this._currentEnemySkill.name}, effect: ${this._currentEnemySkill.effect || 'none'}`)
 
     // 启动攻击动画
     this._startEnemyAttackAnimation(target)
@@ -1711,6 +2136,32 @@ export class BattleScene {
         icons.push({
           emoji: '❄️',
           turns: 1
+        })
+      }
+    })
+
+    return icons
+  }
+
+  /**
+   * 获取己方角色的状态效果图标
+   */
+  _getHeroStatusIcons(heroIndex) {
+    const icons = []
+    const effects = this.statusEffects.heroes[heroIndex]
+
+    if (!effects) return icons
+
+    effects.forEach(effect => {
+      if (effect.type === 'slimed') {
+        icons.push({
+          emoji: '🟢',
+          turns: effect.turnsRemaining
+        })
+      } else if (effect.type === 'restricted') {
+        icons.push({
+          emoji: '🔗',
+          turns: effect.turnsRemaining
         })
       }
     })
@@ -1942,10 +2393,11 @@ export class BattleScene {
     this._renderParty(ctx)
 
     // 敌人精灵（绘制在角色之上）
-    if (!this.enemyAttacking) {
+    if (!this.enemyAttacking || !this.enemyAttackAnim) {
+      // 非攻击状态 或 原地技能施法（无跳跃动画）→ 正常渲染敌人精灵
       this._renderEnemySprites(ctx)
     } else {
-      // 攻击中的敌人绘制在角色之上
+      // 跳跃攻击中的敌人绘制在角色之上
       this._renderAttackingEnemy(ctx)
     }
 
@@ -1961,6 +2413,9 @@ export class BattleScene {
 
     // 战斗日志
     this._renderBattleLog(ctx)
+
+    // 代码特效（粒子动画）
+    this._renderCodeEffects(ctx)
 
     // 伤害数字（安全检查）
     if (this.damageTexts && Array.isArray(this.damageTexts)) {
@@ -2617,6 +3072,20 @@ export class BattleScene {
       const nameText = hero.name
       const levelText = hero.level ? ` Lv.${hero.level}` : ''
       ctx.fillText(nameText + levelText, avatarX + avatarSize + 8 * dpr, y + 18 * dpr)
+
+      // 状态效果图标（显示在名字右侧）
+      const statusHeroIdx = this.party.indexOf(hero)
+      const heroStatusIcons = this._getHeroStatusIcons(statusHeroIdx)
+      if (heroStatusIcons.length > 0) {
+        const iconStartX = x + cardW - 10 * dpr
+        heroStatusIcons.forEach((icon, i) => {
+          const iconX = iconStartX - i * 22 * dpr
+          const iconY = y + 14 * dpr
+          ctx.font = `${14 * dpr}px sans-serif`
+          ctx.textAlign = 'center'
+          ctx.fillText(icon.emoji, iconX, iconY)
+        })
+      }
 
       // 职业
       ctx.font = `${10 * dpr}px sans-serif`
