@@ -175,8 +175,8 @@ export class CharacterState {
     state.def = Math.floor(state.baseDef * (1 + growth.def * (state.level - 1)))
     state.spd = Math.floor(state.baseSpd * (1 + growth.spd * (state.level - 1)))
     
-    state.hp = data.hp
-    state.mp = data.mp
+    state.hp = Math.min(data.hp, state.maxHp)
+    state.mp = Math.min(data.mp, state.maxMp)
     state.buffs = data.buffs || []
     
     // 加载装备

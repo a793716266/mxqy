@@ -184,7 +184,8 @@ export class FieldScene {
     }
     
     // 将角色状态转换为战斗用的角色对象
-    return allChars.map(charState => {
+    const party = allChars.map(charState => {
+      console.log(`[Field] 角色 ${charState.name} - ATK:${charState.atk}, DEF:${charState.def}, 装备:`, charState.equipment)
       return {
         id: charState.id,
         name: charState.name,
@@ -210,6 +211,8 @@ export class FieldScene {
         exp: charState.exp
       }
     })
+    
+    return party
   }
 
   /**
