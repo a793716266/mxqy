@@ -73,9 +73,7 @@ export const ASSETS = {
   HERO_LIXIAOBAO: 'images/characters/hero_lixiaobao.png',
   
   // 臻宝动画帧 - 统一放在 zhenbao/ 目录下管理
-  // walk: 10帧, idle: 5帧, slash: 20帧（battle分包）
-  HERO_ZHENBAO_WALK_01: BATTLE_PKG + 'images/characters_anim/zhenbao/walk/walk_01.png',
-  HERO_ZHENBAO_WALK_02: BATTLE_PKG + 'images/characters_anim/zhenbao/walk/walk_02.png',
+  // walk: 8帧(03~10), idle: 5帧, slash: 13帧（battle分包）
   HERO_ZHENBAO_WALK_03: BATTLE_PKG + 'images/characters_anim/zhenbao/walk/walk_03.png',
   HERO_ZHENBAO_WALK_04: BATTLE_PKG + 'images/characters_anim/zhenbao/walk/walk_04.png',
   HERO_ZHENBAO_WALK_05: BATTLE_PKG + 'images/characters_anim/zhenbao/walk/walk_05.png',
@@ -275,6 +273,20 @@ export const ASSETS = {
   SLIME_CAT_SKILL_0074: BATTLE_PKG + 'images/characters_anim/transparent/slime_cat/skill/skill_0074.png',
   SLIME_CAT_SKILL_0077: BATTLE_PKG + 'images/characters_anim/transparent/slime_cat/skill/skill_0077.png',
   SLIME_CAT_SKILL_0080: BATTLE_PKG + 'images/characters_anim/transparent/slime_cat/skill/skill_0080.png',
+
+  // walk: 12帧（史莱姆猫野外移动动画）
+  SLIME_CAT_WALK_01: BATTLE_PKG + 'images/characters_anim/transparent/slime_cat/walk/walk_01.png',
+  SLIME_CAT_WALK_02: BATTLE_PKG + 'images/characters_anim/transparent/slime_cat/walk/walk_02.png',
+  SLIME_CAT_WALK_03: BATTLE_PKG + 'images/characters_anim/transparent/slime_cat/walk/walk_03.png',
+  SLIME_CAT_WALK_04: BATTLE_PKG + 'images/characters_anim/transparent/slime_cat/walk/walk_04.png',
+  SLIME_CAT_WALK_05: BATTLE_PKG + 'images/characters_anim/transparent/slime_cat/walk/walk_05.png',
+  SLIME_CAT_WALK_06: BATTLE_PKG + 'images/characters_anim/transparent/slime_cat/walk/walk_06.png',
+  SLIME_CAT_WALK_07: BATTLE_PKG + 'images/characters_anim/transparent/slime_cat/walk/walk_07.png',
+  SLIME_CAT_WALK_08: BATTLE_PKG + 'images/characters_anim/transparent/slime_cat/walk/walk_08.png',
+  SLIME_CAT_WALK_09: BATTLE_PKG + 'images/characters_anim/transparent/slime_cat/walk/walk_09.png',
+  SLIME_CAT_WALK_10: BATTLE_PKG + 'images/characters_anim/transparent/slime_cat/walk/walk_10.png',
+  SLIME_CAT_WALK_11: BATTLE_PKG + 'images/characters_anim/transparent/slime_cat/walk/walk_11.png',
+  SLIME_CAT_WALK_12: BATTLE_PKG + 'images/characters_anim/transparent/slime_cat/walk/walk_12.png',
 
   // 暗影鼠动画（战斗场景敌人）
   // idle: 6帧

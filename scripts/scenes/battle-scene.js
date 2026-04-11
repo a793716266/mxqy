@@ -173,7 +173,7 @@ export class BattleScene {
         frame: 0,
         frameTimer: 0,
         frameDuration: 80,  // 80ms一帧（流畅）
-        totalWalkFrames: hero.id === 'zhenbao' ? 10 : (hero.id === 'lixiaobao' ? 8 : 8),
+        totalWalkFrames: hero.id === 'zhenbao' ? 8 : (hero.id === 'lixiaobao' ? 8 : 8),
         totalIdleFrames: hero.id === 'zhenbao' ? 5 : (hero.id === 'lixiaobao' ? 2 : 0),
         totalSlashFrames: hero.id === 'zhenbao' ? 13 : 0,  // 斩击攻击帧数
       }
@@ -301,6 +301,9 @@ export class BattleScene {
     const effectiveDt = dt * this.battleSpeed
     const MOVE_SPEED = 200 * effectiveDt  // 像素/帧
 
+    // ===== 第一轮碰撞分离：先把重叠的单位推开 =====
+    this._applyCollisionSeparation()
+
     // ===== 己方角色更新 =====
     for (const hero of this.party) {
       if (hero.hp <= 0) continue
@@ -309,14 +312,23 @@ export class BattleScene {
 
       switch (state.state) {
         case 'moving_to_attack':
-          // 向目标移动
+          // 向目标移动（带障碍检测）
           if (state.targetX !== null) {
             const dx = state.targetX - state.x
             const dy = state.targetY - state.y
             const dist = Math.sqrt(dx * dx + dy * dy)
             if (dist > MOVE_SPEED) {
-              state.x += (dx / dist) * MOVE_SPEED
-              state.y += (dy / dist) * MOVE_SPEED
+              // 计算预期新位置
+              let nx = state.x + (dx / dist) * MOVE_SPEED
+              let ny = state.y + (dy / dist) * MOVE_SPEED
+              // 障碍检测：如果会撞到其他单位，尝试滑开或停止
+              const blocked = this._getMovementBlocker(state, nx, ny)
+              if (blocked) {
+                // 尝试沿切线方向滑动
+                const slide = this._slideAround(state, nx, ny, dx / dist, dy / dist, MOVE_SPEED, blocked)
+                nx = slide.x; ny = slide.y
+              }
+              state.x = nx; state.y = ny
             } else {
               state.x = state.targetX
               state.y = state.targetY
@@ -329,14 +341,20 @@ export class BattleScene {
           }
           break
 
-        case 'returning':
+        case 'returning': {
           // 返回原位
           const rx = state.baseX - state.x
           const ry = state.baseY - state.y
           const rDist = Math.sqrt(rx * rx + ry * ry)
           if (rDist > MOVE_SPEED) {
-            state.x += (rx / rDist) * MOVE_SPEED
-            state.y += (ry / rDist) * MOVE_SPEED
+            let nx = state.x + (rx / rDist) * MOVE_SPEED
+            let ny = state.y + (ry / rDist) * MOVE_SPEED
+            const blocked = this._getMovementBlocker(state, nx, ny)
+            if (blocked) {
+              const slide = this._slideAround(state, nx, ny, rx / rDist, ry / rDist, MOVE_SPEED, blocked)
+              nx = slide.x; ny = slide.y
+            }
+            state.x = nx; state.y = ny
           } else {
             state.x = state.baseX
             state.y = state.baseY
@@ -344,6 +362,7 @@ export class BattleScene {
             state.currentTargetId = null
           }
           break
+        }
       }
 
       // 同步更新 heroBasePositions 用于渲染
@@ -371,7 +390,6 @@ export class BattleScene {
           eAnim.frameTimer = 0
           eAnim.displayFrame = 0
         } else if (!isMoving && estate.state === 'idle' && eAnim.state !== 'idle') {
-          // 只有完全空闲时才切回idle（不覆盖attack/skill状态）
           eAnim.state = 'idle'
           eAnim.frame = 1
           eAnim.frameTimer = 0
@@ -385,8 +403,14 @@ export class BattleScene {
             const dy = estate.targetY - estate.y
             const dist = Math.sqrt(dx * dx + dy * dy)
             if (dist > MOVE_SPEED) {
-              estate.x += (dx / dist) * MOVE_SPEED
-              estate.y += (dy / dist) * MOVE_SPEED
+              let nx = estate.x + (dx / dist) * MOVE_SPEED
+              let ny = estate.y + (dy / dist) * MOVE_SPEED
+              const blocked = this._getMovementBlocker(estate, nx, ny)
+              if (blocked) {
+                const slide = this._slideAround(estate, nx, ny, dx / dist, dy / dist, MOVE_SPEED, blocked)
+                nx = slide.x; ny = slide.y
+              }
+              estate.x = nx; estate.y = ny
             } else {
               estate.x = estate.targetX
               estate.y = estate.targetY
@@ -394,13 +418,19 @@ export class BattleScene {
             }
           }
           break
-        case 'returning':
+        case 'returning': {
           const erx = estate.baseX - estate.x
           const ery = estate.baseY - estate.y
           const erDist = Math.sqrt(erx * erx + ery * ery)
           if (erDist > MOVE_SPEED) {
-            estate.x += (erx / erDist) * MOVE_SPEED
-            estate.y += (ery / erDist) * MOVE_SPEED
+            let nx = estate.x + (erx / erDist) * MOVE_SPEED
+            let ny = estate.y + (ery / erDist) * MOVE_SPEED
+            const blocked = this._getMovementBlocker(estate, nx, ny)
+            if (blocked) {
+              const slide = this._slideAround(estate, nx, ny, erx / erDist, ery / erDist, MOVE_SPEED, blocked)
+              nx = slide.x; ny = slide.y
+            }
+            estate.x = nx; estate.y = ny
           } else {
             estate.x = estate.baseX
             estate.y = estate.baseY
@@ -408,6 +438,7 @@ export class BattleScene {
             estate.currentTargetId = null
           }
           break
+        }
       }
 
       // 同步更新敌人位置用于渲染
@@ -417,7 +448,7 @@ export class BattleScene {
       }
     }
 
-    // 碰撞分离：同阵营单位不重叠
+    // ===== 第二轮碰撞分离：移动后再次修正 =====
     this._applyCollisionSeparation()
   }
 
@@ -497,23 +528,37 @@ export class BattleScene {
   }
 
   /**
-   * 同阵营碰撞分离：防止友军互相重叠
-   * 在 _updateCombatUnits 末尾调用
+   * 全局碰撞分离：所有单位之间（含敌我）都不重叠
+   * 在 _updateCombatUnits 中移动前后各调用一次
    */
   _applyCollisionSeparation() {
     const dpr = this.dpr
-    const PUSH_FORCE = 0.6  // 推力系数（每帧修正比例）
+    const PUSH_FORCE = 0.8
 
-    // 己方角色之间分离
-    const aliveHeroes = this.party.filter(h => h.hp > 0).map(h => ({ hero: h, state: this.unitStates[h.id] })).filter(x => x.state)
-    for (let i = 0; i < aliveHeroes.length; i++) {
-      for (let j = i + 1; j < aliveHeroes.length; j++) {
-        const a = aliveHeroes[i].state
-        const b = aliveHeroes[j].state
+    const allUnits = []
+
+    for (const hero of this.party) {
+      if (hero.hp <= 0) continue
+      const state = this.unitStates[hero.id]
+      if (!state) continue
+      allUnits.push({ state, faction: 'hero', id: hero.id })
+    }
+
+    for (let i = 0; i < this.enemies.length; i++) {
+      if (this.enemies[i].hp <= 0) continue
+      const state = this.unitStates['enemy_' + i]
+      if (!state) continue
+      allUnits.push({ state, faction: 'enemy', id: 'e' + i })
+    }
+
+    for (let i = 0; i < allUnits.length; i++) {
+      for (let j = i + 1; j < allUnits.length; j++) {
+        const a = allUnits[i].state
+        const b = allUnits[j].state
         const dx = b.x - a.x
         const dy = b.y - a.y
         const dist = Math.sqrt(dx * dx + dy * dy)
-        const minDist = (a.radius || 0) + (b.radius || 0) + 5 * dpr
+        const minDist = (a.radius || 0) + (b.radius || 0) + 3 * dpr
 
         if (dist < minDist && dist > 0.01) {
           const overlap = (minDist - dist) * PUSH_FORCE * 0.5
@@ -526,29 +571,51 @@ export class BattleScene {
         }
       }
     }
+  }
 
-    // 敌人之间分离
-    const aliveEnemies = this.enemies.filter(e => e.hp > 0).map((e, idx) => ({ enemy: e, state: this.unitStates['enemy_' + idx], idx })).filter(x => x.state)
-    for (let i = 0; i < aliveEnemies.length; i++) {
-      for (let j = i + 1; j < aliveEnemies.length; j++) {
-        const a = aliveEnemies[i].state
-        const b = aliveEnemies[j].state
-        const dx = b.x - a.x
-        const dy = b.y - a.y
-        const dist = Math.sqrt(dx * dx + dy * dy)
-        const minDist = (a.radius || 0) + (b.radius || 0) + 5 * dpr
-
-        if (dist < minDist && dist > 0.01) {
-          const overlap = (minDist - dist) * PUSH_FORCE * 0.5
-          const nx = dx / dist
-          const ny = dy / dist
-          a.x -= nx * overlap
-          a.y -= ny * overlap
-          b.x += nx * overlap
-          b.y += ny * overlap
-        }
-      }
+  _getMovementBlocker(moverState, targetX, targetY) {
+    const moverRadius = moverState.radius || 24 * this.dpr
+    for (const hero of this.party) {
+      if (hero.hp <= 0) continue
+      const state = this.unitStates[hero.id]
+      if (!state || state === moverState) continue
+      const dx = targetX - state.x
+      const dy = targetY - state.y
+      const dist = Math.sqrt(dx * dx + dy * dy)
+      if (dist < moverRadius + (state.radius || 24 * this.dpr)) return state
     }
+    for (let i = 0; i < this.enemies.length; i++) {
+      if (this.enemies[i].hp <= 0) continue
+      const estate = this.unitStates['enemy_' + i]
+      if (!estate || estate === moverState) continue
+      const dx = targetX - estate.x
+      const dy = targetY - estate.y
+      const dist = Math.sqrt(dx * dx + dy * dy)
+      if (dist < moverRadius + (estate.radius || 16 * this.dpr)) return estate
+    }
+    return null
+  }
+
+  _slideAround(moverState, targetX, targetY, dirX, dirY, moveSpeed, blocker) {
+    const perpX = -dirY
+    const perpY = dirX
+    const slideAmount = moveSpeed * 0.7
+
+    const awayX = targetX - blocker.x
+    const awayY = targetY - blocker.y
+    const dot1 = perpX * awayX + perpY * awayY
+
+    const sign = dot1 >= 0 ? 1 : -1
+    let sx = moverState.x + (dirX * moveSpeed * 0.2) + perpX * slideAmount * sign
+    let sy = moverState.y + (dirY * moveSpeed * 0.2) + perpY * slideAmount * sign
+
+    if (!this._getMovementBlocker(moverState, sx, sy)) return { x: sx, y: sy }
+
+    sx = moverState.x + (dirX * moveSpeed * 0.2) - perpX * slideAmount * sign
+    sy = moverState.y + (dirY * moveSpeed * 0.2) - perpY * slideAmount * sign
+    if (!this._getMovementBlocker(moverState, sx, sy)) return { x: sx, y: sy }
+
+    return { x: moverState.x, y: moverState.y }
   }
 
   /**
@@ -948,7 +1015,8 @@ export class BattleScene {
             console.log(`[Battle] ${hero.name} 目标跑远了，追击 dist=${actualDist.toFixed(1)} range=${contactDist.toFixed(1)}`)
             if (tState) {
               this._setApproachTarget(state, tState, targetEnemyIdx)
-            }
+              const angle = Math.atan2(tState.y - state.y, tState.x - state.x)
+              const chaseDist = actualDist - contactDist
               state.targetX = state.x + Math.cos(angle) * chaseDist
               state.targetY = state.y + Math.sin(angle) * chaseDist
               state.state = 'moving_to_attack'
@@ -2035,27 +2103,31 @@ export class BattleScene {
       // 根据移动状态同步动画状态（只处理 walk/idle/attack 三种状态）
       const isMoving = (uState.state === 'moving_to_attack' || uState.state === 'returning')
       const isAttackingUnit = (uState.state === 'attacking')
+      // in_range 表示站在目标附近持续交战，用walk帧作为战斗待机姿态
+      const isInCombatStance = (uState.state === 'in_range')
 
-      if (isMoving && animState.state !== 'walk') {
-        // 开始移动 → 切换到walk，重置帧
-        animState.prevState = animState.state  // 记录之前的状态（用于攻击结束后恢复）
-        animState.state = 'walk'
+      if (isAttackingUnit && animState.state !== 'attack') {
+        // 单位进入攻击状态 → 切换到攻击帧动画（最高优先级）
+        animState.prevState = animState.state
+        animState.state = 'attack'
         animState.frame = 0
         animState.frameTimer = 0
-      } else if (!isMoving && !isAttackingUnit) {
-        // 不移动且不在攻击中 → 必须回到idle（覆盖 walk / attack 等所有状态）
+        animState.attackFrameTimer = 0
+      } else if (isMoving || isInCombatStance) {
+        // 移动中 或 战斗待机(in_range) → 使用walk动画
+        if (animState.state !== 'walk') {
+          animState.prevState = animState.state
+          animState.state = 'walk'
+          animState.frame = 0
+          animState.frameTimer = 0
+        }
+      } else {
+        // 完全静止（idle状态，回到原位）→ idle呼吸动画
         if (animState.state !== 'idle') {
           animState.state = 'idle'
           animState.frame = 0
           animState.frameTimer = 0
         }
-      } else if (isAttackingUnit && animState.state !== 'attack') {
-        // 单位进入攻击状态 → 切换到攻击帧动画
-        animState.prevState = animState.state  // 记录之前的状态（用于攻击结束后恢复）
-        animState.state = 'attack'
-        animState.frame = 0
-        animState.frameTimer = 0
-        animState.attackFrameTimer = 0
       }
 
       // 更新帧动画
@@ -4457,7 +4529,9 @@ export class BattleScene {
       return 'SHADOW_MOUSE_IDLE_01'
     }
     // 史莱姆猫
-    if (animState.state === 'idle' || animState.state === 'walk') {
+    if (animState.state === 'walk') {
+      return `SLIME_CAT_WALK_${String(animState.frame).padStart(2, '0')}`
+    } else if (animState.state === 'idle') {
       return `SLIME_CAT_IDLE_${animState.frame}`
     } else if (animState.state === 'attack') {
       return `SLIME_CAT_ATTACK_${String(animState.frame).padStart(4, '0')}`
@@ -5651,8 +5725,11 @@ export class BattleScene {
   _getHeroWalkImageKey(heroId, frameNum) {
     // 返回walk动画帧key
     // 兼容两种命名格式：HERO_ZHENBAO_WALK_01（带前导零）和 HERO_LIXIAOBAO_WALK_0（无前导零）
-    const padded = String(frameNum).padStart(2, '0')
-    const unpadded = String(frameNum)
+    // 臻宝walk帧从03开始（01/02已删除），需要偏移
+    const offset = heroId === 'zhenbao' ? 3 : 0
+    const actualFrame = frameNum + offset
+    const padded = String(actualFrame).padStart(2, '0')
+    const unpadded = String(actualFrame)
 
     // 先尝试带前导零的格式（臻宝等角色）
     const paddedKey = `HERO_${heroId.toUpperCase()}_WALK_${padded}`

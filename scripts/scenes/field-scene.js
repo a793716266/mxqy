@@ -43,6 +43,9 @@ export class FieldScene {
     this.animFrame = 0
     this.animTimer = 0
     this.isMoving = false
+    this._effectiveMoving = false   // 带滞后的有效移动状态，防止walk/idle闪烁
+    this._movingHoldFrames = 0      // 停止移动后的保持计数器（帧）
+    this._MOVING_HOLD = 5           // 停止后保持5帧(约80ms)不切回idle
     this.frameDuration = 0.15 // 每帧150ms
     
     // 摇杆控制（固定位置摇杆）
@@ -230,6 +233,8 @@ export class FieldScene {
         animFrame: 0,
         animTimer: 0,
         isMoving: false,
+        _effectiveMoving: false,
+        _movingHoldFrames: 0,
         facingLeft: this.facingLeft
       })
     }
@@ -509,6 +514,8 @@ export class FieldScene {
           animFrame: 0,
           animTimer: 0,
           isMoving: false,
+          _effectiveMoving: false,
+          _movingHoldFrames: 0,
           facingLeft: this.facingLeft
         })
         console.log(`[Field] 新角色加入跟随: ${char.name}`)
@@ -599,9 +606,21 @@ export class FieldScene {
     this._updateFollowers(dt)
 
     // 检测从移动切换到idle，重置动画帧（避免使用walk_7等无效帧）
-    if (wasMoving && !this.isMoving) {
-      this.animFrame = 0
-      this.animTimer = 0
+    // 使用带滞后的有效移动状态，防止摇杆在死区边缘抖动导致 walk/idle 闪烁
+    if (this.isMoving) {
+      this._effectiveMoving = true
+      this._movingHoldFrames = 0
+    } else {
+      this._movingHoldFrames++
+      if (this._movingHoldFrames > this._MOVING_HOLD) {
+        if (this._effectiveMoving) {
+          // 真正停止移动了，重置动画到idle起始
+          this.animFrame = 0
+          this.animTimer = 0
+        }
+        this._effectiveMoving = false
+        this._movingHoldFrames = 0
+      }
     }
 
     // 动画帧更新
@@ -612,11 +631,14 @@ export class FieldScene {
     const isCat = heroId.toLowerCase().includes('cat') || heroId === 'mao' // 猫咪角色
 
     let frameDuration, totalFrames
-    if (this.isMoving) {
+    if (this._effectiveMoving) {
       // 走路动画
       if (heroId === 'zhenbao') {
-        frameDuration = 0.100 // 臻宝10帧（减帧版），100ms/帧 ≈ 1秒循环
-        totalFrames = 10
+        frameDuration = 0.100 // 臻宝8帧（walk_03~10），100ms/帧 ≈ 0.8秒循环
+        totalFrames = 8
+      } else if (heroId === 'slime_cat') {
+        frameDuration = 0.083 // 史莱姆猫12帧walk，83ms/帧 ≈ 1秒循环
+        totalFrames = 12
       } else if (isCat) {
         frameDuration = 0.083 // 猫咪12帧（减帧版），83ms/帧 ≈ 1秒循环
         totalFrames = 12
@@ -629,6 +651,9 @@ export class FieldScene {
       if (heroId === 'zhenbao') {
         frameDuration = 0.200 // 臻宝5帧（减帧版），200ms/帧 = 1秒循环
         totalFrames = 5
+      } else if (heroId === 'slime_cat') {
+        frameDuration = 0.143 // 史莱姆猫7帧idle，143ms/帧 ≈ 1秒循环
+        totalFrames = 7
       } else if (isCat) {
         frameDuration = 0.125 // 猫咪8帧（减帧版），125ms/帧 ≈ 1秒循环
         totalFrames = 8
@@ -883,9 +908,9 @@ export class FieldScene {
           follower.facingLeft = targetPos.facingLeft
           follower.isMoving = true
         } else {
-          // 距离足够近，停止移动
-          // 只有在主角也停止时才重置动画帧
-          if (!this.isMoving) {
+          // 距离足够近，且主角已停止移动时，才让队友也停止
+          // 使用主角的_effectiveMoving判断，避免循环依赖
+          if (!this._effectiveMoving) {
             const wasMoving = follower.isMoving
             follower.isMoving = false
             
@@ -897,6 +922,18 @@ export class FieldScene {
         }
       }
       
+      // 队友移动状态滞后（与主角相同的防闪烁机制）
+      if (follower.isMoving) {
+        follower._effectiveMoving = true
+        follower._movingHoldFrames = 0
+      } else {
+        follower._movingHoldFrames++
+        if (follower._movingHoldFrames > this._MOVING_HOLD) {
+          follower._effectiveMoving = false
+          follower._movingHoldFrames = 0
+        }
+      }
+      
       // 更新队友动画
       follower.animTimer += dt
 
@@ -905,11 +942,14 @@ export class FieldScene {
       const isCat = heroId.toLowerCase().includes('cat') || heroId === 'mao'
 
       let frameDuration, totalFrames
-      if (follower.isMoving) {
+      if (follower._effectiveMoving) {
         // 走路动画
         if (heroId === 'zhenbao') {
           frameDuration = 0.100
-          totalFrames = 10
+          totalFrames = 8
+        } else if (heroId === 'slime_cat') {
+          frameDuration = 0.083  // 史莱姆猫12帧walk
+          totalFrames = 12
         } else if (isCat) {
           frameDuration = 0.083
           totalFrames = 12
@@ -922,6 +962,9 @@ export class FieldScene {
         if (heroId === 'zhenbao') {
           frameDuration = 0.200
           totalFrames = 5
+        } else if (heroId === 'slime_cat') {
+          frameDuration = 0.143  // 史莱姆猫7帧idle
+          totalFrames = 7
         } else if (isCat) {
           frameDuration = 0.125
           totalFrames = 8
@@ -1316,17 +1359,24 @@ export class FieldScene {
       const isCat = heroId.toLowerCase().includes('cat') || heroId === 'mao' // 猫咪角色
 
       if (heroId === 'zhenbao') {
-        // 臻宝使用新版动画
-        if (follower.isMoving) {
-          const walkKey = `HERO_ZHENBAO_WALK_${(follower.animFrame + 1).toString().padStart(2, '0')}`
+        // 臻宝使用新版动画（walk帧从walk_03开始，需+3偏移）
+        if (follower._effectiveMoving) {
+          const walkKey = `HERO_ZHENBAO_WALK_${(follower.animFrame + 3).toString().padStart(2, '0')}`
           frameImg = this.game.assets.get(walkKey)
         } else {
           const idleKey = `HERO_ZHENBAO_IDLE_${(follower.animFrame + 1).toString().padStart(2, '0')}`
           frameImg = this.game.assets.get(idleKey)
         }
+      } else if (heroId === 'slime_cat') {
+        // 史莱姆猫使用专属动画资源（transparent/slime_cat目录）
+        if (follower._effectiveMoving) {
+          frameImg = this.game.assets.get(`SLIME_CAT_WALK_${(follower.animFrame + 1).toString().padStart(2, '0')}`)
+        } else {
+          frameImg = this.game.assets.get(`SLIME_CAT_IDLE_${follower.animFrame + 1}`)
+        }
       } else if (isCat) {
         // 猫咪使用特殊的动画资源
-        if (follower.isMoving) {
+        if (follower._effectiveMoving) {
           const walkKey = `CAT_WALK_${(follower.animFrame + 1).toString().padStart(2, '0')}`
           frameImg = this.game.assets.get(walkKey)
         } else {
@@ -1335,7 +1385,7 @@ export class FieldScene {
         }
       } else {
         // 普通英雄使用标准动画资源
-        if (follower.isMoving) {
+        if (follower._effectiveMoving) {
           const walkKey = `HERO_${heroId.toUpperCase()}_WALK_${follower.animFrame}`
           frameImg = this.game.assets.get(walkKey)
         } else {
@@ -1403,17 +1453,25 @@ export class FieldScene {
     const isCat = heroId.toLowerCase().includes('cat') || heroId === 'mao' // 猫咪角色
 
     if (heroId === 'zhenbao') {
-      // 臻宝使用新版动画（HERO_ZHENBAO_WALK_01格式，索引从1开始）
-      if (this.isMoving) {
-        const walkKey = `HERO_ZHENBAO_WALK_${(this.animFrame + 1).toString().padStart(2, '0')}`
+      // 臻宝使用新版动画（walk帧从walk_03开始，需+3偏移）
+      if (this._effectiveMoving) {
+        const walkKey = `HERO_ZHENBAO_WALK_${(this.animFrame + 3).toString().padStart(2, '0')}`
         frameImg = this.game.assets.get(walkKey)
       } else {
         const idleKey = `HERO_ZHENBAO_IDLE_${(this.animFrame + 1).toString().padStart(2, '0')}`
         frameImg = this.game.assets.get(idleKey)
       }
-    } else if (isCat) {
+    } else if (heroId === 'slime_cat') {
+      // 史莱姆猫使用专属动画资源
+      if (this._effectiveMoving) {
+        const walkKey = `SLIME_CAT_WALK_${(this.animFrame + 1).toString().padStart(2, '0')}`
+        frameImg = this.game.assets.get(walkKey)
+      } else {
+        const idleKey = `SLIME_CAT_IDLE_${this.animFrame + 1}`
+        frameImg = this.game.assets.get(idleKey)
+      }
       // 猫咪使用特殊的动画资源（CAT_IDLE_01格式，索引从1开始）
-      if (this.isMoving) {
+      if (this._effectiveMoving) {
         const walkKey = `CAT_WALK_${(this.animFrame + 1).toString().padStart(2, '0')}`
         frameImg = this.game.assets.get(walkKey)
       } else {
@@ -1422,7 +1480,7 @@ export class FieldScene {
       }
     } else {
       // 普通英雄使用标准动画资源（HERO_XXX_WALK_0格式，索引从0开始）
-      if (this.isMoving) {
+        if (this._effectiveMoving) {
         const walkKey = `HERO_${heroId.toUpperCase()}_WALK_${this.animFrame}`
         frameImg = this.game.assets.get(walkKey)
       } else {
@@ -1482,7 +1540,7 @@ export class FieldScene {
       ctx.fill()
 
       // 移动时添加轻微的方向指示器
-      if (this.isMoving) {
+      if (this._effectiveMoving) {
         ctx.beginPath()
         const arrowDist = targetHeight / 2 + 10 * this.dpr
         let arrowX = screenX
@@ -1579,11 +1637,19 @@ export class FieldScene {
     // 获取动画帧图片
     let frameImg = null
     if (monster.isMoving) {
-      const walkKey = `CAT_WALK_${(monster.animFrame + 1).toString().padStart(2, '0')}`
-      frameImg = this.game.assets.get(walkKey)
+      if (monster.id === 'slime_cat') {
+        frameImg = this.game.assets.get(`SLIME_CAT_WALK_${(monster.animFrame + 1).toString().padStart(2, '0')}`)
+      } else {
+        const walkKey = `CAT_WALK_${(monster.animFrame + 1).toString().padStart(2, '0')}`
+        frameImg = this.game.assets.get(walkKey)
+      }
     } else {
-      const idleKey = `CAT_IDLE_${(monster.animFrame + 1).toString().padStart(2, '0')}`
-      frameImg = this.game.assets.get(idleKey)
+      if (monster.id === 'slime_cat') {
+        frameImg = this.game.assets.get(`SLIME_CAT_IDLE_${monster.animFrame + 1}`)
+      } else {
+        const idleKey = `CAT_IDLE_${(monster.animFrame + 1).toString().padStart(2, '0')}`
+        frameImg = this.game.assets.get(idleKey)
+      }
     }
 
     if (frameImg) {

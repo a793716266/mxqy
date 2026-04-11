@@ -35,6 +35,9 @@ export class FieldMovement {
     this.animFrame = 0
     this.animTimer = 0
     this.isMoving = false
+    this._effectiveMoving = false   // 带滞后的有效移动状态，防止walk/idle闪烁
+    this._movingHoldFrames = 0      // 停止移动后的保持计数器（帧）
+    this._MOVING_HOLD = 5           // 停止后保持5帧(约80ms)不切回idle
     this.frameDuration = 0.15
     
     // 摇杆控制（固定位置摇杆）
@@ -194,10 +197,21 @@ export class FieldMovement {
     // 更新队友跟随
     this._updateFollowers(dt)
 
-    // 检测从移动切换到idle，重置动画帧
-    if (wasMoving && !this.isMoving) {
-      this.animFrame = 0
-      this.animTimer = 0
+    // 移动状态滞后（防止摇杆死区抖动导致walk/idle闪烁）
+    if (this.isMoving) {
+      this._effectiveMoving = true
+      this._movingHoldFrames = 0
+    } else {
+      this._movingHoldFrames++
+      if (this._movingHoldFrames > this._MOVING_HOLD) {
+        if (this._effectiveMoving) {
+          // 真正停止移动了，重置动画到idle起始
+          this.animFrame = 0
+          this.animTimer = 0
+        }
+        this._effectiveMoving = false
+        this._movingHoldFrames = 0
+      }
     }
 
     // 动画帧更新
@@ -208,11 +222,14 @@ export class FieldMovement {
     const isCat = heroId.toLowerCase().includes('cat') || heroId === 'mao'
 
     let frameDuration, totalFrames
-    if (this.isMoving) {
+    if (this._effectiveMoving) {
       // 走路动画
       if (heroId === 'zhenbao') {
-        frameDuration = 0.100 // 臻宝10帧（减帧版），100ms/帧 ≈ 1秒循环
-        totalFrames = 10
+        frameDuration = 0.100 // 臻宝8帧（walk_03~10），100ms/帧 ≈ 0.8秒循环
+        totalFrames = 8
+      } else if (heroId === 'slime_cat') {
+        frameDuration = 0.083 // 史莱姆猫12帧walk，83ms/帧 ≈ 1秒循环
+        totalFrames = 12
       } else if (isCat) {
         frameDuration = 0.083 // 猫咪12帧（减帧版），83ms/帧 ≈ 1秒循环
         totalFrames = 12
@@ -225,6 +242,9 @@ export class FieldMovement {
       if (heroId === 'zhenbao') {
         frameDuration = 0.200 // 臻宝5帧（减帧版），200ms/帧 = 1秒循环
         totalFrames = 5
+      } else if (heroId === 'slime_cat') {
+        frameDuration = 0.143 // 史莱姆猫7帧idle，143ms/帧 ≈ 1秒循环
+        totalFrames = 7
       } else if (isCat) {
         frameDuration = 0.125 // 猫咪8帧（减帧版），125ms/帧 ≈ 1秒循环
         totalFrames = 8
@@ -265,6 +285,8 @@ export class FieldMovement {
         animFrame: 0,
         animTimer: 0,
         isMoving: false,
+        _effectiveMoving: false,
+        _movingHoldFrames: 0,
         facingLeft: this.facingLeft
       })
     }
@@ -320,8 +342,9 @@ export class FieldMovement {
           follower.facingLeft = targetPos.facingLeft
           follower.isMoving = true
         } else {
-          // 距离足够近，停止移动
-          if (!this.isMoving) {
+          // 距离足够近，且主角已停止移动时，才让队友也停止
+          // 使用主角的_effectiveMoving判断，避免循环依赖
+          if (!this._effectiveMoving) {
             const wasMoving = follower.isMoving
             follower.isMoving = false
             
@@ -333,6 +356,18 @@ export class FieldMovement {
         }
       }
       
+      // 队友移动状态滞后（与主角相同的防闪烁机制）
+      if (follower.isMoving) {
+        follower._effectiveMoving = true
+        follower._movingHoldFrames = 0
+      } else {
+        follower._movingHoldFrames++
+        if (follower._movingHoldFrames > this._MOVING_HOLD) {
+          follower._effectiveMoving = false
+          follower._movingHoldFrames = 0
+        }
+      }
+      
       // 更新队友动画
       follower.animTimer += dt
 
@@ -341,11 +376,14 @@ export class FieldMovement {
       const isCat = heroId.toLowerCase().includes('cat') || heroId === 'mao'
 
       let frameDuration, totalFrames
-      if (follower.isMoving) {
+      if (follower._effectiveMoving) {
         // 走路动画
         if (heroId === 'zhenbao') {
-          frameDuration = 0.100
-          totalFrames = 10
+          frameDuration = 0.100 // 臻宝8帧
+          totalFrames = 8
+        } else if (heroId === 'slime_cat') {
+          frameDuration = 0.083 // 史莱姆猫12帧walk
+          totalFrames = 12
         } else if (isCat) {
           frameDuration = 0.083
           totalFrames = 12
@@ -358,6 +396,9 @@ export class FieldMovement {
         if (heroId === 'zhenbao') {
           frameDuration = 0.200
           totalFrames = 5
+        } else if (heroId === 'slime_cat') {
+          frameDuration = 0.143 // 史莱姆猫7帧idle
+          totalFrames = 7
         } else if (isCat) {
           frameDuration = 0.125
           totalFrames = 8
@@ -420,11 +461,20 @@ export class FieldMovement {
     let frameKey = null
     
     if (heroId === 'zhenbao') {
-      // 臻宝使用新版动画（HERO_ZHENBAO_WALK_01格式，索引从1开始）
+      // 臻宝使用新版动画（walk帧从walk_03开始，需+3偏移）
       const frameType = isMoving ? 'WALK' : 'IDLE'
-      frameKey = `HERO_ZHENBAO_${frameType}_${(animFrame + 1).toString().padStart(2, '0')}`
+      const offset = isMoving ? 3 : 1
+      frameKey = `HERO_ZHENBAO_${frameType}_${(animFrame + offset).toString().padStart(2, '0')}`
+    } else if (heroId === 'slime_cat') {
+      // 史莱姆猫使用专属动画资源（transparent/slime_cat目录）
+      const frameType = isMoving ? 'WALK' : 'IDLE'
+      if (isMoving) {
+        frameKey = `SLIME_CAT_WALK_${(animFrame + 1).toString().padStart(2, '0')}`
+      } else {
+        frameKey = `SLIME_CAT_IDLE_${animFrame + 1}`
+      }
     } else if (isCat) {
-      // 猫咪使用特殊动画（CAT_WALK_01格式，索引从1开始）
+      // 其他猫咪使用通用动画（CAT_WALK_01格式，索引从1开始）
       const frameType = isMoving ? 'WALK' : 'IDLE'
       frameKey = `CAT_${frameType}_${(animFrame + 1).toString().padStart(2, '0')}`
     } else {
@@ -437,7 +487,9 @@ export class FieldMovement {
     
     // 如果没有动画帧，使用静态立绘
     if (!img) {
-      if (isCat) {
+      if (heroId === 'slime_cat') {
+        img = this.game.assets.get('SLIME_CAT_IDLE_1')
+      } else if (isCat) {
         img = this.game.assets.get(`CAT_${heroId.toUpperCase()}`)
       } else {
         img = this.game.assets.get(`HERO_${heroId.toUpperCase()}`)
@@ -492,7 +544,7 @@ export class FieldMovement {
           follower.y,
           follower.animFrame,
           follower.facingLeft,
-          follower.isMoving
+          follower._effectiveMoving
         )
       }
     }
@@ -506,7 +558,7 @@ export class FieldMovement {
         this.playerY,
         this.animFrame,
         this.facingLeft,
-        this.isMoving
+        this._effectiveMoving
       )
     }
   }
