@@ -230,6 +230,9 @@ export class FieldMovement {
       } else if (heroId === 'slime_cat') {
         frameDuration = 0.083 // 史莱姆猫12帧walk，83ms/帧 ≈ 1秒循环
         totalFrames = 12
+      } else if (heroId === 'shadow_mouse') {
+        frameDuration = 0.083 // 暗影鼠12帧walk
+        totalFrames = 12
       } else if (isCat) {
         frameDuration = 0.083 // 猫咪12帧（减帧版），83ms/帧 ≈ 1秒循环
         totalFrames = 12
@@ -245,6 +248,9 @@ export class FieldMovement {
       } else if (heroId === 'slime_cat') {
         frameDuration = 0.143 // 史莱姆猫7帧idle，143ms/帧 ≈ 1秒循环
         totalFrames = 7
+      } else if (heroId === 'shadow_mouse') {
+        frameDuration = 0.167 // 暗影鼠6帧idle
+        totalFrames = 6
       } else if (isCat) {
         frameDuration = 0.125 // 猫咪8帧（减帧版），125ms/帧 ≈ 1秒循环
         totalFrames = 8
@@ -384,6 +390,9 @@ export class FieldMovement {
         } else if (heroId === 'slime_cat') {
           frameDuration = 0.083 // 史莱姆猫12帧walk
           totalFrames = 12
+        } else if (heroId === 'shadow_mouse') {
+          frameDuration = 0.083 // 暗影鼠12帧walk
+          totalFrames = 12
         } else if (isCat) {
           frameDuration = 0.083
           totalFrames = 12
@@ -399,6 +408,9 @@ export class FieldMovement {
         } else if (heroId === 'slime_cat') {
           frameDuration = 0.143 // 史莱姆猫7帧idle
           totalFrames = 7
+        } else if (heroId === 'shadow_mouse') {
+          frameDuration = 0.167 // 暗影鼠6帧idle
+          totalFrames = 6
         } else if (isCat) {
           frameDuration = 0.125
           totalFrames = 8
@@ -473,6 +485,13 @@ export class FieldMovement {
       } else {
         frameKey = `SLIME_CAT_IDLE_${animFrame + 1}`
       }
+    } else if (heroId === 'shadow_mouse') {
+      // 暗影鼠使用专属动画资源
+      if (isMoving) {
+        frameKey = `SHADOW_MOUSE_WALK_${(animFrame + 1).toString().padStart(2, '0')}`
+      } else {
+        frameKey = `SHADOW_MOUSE_IDLE_${String(animFrame + 1).padStart(2, '0')}`
+      }
     } else if (isCat) {
       // 其他猫咪使用通用动画（CAT_WALK_01格式，索引从1开始）
       const frameType = isMoving ? 'WALK' : 'IDLE'
@@ -489,6 +508,8 @@ export class FieldMovement {
     if (!img) {
       if (heroId === 'slime_cat') {
         img = this.game.assets.get('SLIME_CAT_IDLE_1')
+      } else if (heroId === 'shadow_mouse') {
+        img = this.game.assets.get('SHADOW_MOUSE_IDLE_01')
       } else if (isCat) {
         img = this.game.assets.get(`CAT_${heroId.toUpperCase()}`)
       } else {

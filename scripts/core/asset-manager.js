@@ -320,6 +320,20 @@ export const ASSETS = {
   SHADOW_MOUSE_SKILL_11: BATTLE_PKG + 'images/characters_anim/transparent/shadow_mouse/skill/skill_11.png',
   SHADOW_MOUSE_SKILL_12: BATTLE_PKG + 'images/characters_anim/transparent/shadow_mouse/skill/skill_12.png',
 
+  // walk: 12帧（暗影鼠野外移动动画）
+  SHADOW_MOUSE_WALK_01: BATTLE_PKG + 'images/characters_anim/transparent/shadow_mouse/walk/walk_01.png',
+  SHADOW_MOUSE_WALK_02: BATTLE_PKG + 'images/characters_anim/transparent/shadow_mouse/walk/walk_02.png',
+  SHADOW_MOUSE_WALK_03: BATTLE_PKG + 'images/characters_anim/transparent/shadow_mouse/walk/walk_03.png',
+  SHADOW_MOUSE_WALK_04: BATTLE_PKG + 'images/characters_anim/transparent/shadow_mouse/walk/walk_04.png',
+  SHADOW_MOUSE_WALK_05: BATTLE_PKG + 'images/characters_anim/transparent/shadow_mouse/walk/walk_05.png',
+  SHADOW_MOUSE_WALK_06: BATTLE_PKG + 'images/characters_anim/transparent/shadow_mouse/walk/walk_06.png',
+  SHADOW_MOUSE_WALK_07: BATTLE_PKG + 'images/characters_anim/transparent/shadow_mouse/walk/walk_07.png',
+  SHADOW_MOUSE_WALK_08: BATTLE_PKG + 'images/characters_anim/transparent/shadow_mouse/walk/walk_08.png',
+  SHADOW_MOUSE_WALK_09: BATTLE_PKG + 'images/characters_anim/transparent/shadow_mouse/walk/walk_09.png',
+  SHADOW_MOUSE_WALK_10: BATTLE_PKG + 'images/characters_anim/transparent/shadow_mouse/walk/walk_10.png',
+  SHADOW_MOUSE_WALK_11: BATTLE_PKG + 'images/characters_anim/transparent/shadow_mouse/walk/walk_11.png',
+  SHADOW_MOUSE_WALK_12: BATTLE_PKG + 'images/characters_anim/transparent/shadow_mouse/walk/walk_12.png',
+
   // ⚡ 雷击术释放特效（15帧）
   EFFECT_LIGHTNING_CAST_01: BATTLE_PKG + 'images/effects/lightning_cast/lightning_cast_01.png',
   EFFECT_LIGHTNING_CAST_02: BATTLE_PKG + 'images/effects/lightning_cast/lightning_cast_02.png',

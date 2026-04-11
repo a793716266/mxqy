@@ -4523,7 +4523,8 @@ export class BattleScene {
     // 暗影鼠
     if (animState.type === 'shadow_mouse') {
       const frameNum = String(animState.frame).padStart(2, '0')
-      if (animState.state === 'idle' || animState.state === 'walk') return `SHADOW_MOUSE_IDLE_${frameNum}`
+      if (animState.state === 'walk') return `SHADOW_MOUSE_WALK_${frameNum}`
+      if (animState.state === 'idle') return `SHADOW_MOUSE_IDLE_${frameNum}`
       if (animState.state === 'attack') return `SHADOW_MOUSE_ATTACK_${frameNum}`
       if (animState.state === 'skill') return `SHADOW_MOUSE_SKILL_${frameNum}`
       return 'SHADOW_MOUSE_IDLE_01'

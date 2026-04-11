@@ -639,6 +639,9 @@ export class FieldScene {
       } else if (heroId === 'slime_cat') {
         frameDuration = 0.083 // 史莱姆猫12帧walk，83ms/帧 ≈ 1秒循环
         totalFrames = 12
+      } else if (heroId === 'shadow_mouse') {
+        frameDuration = 0.083 // 暗影鼠12帧walk
+        totalFrames = 12
       } else if (isCat) {
         frameDuration = 0.083 // 猫咪12帧（减帧版），83ms/帧 ≈ 1秒循环
         totalFrames = 12
@@ -654,6 +657,9 @@ export class FieldScene {
       } else if (heroId === 'slime_cat') {
         frameDuration = 0.143 // 史莱姆猫7帧idle，143ms/帧 ≈ 1秒循环
         totalFrames = 7
+      } else if (heroId === 'shadow_mouse') {
+        frameDuration = 0.167 // 暗影鼠6帧idle
+        totalFrames = 6
       } else if (isCat) {
         frameDuration = 0.125 // 猫咪8帧（减帧版），125ms/帧 ≈ 1秒循环
         totalFrames = 8
@@ -950,6 +956,9 @@ export class FieldScene {
         } else if (heroId === 'slime_cat') {
           frameDuration = 0.083  // 史莱姆猫12帧walk
           totalFrames = 12
+        } else if (heroId === 'shadow_mouse') {
+          frameDuration = 0.083  // 暗影鼠12帧walk
+          totalFrames = 12
         } else if (isCat) {
           frameDuration = 0.083
           totalFrames = 12
@@ -965,6 +974,9 @@ export class FieldScene {
         } else if (heroId === 'slime_cat') {
           frameDuration = 0.143  // 史莱姆猫7帧idle
           totalFrames = 7
+        } else if (heroId === 'shadow_mouse') {
+          frameDuration = 0.167  // 暗影鼠6帧idle
+          totalFrames = 6
         } else if (isCat) {
           frameDuration = 0.125
           totalFrames = 8
@@ -1374,6 +1386,13 @@ export class FieldScene {
         } else {
           frameImg = this.game.assets.get(`SLIME_CAT_IDLE_${follower.animFrame + 1}`)
         }
+      } else if (heroId === 'shadow_mouse') {
+        // 暗影鼠使用专属动画资源
+        if (follower._effectiveMoving) {
+          frameImg = this.game.assets.get(`SHADOW_MOUSE_WALK_${(follower.animFrame + 1).toString().padStart(2, '0')}`)
+        } else {
+          frameImg = this.game.assets.get(`SHADOW_MOUSE_IDLE_${String(follower.animFrame + 1).padStart(2, '0')}`)
+        }
       } else if (isCat) {
         // 猫咪使用特殊的动画资源
         if (follower._effectiveMoving) {
@@ -1470,12 +1489,13 @@ export class FieldScene {
         const idleKey = `SLIME_CAT_IDLE_${this.animFrame + 1}`
         frameImg = this.game.assets.get(idleKey)
       }
-      // 猫咪使用特殊的动画资源（CAT_IDLE_01格式，索引从1开始）
+    } else if (heroId === 'shadow_mouse') {
+      // 暗影鼠使用专属动画资源
       if (this._effectiveMoving) {
-        const walkKey = `CAT_WALK_${(this.animFrame + 1).toString().padStart(2, '0')}`
+        const walkKey = `SHADOW_MOUSE_WALK_${(this.animFrame + 1).toString().padStart(2, '0')}`
         frameImg = this.game.assets.get(walkKey)
       } else {
-        const idleKey = `CAT_IDLE_${(this.animFrame + 1).toString().padStart(2, '0')}`
+        const idleKey = `SHADOW_MOUSE_IDLE_${String(this.animFrame + 1).padStart(2, '0')}`
         frameImg = this.game.assets.get(idleKey)
       }
     } else {
@@ -1639,6 +1659,8 @@ export class FieldScene {
     if (monster.isMoving) {
       if (monster.id === 'slime_cat') {
         frameImg = this.game.assets.get(`SLIME_CAT_WALK_${(monster.animFrame + 1).toString().padStart(2, '0')}`)
+      } else if (monster.id === 'shadow_mouse') {
+        frameImg = this.game.assets.get(`SHADOW_MOUSE_WALK_${(monster.animFrame + 1).toString().padStart(2, '0')}`)
       } else {
         const walkKey = `CAT_WALK_${(monster.animFrame + 1).toString().padStart(2, '0')}`
         frameImg = this.game.assets.get(walkKey)
@@ -1646,6 +1668,8 @@ export class FieldScene {
     } else {
       if (monster.id === 'slime_cat') {
         frameImg = this.game.assets.get(`SLIME_CAT_IDLE_${monster.animFrame + 1}`)
+      } else if (monster.id === 'shadow_mouse') {
+        frameImg = this.game.assets.get(`SHADOW_MOUSE_IDLE_${String(monster.animFrame + 1).padStart(2, '0')}`)
       } else {
         const idleKey = `CAT_IDLE_${(monster.animFrame + 1).toString().padStart(2, '0')}`
         frameImg = this.game.assets.get(idleKey)
