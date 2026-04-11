@@ -72,24 +72,39 @@ export const ASSETS = {
   HERO_ZHENBAO: 'images/characters/hero_zhenbao.png',
   HERO_LIXIAOBAO: 'images/characters/hero_lixiaobao.png',
   
-  // 主角走路动画帧 - 透明背景版本（battle分包）
-  // zhenbao: 10帧walk动画 + 5帧idle动画（减帧版本）
-  HERO_ZHENBAO_WALK_01: BATTLE_PKG + 'images/characters_anim/zhenbao_walk/walk_01.png',
-  HERO_ZHENBAO_WALK_02: BATTLE_PKG + 'images/characters_anim/zhenbao_walk/walk_02.png',
-  HERO_ZHENBAO_WALK_03: BATTLE_PKG + 'images/characters_anim/zhenbao_walk/walk_03.png',
-  HERO_ZHENBAO_WALK_04: BATTLE_PKG + 'images/characters_anim/zhenbao_walk/walk_04.png',
-  HERO_ZHENBAO_WALK_05: BATTLE_PKG + 'images/characters_anim/zhenbao_walk/walk_05.png',
-  HERO_ZHENBAO_WALK_06: BATTLE_PKG + 'images/characters_anim/zhenbao_walk/walk_06.png',
-  HERO_ZHENBAO_WALK_07: BATTLE_PKG + 'images/characters_anim/zhenbao_walk/walk_07.png',
-  HERO_ZHENBAO_WALK_08: BATTLE_PKG + 'images/characters_anim/zhenbao_walk/walk_08.png',
-  HERO_ZHENBAO_WALK_09: BATTLE_PKG + 'images/characters_anim/zhenbao_walk/walk_09.png',
-  HERO_ZHENBAO_WALK_10: BATTLE_PKG + 'images/characters_anim/zhenbao_walk/walk_10.png',
-  
-  HERO_ZHENBAO_IDLE_01: BATTLE_PKG + 'images/characters_anim/zhenbao_idle/idle_01.png',
-  HERO_ZHENBAO_IDLE_02: BATTLE_PKG + 'images/characters_anim/zhenbao_idle/idle_02.png',
-  HERO_ZHENBAO_IDLE_03: BATTLE_PKG + 'images/characters_anim/zhenbao_idle/idle_03.png',
-  HERO_ZHENBAO_IDLE_04: BATTLE_PKG + 'images/characters_anim/zhenbao_idle/idle_04.png',
-  HERO_ZHENBAO_IDLE_05: BATTLE_PKG + 'images/characters_anim/zhenbao_idle/idle_05.png',
+  // 臻宝动画帧 - 统一放在 zhenbao/ 目录下管理
+  // walk: 10帧, idle: 5帧, slash: 20帧（battle分包）
+  HERO_ZHENBAO_WALK_01: BATTLE_PKG + 'images/characters_anim/zhenbao/walk/walk_01.png',
+  HERO_ZHENBAO_WALK_02: BATTLE_PKG + 'images/characters_anim/zhenbao/walk/walk_02.png',
+  HERO_ZHENBAO_WALK_03: BATTLE_PKG + 'images/characters_anim/zhenbao/walk/walk_03.png',
+  HERO_ZHENBAO_WALK_04: BATTLE_PKG + 'images/characters_anim/zhenbao/walk/walk_04.png',
+  HERO_ZHENBAO_WALK_05: BATTLE_PKG + 'images/characters_anim/zhenbao/walk/walk_05.png',
+  HERO_ZHENBAO_WALK_06: BATTLE_PKG + 'images/characters_anim/zhenbao/walk/walk_06.png',
+  HERO_ZHENBAO_WALK_07: BATTLE_PKG + 'images/characters_anim/zhenbao/walk/walk_07.png',
+  HERO_ZHENBAO_WALK_08: BATTLE_PKG + 'images/characters_anim/zhenbao/walk/walk_08.png',
+  HERO_ZHENBAO_WALK_09: BATTLE_PKG + 'images/characters_anim/zhenbao/walk/walk_09.png',
+  HERO_ZHENBAO_WALK_10: BATTLE_PKG + 'images/characters_anim/zhenbao/walk/walk_10.png',
+
+  HERO_ZHENBAO_IDLE_01: BATTLE_PKG + 'images/characters_anim/zhenbao/idle/idle_01.png',
+  HERO_ZHENBAO_IDLE_02: BATTLE_PKG + 'images/characters_anim/zhenbao/idle/idle_02.png',
+  HERO_ZHENBAO_IDLE_03: BATTLE_PKG + 'images/characters_anim/zhenbao/idle/idle_03.png',
+  HERO_ZHENBAO_IDLE_04: BATTLE_PKG + 'images/characters_anim/zhenbao/idle/idle_04.png',
+  HERO_ZHENBAO_IDLE_05: BATTLE_PKG + 'images/characters_anim/zhenbao/idle/idle_05.png',
+
+  // zhenbao 斩击攻击帧（13帧）
+  HERO_ZHENBAO_SLASH_01: BATTLE_PKG + 'images/characters_anim/zhenbao/slash/zhenbao_slash_01.png',
+  HERO_ZHENBAO_SLASH_02: BATTLE_PKG + 'images/characters_anim/zhenbao/slash/zhenbao_slash_02.png',
+  HERO_ZHENBAO_SLASH_03: BATTLE_PKG + 'images/characters_anim/zhenbao/slash/zhenbao_slash_03.png',
+  HERO_ZHENBAO_SLASH_04: BATTLE_PKG + 'images/characters_anim/zhenbao/slash/zhenbao_slash_04.png',
+  HERO_ZHENBAO_SLASH_05: BATTLE_PKG + 'images/characters_anim/zhenbao/slash/zhenbao_slash_05.png',
+  HERO_ZHENBAO_SLASH_06: BATTLE_PKG + 'images/characters_anim/zhenbao/slash/zhenbao_slash_06.png',
+  HERO_ZHENBAO_SLASH_07: BATTLE_PKG + 'images/characters_anim/zhenbao/slash/zhenbao_slash_07.png',
+  HERO_ZHENBAO_SLASH_08: BATTLE_PKG + 'images/characters_anim/zhenbao/slash/zhenbao_slash_08.png',
+  HERO_ZHENBAO_SLASH_09: BATTLE_PKG + 'images/characters_anim/zhenbao/slash/zhenbao_slash_09.png',
+  HERO_ZHENBAO_SLASH_10: BATTLE_PKG + 'images/characters_anim/zhenbao/slash/zhenbao_slash_10.png',
+  HERO_ZHENBAO_SLASH_11: BATTLE_PKG + 'images/characters_anim/zhenbao/slash/zhenbao_slash_11.png',
+  HERO_ZHENBAO_SLASH_12: BATTLE_PKG + 'images/characters_anim/zhenbao/slash/zhenbao_slash_12.png',
+  HERO_ZHENBAO_SLASH_13: BATTLE_PKG + 'images/characters_anim/zhenbao/slash/zhenbao_slash_13.png',
   
   // lixiaobao: 8帧walk + 2帧idle（battle分包）
   HERO_LIXIAOBAO_WALK_0: BATTLE_PKG + 'images/characters_anim/transparent/walk/lixiaobao_walk_0.png',

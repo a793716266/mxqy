@@ -169,12 +169,13 @@ export class BattleScene {
     this.party.forEach(hero => {
       this.heroAnimStates[hero.id] = {
         type: hero.id,  // zhenbao, lixiaobao 等
-        state: 'idle',  // idle, walk（不再有cast状态）
+        state: 'idle',  // idle, walk, attack（攻击帧）
         frame: 0,
         frameTimer: 0,
         frameDuration: 80,  // 80ms一帧（流畅）
         totalWalkFrames: hero.id === 'zhenbao' ? 10 : (hero.id === 'lixiaobao' ? 8 : 8),
         totalIdleFrames: hero.id === 'zhenbao' ? 5 : (hero.id === 'lixiaobao' ? 2 : 0),
+        totalSlashFrames: hero.id === 'zhenbao' ? 13 : 0,  // 斩击攻击帧数
       }
     })
   }
@@ -893,28 +894,81 @@ export class BattleScene {
 
     setTimeout(() => {
       if (hero.hp <= 0) { this.activeAttackers.delete(hero.id); return; }
-      
-      // 获取目标敌人位置
-      const targetEnemyIdx = this.enemies.indexOf(target)
-      const targetEnemyPos = this.enemyPositions[targetEnemyIdx] || { x: this.enemyBaseX, y: this.enemyBaseY }
 
-      // 播放击中特效
-      if (skill.type === 'attack' || skill.type === 'magic') {
-        this._playHitEffect(hero, skill, targetEnemyPos)
-      }
-      
-      // 造成伤害
-      this._applyAttackDamage(hero, target)
+      // ========== 根据技能类型和目标范围执行不同的伤害逻辑 ==========
+      const isMagicSkill = (skill.type === 'magic')
+      const isAoeSkill = (skill.target === 'all')
 
-      setTimeout(() => {
-        this.activeAttackers.delete(hero.id)
-        if (!hState || hero.hp <= 0) return
-        if (target && target.hp > 0 && hState.currentTargetId !== null) {
-          hState.state = 'in_range'
-        } else {
+      if (isAoeSkill && (skill.type === 'attack' || skill.type === 'magic')) {
+        // ====== 群体攻击：对所有存活敌人造成伤害 ======
+        const aliveEnemies = this.enemies.filter(e => e.hp > 0)
+
+        aliveEnemies.forEach((enemy, index) => {
+          const enemyIdx = this.enemies.indexOf(enemy)
+          const enemyPos = this.enemyPositions[enemyIdx] || { x: this.enemyBaseX, y: this.enemyBaseY }
+
+          // 错开每个敌人的受击时间，形成连击视觉效果
+          setTimeout(() => {
+            if (skill.type === 'magic') {
+              // 魔法群体伤害 → 蓝色
+              this._playHitEffect(hero, skill, enemyPos)
+              this._applyMagicDamage(hero, skill, enemy, enemyPos)
+            } else {
+              // 物理群体伤害 → 红色
+              this._applyAttackDamageToTarget(hero, skill, enemy, enemyPos)
+            }
+          }, index * 150)
+        })
+
+        // 群体攻击完成后回到 auto_battle
+        const totalDuration = (aliveEnemies.length - 1) * 150 + 400
+        setTimeout(() => {
+          this.activeAttackers.delete(hero.id)
+          if (!hState || hero.hp <= 0) return
           hState.state = 'returning'
+        }, totalDuration)
+
+      } else if (isMagicSkill && !isAoeSkill) {
+        // ====== 魔法单体攻击 → 蓝色伤害数字 ======
+        const targetEnemyIdx = this.enemies.indexOf(target)
+        const targetEnemyPos = this.enemyPositions[targetEnemyIdx] || { x: this.enemyBaseX, y: this.enemyBaseY }
+
+        this._playHitEffect(hero, skill, targetEnemyPos)
+        this._applyMagicDamage(hero, skill, target, targetEnemyPos)
+
+        setTimeout(() => {
+          this.activeAttackers.delete(hero.id)
+          if (!hState || hero.hp <= 0) return
+          if (target && target.hp > 0 && hState.currentTargetId !== null) {
+            hState.state = 'in_range'
+          } else {
+            hState.state = 'returning'
+          }
+        }, 200)
+
+      } else {
+        // ====== 物理单体攻击 → 红色伤害数字（原有逻辑）======
+        const targetEnemyIdx = this.enemies.indexOf(target)
+        const targetEnemyPos = this.enemyPositions[targetEnemyIdx] || { x: this.enemyBaseX, y: this.enemyBaseY }
+
+        if (skill.type === 'attack' || skill.type === 'magic') {
+          this._playHitEffect(hero, skill, targetEnemyPos)
         }
-      }, 200)
+        this._applyAttackDamageToTarget(hero, skill, target, targetEnemyPos)
+
+        // 等斩击帧完整播放后再切换状态（20帧×60ms=1200ms，减去前面已等待的400ms）
+        const SLASH_TOTAL_DURATION = 13 * 60 // 780ms
+        const REMAINING_SLASH_TIME = Math.max(SLASH_TOTAL_DURATION - 400, 300)
+        setTimeout(() => {
+          this.activeAttackers.delete(hero.id)
+          if (!hState || hero.hp <= 0) return
+          if (target && target.hp > 0 && hState.currentTargetId !== null) {
+            hState.state = 'in_range'
+          } else {
+            hState.state = 'returning'
+          }
+        }, REMAINING_SLASH_TIME)
+      }
     }, 400)
   }
 
@@ -1386,15 +1440,23 @@ export class BattleScene {
   }
 
   _applyAttackDamage(hero, target) {
+    // 向后兼容：从 this.attackAnimSkill 获取技能
     const skill = this.attackAnimSkill
-    
-    // 安全检查：非攻击/魔法技能不造成伤害（buff/heal/debuff）
-    if (!skill) {
-      console.warn('[Battle._applyAttackDamage] 没有技能，跳过')
-      return
-    }
-    if (skill.type !== 'attack' && skill.type !== 'magic') {
-      console.log(`[Battle._applyAttackDamage] ${skill.name} 是 ${skill.type} 类型，不造成直接伤害`)
+    if (!skill || (skill.type !== 'attack' && skill.type !== 'magic')) return
+
+    const targetEnemyIndex = this.enemies.indexOf(target)
+    const targetEnemyPos = this.enemyPositions[targetEnemyIndex] || { x: this.enemyBaseX, y: this.enemyBaseY }
+    return this._applyAttackDamageToTarget(hero, skill, target, targetEnemyPos)
+  }
+
+  /**
+   * 物理伤害结算（通用，接受显式参数）
+   * 红色伤害数字 #ff4757
+   */
+  _applyAttackDamageToTarget(hero, skill, target, targetPos) {
+    // 安全检查
+    if (!skill || (skill.type !== 'attack' && skill.type !== 'magic')) {
+      console.log(`[Battle._applyAttackDamage] ${skill ? skill.name : '?'} 不造成直接伤害`)
       return
     }
 
@@ -1415,17 +1477,13 @@ export class BattleScene {
 
     target.hp = Math.max(0, target.hp - damage)
 
-    // 获取目标敌人的位置
-    const targetEnemyIndex = this.enemies.indexOf(target)
-    const targetEnemyPos = this.enemyPositions[targetEnemyIndex] || { x: this.enemyBaseX, y: this.enemyBaseY }
-
-    // 动画效果
+    // 动画效果 + 红色伤害数字
     this.shakeAmount = 12
     this.flashAlpha = 0.6
     this.damageTexts.push({
       text: `-${damage}`,
-      x: targetEnemyPos.x,
-      y: targetEnemyPos.y - 80 * this.dpr,
+      x: targetPos.x,
+      y: targetPos.y - 80 * this.dpr,
       color: '#ff4757',  // 物理伤害：红色
       isCrit: isCrit,
       life: 1.5
@@ -1438,9 +1496,6 @@ export class BattleScene {
       hero.hp = Math.min(hero.maxHp, hero.hp + heal)
       this._addLog(`恢复了 ${heal} 点生命`)
     }
-
-    // 清除技能引用
-    this.attackAnimSkill = null
   }
 
   /**
@@ -1850,16 +1905,30 @@ export class BattleScene {
       const uState = this.unitStates[heroId]
       if (!uState) return
 
-      // 根据移动状态同步动画状态（只处理 walk/idle 两种状态）
+      // 根据移动状态同步动画状态（只处理 walk/idle/attack 三种状态）
       const isMoving = (uState.state === 'moving_to_attack' || uState.state === 'returning')
+      const isAttackingUnit = (uState.state === 'attacking')
+
       if (isMoving && animState.state !== 'walk') {
+        // 开始移动 → 切换到walk，重置帧
+        animState.prevState = animState.state  // 记录之前的状态（用于攻击结束后恢复）
         animState.state = 'walk'
         animState.frame = 0
         animState.frameTimer = 0
-      } else if (!isMoving && animState.state !== 'idle') {
-        animState.state = 'idle'
+      } else if (!isMoving && !isAttackingUnit) {
+        // 不移动且不在攻击中 → 必须回到idle（覆盖 walk / attack 等所有状态）
+        if (animState.state !== 'idle') {
+          animState.state = 'idle'
+          animState.frame = 0
+          animState.frameTimer = 0
+        }
+      } else if (isAttackingUnit && animState.state !== 'attack') {
+        // 单位进入攻击状态 → 切换到攻击帧动画
+        animState.prevState = animState.state  // 记录之前的状态（用于攻击结束后恢复）
+        animState.state = 'attack'
         animState.frame = 0
         animState.frameTimer = 0
+        animState.attackFrameTimer = 0
       }
 
       // 更新帧动画
@@ -1878,9 +1947,20 @@ export class BattleScene {
         if (animState.frameTimer >= IDLE_FRAME_DURATION) {
           animState.frameTimer = 0
           animState.frame++
-          // 获取该角色的idle总帧数并循环
           if (animState.totalIdleFrames && animState.frame > animState.totalIdleFrames - 1) {
-            animState.frame = 0  // 从第0帧重新开始
+            animState.frame = 0
+          }
+        }
+      } else if (animState.state === 'attack') {
+        // 攻击帧动画（斩击等，较快节奏）
+        const SLASH_FRAME_DURATION = 60  // 60ms/帧，快速有力
+        animState.frameTimer += dt * 1000
+        if (animState.frameTimer >= SLASH_FRAME_DURATION) {
+          animState.frameTimer = 0
+          animState.frame++
+          // 斩击帧播放完后停在最后一帧（由 _doHeroAttack 的 setTimeout 清除 attacking 状态）
+          if (animState.frame > (animState.totalSlashFrames || 13)) {
+            animState.frame = (animState.totalSlashFrames || 13)
           }
         }
       }
@@ -3954,10 +4034,10 @@ export class BattleScene {
       ]
       const barColor = SEGMENT_COLORS[currentSegment % SEGMENT_COLORS.length]
 
-      const hpBarW = 100 * dpr
-      const hpBarH = 16 * dpr
+      const hpBarW = 68 * dpr
+      const hpBarH = 9 * dpr
       const hpBarX = ex - hpBarW / 2
-      const hpBarY = ey - 75 * dpr
+      const hpBarY = ey - 52 * dpr
 
       // 背景
       ctx.fillStyle = 'rgba(0, 0, 0, 0.5)'
@@ -3976,34 +4056,34 @@ export class BattleScene {
         segDelayRatio)
 
       // 敌人名称和等级（在HP条上方）
-      ctx.font = `bold ${16 * dpr}px sans-serif`
+      ctx.font = `bold ${13 * dpr}px sans-serif`
       ctx.fillStyle = enemy.isBoss ? '#ff4757' : '#ffffff'
       ctx.textAlign = 'center'
       const title = enemy.isBoss ? `👑 ${enemy.name}` : enemy.name
-      ctx.fillText(title, ex, hpBarY - 18 * dpr)
+      ctx.fillText(title, ex, hpBarY - 12 * dpr)
 
-      ctx.font = `${12 * dpr}px sans-serif`
+      ctx.font = `${10 * dpr}px sans-serif`
       ctx.fillStyle = '#f39c12'
-      ctx.fillText(`Lv.${enemy.level || 1}`, ex, hpBarY - 34 * dpr)
+      ctx.fillText(`Lv.${enemy.level || 1}`, ex, hpBarY - 24 * dpr)
 
       if (enemy.crit && enemy.crit > 0) {
-        ctx.font = `${10 * dpr}px sans-serif`
+        ctx.font = `${9 * dpr}px sans-serif`
         ctx.fillStyle = '#ff6b6b'
-        ctx.fillText(`暴击 ${(enemy.crit * 100).toFixed(0)}%`, ex, hpBarY - 48 * dpr)
+        ctx.fillText(`暴击 ${(enemy.crit * 100).toFixed(0)}%`, ex, hpBarY - 36 * dpr)
       }
 
       // 状态效果图标（在等级上方）
       const statusIcons = this._getEnemyStatusIcons(index)
       if (statusIcons.length > 0) {
-        const iconY = hpBarY - 65 * dpr
-        const iconSpacing = 30 * dpr
+        const iconY = hpBarY - 50 * dpr
+        const iconSpacing = 26 * dpr
         const startX = ex - (statusIcons.length - 1) * iconSpacing / 2
 
         statusIcons.forEach((icon, i) => {
           const iconX = startX + i * iconSpacing
           ctx.fillStyle = 'rgba(0, 0, 0, 0.6)'
           ctx.beginPath()
-          ctx.arc(iconX, iconY, 12 * dpr, 0, Math.PI * 2)
+          ctx.arc(iconX, iconY, 10 * dpr, 0, Math.PI * 2)
           ctx.fill()
 
           ctx.font = `${16 * dpr}px sans-serif`
@@ -4055,7 +4135,9 @@ export class BattleScene {
 
   _drawEnemySprite(ctx, x, y, enemy) {
     const dpr = this.dpr
-    const size = 55 * dpr
+    // 非Boss怪物缩小，与角色视觉协调；Boss保持较大体型
+    const isBoss = enemy.isBoss
+    const size = isBoss ? 65 * dpr : 40 * dpr
     // 行走时不加呼吸动画（保持稳定），idle时保留呼吸感
     const enemyIndex = this.enemies.indexOf(enemy)
     const animState = this.enemyAnimStates[enemyIndex]
@@ -4475,14 +4557,14 @@ export class BattleScene {
           ctx.fillRect(hpBarX, mpBarY, barW * mpRatio, mpBarH)
         }
 
-        // 角色精灵 - 根据动画状态选择帧
+        // 角色精灵 - 根据动画状态选择帧（walk / idle / attack-slash）
         const hAnimState = this.heroAnimStates[hero.id]
         let heroImgKey
-        // ====== 角色动画：attack > walk > idle（技能特效由 createEffect 独立叠加）======
-        if (isAttacking || (hAnimState && hAnimState.state === 'attack')) {
-          heroImgKey = this._getHeroAttackImageKey(hero.id)
-        } else if (hAnimState && hAnimState.state === 'walk') {
+        if (hAnimState && hAnimState.state === 'walk') {
           heroImgKey = this._getHeroWalkImageKey(hero.id, hAnimState.frame)
+        } else if (hAnimState && hAnimState.state === 'attack') {
+          // 攻击状态：使用斩击/攻击帧
+          heroImgKey = this._getHeroSlashImageKey(hero.id, hAnimState.frame)
         } else {
           heroImgKey = this._getHeroIdleImageKey(hero.id, hAnimState ? hAnimState.frame : 0)
         }
@@ -4495,16 +4577,23 @@ export class BattleScene {
           // 角色独立缩放：让所有角色视觉大小一致
           const heroScale = this._getHeroScale(hero.id)
           const drawSize = spriteSize * heroScale
-          
+
+          ctx.save()
+
           if (!facingRight) {
-            ctx.save()
             ctx.translate(bx, by)
             ctx.scale(-1, 1)
             ctx.drawImage(heroImg, -drawSize / 2, -drawSize / 2, drawSize, drawSize)
-            ctx.restore()
           } else {
             ctx.drawImage(heroImg, bx - drawSize / 2, by - drawSize / 2, drawSize, drawSize)
           }
+
+          // 攻击中不再叠加额外特效（保持底图精灵不变即可）
+          if (isAttacking) {
+            // 预留：可在此处添加攻击状态视觉反馈
+          }
+
+          ctx.restore()
           
           // 清除阴影设置
           ctx.shadowBlur = 0
@@ -4546,16 +4635,13 @@ export class BattleScene {
           ctx.fillRect(hpBarX, mpBarY, barWidth * mpRatio, mpBarH)
         }
 
-        // 角色立绘
+        // 角色立绘（卡片状态也播放idle帧动画，保持一致性）
         const hAnimState = this.heroAnimStates[hero.id]
         let heroImgKey
         
-        // ====== 角色动画：attack > idle（技能特效由 createEffect 独立叠加）======
-        if (isAttacking) {
-          heroImgKey = this._getHeroAttackImageKey(hero.id)
-        } else {
-          heroImgKey = this._getHeroIdleImageKey(hero.id, hAnimState ? hAnimState.frame : 0)
-        }
+        // 卡片状态：始终使用idle帧动画（不切换到attack图）
+        heroImgKey = this._getHeroIdleImageKey(hero.id, hAnimState ? hAnimState.frame : 0)
+        
         const heroImg = this.game.assets.get(heroImgKey) || this.game.assets.get(this._getHeroImageKey(hero.id))
         const avatarX = centerX - avatarSize / 2
         const avatarY = mpBarY + mpBarH + 8 * dpr
@@ -5410,10 +5496,18 @@ export class BattleScene {
 
   _getHeroIdleImageKey(heroId, frameNum) {
     // 返回idle状态图片key（带帧号）
-    // 尝试带帧号的key（如 HERO_LIXIAOBAO_IDLE_0），没有则尝试无帧号，最后fallback到普通立绘
+    // 兼容两种命名格式：HERO_ZHENBAO_IDLE_01（带前导零）和 HERO_LIXIAOBAO_IDLE_0（无前导零）
     if (typeof frameNum === 'number' && frameNum >= 0) {
-      const framedKey = `${this._getHeroImageKey(heroId)}_IDLE_${frameNum}`
-      if (this.game.assets.get(framedKey)) return framedKey
+      const padded = String(frameNum).padStart(2, '0')
+      const unpadded = String(frameNum)
+
+      // 先尝试带前导零的格式
+      const paddedKey = `${this._getHeroImageKey(heroId)}_IDLE_${padded}`
+      if (this.game.assets.get(paddedKey)) return paddedKey
+
+      // 再尝试无前导零的格式
+      const unpaddedKey = `${this._getHeroImageKey(heroId)}_IDLE_${unpadded}`
+      if (this.game.assets.get(unpaddedKey)) return unpaddedKey
     }
     
     // 尝试无帧号的IDLE key
@@ -5428,9 +5522,34 @@ export class BattleScene {
   }
 
   _getHeroWalkImageKey(heroId, frameNum) {
-    // 返回walk动画帧key（如 HERO_ZHENBAO_WALK_03）
-    const walkKey = `HERO_${heroId.toUpperCase()}_WALK_${String(frameNum).padStart(2, '0')}`
-    return this.game.assets.get(walkKey) ? walkKey : this._getHeroImageKey(heroId)
+    // 返回walk动画帧key
+    // 兼容两种命名格式：HERO_ZHENBAO_WALK_01（带前导零）和 HERO_LIXIAOBAO_WALK_0（无前导零）
+    const padded = String(frameNum).padStart(2, '0')
+    const unpadded = String(frameNum)
+
+    // 先尝试带前导零的格式（臻宝等角色）
+    const paddedKey = `HERO_${heroId.toUpperCase()}_WALK_${padded}`
+    if (this.game.assets.get(paddedKey)) return paddedKey
+
+    // 再尝试无前导零的格式（李小宝等角色）
+    const unpaddedKey = `HERO_${heroId.toUpperCase()}_WALK_${unpadded}`
+    if (this.game.assets.get(unpaddedKey)) return unpaddedKey
+
+    // fallback 到静态立绘
+    return this._getHeroImageKey(heroId)
+  }
+
+  /**
+   * 获取角色攻击帧（如臻宝斩击）
+   */
+  _getHeroSlashImageKey(heroId, frameNum) {
+    // 尝试 HERO_ZHENBAO_SLASH_01 ~ SLASH_20
+    const padded = String(frameNum).padStart(2, '0')
+    const slashKey = `HERO_${heroId.toUpperCase()}_SLASH_${padded}`
+    if (this.game.assets.get(slashKey)) return slashKey
+
+    // 没有攻击帧则 fallback 到 idle 帧
+    return this._getHeroIdleImageKey(heroId, frameNum)
   }
 
 
