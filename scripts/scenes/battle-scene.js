@@ -261,6 +261,7 @@ export class BattleScene {
         isRanged: isRanged,
         attackRange: isRanged ? this.RANGED_RANGE : this.MELEE_RANGE,
         currentTargetId: null,  // 当前目标敌人索引或null
+        radius: 24 * this.dpr, // 碰撞半径（基于60*dpr精灵尺寸的40%）
       }
     })
 
@@ -279,6 +280,7 @@ export class BattleScene {
         isRanged: enemy.isRanged || false,
         attackRange: (enemy.isRanged || enemy.role === 'mage') ? this.RANGED_RANGE : this.MELEE_RANGE,
         currentTargetId: null,
+        radius: (enemy.isBoss ? 26 : 16) * this.dpr, // Boss碰撞大，小怪小
       }
     })
   }
@@ -414,15 +416,139 @@ export class BattleScene {
         this.enemyPositions[i].y = estate.y
       }
     }
+
+    // 碰撞分离：同阵营单位不重叠
+    this._applyCollisionSeparation()
   }
 
   /**
-   * 检查角色是否在目标攻击范围内
+   * 检查角色是否在目标攻击范围内（基于碰撞盒半径）
+   * 近战：中心距离 <= 攻击者半径 + 目标半径 + 武器延伸(10*dpr)
+   * 远程：保持原逻辑（纯距离判断）
    */
   _isInRange(unitState, targetState) {
     if (!targetState) return false
     const dist = this._getDistance(unitState, targetState)
-    return dist <= unitState.attackRange
+    if (unitState.isRanged) {
+      return dist <= unitState.attackRange
+    }
+    // 近战：考虑双方碰撞盒体积 + 武器延伸
+    const reachRadius = (unitState.radius || 0) + (targetState.radius || 0) + 10 * this.dpr
+    return dist <= reachRadius
+  }
+
+  /**
+   * 获取近战攻击的实际接触距离（两圆相切）
+   */
+  _getMeleeContactDistance(attackerState, targetState) {
+    return (attackerState.radius || 0) + (targetState.radius || 0) + 8 * this.dpr
+  }
+
+  /**
+   * 设置近战移动目标（支持弧形站位：多个近战围绕同一目标均匀分布）
+   */
+  _setApproachTarget(attackerState, targetState, targetIdx) {
+    const distToEnemy = this._getDistance(attackerState, targetState)
+    const contactDist = this._getMeleeContactDistance(attackerState, targetState)
+    const baseAngle = Math.atan2(targetState.y - attackerState.y, targetState.x - attackerState.x)
+
+    // 检查有多少己方近战单位在打同一个敌人（用于弧形站位偏移）
+    const alliesOnSameTarget = this.party.filter(h => {
+      if (h.hp <= 0 || h.id === attackerState.currentTargetId || h.id === Object.keys(this.unitStates).find(k => this.unitStates[k] === attackerState)) return false
+      const s = this.unitStates[h.id]
+      return s && !s.isRanged && s.currentTargetId === targetIdx && s.state !== 'idle' && s.state !== 'returning'
+    })
+    
+    // 弧形站位：根据同目标友军数量分配角度偏移
+    let angleOffset = 0
+    if (!attackerState.isRanged && alliesOnSameTarget.length > 0) {
+      // 总共 alliesOnSameTarget.length + 1 个人打这个目标，均匀分布在目标周围
+      const totalAllies = alliesOnSameTarget.length + 1
+      const arcAngle = Math.PI * 0.4 // 半圆弧度（±72度）
+      // 找到自己在排序中的位置
+      const myIdx = this._getHeroAttackOrderIndex(attackerState, targetIdx, totalAllies)
+      angleOffset = -arcAngle / 2 + (myIdx / (totalAllies - 1)) * arcAngle
+    }
+
+    const finalAngle = baseAngle + angleOffset
+    const approachDist = distToEnemy - contactDist + 5 * this.dpr
+    attackerState.targetX = attackerState.x + Math.cos(finalAngle) * approachDist
+    attackerState.targetY = attackerState.y + Math.sin(finalAngle) * approachDist
+    attackerState.currentTargetId = targetIdx
+  }
+
+  /**
+   * 获取当前英雄在同目标攻击者中的排序索引（用于弧形站位）
+   */
+  _getHeroAttackOrderIndex(heroState, targetIdx, totalSlots) {
+    // 收集所有攻击同一目标的己方单位
+    const attackers = []
+    for (const hero of this.party) {
+      if (hero.hp <= 0) continue
+      const s = this.unitStates[hero.id]
+      if (!s || s.isRanged) continue
+      if ((s.currentTargetId === targetIdx && s.state !== 'idle') || s === heroState) {
+        attackers.push({ state: s, id: hero.id })
+      }
+    }
+    // 找到自己
+    const myIdx = attackers.findIndex(a => a.state === heroState)
+    return myIdx >= 0 ? myIdx : 0
+  }
+
+  /**
+   * 同阵营碰撞分离：防止友军互相重叠
+   * 在 _updateCombatUnits 末尾调用
+   */
+  _applyCollisionSeparation() {
+    const dpr = this.dpr
+    const PUSH_FORCE = 0.6  // 推力系数（每帧修正比例）
+
+    // 己方角色之间分离
+    const aliveHeroes = this.party.filter(h => h.hp > 0).map(h => ({ hero: h, state: this.unitStates[h.id] })).filter(x => x.state)
+    for (let i = 0; i < aliveHeroes.length; i++) {
+      for (let j = i + 1; j < aliveHeroes.length; j++) {
+        const a = aliveHeroes[i].state
+        const b = aliveHeroes[j].state
+        const dx = b.x - a.x
+        const dy = b.y - a.y
+        const dist = Math.sqrt(dx * dx + dy * dy)
+        const minDist = (a.radius || 0) + (b.radius || 0) + 5 * dpr
+
+        if (dist < minDist && dist > 0.01) {
+          const overlap = (minDist - dist) * PUSH_FORCE * 0.5
+          const nx = dx / dist
+          const ny = dy / dist
+          a.x -= nx * overlap
+          a.y -= ny * overlap
+          b.x += nx * overlap
+          b.y += ny * overlap
+        }
+      }
+    }
+
+    // 敌人之间分离
+    const aliveEnemies = this.enemies.filter(e => e.hp > 0).map((e, idx) => ({ enemy: e, state: this.unitStates['enemy_' + idx], idx })).filter(x => x.state)
+    for (let i = 0; i < aliveEnemies.length; i++) {
+      for (let j = i + 1; j < aliveEnemies.length; j++) {
+        const a = aliveEnemies[i].state
+        const b = aliveEnemies[j].state
+        const dx = b.x - a.x
+        const dy = b.y - a.y
+        const dist = Math.sqrt(dx * dx + dy * dy)
+        const minDist = (a.radius || 0) + (b.radius || 0) + 5 * dpr
+
+        if (dist < minDist && dist > 0.01) {
+          const overlap = (minDist - dist) * PUSH_FORCE * 0.5
+          const nx = dx / dist
+          const ny = dy / dist
+          a.x -= nx * overlap
+          a.y -= ny * overlap
+          b.x += nx * overlap
+          b.y += ny * overlap
+        }
+      }
+    }
   }
 
   /**
@@ -779,21 +905,18 @@ export class BattleScene {
           const { index: enemyIdx, state: enemyState } = this._findNearestAliveEnemy(state)
           if (enemyIdx < 0 || !enemyState || this.enemies[enemyIdx].hp <= 0) break
 
-          // 检查是否在攻击范围内
+          // 检查是否在攻击范围内（碰撞盒感知）
           const distToEnemy = this._getDistance(state, enemyState)
+          const contactDist = state.isRanged ? state.attackRange : this._getMeleeContactDistance(state, enemyState)
 
-          if (distToEnemy <= state.attackRange) {
+          if (distToEnemy <= contactDist) {
             // 在攻击范围内 → 切换到战斗状态，开始累积攻击计时器
             state.currentTargetId = enemyIdx
             state.state = 'in_range'
             timer.attackTimer = 0  // 到位后立即准备第一击
           } else {
-            // 不在范围内 → 移动过去
-            const angle = Math.atan2(enemyState.y - state.y, enemyState.x - state.x)
-            const approachDist = distToEnemy - state.attackRange + 10 * this.dpr
-            state.targetX = state.x + Math.cos(angle) * approachDist
-            state.targetY = state.y + Math.sin(angle) * approachDist
-            state.currentTargetId = enemyIdx
+            // 不在范围内 → 移动过去（考虑弧形站位）
+            this._setApproachTarget(state, enemyState, enemyIdx)
             state.state = 'moving_to_attack'
           }
           break
@@ -818,13 +941,14 @@ export class BattleScene {
           if (tState) {
             actualDist = this._getDistance(state, tState)
           }
+          const contactDist = state.isRanged ? state.attackRange : this._getMeleeContactDistance(state, tState)
 
-          if (actualDist > state.attackRange * 1.5) {
+          if (actualDist > contactDist * 1.5) {
             // 目标跑远了，重新追上去（不回原位）
-            console.log(`[Battle] ${hero.name} 目标跑远了，追击 dist=${actualDist.toFixed(1)} range=${state.attackRange}`)
+            console.log(`[Battle] ${hero.name} 目标跑远了，追击 dist=${actualDist.toFixed(1)} range=${contactDist.toFixed(1)}`)
             if (tState) {
-              const angle = Math.atan2(tState.y - state.y, tState.x - state.x)
-              const chaseDist = actualDist - state.attackRange + 10 * this.dpr
+              this._setApproachTarget(state, tState, targetEnemyIdx)
+            }
               state.targetX = state.x + Math.cos(angle) * chaseDist
               state.targetY = state.y + Math.sin(angle) * chaseDist
               state.state = 'moving_to_attack'
@@ -1005,15 +1129,17 @@ export class BattleScene {
           if (!nearestHero || !heroState) break
 
           const dist = this._getDistance(estate, heroState)
-          if (dist <= estate.attackRange) {
+          const contactDist = estate.isRanged ? estate.attackRange : this._getMeleeContactDistance(estate, heroState)
+
+          if (dist <= contactDist) {
             // 在攻击范围内 → 切换到战斗状态
             estate.currentTargetId = nearestHero.id
             estate.state = 'in_range'
             timer.attackTimer = 0  // 到位后立即准备第一击
           } else {
-            // 不在范围内 → 移动过去
+            // 不在范围内 → 移动过去（敌人不需要弧形站位，直接靠近）
             const angle = Math.atan2(heroState.y - estate.y, heroState.x - estate.x)
-            const approachDist = dist - estate.attackRange + 10 * this.dpr
+            const approachDist = dist - contactDist + 5 * this.dpr
             estate.targetX = estate.x + Math.cos(angle) * approachDist
             estate.targetY = estate.y + Math.sin(angle) * approachDist
             estate.currentTargetId = nearestHero.id
@@ -1039,12 +1165,13 @@ export class BattleScene {
           const hState = this.unitStates[targetHero.id]
           let actualDist = Infinity
           if (hState) actualDist = this._getDistance(estate, hState)
+          const eContactDist = estate.isRanged ? estate.attackRange : this._getMeleeContactDistance(estate, hState)
 
-          if (actualDist > estate.attackRange * 1.5) {
+          if (actualDist > eContactDist * 1.5) {
             // 目标跑远了，追上去
             if (hState) {
               const angle = Math.atan2(hState.y - estate.y, hState.x - estate.x)
-              const chaseDist = actualDist - estate.attackRange + 10 * this.dpr
+              const chaseDist = actualDist - eContactDist + 5 * this.dpr
               estate.targetX = estate.x + Math.cos(angle) * chaseDist
               estate.targetY = estate.y + Math.sin(angle) * chaseDist
               estate.state = 'moving_to_attack'
