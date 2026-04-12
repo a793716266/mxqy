@@ -183,6 +183,10 @@ export class BattleScene {
         // ★ 新增：技能施法标记
         _isCastingSkill: false,
         _attackLoopCount: 0,
+        // ★ 移动滞后防闪烁（与field-scene一致）
+        _effectiveMoving: false,
+        _movingHoldFrames: 0,
+        _MOVING_HOLD: 5,
       }
     })
   }
@@ -2753,12 +2757,28 @@ export class BattleScene {
       if (!uState) return
 
       // 根据移动状态同步动画状态（4种核心状态：idle / walk / attack / cast）
-      const isMoving = (uState.state === 'moving_to_attack' || uState.state === 'returning')
-      const isAttackingUnit = (uState.state === 'attacking')
-      // ★ 修复1：in_range 统一用 idle 帧（呼吸待机），不再让近战角色原地踏步
-      const isInCombatStance = (uState.state === 'in_range')
-      // 技能施法中标记（由 _doHeroAttack 设置）
-      const isCastingSkill = animState._isCastingSkill
+
+        // ★ 移动滞后防闪烁机制
+        const rawIsMoving = (uState.state === 'moving_to_attack' || uState.state === 'returning')
+        const isAttackingUnit = (uState.state === 'attacking')
+        const isInCombatStance = (uState.state === 'in_range')
+        const isCastingSkill = animState._isCastingSkill
+
+        // 更新滞后状态
+        if (rawIsMoving || isAttackingUnit) {
+          animState._effectiveMoving = true
+          animState._movingHoldFrames = 0
+        } else {
+          animState._movingHoldFrames++
+          if (animState._movingHoldFrames > (animState._MOVING_HOLD || 5)) {
+            if (animState._effectiveMoving) { animState.frame = 0; animState.frameTimer = 0 }
+            animState._effectiveMoving = false
+            animState._movingHoldFrames = 0
+          }
+        }
+
+        // ★ 使用滞后后的isMoving做动画切换
+        const isMoving = animState._effectiveMoving
 
       if (isCastingSkill) {
         // ★ 技能施法：切换到 cast 状态，冻结为 idle 第0帧（施法站姿）
