@@ -52,9 +52,10 @@ export class BattleScene {
 
     // ====== 实时距离战斗系统 ======
     this.unitStates = {}  // 每个单位的实时状态 { x, y, targetX, baseX, state, ... }
-    this.MELEE_RANGE = 95 * this.dpr       // 近战攻击范围（足够让精灵接触）
-    this.RANGED_RANGE = 280 * this.dpr      // 远程攻击范围  
-    this.MOVE_SPEED = 200                  // 移动速度(像素/秒)
+    this.MELEE_RANGE = 130 * this.dpr       // 近战攻击范围（略增大）
+    // 远程攻击范围：屏幕高度的22%，法师需要稍微靠近才能攻击
+    this.RANGED_RANGE = this.height * 0.22
+    this.MOVE_SPEED_BASE = 120               // 基础移动速度(像素/秒)，实际速度=BASE × (spd/10)
 
     // 动画
     this.shakeAmount = 0
@@ -101,6 +102,7 @@ export class BattleScene {
 
     // 角色动画系统（移动动画帧）
     this.heroAnimStates = {}   // 角色动画状态
+    this.lastCastEffectType = {}  // ★ 角色当前cast特效类型映射（heroId -> effectType）
     this._initHeroAnimations()
 
     // 敌人HP延迟过渡动画（DNF风格多段血条）
@@ -167,15 +169,20 @@ export class BattleScene {
    */
   _initHeroAnimations() {
     this.party.forEach(hero => {
+      const walkCount = 8
       this.heroAnimStates[hero.id] = {
         type: hero.id,  // zhenbao, lixiaobao 等
-        state: 'idle',  // idle, walk, attack（攻击帧）
+        state: 'idle',  // idle, walk, attack（4种核心状态）
         frame: 0,
         frameTimer: 0,
-        frameDuration: 80,  // 80ms一帧（流畅）
-        totalWalkFrames: hero.id === 'zhenbao' ? 8 : (hero.id === 'lixiaobao' ? 8 : 8),
-        totalIdleFrames: hero.id === 'zhenbao' ? 5 : (hero.id === 'lixiaobao' ? 2 : 0),
-        totalSlashFrames: hero.id === 'zhenbao' ? 13 : 0,  // 斩击攻击帧数
+        frameDuration: 80,  // 默认帧间隔
+        // 帧数量配置
+        totalWalkFrames: walkCount,
+        totalIdleFrames: hero.id === 'zhenbao' ? 5 : (hero.id === 'lixiaobao' ? 2 : 2),
+        totalSlashFrames: hero.id === 'zhenbao' ? 13 : walkCount,
+        // ★ 新增：技能施法标记
+        _isCastingSkill: false,
+        _attackLoopCount: 0,
       }
     })
   }
@@ -231,12 +238,10 @@ export class BattleScene {
     this._addLog(`⚔️ 战斗开始！`)
     this._addLog(`野生的 ${this.enemies.map(e => e.name).join('、')} 出现了！`)
 
-    // 1.5秒后进入自动战斗
-    setTimeout(() => {
-      this.phase = 'auto_battle'
-      this.battleTime = 0
-      this._addLog(`💡 自动战斗中 - 角色将自动攻击`)
-    }, 1500)
+    // 直接进入自动战斗（不延迟，角色初始化就在底部战场位置）
+    this.phase = 'auto_battle'
+    this.battleTime = 0
+    console.log('[Battle] 立即进入自动战斗模式')
   }
 
   // ======== 实时自动战斗系统（距离制） ========
@@ -245,23 +250,35 @@ export class BattleScene {
    * 初始化距离战斗系统的单位状态
    */
   _initUnitStates() {
+    // 计算己方角色初始站位（靠近屏幕底部）
+    const meleeY = this.height * 0.72   // 近战前排（屏幕偏下）
+    const rangedY = this.height * 0.82  // 远程后排（最下方）
+
     // 初始化己方角色状态
     this.party.forEach((hero, i) => {
       if (!this.heroBasePositions[i]) return
       const pos = this.heroBasePositions[i]
       const isRanged = (hero.role === 'mage' || hero.role === 'healer' || hero.role === 'archer')
+      // 远程角色初始站到战场后排位置，近战站到前排位置
+      const combatY = isRanged ? rangedY : meleeY
+
+      // ★ 关键：初始化时就同步 heroBasePositions 到战斗位置，避免"中间→底部"跳跃
+      if (!pos._originalCardY) pos._originalCardY = pos.y  // 保存原始卡片位置用于返回时恢复
+      pos.y = combatY  // 同步到战斗初始位置
+
       this.unitStates[hero.id] = {
+        id: hero.id,  // ★ 用于阵营判断
         x: pos.x,
-        y: pos.y,
-        baseX: pos.x,       // 原始站位X
-        baseY: pos.y,        // 原始站位Y
-        targetX: null,       // 移动目标X（null=不移动）
+        y: combatY,             // 初始就站到战场位置
+        baseX: pos.x,           // 原始站位X（用于返回）
+        baseY: combatY,          // 原始站位Y也设为战场位置（不回卡片位置）
+        targetX: null,
         targetY: null,
-        state: 'idle',       // idle | moving_to_attack | attacking | returning
+        state: 'idle',
         isRanged: isRanged,
         attackRange: isRanged ? this.RANGED_RANGE : this.MELEE_RANGE,
-        currentTargetId: null,  // 当前目标敌人索引或null
-        radius: 24 * this.dpr, // 碰撞半径（基于60*dpr精灵尺寸的40%）
+        currentTargetId: null,
+        radius: 24 * this.dpr,
       }
     })
 
@@ -269,7 +286,9 @@ export class BattleScene {
     this.enemies.forEach((enemy, i) => {
       if (!this.enemyPositions[i]) return
       const pos = this.enemyPositions[i]
+      // 移动速度已由 _getMoveSpeed() 基于enemy.spd属性统一计算，无需硬编码倍率
       this.unitStates['enemy_' + i] = {
+        id: 'enemy_' + i,  // ★ 用于阵营判断
         x: pos.x,
         y: pos.y,
         baseX: pos.x,
@@ -292,6 +311,35 @@ export class BattleScene {
   }
 
   /**
+   * 将单位位置限制在战场边界内
+   * 战场有效区域：X [margin, width-margin]，Y [topMargin, bottomMargin]
+   * 上方留给敌人出生区，下方留给角色卡片UI
+   */
+  _clampToBattlefield(unitState) {
+    const dpr = this.dpr
+    const r = unitState.radius || 24 * dpr  // 单位碰撞半径，确保身体不穿出围栏
+    const margin = 30 * dpr + r             // 左右边界 = 围栏位置 + 半径
+    const topMargin = 20 * dpr + r          // 上边界
+    const bottomMargin = this.height * 0.82 - r  // 下边界：向下延伸
+    unitState.x = Math.max(margin, Math.min(this.width - margin, unitState.x))
+    unitState.y = Math.max(topMargin, Math.min(bottomMargin, unitState.y))
+  }
+
+  /**
+   * 将目标点限制在战场围栏内（用于逃跑/移动目标点，不考虑单位半径）
+   */
+  _clampTargetToBattlefield(targetX, targetY) {
+    const dpr = this.dpr
+    const margin = 50 * dpr
+    const top = 30 * dpr
+    const bottom = this.height * 0.82 - 30 * dpr
+    return {
+      x: Math.max(margin, Math.min(this.width - margin, targetX)),
+      y: Math.max(top, Math.min(bottom, targetY))
+    }
+  }
+
+  /**
    * 更新单位移动和攻击状态（核心实时战斗循环）
    */
   _updateCombatUnits(dt) {
@@ -299,16 +347,23 @@ export class BattleScene {
     if (this.phase !== 'auto_battle' && this.phase !== 'animating') return
 
     const effectiveDt = dt * this.battleSpeed
-    const MOVE_SPEED = 200 * effectiveDt  // 像素/帧
 
     // ===== 第一轮碰撞分离：先把重叠的单位推开 =====
     this._applyCollisionSeparation()
 
-    // ===== 己方角色更新 =====
+    // ===== 己方角色更新（移动速度基于角色spd属性） =====
     for (const hero of this.party) {
       if (hero.hp <= 0) continue
       const state = this.unitStates[hero.id]
       if (!state) continue
+
+      // 每个角色的移动速度基于spd属性：BASE × spd/10，范围[50, 300]
+      const movePx = this._getMoveSpeed(hero) * effectiveDt
+
+      // 递减"刚到位"宽限期
+      if (state._justArrivedTimer > 0) {
+        state._justArrivedTimer = Math.max(0, state._justArrivedTimer - effectiveDt)
+      }
 
       switch (state.state) {
         case 'moving_to_attack':
@@ -317,15 +372,26 @@ export class BattleScene {
             const dx = state.targetX - state.x
             const dy = state.targetY - state.y
             const dist = Math.sqrt(dx * dx + dy * dy)
-            if (dist > MOVE_SPEED) {
+
+            // 卡住检测：移动超过3秒还没到达，强制切换到in_range开始攻击
+            if (state._moveStartTime && this.battleTime - state._moveStartTime > 3.0) {
+              console.log(`[Battle] ${hero.name} 移动卡住(${(this.battleTime - state._moveStartTime).toFixed(1)}s)，强制进入战斗`)
+              state.state = 'in_range'
+              const hTimer = this.heroAttackTimers[hero.id]
+              if (hTimer) hTimer.attackTimer = 0
+              state._moveStartTime = null
+              break
+            }
+
+            if (dist > movePx) {
               // 计算预期新位置
-              let nx = state.x + (dx / dist) * MOVE_SPEED
-              let ny = state.y + (dy / dist) * MOVE_SPEED
+              let nx = state.x + (dx / dist) * movePx
+              let ny = state.y + (dy / dist) * movePx
               // 障碍检测：如果会撞到其他单位，尝试滑开或停止
               const blocked = this._getMovementBlocker(state, nx, ny)
               if (blocked) {
                 // 尝试沿切线方向滑动
-                const slide = this._slideAround(state, nx, ny, dx / dist, dy / dist, MOVE_SPEED, blocked)
+                const slide = this._slideAround(state, nx, ny, dx / dist, dy / dist, movePx, blocked)
                 nx = slide.x; ny = slide.y
               }
               state.x = nx; state.y = ny
@@ -334,42 +400,60 @@ export class BattleScene {
               state.y = state.targetY
               // 到达攻击位置，切换到战斗状态
               state.state = 'in_range'
-              // 重置攻击计时器，准备第一击
+              // 设置"刚到位"宽限期：1秒内不触发追击（给侧面站位稳定时间）
+              state._justArrivedTimer = 1.0
+              // 重置攻击计时器 + 标记首攻（碰到就打！零延迟出第一刀）
               const timer = this.heroAttackTimers[hero.id]
-              if (timer) timer.attackTimer = 0
+              if (timer) {
+                timer.attackTimer = 0
+                if (!timer._hasFirstAttacked) {
+                  timer._needsFirstStrike = true
+                }
+              }
             }
           }
           break
 
         case 'returning': {
-          // 返回原位
+          // 返回原位（速度同移动速度）
           const rx = state.baseX - state.x
           const ry = state.baseY - state.y
           const rDist = Math.sqrt(rx * rx + ry * ry)
-          if (rDist > MOVE_SPEED) {
-            let nx = state.x + (rx / rDist) * MOVE_SPEED
-            let ny = state.y + (ry / rDist) * MOVE_SPEED
+          if (rDist > movePx) {
+            let nx = state.x + (rx / rDist) * movePx
+            let ny = state.y + (ry / rDist) * movePx
             const blocked = this._getMovementBlocker(state, nx, ny)
-            if (blocked) {
-              const slide = this._slideAround(state, nx, ny, rx / rDist, ry / rDist, MOVE_SPEED, blocked)
-              nx = slide.x; ny = slide.y
-            }
+              if (blocked) {
+                const slide = this._slideAround(state, nx, ny, rx / rDist, ry / rDist, movePx, blocked)
+                nx = slide.x; ny = slide.y
+              }
             state.x = nx; state.y = ny
           } else {
             state.x = state.baseX
             state.y = state.baseY
             state.state = 'idle'
             state.currentTargetId = null
+            // ★ 返回空闲时重置 heroBasePositions 到原始卡片位置，防止下次进入战斗时位置错误
+            const hIdx = this.party.indexOf(hero)
+            if (this.heroBasePositions[hIdx] && this.heroBasePositions[hIdx]._originalCardY != null) {
+              this.heroBasePositions[hIdx].x = state.baseX
+              this.heroBasePositions[hIdx].y = this.heroBasePositions[hIdx]._originalCardY
+            }
           }
           break
         }
       }
 
-      // 同步更新 heroBasePositions 用于渲染
-      const hIdx = this.party.indexOf(hero)
-      if (this.heroBasePositions[hIdx]) {
-        this.heroBasePositions[hIdx].x = state.x
-        this.heroBasePositions[hIdx].y = state.y
+      // 边界限制：确保角色不会跑出战场
+      this._clampToBattlefield(state)
+
+      // 同步更新 heroBasePositions 用于渲染（仅非空闲状态，空闲状态已在返回时重置到卡片位置）
+      if (state.state !== 'idle') {
+        const hIdx = this.party.indexOf(hero)
+        if (this.heroBasePositions[hIdx]) {
+          this.heroBasePositions[hIdx].x = state.x
+          this.heroBasePositions[hIdx].y = state.y
+        }
       }
     }
 
@@ -380,16 +464,59 @@ export class BattleScene {
       const estate = this.unitStates['enemy_' + i]
       if (!estate) continue
 
-      // 同步敌人动画状态：移动中→walk动画，其他→idle
+      // 敌人移动速度基于spd属性（与角色统一公式）
+      const eSpeed = this._getMoveSpeed(enemy) * effectiveDt
+
+      // 递减敌人"刚到位"宽限期
+      if (estate._justArrivedTimer > 0) {
+        estate._justArrivedTimer = Math.max(0, estate._justArrivedTimer - effectiveDt)
+      }
+
+      // 同步敌人动画状态：移动中/逃跑→walk动画，攻击中→attack，其他→idle
       const eAnim = this.enemyAnimStates[i]
       if (eAnim) {
-        const isMoving = (estate.state === 'moving_to_attack' || estate.state === 'returning')
+        const isMoving = (estate.state === 'moving_to_attack' || estate.state === 'returning' || estate.state === 'fleeing')
+        const isAttacking = (estate.state === 'attacking')
         if (isMoving && eAnim.state !== 'walk') {
           eAnim.state = 'walk'
           eAnim.frame = 1
           eAnim.frameTimer = 0
           eAnim.displayFrame = 0
-        } else if (!isMoving && estate.state === 'idle' && eAnim.state !== 'idle') {
+        } else if (isAttacking && eAnim.state !== 'attack' && eAnim.state !== 'skill') {
+          // 攻击中切换到攻击帧（区分普攻/技能帧）
+          if (eAnim.type === 'slime_cat' || eAnim.type === 'shadow_mouse') {
+            // 检查是否是特殊技能（非基础普攻）
+            const estateForSkill = this.unitStates['enemy_' + i]
+            const currentSkill = estateForSkill ? estateForSkill._currentSkill : null
+            const isSkillAttack = currentSkill && (
+              currentSkill.effect || currentSkill.target ||
+              (currentSkill.power || 1) > 1.25 || currentSkill.id
+            )
+            
+            if (isSkillAttack && eAnim.type === 'slime_cat') {
+              // 技能：使用skill帧序列（更夸张的动作）
+              eAnim.state = 'skill'
+              eAnim.frame = 50
+              eAnim.displayFrame = 0
+              eAnim.frameTimer = 0
+              eAnim.attackDamageApplied = false
+            } else if (isSkillAttack && eAnim.type === 'shadow_mouse') {
+              // 暗影鼠技能帧
+              eAnim.state = 'skill'
+              eAnim.frame = 1
+              eAnim.displayFrame = 0
+              eAnim.frameTimer = 0
+              eAnim.attackDamageApplied = false
+            } else {
+              // 基础攻击：使用attack帧序列
+              eAnim.state = 'attack'
+              eAnim.frame = eAnim.type === 'shadow_mouse' ? 1 : 8
+              eAnim.displayFrame = 0
+              eAnim.frameTimer = 0
+              eAnim.attackDamageApplied = false
+            }
+          }
+        } else if (!isMoving && !isAttacking && estate.state === 'idle' && eAnim.state !== 'idle') {
           eAnim.state = 'idle'
           eAnim.frame = 1
           eAnim.frameTimer = 0
@@ -402,12 +529,24 @@ export class BattleScene {
             const dx = estate.targetX - estate.x
             const dy = estate.targetY - estate.y
             const dist = Math.sqrt(dx * dx + dy * dy)
-            if (dist > MOVE_SPEED) {
-              let nx = estate.x + (dx / dist) * MOVE_SPEED
-              let ny = estate.y + (dy / dist) * MOVE_SPEED
+            // 敌人移动速度基于spd属性（与角色统一公式）
+            const eSpeed = this._getMoveSpeed(enemy) * effectiveDt
+
+            // 敌人卡住检测：3秒强制进入战斗
+            if (estate._moveStartTime && this.battleTime - estate._moveStartTime > 3.0) {
+              estate.state = 'in_range'
+              const eTimer = this.enemyAttackTimers[i]
+              if (eTimer) eTimer.attackTimer = 0
+              estate._moveStartTime = null
+              break
+            }
+
+            if (dist > eSpeed) {
+              let nx = estate.x + (dx / dist) * eSpeed
+              let ny = estate.y + (dy / dist) * eSpeed
               const blocked = this._getMovementBlocker(estate, nx, ny)
               if (blocked) {
-                const slide = this._slideAround(estate, nx, ny, dx / dist, dy / dist, MOVE_SPEED, blocked)
+                const slide = this._slideAround(estate, nx, ny, dx / dist, dy / dist, eSpeed, blocked)
                 nx = slide.x; ny = slide.y
               }
               estate.x = nx; estate.y = ny
@@ -415,6 +554,7 @@ export class BattleScene {
               estate.x = estate.targetX
               estate.y = estate.targetY
               estate.state = 'in_range'
+              estate._justArrivedTimer = 1.0  // 宽限期：防止侧面站位距离超标触发追击
             }
           }
           break
@@ -422,12 +562,14 @@ export class BattleScene {
           const erx = estate.baseX - estate.x
           const ery = estate.baseY - estate.y
           const erDist = Math.sqrt(erx * erx + ery * ery)
-          if (erDist > MOVE_SPEED) {
-            let nx = estate.x + (erx / erDist) * MOVE_SPEED
-            let ny = estate.y + (ery / erDist) * MOVE_SPEED
+          // 返回速度基于spd属性（略快15%）
+          const eReturnSpeed = this._getMoveSpeed(enemy) * 1.15 * effectiveDt
+          if (erDist > eReturnSpeed) {
+            let nx = estate.x + (erx / erDist) * eReturnSpeed
+            let ny = estate.y + (ery / erDist) * eReturnSpeed
             const blocked = this._getMovementBlocker(estate, nx, ny)
             if (blocked) {
-              const slide = this._slideAround(estate, nx, ny, erx / erDist, ery / erDist, MOVE_SPEED, blocked)
+              const slide = this._slideAround(estate, nx, ny, erx / erDist, ery / erDist, eReturnSpeed, blocked)
               nx = slide.x; ny = slide.y
             }
             estate.x = nx; estate.y = ny
@@ -439,7 +581,37 @@ export class BattleScene {
           }
           break
         }
+        case 'fleeing': {
+          // 逃跑移动：基于spd属性+20%
+          const fleeSpeed = this._getMoveSpeed(enemy) * 1.2 * effectiveDt
+          if (estate.targetX !== null) {
+            const fdx = estate.targetX - estate.x
+            const fdy = estate.targetY - estate.y
+            const fdist = Math.sqrt(fdx * fdx + fdy * fdy)
+            if (fdist > fleeSpeed) {
+              let nx = estate.x + (fdx / fdist) * fleeSpeed
+              let ny = estate.y + (fdy / fdist) * fleeSpeed
+              const blocked = this._getMovementBlocker(estate, nx, ny)
+              if (blocked) {
+                const slide = this._slideAround(estate, nx, ny, fdx / fdist, fdy / fdist, fleeSpeed, blocked)
+                nx = slide.x; ny = slide.y
+              }
+              estate.x = nx; estate.y = ny
+            } else {
+              // 到达逃跑目标点，停下来（idle状态，等血恢复再参战）
+              estate.x = estate.targetX
+              estate.y = estate.targetY
+              estate.state = 'idle'
+              estate.targetX = null
+              estate.targetY = null
+            }
+          }
+          break
+        }
       }
+
+      // 边界限制：确保敌人不会跑出战场
+      this._clampToBattlefield(estate)
 
       // 同步更新敌人位置用于渲染
       if (this.enemyPositions[i]) {
@@ -464,7 +636,7 @@ export class BattleScene {
       return dist <= unitState.attackRange
     }
     // 近战：考虑双方碰撞盒体积 + 武器延伸
-    const reachRadius = (unitState.radius || 0) + (targetState.radius || 0) + 10 * this.dpr
+    const reachRadius = (unitState.radius || 0) + (targetState.radius || 0) + 12 * this.dpr
     return dist <= reachRadius
   }
 
@@ -472,7 +644,9 @@ export class BattleScene {
    * 获取近战攻击的实际接触距离（两圆相切）
    */
   _getMeleeContactDistance(attackerState, targetState) {
-    return (attackerState.radius || 0) + (targetState.radius || 0) + 8 * this.dpr
+    // 接触距离必须 > 碰撞分离minDist，否则永远到不了攻击范围
+    // 碰撞分离 = 24+16+8=48dpr，接触距离设为55dpr，留7dpr余量
+    return (attackerState.radius || 0) + (targetState.radius || 0) + 15 * this.dpr
   }
 
   /**
@@ -480,8 +654,31 @@ export class BattleScene {
    */
   _setApproachTarget(attackerState, targetState, targetIdx) {
     const distToEnemy = this._getDistance(attackerState, targetState)
-    const contactDist = this._getMeleeContactDistance(attackerState, targetState)
     const baseAngle = Math.atan2(targetState.y - attackerState.y, targetState.x - attackerState.x)
+
+    // 远程角色：停在攻击范围边缘即可（不需要贴脸）
+    if (attackerState.isRanged) {
+      const stopDist = attackerState.attackRange * 0.85  // 留15%余量避免边界抖动
+      if (distToEnemy <= stopDist) {
+        // 已经在范围内，不需要移动
+        attackerState.currentTargetId = targetIdx
+        return
+      }
+      const approachDist = distToEnemy - stopDist
+      attackerState.targetX = attackerState.x + Math.cos(baseAngle) * approachDist
+      attackerState.targetY = attackerState.y + Math.sin(baseAngle) * approachDist
+      attackerState.currentTargetId = targetIdx
+      return
+    }
+
+    // ===== 近战逻辑：站位到目标侧面（而非正面） =====
+    const contactDist = this._getMeleeContactDistance(attackerState, targetState)
+
+    // 侧面偏移量：站在目标左侧或右侧（基于攻击者ID哈希固定选择一侧）
+    const attackerId = Object.keys(this.unitStates).find(k => this.unitStates[k] === attackerState) || 'h0'
+    const sideSign = (attackerId.charCodeAt(attackerId.length - 1) % 2 === 0) ? 1 : -1
+    // 侧移距离：约30*dpr像素的横向偏移
+    const lateralOffset = 30 * this.dpr * sideSign
 
     // 检查有多少己方近战单位在打同一个敌人（用于弧形站位偏移）
     const alliesOnSameTarget = this.party.filter(h => {
@@ -493,18 +690,26 @@ export class BattleScene {
     // 弧形站位：根据同目标友军数量分配角度偏移
     let angleOffset = 0
     if (!attackerState.isRanged && alliesOnSameTarget.length > 0) {
-      // 总共 alliesOnSameTarget.length + 1 个人打这个目标，均匀分布在目标周围
       const totalAllies = alliesOnSameTarget.length + 1
-      const arcAngle = Math.PI * 0.4 // 半圆弧度（±72度）
-      // 找到自己在排序中的位置
+      const arcAngle = Math.PI * 0.4
       const myIdx = this._getHeroAttackOrderIndex(attackerState, targetIdx, totalAllies)
       angleOffset = -arcAngle / 2 + (myIdx / (totalAllies - 1)) * arcAngle
     }
 
     const finalAngle = baseAngle + angleOffset
+    // 先计算正面接近点
     const approachDist = distToEnemy - contactDist + 5 * this.dpr
-    attackerState.targetX = attackerState.x + Math.cos(finalAngle) * approachDist
-    attackerState.targetY = attackerState.y + Math.sin(finalAngle) * approachDist
+    let targetX = attackerState.x + Math.cos(finalAngle) * approachDist
+    let targetY = attackerState.y + Math.sin(finalAngle) * approachDist
+
+    // 叠加侧面偏移（垂直于接近方向的侧向位移）
+    const perpX = -Math.sin(finalAngle)
+    const perpY = Math.cos(finalAngle)
+    targetX += perpX * lateralOffset
+    targetY += perpY * lateralOffset
+
+    attackerState.targetX = targetX
+    attackerState.targetY = targetY
     attackerState.currentTargetId = targetIdx
   }
 
@@ -530,10 +735,11 @@ export class BattleScene {
   /**
    * 全局碰撞分离：所有单位之间（含敌我）都不重叠
    * 在 _updateCombatUnits 中移动前后各调用一次
+   * 增强：多轮迭代 + 防振荡 + 更强推力
    */
   _applyCollisionSeparation() {
     const dpr = this.dpr
-    const PUSH_FORCE = 0.8
+    const PUSH_FORCE = 1.0  // 增强推力
 
     const allUnits = []
 
@@ -551,30 +757,67 @@ export class BattleScene {
       allUnits.push({ state, faction: 'enemy', id: 'e' + i })
     }
 
-    for (let i = 0; i < allUnits.length; i++) {
-      for (let j = i + 1; j < allUnits.length; j++) {
-        const a = allUnits[i].state
-        const b = allUnits[j].state
-        const dx = b.x - a.x
-        const dy = b.y - a.y
-        const dist = Math.sqrt(dx * dx + dy * dy)
-        const minDist = (a.radius || 0) + (b.radius || 0) + 3 * dpr
+    // 多轮分离：3轮确保完全消除重叠
+    for (let pass = 0; pass < 3; pass++) {
+      let hasOverlap = false
 
-        if (dist < minDist && dist > 0.01) {
-          const overlap = (minDist - dist) * PUSH_FORCE * 0.5
-          const nx = dx / dist
-          const ny = dy / dist
-          a.x -= nx * overlap
-          a.y -= ny * overlap
-          b.x += nx * overlap
-          b.y += ny * overlap
+      for (let i = 0; i < allUnits.length; i++) {
+        for (let j = i + 1; j < allUnits.length; j++) {
+          const a = allUnits[i].state
+          const b = allUnits[j].state
+          const dx = b.x - a.x
+          const dy = b.y - a.y
+          const dist = Math.sqrt(dx * dx + dy * dy)
+
+          // 判断是否是"交战对"：敌我双方且至少一方处于战斗状态
+          const isHeroEnemyPair = (allUnits[i].faction !== allUnits[j].faction)
+          const aInCombat = (a.state === 'moving_to_attack' || a.state === 'in_range' || a.state === 'attacking')
+          const bInCombat = (b.state === 'moving_to_attack' || b.state === 'in_range' || b.state === 'attacking')
+          const isCombatPair = isHeroEnemyPair && (aInCombat || bInCombat)
+
+          // 基础minDist：双方半径之和
+          const baseRadiusSum = (a.radius || 24 * dpr) + (b.radius || (allUnits[j].faction === 'enemy' ? 16 : 24) * dpr)
+
+          let minDist
+          if (isCombatPair) {
+            // ★ 敌我交战对：完全跳过碰撞分离！
+            // 它们本来就需要靠近战斗，碰撞分离会把敌人推到错误位置
+            // 之前只对"双方都到位"跳过，但moving_to_attack阶段的弱推力累积也会造成巨大偏移
+            continue
+          } else {
+            // 非交战对：正常推开距离（加8*dpr余量）
+            minDist = baseRadiusSum + 8 * dpr
+          }
+
+          if (dist < minDist && dist > 0.01) {
+            hasOverlap = true
+            // 每轮递减推力，避免过冲振荡
+            const passFactor = pass === 0 ? 1.0 : pass === 1 ? 0.5 : 0.25
+            const overlap = (minDist - dist) * PUSH_FORCE * 0.5 * passFactor
+            const nx = dx / dist
+            const ny = dy / dist
+            a.x -= nx * overlap
+            a.y -= ny * overlap
+            b.x += nx * overlap
+            b.y += ny * overlap
+          }
         }
       }
+
+      // 无重叠就提前退出
+      if (!hasOverlap) break
+    }
+
+    // 碰撞分离后统一边界限制
+    for (const unit of allUnits) {
+      this._clampToBattlefield(unit.state)
     }
   }
 
   _getMovementBlocker(moverState, targetX, targetY) {
     const moverRadius = moverState.radius || 24 * this.dpr
+    // 用较小的检测半径（70%），避免过度敏感导致"假阻塞"
+    const checkRadius = moverRadius * 0.7
     for (const hero of this.party) {
       if (hero.hp <= 0) continue
       const state = this.unitStates[hero.id]
@@ -582,7 +825,7 @@ export class BattleScene {
       const dx = targetX - state.x
       const dy = targetY - state.y
       const dist = Math.sqrt(dx * dx + dy * dy)
-      if (dist < moverRadius + (state.radius || 24 * this.dpr)) return state
+      if (dist < checkRadius + (state.radius || 24 * this.dpr)) return state
     }
     for (let i = 0; i < this.enemies.length; i++) {
       if (this.enemies[i].hp <= 0) continue
@@ -591,7 +834,7 @@ export class BattleScene {
       const dx = targetX - estate.x
       const dy = targetY - estate.y
       const dist = Math.sqrt(dx * dx + dy * dy)
-      if (dist < moverRadius + (estate.radius || 16 * this.dpr)) return estate
+      if (dist < checkRadius + (estate.radius || 16 * this.dpr)) return estate
     }
     return null
   }
@@ -599,20 +842,27 @@ export class BattleScene {
   _slideAround(moverState, targetX, targetY, dirX, dirY, moveSpeed, blocker) {
     const perpX = -dirY
     const perpY = dirX
-    const slideAmount = moveSpeed * 0.7
+    // 增大滑动力度，更容易绕过障碍物
+    const slideAmount = moveSpeed * 0.9
 
     const awayX = targetX - blocker.x
     const awayY = targetY - blocker.y
     const dot1 = perpX * awayX + perpY * awayY
 
     const sign = dot1 >= 0 ? 1 : -1
-    let sx = moverState.x + (dirX * moveSpeed * 0.2) + perpX * slideAmount * sign
-    let sy = moverState.y + (dirY * moveSpeed * 0.2) + perpY * slideAmount * sign
+    let sx = moverState.x + (dirX * moveSpeed * 0.3) + perpX * slideAmount * sign
+    let sy = moverState.y + (dirY * moveSpeed * 0.3) + perpY * slideAmount * sign
 
     if (!this._getMovementBlocker(moverState, sx, sy)) return { x: sx, y: sy }
 
-    sx = moverState.x + (dirX * moveSpeed * 0.2) - perpX * slideAmount * sign
-    sy = moverState.y + (dirY * moveSpeed * 0.2) - perpY * slideAmount * sign
+    sx = moverState.x + (dirX * moveSpeed * 0.3) - perpX * slideAmount * sign
+    sy = moverState.y + (dirY * moveSpeed * 0.3) - perpY * slideAmount * sign
+    if (!this._getMovementBlocker(moverState, sx, sy)) return { x: sx, y: sy }
+
+    // 双侧都受阻：尝试沿远离障碍物方向推开
+    const pushAngle = Math.atan2(awayY, awayX)
+    sx = moverState.x + Math.cos(pushAngle) * moveSpeed * 0.8
+    sy = moverState.y + Math.sin(pushAngle) * moveSpeed * 0.8
     if (!this._getMovementBlocker(moverState, sx, sy)) return { x: sx, y: sy }
 
     return { x: moverState.x, y: moverState.y }
@@ -660,11 +910,12 @@ export class BattleScene {
     // 初始化每个己方角色的攻击计时器
     this.party.forEach(hero => {
       const attackInterval = this._getAttackInterval(hero)
-      // 随机初始偏移（0~50%攻击间隔），避免同时开打
-      const initialOffset = attackInterval * (0.3 + Math.random() * 0.5)
+      // 极小随机偏移（0~15%攻击间隔）：让角色几乎立刻就能出第一刀，同时略微错开
+      const initialOffset = attackInterval * Math.random() * 0.15
       this.heroAttackTimers[hero.id] = {
         attackTimer: initialOffset,
-        skillCDs: {}
+        skillCDs: {},
+        _hasFirstAttacked: false,  // 标记是否已出过第一刀（用于零延迟首攻）
       }
       // 初始化非普攻技能的CD为0（开局即可使用）
       hero.skills.forEach(skill => {
@@ -693,6 +944,18 @@ export class BattleScene {
   }
 
   /**
+   * 根据单位的spd属性计算实际移动速度(像素/秒)
+   * 公式：BASE × spd / 10，范围限制 [50, 300]
+   * spd=10 → 120px/s（标准速度）
+   * spd=6  → 72px/s（慢，如史莱姆猫、石像守卫）
+   * spd=17 → 204px/s（快，如暗影鼠精英）
+   */
+  _getMoveSpeed(unit) {
+    const spd = unit.spd || 10
+    return Math.max(50, Math.min(300, this.MOVE_SPEED_BASE * spd / 10))
+  }
+
+  /**
    * 计算角色的普通攻击间隔（秒）
    * 公式：2.0 - spd * 0.08，范围限制在 [0.5, 2.5]
    */
@@ -716,17 +979,27 @@ export class BattleScene {
    * 按 skill.power 分档，再受spd影响缩短
    */
   _getSkillCooldown(unit, skill) {
+    // 区分"基础普攻"和"攻击类技能"
+    // 基础普攻：无effect/target/restrictChance/id，且名称为'攻击'
+    const isBasicAttack = !skill.effect && !skill.target && !skill.restrictChance &&
+                          !skill.id && (!skill.name || skill.name === '攻击') && skill.power <= 1.05
     let baseCd
-    if (skill.type === 'attack') {
-      baseCd = 0  // 普攻无CD
-    } else if (skill.power <= 1.0) {
-      baseCd = 5   // 弱技能
-    } else if (skill.power <= 1.5) {
-      baseCd = 8   // 中等技能
-    } else if (skill.power <= 2.0) {
-      baseCd = 12  // 强力技能
+    if (isBasicAttack) {
+      baseCd = 0  // 基础普攻无CD
+    } else if (skill.type === 'magic' || skill.type === 'heal_self' || skill.type === 'buff' || skill.type === 'summon') {
+      // 法术/治疗/召唤类技能
+      if (skill.power <= 1.0) { baseCd = 5 }
+      else if (skill.power <= 1.5) { baseCd = 8 }
+      else if (skill.power <= 2.0) { baseCd = 12 }
+      else { baseCd = 15 }
+    } else if (skill.type === 'attack') {
+      // 攻击类技能（有effect/特殊效果）：按威力分档CD
+      if (skill.power <= 1.3) { baseCd = 4 }   // 轻度技能（黏液喷射、抓挠）
+      else if (skill.power <= 1.6) { baseCd = 6 } // 中等技能（黏液包裹、狂抓）
+      else if (skill.power <= 2.2) { baseCd = 9 } // 强力技能（暗影突袭、撕裂）
+      else { baseCd = 13 }                       // 终极技能（暗影之怒）
     } else {
-      baseCd = 15  // 终极技能
+      baseCd = 5   // 兜底
     }
     if (baseCd === 0) return 0
     // spd越高CD越短，最低为基础值的50%
@@ -819,17 +1092,22 @@ export class BattleScene {
       // CD未完成则跳过
       const cdRemaining = timer.skillCDs[skill.id] || 0
       if (cdRemaining > 0) return
-      // 治疗类特殊处理（后面统一判断）
       availableSkills.push(skill)
     })
 
     if (availableSkills.length === 0) return null
 
-    // ====== 角色类型AI决策 ======
+    // ====== 角色类型AI决策（重写版） ======
+
+    // 判断一个技能是否是"基础普攻"（无任何特殊效果的纯平A）
+    const isBasicAttack = (s) => {
+      return s.type === 'attack' && !s.effect && !s.target &&
+             !s.restrictChance && !s.statusEffect &&
+             (s.mpCost || 0) <= 0 && (s.power || 1) <= 1.25
+    }
 
     // 1. 治疗型角色：队友HP低时优先治疗
     if (hero.role === 'healer') {
-      // 找最低HP的存活队友
       let lowestHpAlly = null
       let lowestHpRatio = 1
       this.party.forEach(h => {
@@ -838,57 +1116,69 @@ export class BattleScene {
           lowestHpAlly = h
         }
       })
-
-      // 队友HP<50% → 优先选治疗技能
       if (lowestHpAlly && lowestHpRatio < 0.5) {
         const healSkill = availableSkills.find(s =>
           s.type === 'heal' && (s.target === 'single_ally' || !s.target?.includes('all'))
         )
         if (healSkill) return healSkill
-        // 没有单体治疗就用群疗
         const groupHeal = availableSkills.find(s => s.type === 'heal')
         if (groupHeal) return groupHeal
       }
     }
 
-    // 2. Buff技能智能释放：有概率释放，但不是每次都放
+    // 2. Buff技能：无同类buff时高概率释放（65%），buff快过期时必放
     const buffSkills = availableSkills.filter(s => s.type === 'buff')
     if (buffSkills.length > 0) {
-      // 检查是否已有同类buff生效（避免重复释放）
       const heroIndex = this.party.indexOf(hero)
       const heroEffects = heroIndex !== -1 ? (this.statusEffects.heroes[heroIndex] || []) : []
+      // 按价值排序（高value/higher mpCost优先）
+      buffSkills.sort((a, b) => ((b.value || 0) + (b.mpCost || 0)) - ((a.value || 0) + (a.mpCost || 0)))
       for (const bs of buffSkills) {
-        const effectType = bs.effect === 'atk_up_self' ? 'atk_up' : bs.effect
-        const hasBuff = heroEffects.some(e => e.type === effectType && e.turnsRemaining > 0)
-        if (!hasBuff && Math.random() < 0.4) {
-          // 没有同类buff且40%概率 → 释放buff
+        const effectType = bs.effect === 'atk_up_self' ? 'atk_up' :
+                           bs.effect === 'def_up_self' ? 'def_up' : bs.effect
+        const existingBuff = heroEffects.find(e => e.type === effectType && e.turnsRemaining > 0)
+        if (!existingBuff) {
+          // 无同类buff → 65%概率释放
+          if (Math.random() < 0.65) return bs
+        } else if (existingBuff.turnsRemaining <= 1) {
+          // buff即将过期(≤1回合) → 必续
           return bs
         }
       }
     }
 
-    // 3. Debuff技能：有概率释放
+    // 3. Debuff技能：有概率释放（40%）
     const debuffSkills = availableSkills.filter(s => s.type === 'debuff')
-    if (debuffSkills.length > 0 && Math.random() < 0.3) {
-      return debuffSkills[0]
+    if (debuffSkills.length > 0 && Math.random() < 0.4) {
+      return debuffSkills[Math.floor(Math.random() * debuffSkills.length)]
     }
 
-    // 4. 攻击型技能：优先选高power的攻击/魔法技能
-    const attackSkills = availableSkills.filter(s => s.type === 'magic')
-    if (attackSkills.length > 0) {
-      // 全体攻击在多敌人时优先
+    // 4. 法术/魔法技能：高优先级（60%概率使用魔法，否则走物理）
+    const magicSkills = availableSkills.filter(s => s.type === 'magic')
+    if (magicSkills.length > 0 && Math.random() < 0.6) {
+      // 多敌人时优先AOE
       if (this.enemies.filter(e => e.hp > 0).length >= 2) {
-        const aoeSkill = attackSkills.find(s => s.target === 'all')
+        const aoeSkill = magicSkills.find(s => s.target === 'all')
         if (aoeSkill) return aoeSkill
       }
-      // 否则选power最高的
-      attackSkills.sort((a, b) => (b.power || 1) - (a.power || 1))
-      return attackSkills[0]
+      magicSkills.sort((a, b) => (b.power || 1) - (a.power || 1))
+      return magicSkills[0]
     }
 
-    // 5. 默认返回普攻
-    const basicAttack = availableSkills.find(s => s.type === 'attack')
-    return basicAttack || availableSkills[0]
+    // 5. 物理攻击型技能（含特殊效果）：50%概率使用，避免一直普攻
+    const specialAttacks = availableSkills.filter(s =>
+      s.type === 'attack' && !isBasicAttack(s)
+    )
+    if (specialAttacks.length > 0 && Math.random() < 0.5) {
+      specialAttacks.sort((a, b) => (b.power || 1) - (a.power || 1))
+      return specialAttacks[0]
+    }
+
+    // 6. 默认返回基础普攻
+    const basicAttack = availableSkills.find(s => isBasicAttack(s))
+    if (basicAttack) return basicAttack
+    // 兜底：返回任意可用技能
+    return availableSkills[0]
   }
 
   /**
@@ -977,14 +1267,21 @@ export class BattleScene {
           const contactDist = state.isRanged ? state.attackRange : this._getMeleeContactDistance(state, enemyState)
 
           if (distToEnemy <= contactDist) {
-            // 在攻击范围内 → 切换到战斗状态，开始累积攻击计时器
+            // 在攻击范围内 → 切换到战斗状态
+            const isFirstEntry = state.state !== 'in_range' && state.state !== 'attacking'
             state.currentTargetId = enemyIdx
             state.state = 'in_range'
-            timer.attackTimer = 0  // 到位后立即准备第一击
+            timer.attackTimer = 0
+            if (isFirstEntry && !timer._hasFirstAttacked) {
+              // 首次进入攻击范围 → 标记需要立即出刀
+              timer._needsFirstStrike = true
+            }
+            state._moveStartTime = null
           } else {
             // 不在范围内 → 移动过去（考虑弧形站位）
             this._setApproachTarget(state, enemyState, enemyIdx)
             state.state = 'moving_to_attack'
+            state._moveStartTime = this.battleTime || Date.now() / 1000  // 记录移动开始时间
           }
           break
         }
@@ -1010,33 +1307,71 @@ export class BattleScene {
           }
           const contactDist = state.isRanged ? state.attackRange : this._getMeleeContactDistance(state, tState)
 
-          if (actualDist > contactDist * 1.5) {
-            // 目标跑远了，重新追上去（不回原位）
+          if (actualDist > contactDist * 1.8) {
+            // 正在播放攻击动画时不追击（防止碰撞分离推开导致的假性追击）
+            if (this.activeAttackers.has(hero.id)) break
+            // 刚到位1秒内不追击（侧面站位需要稳定时间）
+            if (state._justArrivedTimer && state._justArrivedTimer > 0) break
+            // 目标跑远了，重新追上去（也走到侧面）
             console.log(`[Battle] ${hero.name} 目标跑远了，追击 dist=${actualDist.toFixed(1)} range=${contactDist.toFixed(1)}`)
             if (tState) {
-              this._setApproachTarget(state, tState, targetEnemyIdx)
               const angle = Math.atan2(tState.y - state.y, tState.x - state.x)
+              // 追击时同样保持侧面站位
+              const chaserId = Object.keys(this.unitStates).find(k => this.unitStates[k] === state) || 'h0'
+              const chaseSideSign = (chaserId.charCodeAt(chaserId.length - 1) % 2 === 0) ? 1 : -1
+              const chaseLateral = 30 * this.dpr * chaseSideSign
               const chaseDist = actualDist - contactDist
-              state.targetX = state.x + Math.cos(angle) * chaseDist
-              state.targetY = state.y + Math.sin(angle) * chaseDist
+              state.targetX = state.x + Math.cos(angle) * chaseDist + (-Math.sin(angle)) * chaseLateral
+              state.targetY = state.y + Math.sin(angle) * chaseDist + Math.cos(angle) * chaseLateral
               state.state = 'moving_to_attack'
             }
             break
           }
 
           // 在范围内 → 累积攻击计时器
-          timer.attackTimer += effectiveDt
           const attackInterval = this._getAttackInterval(hero)
 
-          if (timer.attackTimer >= attackInterval) {
-            console.log(`[Battle] ${hero.name} 攻击! timer=${timer.attackTimer.toFixed(2)} interval=${attackInterval.toFixed(2)}`)
-            timer.attackTimer -= attackInterval
+          // 首次进入攻击范围：零延迟立即出第一刀！
+          if (timer._needsFirstStrike && !this.activeAttackers.has(hero.id)) {
+            console.log(`[Battle] ${hero.name} 首攻! 零延迟出刀`)
+            timer._needsFirstStrike = false
+            timer._hasFirstAttacked = true
             const skill = this._aiChooseSkill(hero)
-            if (!skill) break  // 无可用技能就等下一轮
-            if (skill.type !== 'attack') {
+            if (!skill) { timer._needsFirstStrike = false; break }
+            // 基础普攻不设CD，其他技能（含特殊物理攻击）都设CD
+            const isFirstBasic = !skill.effect && !skill.target && !skill.restrictChance && !skill.statusEffect && (skill.mpCost||0)<=0 && (skill.power||1)<=1.25
+            if (!isFirstBasic && skill.type !== 'attack') {
+              timer.skillCDs[skill.id] = this._getSkillCooldown(hero, skill)
+            } else if (!isFirstBasic) {
+              // 特殊物理攻击（有effect/statusEffect等）也要设CD
               timer.skillCDs[skill.id] = this._getSkillCooldown(hero, skill)
             }
             this.activeAttackers.add(hero.id)
+            {
+              const bs = !skill.effect && !skill.target && !skill.restrictChance && !skill.statusEffect && (skill.mpCost||0)<=0 && (skill.power||1)<=1.25
+              console.log(`[Battle] ${hero.name} 首攻使用 ${skill.name}${bs?'(普攻)':'('+skill.type+')'}`)
+            }
+            this._doHeroAttack(hero, skill, targetEnemy, targetEnemyIdx)
+            break
+          }
+
+          // 正常攻击循环：累积计时器
+          timer.attackTimer += effectiveDt
+
+          if (timer.attackTimer >= attackInterval) {
+            timer.attackTimer -= attackInterval
+            const skill = this._aiChooseSkill(hero)
+            if (!skill) break  // 无可用技能就等下一轮
+            // 基础普攻不设CD，其他技能都设CD
+            const isLoopBasic = !skill.effect && !skill.target && !skill.restrictChance && !skill.statusEffect && (skill.mpCost||0)<=0 && (skill.power||1)<=1.25
+            if (!isLoopBasic) {
+              timer.skillCDs[skill.id] = this._getSkillCooldown(hero, skill)
+            }
+            this.activeAttackers.add(hero.id)
+            {
+              const bs = !skill.effect && !skill.target && !skill.restrictChance && !skill.statusEffect && (skill.mpCost||0)<=0 && (skill.power||1)<=1.25
+              console.log(`[Battle] ${hero.name} 使用 ${skill.name}${bs?'(普攻)':'('+skill.type+')'}`)
+            }
             this._doHeroAttack(hero, skill, targetEnemy, targetEnemyIdx)
           }
           break
@@ -1055,119 +1390,130 @@ export class BattleScene {
    * 执行英雄攻击（距离制版本）
    * 攻击后不返回，持续在目标附近交战
    */
+  /**
+   * 执行英雄攻击（动画驱动结算版本）
+   * ★ 核心改变：不再用setTimeout猜测时长，而是cast特效onComplete驱动整个流程
+   */
   _doHeroAttack(hero, skill, target, targetEnemyIndex) {
     if (hero.hp <= 0) { this.activeAttackers.delete(hero.id); return; }
 
     const hState = this.unitStates[hero.id]
     const hAnimState = this.heroAnimStates[hero.id]
 
-    // ========== 安全检查：目标合法性 ==========
-    const isTargetAlly = target && this.party.some(h => h.id === target.id)
-    if (isTargetAlly) {
-      console.error(`[Battle] ❌ ${hero.name} 被阻止攻击队友 ${target.name}`)
-      const aliveEnemy = this.enemies.find(e => e.hp > 0)
-      if (aliveEnemy) { target = aliveEnemy } else { this.activeAttackers.delete(hero.id); return }
-    }
-    if (!target || target.hp <= 0) {
-      const aliveEnemy = this.enemies.find(e => e.hp > 0)
-      if (!aliveEnemy) { this.activeAttackers.delete(hero.id); return }
-      target = aliveEnemy
+    const isBasicSkill = !skill.effect && !skill.target && !skill.restrictChance &&
+                         !skill.id && (!skill.name || skill.name === '攻击') && skill.power <= 1.05
+    const isMagicSkill = (skill.type === 'magic') && !isBasicSkill
+
+    // MP
+    const mpCost = skill.mpCost || 0
+    if (mpCost > 0) {
+      if (hero.mp >= mpCost) {
+        hero.mp = Math.round((hero.mp - mpCost) * 100) / 100
+      } else {
+        console.log(`[Battle] ${hero.name} MP不足(${mpCost})，跳过技能`)
+        this.activeAttackers.delete(hero.id); return;
+      }
     }
 
-    // 标记攻击中
+    // 目标合法性
+    if (!target || target.hp <= 0) {
+      const e = this.enemies.find(e => e.hp > 0)
+      if (!e) { this.activeAttackers.delete(hero.id); return }
+      target = e
+    }
+    if (target && this.party.some(h => h.id === target.id)) {
+      const e = this.enemies.find(e => e.hp > 0)
+      if (e) target = e; else { this.activeAttackers.delete(hero.id); return }
+    }
+
     if (hState) hState.state = 'attacking'
     this.attackAnimSkill = skill
-
-    // ========== 播放技能特效（PNG序列帧，独立于角色）==========
-    // 注意：不改变角色自身动画状态（idle/walk 保持不变）
-    // 技能特效只是在角色位置叠加的视觉效果
     const heroPos = hState ? { x: hState.x, y: hState.y } : this.heroBasePositions[this.party.indexOf(hero)]
+
+    // ====== 魔法技能：动画驱动结算 ======
+    if (isMagicSkill && !isBasicSkill) {
+      // ② 进入施法状态（cast帧绑定绘制角色）
+      if (hAnimState) {
+        hAnimState._isCastingSkill = true
+        hAnimState.state = 'cast'
+        hAnimState.frame = 0
+        hAnimState.frameTimer = 0
+      }
+
+      // ③ 播放cast特效（带onComplete回调）
+      this._playCastEffectWithCallback(hero, skill, heroPos, () => {
+        // ★★★ cast特效播放完毕后自动执行以下流程 ★★★
+        
+        const isAoe = (skill.target === 'all')
+        
+        if (isAoe) {
+          const aliveEnemies = this.enemies.filter(e => e.hp > 0)
+          aliveEnemies.forEach((enemy, idx) => {
+            const enemyIdx = this.enemies.indexOf(enemy)
+            const enemyPos = this.enemyPositions[enemyIdx] || { x: this.enemyBaseX, y: this.enemyBaseY }
+            setTimeout(() => {
+              this._playHitEffect(hero, skill, enemyPos)
+              this._applyMagicDamage(hero, skill, enemy, enemyPos)
+            }, idx * 120)
+          })
+          setTimeout(() => this._finishHeroAttack(hero), aliveEnemies.length * 120 + 300)
+        } else {
+          const tIdx = this.enemies.indexOf(target)
+          const tPos = this.enemyPositions[tIdx] || { x: this.enemyBaseX, y: this.enemyBaseY }
+          this._playHitEffect(hero, skill, tPos)
+          this._applyMagicDamage(hero, skill, target, tPos)
+          setTimeout(() => this._finishHeroAttack(hero), 350)
+        }
+      })
+      
+      return  // ★ 整个流程由回调驱动
+    }
+
+    // ====== 物理普攻：保持原有逻辑 ======
+    if (hAnimState) hAnimState._isCastingSkill = false
     this._playCastEffect(hero, skill, heroPos)
 
     setTimeout(() => {
       if (hero.hp <= 0) { this.activeAttackers.delete(hero.id); return; }
-
-      // ========== 根据技能类型和目标范围执行不同的伤害逻辑 ==========
-      const isMagicSkill = (skill.type === 'magic')
-      const isAoeSkill = (skill.target === 'all')
-
-      if (isAoeSkill && (skill.type === 'attack' || skill.type === 'magic')) {
-        // ====== 群体攻击：对所有存活敌人造成伤害 ======
-        const aliveEnemies = this.enemies.filter(e => e.hp > 0)
-
-        aliveEnemies.forEach((enemy, index) => {
-          const enemyIdx = this.enemies.indexOf(enemy)
-          const enemyPos = this.enemyPositions[enemyIdx] || { x: this.enemyBaseX, y: this.enemyBaseY }
-
-          // 错开每个敌人的受击时间，形成连击视觉效果
-          setTimeout(() => {
-            if (skill.type === 'magic') {
-              // 魔法群体伤害 → 蓝色
-              this._playHitEffect(hero, skill, enemyPos)
-              this._applyMagicDamage(hero, skill, enemy, enemyPos)
-            } else {
-              // 物理群体伤害 → 红色
-              this._applyAttackDamageToTarget(hero, skill, enemy, enemyPos)
-            }
-          }, index * 150)
-        })
-
-        // 群体攻击完成后回到 auto_battle
-        const totalDuration = (aliveEnemies.length - 1) * 150 + 400
-        setTimeout(() => {
-          this.activeAttackers.delete(hero.id)
-          if (!hState || hero.hp <= 0) return
-          hState.state = 'returning'
-        }, totalDuration)
-
-      } else if (isMagicSkill && !isAoeSkill) {
-        // ====== 魔法单体攻击 → 蓝色伤害数字 ======
-        const targetEnemyIdx = this.enemies.indexOf(target)
-        const targetEnemyPos = this.enemyPositions[targetEnemyIdx] || { x: this.enemyBaseX, y: this.enemyBaseY }
-
-        this._playHitEffect(hero, skill, targetEnemyPos)
-        this._applyMagicDamage(hero, skill, target, targetEnemyPos)
-
-        setTimeout(() => {
-          this.activeAttackers.delete(hero.id)
-          if (!hState || hero.hp <= 0) return
-          if (target && target.hp > 0 && hState.currentTargetId !== null) {
-            hState.state = 'in_range'
-          } else {
-            hState.state = 'returning'
-          }
-        }, 200)
-
-      } else {
-        // ====== 物理单体攻击 → 红色伤害数字（原有逻辑）======
-        const targetEnemyIdx = this.enemies.indexOf(target)
-        const targetEnemyPos = this.enemyPositions[targetEnemyIdx] || { x: this.enemyBaseX, y: this.enemyBaseY }
-
-        if (skill.type === 'attack' || skill.type === 'magic') {
-          this._playHitEffect(hero, skill, targetEnemyPos)
-        }
-        this._applyAttackDamageToTarget(hero, skill, target, targetEnemyPos)
-
-        // 等斩击帧完整播放后再切换状态（20帧×60ms=1200ms，减去前面已等待的400ms）
-        const SLASH_TOTAL_DURATION = 13 * 60 // 780ms
-        const REMAINING_SLASH_TIME = Math.max(SLASH_TOTAL_DURATION - 400, 300)
-        setTimeout(() => {
-          this.activeAttackers.delete(hero.id)
-          if (!hState || hero.hp <= 0) return
-          if (target && target.hp > 0 && hState.currentTargetId !== null) {
-            hState.state = 'in_range'
-          } else {
-            hState.state = 'returning'
-          }
-        }, REMAINING_SLASH_TIME)
-      }
+      const tIdx = this.enemies.indexOf(target)
+      const tPos = this.enemyPositions[tIdx] || { x: this.enemyBaseX, y: this.enemyBaseY }
+      if (skill.type === 'attack') this._playHitEffect(hero, skill, tPos)
+      this._applyAttackDamageToTarget(hero, skill, target, tPos)
+      const SLASH_TOTAL = 13 * 60
+      setTimeout(() => {
+        this.activeAttackers.delete(hero.id)
+        if (!hState || hero.hp <= 0) return
+        if (target && target.hp > 0 && hState.currentTargetId !== null) hState.state = 'in_range'
+        else hState.state = 'returning'
+      }, Math.max(SLASH_TOTAL - 400, 300))
     }, 400)
   }
 
   /**
-   * 敌人实时自动攻击引擎（距离制）
-   * 敌人也需要移动到近战范围内才能攻击
+   * ★ 攻击完成后的统一清理（魔法/物理共用）
    */
+  _finishHeroAttack(hero) {
+    if (hero.hp <= 0) { this.activeAttackers.delete(hero.id); return; }
+    const hState = this.unitStates[hero.id]
+    const hAnimState = this.heroAnimStates[hero.id]
+    this.activeAttackers.delete(hero.id)
+    if (hAnimState) {
+      hAnimState._isCastingSkill = false
+      hAnimState.state = 'idle'
+      hAnimState.frame = 0
+      hAnimState.frameTimer = 0
+    }
+    delete this.lastCastEffectType?.[hero.id]
+    if (!hState || hero.hp <= 0) return
+    const hasAliveEnemy = this.enemies.some(e => e.hp > 0)
+    if (hasAliveEnemy && hState.currentTargetId !== null) hState.state = 'in_range'
+    else hState.state = 'returning'
+  }
+
+  /**
+   * ★ 播放cast特效并注册完成回调（动画驱动核心）
+   */
+
   _updateEnemyAutoAttack(dt) {
     if (this.isPaused) return
     if (this.phase !== 'auto_battle' && this.phase !== 'animating') return
@@ -1190,36 +1536,128 @@ export class BattleScene {
         }
       }
 
+      // ===== 逃跑AI：血量低于25%时触发逃跑（Boss不逃跑） =====
+      const hpRatio = enemy.hp / enemy.maxHp
+      const isFleeing = estate.state === 'fleeing'
+
+      if (!enemy.isBoss && hpRatio <= 0.25 && !isFleeing) {
+        // 进入逃跑状态：向远离最近英雄的方向跑
+        const { state: fleeFromState } = this._findNearestAliveHero(estate)
+        if (fleeFromState) {
+          const fleeAngle = Math.atan2(estate.y - fleeFromState.y, estate.x - fleeFromState.x)
+          const fleeDist = this.height * 0.4  // 逃跑距离：屏幕高度的40%
+          estate.targetX = estate.x + Math.cos(fleeAngle) * fleeDist
+          estate.targetY = estate.y + Math.sin(fleeAngle) * fleeDist
+          // 限制在战场围栏内
+          const clamped = this._clampTargetToBattlefield(estate.targetX, estate.targetY)
+          estate.targetX = clamped.x
+          estate.targetY = clamped.y
+          estate.state = 'fleeing'
+          estate._fleeTimer = 0
+          estate.currentTargetId = null
+          console.log(`[Battle] ${enemy.name || 'Enemy'} 血量${(hpRatio*100).toFixed(0)}%，开始逃跑！`)
+        }
+      }
+
       switch (estate.state) {
         case 'idle': {
-          // 找最近的角色
-          const { hero: nearestHero, state: heroState } = this._findNearestAliveHero(estate)
-          if (!nearestHero || !heroState) break
+          // 逃跑后恢复血量超过40%会重新参战
+          if (hpRatio > 0.40) {
+            // 找最近的角色
+            const { hero: nearestHero, state: heroState } = this._findNearestAliveHero(estate)
+            if (!nearestHero || !heroState) break
 
-          const dist = this._getDistance(estate, heroState)
-          const contactDist = estate.isRanged ? estate.attackRange : this._getMeleeContactDistance(estate, heroState)
+            const dist = this._getDistance(estate, heroState)
+            const contactDist = estate.isRanged ? estate.attackRange : this._getMeleeContactDistance(estate, heroState)
 
-          if (dist <= contactDist) {
-            // 在攻击范围内 → 切换到战斗状态
-            estate.currentTargetId = nearestHero.id
-            estate.state = 'in_range'
-            timer.attackTimer = 0  // 到位后立即准备第一击
-          } else {
-            // 不在范围内 → 移动过去（敌人不需要弧形站位，直接靠近）
-            const angle = Math.atan2(heroState.y - estate.y, heroState.x - estate.x)
-            const approachDist = dist - contactDist + 5 * this.dpr
-            estate.targetX = estate.x + Math.cos(angle) * approachDist
-            estate.targetY = estate.y + Math.sin(angle) * approachDist
-            estate.currentTargetId = nearestHero.id
-            estate.state = 'moving_to_attack'
+            if (dist <= contactDist) {
+              estate.currentTargetId = nearestHero.id
+              estate.state = 'in_range'
+              timer.attackTimer = 0
+              estate._moveStartTime = null
+            } else {
+              const angle = Math.atan2(heroState.y - estate.y, heroState.x - estate.x)
+              // 敌人也走到目标侧面（与己方逻辑对称）
+              const eSideSign = (i % 2 === 0) ? -1 : 1  // 奇数怪从左侧，偶数怪从右侧
+              const eLateralOffset = 25 * this.dpr * eSideSign
+              const approachDist = dist - contactDist + 5 * this.dpr
+              let ex = estate.x + Math.cos(angle) * approachDist
+              let ey = estate.y + Math.sin(angle) * approachDist
+              // 叠加侧面偏移
+              ex += (-Math.sin(angle)) * eLateralOffset
+              ey += Math.cos(angle) * eLateralOffset
+              estate.targetX = ex
+              estate.targetY = ey
+              estate.currentTargetId = nearestHero.id
+              estate.state = 'moving_to_attack'
+              estate._moveStartTime = this.battleTime || Date.now() / 1000
+            }
           }
+          break
+        }
+
+        case 'fleeing': {
+          // 逃跑中：持续远离英雄，每2秒更新逃跑方向
+          estate._fleeTimer = (estate._fleeTimer || 0) + effectiveDt
+          if (estate._fleeTimer > 2.0) {
+            estate._fleeTimer = 0
+            const { state: fleeFromState } = this._findNearestAliveHero(estate)
+            if (fleeFromState) {
+              const fleeAngle = Math.atan2(estate.y - fleeFromState.y, estate.x - fleeFromState.x)
+              const fleeDist = this.height * 0.3
+              estate.targetX = estate.x + Math.cos(fleeAngle) * fleeDist
+              estate.targetY = estate.y + Math.sin(fleeAngle) * fleeDist
+              const fc1 = this._clampTargetToBattlefield(estate.targetX, estate.targetY)
+              estate.targetX = fc1.x; estate.targetY = fc1.y
+            }
+          }
+          // 逃跑速度比普通移动快20%
+          break
+        }
+
+        case 'moving_to_attack': {
+          // 移动中检查是否需要逃跑
+          if (!enemy.isBoss && hpRatio <= 0.25) {
+            const { state: fleeFromState } = this._findNearestAliveHero(estate)
+            if (fleeFromState) {
+              const fleeAngle = Math.atan2(estate.y - fleeFromState.y, estate.x - fleeFromState.x)
+              const fleeDist = this.height * 0.4
+              estate.targetX = estate.x + Math.cos(fleeAngle) * fleeDist
+              estate.targetY = estate.y + Math.sin(fleeAngle) * fleeDist
+              const fc2 = this._clampTargetToBattlefield(estate.targetX, estate.targetY)
+              estate.targetX = fc2.x; estate.targetY = fc2.y
+              estate.state = 'fleeing'
+              estate._fleeTimer = 0
+              estate.currentTargetId = null
+              console.log(`[Battle] ${enemy.name || 'Enemy'} 血量${(hpRatio*100).toFixed(0)}%，移动中转逃跑！`)
+              break
+            }
+          }
+          // 正常移动逻辑由 _updateCombatUnits 处理
           break
         }
 
         case 'in_range':
         case 'attacking': {
-          // ===== 持续战斗状态 =====
-          // 检查目标是否还活着
+          // ===== 持续战斗中检查逃跑 =====
+          if (!enemy.isBoss && hpRatio <= 0.25) {
+            const { state: fleeFromState } = this._findNearestAliveHero(estate)
+            if (fleeFromState) {
+              const fleeAngle = Math.atan2(estate.y - fleeFromState.y, estate.x - fleeFromState.x)
+              const fleeDist = this.height * 0.4
+              estate.targetX = estate.x + Math.cos(fleeAngle) * fleeDist
+              estate.targetY = estate.y + Math.sin(fleeAngle) * fleeDist
+              const fc3 = this._clampTargetToBattlefield(estate.targetX, estate.targetY)
+              estate.targetX = fc3.x; estate.targetY = fc3.y
+              estate.state = 'fleeing'
+              estate._fleeTimer = 0
+              estate.currentTargetId = null
+              console.log(`[Battle] ${enemy.name || 'Enemy'} 血量${(hpRatio*100).toFixed(0)}%，战斗中逃跑！`)
+              break
+            }
+          }
+
+          // ===== 正常战斗逻辑 =====
           let targetHero = null
           for (const h of this.party) {
             if (h.hp > 0 && h.id === estate.currentTargetId) { targetHero = h; break; }
@@ -1235,13 +1673,20 @@ export class BattleScene {
           if (hState) actualDist = this._getDistance(estate, hState)
           const eContactDist = estate.isRanged ? estate.attackRange : this._getMeleeContactDistance(estate, hState)
 
-          if (actualDist > eContactDist * 1.5) {
-            // 目标跑远了，追上去
+          if (actualDist > eContactDist * 1.8) {
+            // 正在播放攻击动画时不追击（防止碰撞分离推开导致的假性追击）
+            if (this.activeAttackers.has('enemy_' + i)) break
+            // 刚到位1秒内不追击
+            if (estate._justArrivedTimer && estate._justArrivedTimer > 0) break
+            // 目标跑远了，追上去（也走到侧面）
             if (hState) {
               const angle = Math.atan2(hState.y - estate.y, hState.x - estate.x)
+              // 敌人追击也走到侧面
+              const eChaseSideSign = (i % 2 === 0) ? -1 : 1
+              const eChaseLateral = 25 * this.dpr * eChaseSideSign
               const chaseDist = actualDist - eContactDist + 5 * this.dpr
-              estate.targetX = estate.x + Math.cos(angle) * chaseDist
-              estate.targetY = estate.y + Math.sin(angle) * chaseDist
+              estate.targetX = estate.x + Math.cos(angle) * chaseDist + (-Math.sin(angle)) * eChaseLateral
+              estate.targetY = estate.y + Math.sin(angle) * chaseDist + Math.cos(angle) * eChaseLateral
               estate.state = 'moving_to_attack'
             }
             break
@@ -1255,7 +1700,16 @@ export class BattleScene {
             timer.attackTimer -= eAtkInterval
             const skill = this._aiChooseEnemySkill(enemy, i)
             if (!skill) break
+            // 设置技能冷却（非基础普攻才设CD）
+            const isBasicSkill = !skill.effect && !skill.target && !skill.restrictChance &&
+                                 !skill.id && (!skill.name || skill.name === '攻击') && skill.power <= 1.05
+            if (!isBasicSkill) {
+              timer.skillCDs[skill.id || skill.name] = this._getSkillCooldown(enemy, skill)
+            }
+            // 保存当前技能到状态，供动画同步区分普攻/技能帧
+            if (estate) estate._currentSkill = skill
             this.activeAttackers.add('enemy_' + i)
+            console.log(`[Battle] ${enemy.name || ('敌人' + i)} 使用 ${skill.name}${isBasicSkill ? '(普攻)' : '(技能 power=' + skill.power + ')'}`)
             this._doEnemyAttack(enemy, i, skill, targetHero)
           }
           break
@@ -1274,15 +1728,47 @@ export class BattleScene {
     const estate = this.unitStates['enemy_' + enemyIndex]
     if (estate) estate.state = 'attacking'
 
+    // 判断是否是基础普攻还是特殊技能
+    const isBasicSkill = !skill.effect && !skill.target && !skill.restrictChance &&
+                         !skill.id && (!skill.name || skill.name === '攻击') && skill.power <= 1.05
+
+    // ====== MP消耗 ======
+    const mpCost = skill.mpCost || 0
+    if (mpCost > 0) {
+      enemy.mp = Math.round((enemy.mp - mpCost) * 100) / 100
+      console.log(`[Battle] ${enemy.name} 消耗 ${mpCost} MP，剩余 ${(enemy.mp||0).toFixed(1)}/${enemy.maxMp}`)
+    }
+    
+    // 技能施法前摇：让攻击帧动画有时间播放出来
+    const castDelay = isBasicSkill ? 300 : 500  // 普攻300ms，技能500ms给足时间展示动作
+    
     setTimeout(() => {
       if (enemy.hp <= 0) { this.activeAttackers.delete('enemy_' + enemyIndex); return; }
       this._applyEnemyDamageToHero(enemy, skill, target)
 
-      // 攻击完成：释放标记，回到in_range继续战斗
+      // 攻击完成：释放标记，检查是否需要逃跑或回到in_range
       setTimeout(() => {
         this.activeAttackers.delete('enemy_' + enemyIndex)
         if (!estate || enemy.hp <= 0) return
-        // 检查目标是否还活着
+        // 攻击后先检查逃跑：血量低时不再恋战
+        const hpRatio = enemy.hp / enemy.maxHp
+        if (!enemy.isBoss && hpRatio <= 0.25) {
+          const { state: fleeState } = this._findNearestAliveHero(estate)
+          if (fleeState) {
+            const fleeAngle = Math.atan2(estate.y - fleeState.y, estate.x - fleeState.x)
+            const fleeDist = this.height * 0.4
+            estate.targetX = estate.x + Math.cos(fleeAngle) * fleeDist
+            estate.targetY = estate.y + Math.sin(feeAngle) * fleeDist
+            const fc4 = this._clampTargetToBattlefield(estate.targetX, estate.targetY)
+            estate.targetX = fc4.x; estate.targetY = fc4.y
+            estate.state = 'fleeing'
+            estate._fleeTimer = 0
+            estate.currentTargetId = null
+            console.log(`[Battle] ${enemy.name || 'Enemy'} 攻击后血量${(hpRatio*100).toFixed(0)}%，逃跑！`)
+            return
+          }
+        }
+        // 不逃跑：检查目标是否还活着
         let targetAlive = false
         for (const h of this.party) {
           if (h.hp > 0 && h.id === estate.currentTargetId) { targetAlive = true; break; }
@@ -1292,8 +1778,8 @@ export class BattleScene {
         } else {
           estate.state = 'returning'
         }
-      }, 200)
-    }, 400)
+      }, 300)
+    }, castDelay)
   }
 
   /**
@@ -1303,18 +1789,33 @@ export class BattleScene {
     const timer = this.enemyAttackTimers[enemyIndex]
     if (!timer) return { name: '攻击', power: 1.0, type: 'attack', mpCost: 0 }
 
+    // 判断是否是"基础普攻"
+    const isBasicAttack = (s) => {
+      return s.type === 'attack' && !s.effect && !s.target &&
+             !s.restrictChance && (s.mpCost || 0) <= 0 && (s.power || 1) <= 1.25
+    }
+
     // 如果敌人有skills数组
     if (enemy.skills && Array.isArray(enemy.skills)) {
       const available = enemy.skills.filter(skill => {
         const cd = timer.skillCDs[skill.id || skill.name] || 0
-        return cd <= 0
+        const skillMpCost = skill.mpCost || 0
+        return cd <= 0 && (enemy.mp || 0) >= skillMpCost
       })
       if (available.length > 0) {
-        // 70%概率用技能，30%概率普攻
-        if (Math.random() < 0.7 && available.length > 0) {
-          available.sort((a, b) => (b.power || 1) - (a.power || 1))
-          return available[0]
+        // 分离普攻和技能
+        const basic = available.filter(s => isBasicAttack(s))
+        const special = available.filter(s => !isBasicAttack(s))
+        
+        // 有技能时：65%用技能（选最高power），35%用普攻
+        if (special.length > 0 && Math.random() < 0.65) {
+          special.sort((a, b) => (b.power || 1) - (a.power || 1))
+          return special[0]
         }
+        // 没有技能或没选中 → 用普攻
+        if (basic.length > 0) return basic[0]
+        // 兜底返回第一个可用
+        return available[0]
       }
     }
 
@@ -1353,11 +1854,19 @@ export class BattleScene {
   _updateMpRegen(dt) {
     if (this.isPaused) return
     const effectiveDt = dt * this.battleSpeed
+
+    // 己方英雄MP恢复（每秒恢复 maxMp 的 0.8%，约2分钟回满）
     for (const hero of this.party) {
       if (hero.hp <= 0) continue
-      // 每秒恢复 maxMp 的 0.8%（约2分钟回满）
       const regen = hero.maxMp * 0.008 * effectiveDt
       hero.mp = Math.min(hero.maxMp, Math.round((hero.mp + regen) * 100) / 100)
+    }
+
+    // 敌方MP恢复（同速率，防止敌人无限放技能）
+    for (const enemy of this.enemies) {
+      if (!enemy || enemy.hp <= 0 || !enemy.maxMp) continue
+      const regen = enemy.maxMp * 0.006 * effectiveDt  // 敌人略慢，增加策略性
+      enemy.mp = Math.min(enemy.maxMp, Math.round((enemy.mp + regen) * 100) / 100)
     }
   }
 
@@ -1735,13 +2244,67 @@ export class BattleScene {
    * @param {Object} skill - 技能对象
    * @param {Object} heroPos - 角色位置
    */
+  /**
+   * ★ 播放cast特效并注册完成回调（动画驱动结算的核心）
+   * @param {Object} hero - 施法角色
+   * @param {Object} skill - 技能对象
+   * @param {Object} heroPos - 角色位置
+   * @param {Function} onDone - cast特效播放完毕后的回调（用于触发伤害结算）
+   */
+  _playCastEffectWithCallback(hero, skill, heroPos, onDone) {
+    const isLiXiaoBao = (hero.id === 'lixiaobao')
+    
+    // 各技能的cast特效配置（含帧时长，确保onComplete在最后一帧播完后触发）
+    const castConfig = {
+      'fireball':  { type: 'fireball_cast', frameDuration: 136, scale: 1.0 },
+      'ice_shard': { type: 'ice_shard_cast',  frameDuration: 188, scale: 1.0 },
+      'thunder':   { type: 'lightning_cast',frameDuration: 100, scale: 2.0 }
+    }
+
+    const config = castConfig[skill.id]
+    
+    if (config && isLiXiaoBao) {
+      // ★ 记录绑定类型（渲染时用）
+      this.lastCastEffectType[hero.id] = config.type
+      
+      // 创建特效，onComplete回调驱动后续流程
+      this.game.effects.createEffect({
+        type: config.type,
+        x: heroPos.x,
+        y: heroPos.y,
+        frameDuration: config.frameDuration,
+        loop: false,
+        scale: config.scale,
+        alpha: 1.0,
+        onComplete: () => {
+          console.log(`[Battle] ${skill.name} cast特效播放完毕 → 执行结算`)
+          if (typeof onDone === 'function') onDone()
+        }
+      })
+      console.log(`[Battle] 播放${skill.name}施法特效(动画驱动)`)
+      return
+    }
+
+    // 非李小宝魔法或非魔法技能 → 直接回调（无需等待特效）
+    if (typeof onDone === 'function') {
+      setTimeout(onDone, 200)
+    }
+  }
+
   _playCastEffect(hero, skill, heroPos) {
     // 根据技能类型和ID播放对应特效
     const isLiXiaoBao = (hero.id === 'lixiaobao')
     
-    // ====== 魔法类施法特效 ======
+    // ★ 快速连招防护：切换施法技能时先消耗旧的cast特效，防止残留叠层
+    const oldCastType = this.lastCastEffectType ? this.lastCastEffectType[hero.id] : null
+    if (oldCastType) {
+      this.game.effects.consumeByCharacter(oldCastType)
+    }
+    
+    // ====== 魔法类施法特效（李小宝的cast帧包含完整角色图像，需要绑定） ======
     if (skill.id === 'fireball' && isLiXiaoBao) {
       // 🔥 李小宝 - 火球术施法特效
+      this.lastCastEffectType[hero.id] = 'fireball_cast'  // ★ 记录绑定类型
       this.game.effects.createEffect({
         type: 'fireball_cast',
         x: heroPos.x,
@@ -1756,6 +2319,7 @@ export class BattleScene {
     }
     else if (skill.id === 'ice_shard' && isLiXiaoBao) {
       // ❄️ 李小宝 - 冰晶术施法特效
+      this.lastCastEffectType[hero.id] = 'ice_shard_cast'  // ★ 记录绑定类型
       this.game.effects.createEffect({
         type: 'ice_shard_cast',
         x: heroPos.x,
@@ -1770,6 +2334,7 @@ export class BattleScene {
     }
     else if (skill.id === 'thunder' && isLiXiaoBao) {
       // ⚡ 李小宝 - 雷击术施法特效
+      this.lastCastEffectType[hero.id] = 'lightning_cast'  // ★ 记录绑定类型
       this.game.effects.createEffect({
         type: 'lightning_cast',
         x: heroPos.x,
@@ -1812,8 +2377,42 @@ export class BattleScene {
       console.log(`[Battle] ${hero.name} 使用 ${skill.name} (治疗)`)
     }
     else if (skill.type === 'buff') {
-      // ⬆️ Buff - 金色光环
-      console.log(`[Battle] ${hero.name} 使用 ${skill.name} (增益)`)
+      // 根据具体技能ID播放专属buff特效
+      if (skill.id === 'war_cry') {
+        // ⚔️ 战吼：金色冲击波 + 队友光粒
+        this._createCodeEffect({
+          type: 'war_cry',
+          x: heroPos.x,
+          y: heroPos.y,
+          onComplete: () => {
+            // 战吼完成后给全体队友也播放小型升腾效果
+            this.party.forEach((h, idx) => {
+              if (h.hp > 0 && h.id !== hero.id) {
+                const pos = this.heroBasePositions[idx] || heroPos
+                this._createCodeEffect({
+                  type: 'war_cry',
+                  x: pos.x,
+                  y: pos.y - 20 * this.dpr,
+                  duration: 600
+                })
+              }
+            })
+          }
+        })
+        console.log(`[Battle] 播放战吼施法特效 - ${hero.name}`)
+      } else if (skill.id === 'berserk') {
+        // 🔥 狂暴：红色能量爆发 + 火焰漩涡
+        this._createCodeEffect({
+          type: 'berserk',
+          x: heroPos.x,
+          y: heroPos.y,
+          onComplete: () => console.log('[Battle] 狂暴施法特效完成')
+        })
+        console.log(`[Battle] 播放狂暴施法特效 - ${hero.name}`)
+      } else {
+        // ⬆️ 通用Buff - 金色光环（其他buff技能）
+        console.log(`[Battle] ${hero.name} 使用 ${skill.name} (增益)`)
+      }
     }
     
     // 兜底：任何未处理的技能都记录日志
@@ -2057,6 +2656,16 @@ export class BattleScene {
       const animFrameDuration = 55  // 55ms一帧
       animState.frameTimer += dt * 1000
 
+      // 蓄力暂停检测：第2帧触发蓄力特效后，等特效结束再继续推进帧
+      if (animState._chargeHoldUntil) {
+        if (Date.now() < animState._chargeHoldUntil) {
+          // 蓄力特效播放中，冻结在第2帧不推进，只更新计时器
+          return  // 跳过后续帧逻辑（forEach中return = continue效果）
+        }
+        // 蓄力时间到，清除暂停标记
+        animState._chargeHoldUntil = null
+      }
+
       if (animState.frameTimer >= animFrameDuration) {
         animState.frameTimer = 0
         animState.displayFrame = (animState.displayFrame || 0) + 1
@@ -2073,12 +2682,55 @@ export class BattleScene {
           }
         }
 
+        // 技能第2帧：蓄力爆发特效（拳皇风格，只在敌人自身位置播放）
+        // 触发后暂停帧推进，等特效播完再继续
+        if (animState.displayFrame === 2 && !animState._chargeFired &&
+            (animState.state === 'skill' || animState.state === 'attack')) {
+          animState._chargeFired = true
+          const chargeDuration = animState.type === 'slime_cat' ? 500 : 450
+          animState._chargeHoldUntil = Date.now() + chargeDuration
+          if (animState.type === 'slime_cat') {
+            const enemyIdx = Object.keys(this.enemyAnimStates).find(
+              k => this.enemyAnimStates[k] === animState
+            )
+            if (enemyIdx !== undefined) {
+              const ePos = this.enemyPositions[parseInt(enemyIdx)]
+              if (ePos) {
+                console.log(`[Battle] 史莱姆猫技能第2帧 → 蓄力爆发特效(暂停${chargeDuration}ms)`)
+                this._createCodeEffect({
+                  type: 'slime_charge',
+                  x: ePos.x,
+                  y: ePos.y,
+                  duration: chargeDuration,
+                })
+              }
+            }
+          } else if (animState.type === 'shadow_mouse') {
+            const enemyIdx = Object.keys(this.enemyAnimStates).find(
+              k => this.enemyAnimStates[k] === animState
+            )
+            if (enemyIdx !== undefined) {
+              const ePos = this.enemyPositions[parseInt(enemyIdx)]
+              if (ePos) {
+                this._createCodeEffect({
+                  type: 'shadow_charge',
+                  x: ePos.x,
+                  y: ePos.y,
+                  duration: chargeDuration,
+                })
+              }
+            }
+          }
+        }
+
         // 动画播放完毕
         if (animState.displayFrame > displayFrames) {
           animState.frame = 1
           animState.displayFrame = 0
           animState.state = 'idle'
           animState.attackDamageApplied = false
+          animState._chargeFired = false
+          animState._chargeHoldUntil = null  // 重置蓄力暂停标记
           if (animState.onAttackComplete) {
             animState.onAttackComplete()
             animState.onAttackComplete = null
@@ -2100,21 +2752,36 @@ export class BattleScene {
       const uState = this.unitStates[heroId]
       if (!uState) return
 
-      // 根据移动状态同步动画状态（只处理 walk/idle/attack 三种状态）
+      // 根据移动状态同步动画状态（4种核心状态：idle / walk / attack / cast）
       const isMoving = (uState.state === 'moving_to_attack' || uState.state === 'returning')
       const isAttackingUnit = (uState.state === 'attacking')
-      // in_range 表示站在目标附近持续交战，用walk帧作为战斗待机姿态
+      // ★ 修复1：in_range 统一用 idle 帧（呼吸待机），不再让近战角色原地踏步
       const isInCombatStance = (uState.state === 'in_range')
+      // 技能施法中标记（由 _doHeroAttack 设置）
+      const isCastingSkill = animState._isCastingSkill
 
-      if (isAttackingUnit && animState.state !== 'attack') {
-        // 单位进入攻击状态 → 切换到攻击帧动画（最高优先级）
-        animState.prevState = animState.state
-        animState.state = 'attack'
-        animState.frame = 0
-        animState.frameTimer = 0
-        animState.attackFrameTimer = 0
-      } else if (isMoving || isInCombatStance) {
-        // 移动中 或 战斗待机(in_range) → 使用walk动画
+      if (isCastingSkill) {
+        // ★ 技能施法：切换到 cast 状态，冻结为 idle 第0帧（施法站姿）
+        // 视觉主体由 SkillEffectManager 播放的特效承担（火球/冰晶/雷电）
+        if (animState.state !== 'cast') {
+          animState.prevState = animState.state
+          animState.state = 'cast'
+          animState.frame = 0
+          animState.frameTimer = 0
+        }
+        // cast 状态下不推进帧——保持静止施法姿态，让特效动
+      } else if (isAttackingUnit) {
+        // 普攻攻击中：播放 attack 动画帧
+        if (animState.state !== 'attack') {
+          animState.prevState = animState.state
+          animState.state = 'attack'
+          animState.frame = 0
+          animState.frameTimer = 0
+          animState.attackFrameTimer = 0
+          animState._attackLoopCount = 0  // 攻击循环计数
+        }
+      } else if (isMoving) {
+        // 移动中 → walk 动画
         if (animState.state !== 'walk') {
           animState.prevState = animState.state
           animState.state = 'walk'
@@ -2122,8 +2789,9 @@ export class BattleScene {
           animState.frameTimer = 0
         }
       } else {
-        // 完全静止（idle状态，回到原位）→ idle呼吸动画
+        // ★ in_range 战斗待机 + 完全静止(idle) → 统一用 idle 呼吸帧
         if (animState.state !== 'idle') {
+          animState.prevState = animState.state
           animState.state = 'idle'
           animState.frame = 0
           animState.frameTimer = 0
@@ -2132,7 +2800,8 @@ export class BattleScene {
 
       // 更新帧动画
       if (animState.state === 'walk') {
-        const WALK_FRAME_DURATION = 80  // 80ms/帧
+        // Walk：80ms/帧，循环播放
+        const WALK_FRAME_DURATION = 80
         animState.frameTimer += dt * 1000
         if (animState.frameTimer >= WALK_FRAME_DURATION) {
           animState.frameTimer = 0
@@ -2140,9 +2809,9 @@ export class BattleScene {
           if (animState.frame > animState.totalWalkFrames) animState.frame = 0
         }
       } else if (animState.state === 'idle') {
-        // idle 帧动画（呼吸/微动效果）
+        // Idle：500ms/帧，慢节奏呼吸感，循环播放
         animState.frameTimer += dt * 1000
-        const IDLE_FRAME_DURATION = 500  // 慢节奏呼吸感，500ms/帧
+        const IDLE_FRAME_DURATION = 500
         if (animState.frameTimer >= IDLE_FRAME_DURATION) {
           animState.frameTimer = 0
           animState.frame++
@@ -2151,15 +2820,18 @@ export class BattleScene {
           }
         }
       } else if (animState.state === 'attack') {
-        // 攻击帧动画（斩击等，较快节奏）
-        const SLASH_FRAME_DURATION = 60  // 60ms/帧，快速有力
+        // Attack：50ms/帧，快速有力
+        // ★ 修复2：攻击帧播完后自动循环（不停在最后一帧）
+        const SLASH_FRAME_DURATION = 50
         animState.frameTimer += dt * 1000
         if (animState.frameTimer >= SLASH_FRAME_DURATION) {
           animState.frameTimer = 0
           animState.frame++
-          // 斩击帧播放完后停在最后一帧（由 _doHeroAttack 的 setTimeout 清除 attacking 状态）
-          if (animState.frame > (animState.totalSlashFrames || 13)) {
-            animState.frame = (animState.totalSlashFrames || 13)
+          const totalFrames = animState.totalSlashFrames || 13
+          if (animState.frame >= totalFrames) {
+            // 循环播放攻击动作（每轮记录一次，用于连击感）
+            animState.frame = 0
+            animState._attackLoopCount = (animState._attackLoopCount || 0) + 1
           }
         }
       }
@@ -2256,6 +2928,118 @@ export class BattleScene {
           type: 'ripple'
         })
       }
+    } else if (config.type === 'slime_charge') {
+      // 史莱姆猫技能蓄力：拳皇风格的蓄力爆发
+      // 第2帧触发 = 身体膨胀到极限 → 绿色能量从体内爆出
+      effect.duration = 500
+      const dpr = this.dpr
+      
+      // 1) 核心闪光（白色→绿色渐变，模拟能量聚集后释放）
+      for (let i = 0; i < 3; i++) {
+        effect.particles.push({
+          type: 'flash',
+          maxRadius: (35 + i * 20) * dpr,
+          color: i === 0 ? 'rgba(255,255,255,0.7)' : 'rgba(46,213,115,0.4)',
+          life: 0.35 + i * 0.2,
+          age: 0,
+          delay: i * 0.06,
+        })
+      }
+      
+      // 2) 能量粒子向四周喷射（类似拳皇超必杀的"气浪"）
+      for (let i = 0; i < 24; i++) {
+        const angle = (Math.PI * 2 / 24) * i + (Math.random() - 0.5) * 0.3
+        const speed = (40 + Math.random() * 70) * dpr
+        effect.particles.push({
+          x: 0, y: 0,
+          vx: Math.cos(angle) * speed,
+          vy: Math.sin(angle) * speed,
+          size: (3 + Math.random() * 7) * dpr,
+          color: Math.random() > 0.3 ? '#2ed573' : '#7bed9f',
+          gravity: 60 * dpr,
+          life: 0.35 + Math.random() * 0.35,
+          age: 0,
+          type: 'blob',
+          fadeSpeed: 2.5 + Math.random(),
+        })
+      }
+      
+      // 3) 黏液滴向外溅射（少量大滴，增加质感）
+      for (let i = 0; i < 8; i++) {
+        const angle = Math.random() * Math.PI * 2
+        const speed = (25 + Math.random() * 45) * dpr
+        effect.particles.push({
+          x: 0, y: 0,
+          vx: Math.cos(angle) * speed,
+          vy: Math.sin(angle) * speed - 30 * dpr,
+          size: (6 + Math.random() * 10) * dpr,
+          color: this._randomSlimeColor(),
+          gravity: 150 * dpr,
+          life: 0.45 + Math.random() * 0.3,
+          age: 0,
+          type: 'bigblob',
+        })
+      }
+      
+      // 4) 冲击波环（快速扩散一圈，像拳皇的冲击波）
+      for (let i = 0; i < 2; i++) {
+        effect.particles.push({
+          type: 'shockwave',
+          maxRadius: (50 + i * 25) * dpr,
+          color: i === 0 ? 'rgba(46,213,115,0.5)' : 'rgba(46,213,115,0.2)',
+          lineWidth: (2.5 - i * 0.8) * dpr,
+          life: 0.28 + i * 0.18,
+          age: 0,
+          delay: i * 0.04,
+        })
+      }
+    } else if (config.type === 'shadow_charge') {
+      // 暗影鼠蓄力：暗紫色能量聚拢后爆开
+      effect.duration = 450
+      const dpr = this.dpr
+      
+      // 暗影核心闪光
+      for (let i = 0; i < 3; i++) {
+        effect.particles.push({
+          type: 'flash',
+          maxRadius: (30 + i * 18) * dpr,
+          color: i === 0 ? 'rgba(200,180,255,0.6)' : 'rgba(100,40,160,0.35)',
+          life: 0.3 + i * 0.18,
+          age: 0,
+          delay: i * 0.05,
+        })
+      }
+      
+      // 暗影粒子喷射
+      for (let i = 0; i < 18; i++) {
+        const angle = (Math.PI * 2 / 18) * i + Math.random() * 0.4
+        const speed = (50 + Math.random() * 80) * dpr
+        const shade = Math.random()
+        effect.particles.push({
+          x: 0, y: 0,
+          vx: Math.cos(angle) * speed,
+          vy: Math.sin(angle) * speed - 20 * dpr,
+          size: (3 + Math.random() * 5) * dpr,
+          color: shade > 0.5 ? '#9b59b6' : '#6c3483',
+          gravity: 80 * dpr,
+          life: 0.3 + Math.random() * 0.35,
+          age: 0,
+          type: 'blob',
+        })
+      }
+      
+      // 暗影冲击波
+      for (let i = 0; i < 2; i++) {
+        effect.particles.push({
+          type: 'shockwave',
+          maxRadius: (45 + i * 22) * dpr,
+          color: 'rgba(107,42,155,0.4)',
+          lineWidth: (2 - i * 0.6) * dpr,
+          life: 0.26 + i * 0.16,
+          age: 0,
+          delay: i * 0.04,
+        })
+      }
     } else if (config.type === 'shadow_strike') {
       // 暗影突袭：暗紫黑色能量爆发
       effect.duration = 900
@@ -2289,7 +3073,156 @@ export class BattleScene {
           type: 'ripple'
         })
       }
-    }
+    } else if (config.type === 'war_cry') {
+      // ⚔️ 战吼：金色冲击波 + 队友升腾光粒 + 全员光环脉冲
+      effect.duration = 1200
+      const dpr = this.dpr
+
+      // --- 冲击波环（从施法者向外扩散） ---
+      for (let i = 0; i < 3; i++) {
+        effect.particles.push({
+          maxRadius: (120 + i * 50) * dpr,
+          color: i === 0 ? 'rgba(255, 165, 0, 0.6)' : i === 1 ? 'rgba(255, 200, 50, 0.4)' : 'rgba(255, 220, 100, 0.25)',
+          lineWidth: (4 - i) * dpr,
+          life: 0.7 + i * 0.15,
+          age: 0,
+          delay: i * 0.08,
+          type: 'ripple'
+        })
+      }
+
+      // --- 金色火花粒子（向外喷射） ---
+      for (let i = 0; i < 24; i++) {
+        const angle = (Math.PI * 2 / 24) * i + Math.random() * 0.2
+        const speed = (40 + Math.random() * 70) * dpr
+        const goldShade = Math.random()
+        let color
+        if (goldShade < 0.33) color = '#FFD700'
+        else if (goldShade < 0.66) color = '#FFA500'
+        else color = '#FFE066'
+        effect.particles.push({
+          x: 0, y: 0,
+          vx: Math.cos(angle) * speed,
+          vy: Math.sin(angle) * speed - 20 * dpr,
+          size: (3 + Math.random() * 4) * dpr,
+          color,
+          gravity: -30 * dpr, // 轻微上浮
+          life: 0.5 + Math.random() * 0.4,
+          age: 0,
+          delay: Math.random() * 0.15,
+          type: 'spark'
+        })
+      }
+
+      // --- 升腾文字/符号粒子（"⚔"/"+"形状向上飘） ---
+      for (let i = 0; i < 8; i++) {
+        const spreadX = (Math.random() - 0.5) * 60 * dpr
+        effect.particles.push({
+          x: spreadX,
+          y: 10 * dpr,
+          vx: (Math.random() - 0.5) * 15 * dpr,
+          vy: -(30 + Math.random() * 30) * dpr,
+          size: (8 + Math.random() * 6) * dpr,
+          color: 'rgba(255, 215, 0, 0.9)',
+          life: 0.7 + Math.random() * 0.3,
+          age: 0,
+          delay: 0.1 + i * 0.05,
+          type: 'rise_symbol',
+          symbol: Math.random() > 0.5 ? '⚔' : '↑'
+        })
+      }
+
+    } else if (config.type === 'berserk') {
+      // 🔥 狂暴：红色能量爆发 + 漩涡火焰环绕 + 自身红焰升腾
+      effect.duration = 1100
+      const dpr = this.dpr
+
+      // --- 红色爆发冲击波（快速扩散） ---
+      for (let i = 0; i < 4; i++) {
+        effect.particles.push({
+          maxRadius: (80 + i * 35) * dpr,
+          color: i === 0 ? 'rgba(255, 50, 20, 0.7)' :
+                i === 1 ? 'rgba(255, 90, 0, 0.5)' :
+                i === 2 ? 'rgba(255, 140, 0, 0.35)' : 'rgba(255, 180, 50, 0.2)',
+          lineWidth: (5 - i) * dpr,
+          life: 0.45 + i * 0.12,
+          age: 0,
+          delay: i * 0.05,
+          type: 'ripple'
+        })
+      }
+
+      // --- 红色火焰粒子（螺旋向外喷射） ---
+      for (let i = 0; i < 28; i++) {
+        const angle = (Math.PI * 2 / 28) * i + Math.random() * 0.4
+        const speed = (50 + Math.random() * 80) * dpr
+        const flameHue = Math.random()
+        let color
+        if (flameHue < 0.3) color = '#FF2200'   // 深红
+        else if (flameHue < 0.6) color = '#FF5500' // 橙红
+        else if (flameHue < 0.85) color = '#FF8C00' // 橙色
+        else color = '#FFCC00'                     // 金黄火芯
+        effect.particles.push({
+          x: 0, y: 0,
+          vx: Math.cos(angle) * speed,
+          vy: Math.sin(angle) * speed - 10 * dpr,
+          size: (3 + Math.random() * 5) * dpr,
+          color,
+          gravity: 20 * dpr,
+          life: 0.4 + Math.random() * 0.4,
+          age: 0,
+          delay: Math.random() * 0.12,
+          type: 'flame_blob'
+        })
+      }
+
+      // --- 漩涡环绕能量（围绕角色旋转的火焰条） ---
+      for (let i = 0; i < 6; i++) {
+        const baseAngle = (Math.PI * 2 / 6) * i
+        effect.particles.push({
+          angle: baseAngle,
+          radiusStart: 25 * dpr,
+          radiusEnd: (55 + Math.random() * 20) * dpr,
+          rotSpeed: (3 + Math.random() * 2) * (i % 2 === 0 ? 1 : -1),
+          size: (4 + Math.random() * 3) * dpr,
+          color: i % 2 === 0 ? 'rgba(255, 80, 0, 0.85)' : 'rgba(255, 180, 0, 0.75)',
+          life: 0.9,
+          age: 0,
+          delay: i * 0.04,
+          type: 'vortex_ring'
+        })
+      }
+
+      // --- 向上窜起的火焰柱 ---
+      for (let i = 0; i < 12; i++) {
+        const spreadX = (Math.random() - 0.5) * 40 * dpr
+        effect.particles.push({
+          x: spreadX,
+          y: 5 * dpr,
+          vx: (Math.random() - 0.5) * 10 * dpr,
+          vy: -(50 + Math.random() * 50) * dpr,
+          size: (6 + Math.random() * 8) * dpr,
+          color: `rgba(255, ${80 + Math.floor(Math.random() * 120)}, 0, ${0.7 + Math.random() * 0.3})`,
+          life: 0.5 + Math.random() * 0.35,
+          age: 0,
+          delay: 0.08 + i * 0.04,
+          type: 'fire_rise'
+        })
+      }
+
+      // --- 怒气文字 ---
+      effect.particles.push({
+        x: 0, y: -30 * dpr,
+        vy: -25 * dpr,
+        size: 16 * dpr,
+        color: '#FF3300',
+        life: 1.0,
+        age: 0,
+        delay: 0.2,
+        type: 'rage_text',
+        text: 'RAGE!'
+      })
+      }
 
     this.codeEffects.push(effect)
     return effect.id
@@ -2325,6 +3258,34 @@ export class BattleScene {
           const rippleProgress = Math.min(1, p.age / p.life)
           p.expandRadius = rippleProgress * p.maxRadius
           p.alpha = Math.max(0, 1 - rippleProgress)
+        } else if (p.type === 'spark') {
+          // 金色火花：受重力影响轻微上飘
+          p.x += p.vx * dt
+          p.y += p.vy * dt
+          p.vx *= 0.97
+          p.vy += (p.gravity || -30 * this.dpr) * dt
+        } else if (p.type === 'rise_symbol') {
+          // 升腾符号：匀速上浮+左右摇摆
+          p.x += p.vx * dt + Math.sin(p.age * 4) * 0.5 * this.dpr
+          p.y += p.vy * dt
+        } else if (p.type === 'flame_blob' || p.type === 'fire_rise') {
+          // 火焰粒子：重力下坠+阻力衰减
+          p.x += p.vx * dt
+          p.y += p.vy * dt
+          p.vx *= 0.96
+          p.vy += (p.gravity || 20 * this.dpr) * dt
+        } else if (p.type === 'vortex_ring') {
+          // 漩涡环：角度自动更新（渲染时用），无需位置更新
+        } else if (p.type === 'rage_text') {
+          // 怒气文字：缓慢上移
+          p.y += p.vy * dt
+        } else if (p.type === 'flash') {
+          // 核心闪光（蓄力爆发用）：半径随时间扩大，透明度衰减
+          // 无需位置更新，渲染时直接画圆
+        } else if (p.type === 'shockwave') {
+          // 冲击波环：半径扩大
+          const swProgress = Math.min(1, p.age / (p.life || 1))
+          p.currentRadius = swProgress * p.maxRadius
         }
       }
 
@@ -2401,11 +3362,160 @@ export class BattleScene {
             ctx.stroke()
           }
         } else if (p.type === 'ripple') {
+          const lw = p.lineWidth || (3 * this.dpr)
           ctx.globalAlpha = Math.max(0, (p.alpha || 0) * 0.5)
           ctx.strokeStyle = p.color
-          ctx.lineWidth = 3 * this.dpr
+          ctx.lineWidth = lw
           ctx.beginPath()
           ctx.arc(0, 0, p.expandRadius || 0, 0, Math.PI * 2)
+          ctx.stroke()
+        } else if (p.type === 'spark') {
+          // 金色火花（战吼用）- 带发光的小圆点 + 十字光芒
+          const alpha = Math.max(0, (1 - lifeRatio) * 0.95)
+          ctx.globalAlpha = alpha
+          // 发光核心
+          ctx.fillStyle = p.color
+          ctx.beginPath()
+          ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2)
+          ctx.fill()
+          // 十字光芒
+          ctx.globalAlpha = alpha * 0.4
+          ctx.strokeStyle = p.color
+          ctx.lineWidth = 1 * this.dpr
+          ctx.beginPath()
+          ctx.moveTo(p.x - p.size * 2.5, p.y)
+          ctx.lineTo(p.x + p.size * 2.5, p.y)
+          ctx.moveTo(p.x, p.y - p.size * 2.5)
+          ctx.lineTo(p.x, p.y + p.size * 2.5)
+          ctx.stroke()
+        } else if (p.type === 'rise_symbol') {
+          // 升腾符号（战吼用 ⚔/↑ 向上飘）
+          const alpha = lifeRatio < 0.7 ? 1 : (1 - lifeRatio) / 0.3
+          ctx.globalAlpha = alpha * 0.9
+          ctx.font = `bold ${Math.floor(p.size)}px sans-serif`
+          ctx.fillStyle = p.color
+          ctx.textAlign = 'center'
+          ctx.textBaseline = 'middle'
+          // 符号微微旋转
+          ctx.save()
+          ctx.translate(p.x, p.y)
+          ctx.rotate(Math.sin(p.age * 6) * 0.15)
+          ctx.fillText(p.symbol || '⚡', 0, 0)
+          ctx.restore()
+        } else if (p.type === 'flame_blob') {
+          // 火焰粒子（狂暴用）
+          const alpha = Math.max(0, (1 - lifeRatio) * 0.9)
+          ctx.globalAlpha = alpha
+          ctx.fillStyle = p.color
+          ctx.beginPath()
+          const stretch = Math.min(2.5, Math.abs(p.vy || 0) / (80 * this.dpr) + 1)
+          // 火焰形状：上尖下宽的椭圆
+          const flameH = p.size * stretch * 1.3
+          const flameW = p.size * (1.8 - stretch * 0.3)
+          ctx.ellipse(p.x, p.y, flameW, flameH, 0, 0, Math.PI * 2)
+          ctx.fill()
+          // 内核亮光
+          if (lifeRatio < 0.6) {
+            ctx.globalAlpha = alpha * 0.5
+            ctx.fillStyle = '#FFE066'
+            ctx.beginPath()
+            ctx.ellipse(p.x, p.y - p.size * 0.15, flameW * 0.35, flameH * 0.3, 0, 0, Math.PI * 2)
+            ctx.fill()
+          }
+        } else if (p.type === 'vortex_ring') {
+          // 漩涡环绕火焰条（狂暴用）
+          const rotAngle = p.angle + effect.elapsed / 1000 * p.rotSpeed * (p.life || 1)
+          const radiusProg = Math.min(1, p.age / (p.life || 1))
+          const eased = 1 - Math.pow(1 - radiusProg, 2) // ease-out 扩散
+          const curR = (p.radiusStart || 25 * this.dpr) +
+                       ((p.radiusEnd || 55 * this.dpr) - (p.radiusStart || 25 * this.dpr)) * eased
+          const vx = Math.cos(rotAngle) * curR
+          const vy = Math.sin(rotAngle) * curR * 0.65 // 压扁成椭圆轨道
+          const alpha = radiusProg < 0.7 ? radiusProg / 0.7 : (1 - radiusProg) / 0.3
+          ctx.globalAlpha = Math.max(0, alpha * 0.85)
+          ctx.fillStyle = p.color
+          ctx.beginPath()
+          ctx.ellipse(vx, vy, p.size * 2, p.size * 0.7, rotAngle, 0, Math.PI * 2)
+          ctx.fill()
+          // 拖尾
+          if (radiusProg > 0.1 && radiusProg < 0.9) {
+            ctx.globalAlpha = alpha * 0.25
+            const tailLen = p.size * 4
+            ctx.beginPath()
+            ctx.moveTo(vx, vy)
+            ctx.lineTo(
+              vx - Math.cos(rotAngle) * tailLen,
+              vy - Math.sin(rotAngle) * tailLen * 0.65
+            )
+            ctx.strokeStyle = p.color
+            ctx.lineWidth = p.size * 1.2
+            ctx.lineCap = 'round'
+            ctx.stroke()
+          }
+        } else if (p.type === 'fire_rise') {
+          // 向上升腾的火焰柱（狂暴用）
+          const alpha = Math.max(0, (1 - lifeRatio) * 0.85)
+          ctx.globalAlpha = alpha
+          ctx.fillStyle = p.color
+          ctx.beginPath()
+          const wobbleX = Math.sin(p.age * 12 + p.x) * 2 * this.dpr
+          const hStretch = 1 + p.age * 2 // 变长变细
+          ctx.ellipse(
+            p.x + wobbleX, p.y,
+            p.size * (1 / hStretch),
+            p.size * hStretch * 1.5,
+            0, 0, Math.PI * 2
+          )
+          ctx.fill()
+        } else if (p.type === 'rage_text') {
+          // 怒气文字 "RAGE!"（狂暴用）
+          const scale = lifeRatio < 0.25 ? lifeRatio / 0.25 :
+                        lifeRatio > 0.7 ? (1 - lifeRatio) / 0.3 : 1
+          const alpha = scale
+          ctx.globalAlpha = alpha
+          ctx.font = `bold ${Math.floor(p.size)}px sans-serif`
+          // 描边
+          ctx.strokeStyle = '#330000'
+          ctx.lineWidth = 4 * this.dpr
+          ctx.textAlign = 'center'
+          ctx.textBaseline = 'middle'
+          ctx.strokeText(p.text || 'RAGE!', p.x, p.y)
+          // 填充
+          ctx.fillStyle = p.color
+          ctx.fillText(p.text || 'RAGE!', p.x, p.y)
+        } else if (p.type === 'flash') {
+          // 核心闪光圆（蓄力爆发用）
+          const flashProgress = Math.min(1, p.age / (p.life || 1))
+          // 先快后慢的半径扩展 + 透明度快速衰减
+          const easedR = p.maxRadius * (1 - Math.pow(1 - flashProgress, 2))
+          const alpha = Math.max(0, (1 - flashProgress * flashProgress) * 0.85)
+          
+          ctx.globalAlpha = alpha
+          // 外层光晕（柔和扩散）
+          if (flashProgress < 0.6) {
+            ctx.fillStyle = p.color
+            ctx.beginPath()
+            ctx.arc(0, 0, easedR * 1.4, 0, Math.PI * 2)
+            ctx.fill()
+          }
+          // 内核亮白
+          ctx.globalAlpha = alpha * 0.9
+          ctx.fillStyle = '#ffffff'
+          ctx.beginPath()
+          ctx.arc(0, 0, easedR * 0.5 * Math.max(0.3, 1 - flashProgress), 0, Math.PI * 2)
+          ctx.fill()
+        } else if (p.type === 'shockwave') {
+          // 冲击波环（快速扩散的空心环）
+          const swProgress = Math.min(1, p.age / (p.life || 1))
+          const r = p.currentRadius || (swProgress * p.maxRadius)
+          const alpha = Math.max(0, (1 - swProgress) * 0.7)
+          const lw = (p.lineWidth || 2 * this.dpr) * (1 - swProgress * 0.5)
+          
+          ctx.globalAlpha = alpha
+          ctx.strokeStyle = p.color
+          ctx.lineWidth = Math.max(0.5 * this.dpr, lw)
+          ctx.beginPath()
+          ctx.arc(0, 0, r, 0, Math.PI * 2)
           ctx.stroke()
         }
       }
@@ -2427,26 +3537,25 @@ export class BattleScene {
     const enemyId = this.enemy.id || this.enemy.type
 
     if (enemyId === 'slime_cat') {
-      // 史莱姆猫技能特效
-      if (skill.effect === 'slow') {
-        // 减速类技能：根据power区分喷射/包裹
-        if (skill.power >= 1.3) {
-          // 黏液包裹：从四周收拢
-          this._createCodeEffect({
-            type: 'slime_wrap',
-            x: targetPos.x,
-            y: targetPos.y
-          })
-        } else {
-          // 黏液喷射：飞溅
-          this._createCodeEffect({
-            type: 'slime_splash',
-            x: targetPos.x,
-            y: targetPos.y
-          })
-        }
-      } else {
-        // 默认：黏液飞溅
+      // 史莱姆猫技能特效：根据effect区分
+      if (skill.effect === 'slime_wrap' || skill.power >= 1.3) {
+        // 黏液包裹：从四周收拢
+        console.log(`[Battle] 播放黏液包裹特效`)
+        this._createCodeEffect({
+          type: 'slime_wrap',
+          x: targetPos.x,
+          y: targetPos.y
+        })
+      } else if (skill.effect === 'slime_spray' || skill.effect) {
+        // 黏液喷射/其他效果：飞溅
+        console.log(`[Battle] 播放黏液喷射特效`)
+        this._createCodeEffect({
+          type: 'slime_splash',
+          x: targetPos.x,
+          y: targetPos.y
+        })
+      } else if (skill.power > 1.0) {
+        // 非普攻但无effect：默认飞溅
         this._createCodeEffect({
           type: 'slime_splash',
           x: targetPos.x,
@@ -4070,6 +5179,133 @@ export class BattleScene {
       )
     }
 
+    // ===== 战场围栏 =====
+    const margin = 30 * dpr
+    const topMargin = 20 * dpr
+    const bottomMargin = h * 0.82
+    const battleW = w - margin * 2
+    const battleH = bottomMargin - topMargin
+    const postSpacing = 50 * dpr    // 立柱间距
+    const postW = 4 * dpr           // 立柱宽度
+    const postH = 14 * dpr          // 立柱高度
+    const railW = 2.5 * dpr         // 横杆粗细
+    const fenceColor = 'rgba(90, 70, 55, 0.55)'       // 木质围栏色
+    const fenceHighlight = 'rgba(130, 105, 80, 0.4)'   // 高光
+    const fenceShadow = 'rgba(40, 30, 20, 0.4)'        // 阴影
+    const railOffset1 = 3 * dpr     // 上横杆距顶端
+    const railOffset2 = 9 * dpr     // 下横杆距顶端
+
+    // 上边围栏
+    const topPostCount = Math.floor(battleW / postSpacing)
+    for (let i = 0; i <= topPostCount; i++) {
+      const px = margin + i * postSpacing
+      // 立柱阴影
+      ctx.fillStyle = fenceShadow
+      ctx.fillRect(px - postW / 2 + 1 * dpr, topMargin + 1 * dpr, postW, postH)
+      // 立柱
+      ctx.fillStyle = fenceColor
+      ctx.fillRect(px - postW / 2, topMargin, postW, postH)
+      // 立柱高光
+      ctx.fillStyle = fenceHighlight
+      ctx.fillRect(px - postW / 2, topMargin, 1.2 * dpr, postH)
+      // 立柱顶帽
+      ctx.fillStyle = fenceHighlight
+      ctx.fillRect(px - postW / 2 - 1 * dpr, topMargin - 2 * dpr, postW + 2 * dpr, 2.5 * dpr)
+    }
+    // 上横杆
+    ctx.fillStyle = fenceShadow
+    ctx.fillRect(margin, topMargin + railOffset1 + 1 * dpr, battleW, railW)
+    ctx.fillStyle = fenceColor
+    ctx.fillRect(margin, topMargin + railOffset1, battleW, railW)
+    ctx.fillStyle = fenceHighlight
+    ctx.fillRect(margin, topMargin + railOffset1, battleW, 0.8 * dpr)
+    // 下横杆
+    ctx.fillStyle = fenceShadow
+    ctx.fillRect(margin, topMargin + railOffset2 + 1 * dpr, battleW, railW)
+    ctx.fillStyle = fenceColor
+    ctx.fillRect(margin, topMargin + railOffset2, battleW, railW)
+    ctx.fillStyle = fenceHighlight
+    ctx.fillRect(margin, topMargin + railOffset2, battleW, 0.8 * dpr)
+
+    // 下边围栏
+    const botPostCount = Math.floor(battleW / postSpacing)
+    for (let i = 0; i <= botPostCount; i++) {
+      const px = margin + i * postSpacing
+      ctx.fillStyle = fenceShadow
+      ctx.fillRect(px - postW / 2 + 1 * dpr, bottomMargin - postH + 1 * dpr, postW, postH)
+      ctx.fillStyle = fenceColor
+      ctx.fillRect(px - postW / 2, bottomMargin - postH, postW, postH)
+      ctx.fillStyle = fenceHighlight
+      ctx.fillRect(px - postW / 2, bottomMargin - postH, 1.2 * dpr, postH)
+      ctx.fillStyle = fenceHighlight
+      ctx.fillRect(px - postW / 2 - 1 * dpr, bottomMargin - 2 * dpr, postW + 2 * dpr, 2.5 * dpr)
+    }
+    ctx.fillStyle = fenceShadow
+    ctx.fillRect(margin, bottomMargin - railOffset2 + 1 * dpr, battleW, railW)
+    ctx.fillStyle = fenceColor
+    ctx.fillRect(margin, bottomMargin - railOffset2, battleW, railW)
+    ctx.fillStyle = fenceHighlight
+    ctx.fillRect(margin, bottomMargin - railOffset2, battleW, 0.8 * dpr)
+    ctx.fillStyle = fenceShadow
+    ctx.fillRect(margin, bottomMargin - railOffset1 + 1 * dpr, battleW, railW)
+    ctx.fillStyle = fenceColor
+    ctx.fillRect(margin, bottomMargin - railOffset1, battleW, railW)
+    ctx.fillStyle = fenceHighlight
+    ctx.fillRect(margin, bottomMargin - railOffset1, battleW, 0.8 * dpr)
+
+    // 左边围栏
+    const leftPostCount = Math.floor(battleH / postSpacing)
+    for (let i = 0; i <= leftPostCount; i++) {
+      const py = topMargin + i * postSpacing
+      ctx.fillStyle = fenceShadow
+      ctx.fillRect(margin + 1 * dpr, py - postW / 2 + 1 * dpr, postH, postW)
+      ctx.fillStyle = fenceColor
+      ctx.fillRect(margin, py - postW / 2, postH, postW)
+      ctx.fillStyle = fenceHighlight
+      ctx.fillRect(margin, py - postW / 2, postH, 1.2 * dpr)
+      // 立柱端帽
+      ctx.fillStyle = fenceHighlight
+      ctx.fillRect(margin - 2 * dpr, py - postW / 2 - 1 * dpr, 2.5 * dpr, postW + 2 * dpr)
+    }
+    ctx.fillStyle = fenceShadow
+    ctx.fillRect(margin + railOffset1 + 1 * dpr, topMargin, railW, battleH)
+    ctx.fillStyle = fenceColor
+    ctx.fillRect(margin + railOffset1, topMargin, railW, battleH)
+    ctx.fillStyle = fenceHighlight
+    ctx.fillRect(margin + railOffset1, topMargin, 0.8 * dpr, battleH)
+    ctx.fillStyle = fenceShadow
+    ctx.fillRect(margin + railOffset2 + 1 * dpr, topMargin, railW, battleH)
+    ctx.fillStyle = fenceColor
+    ctx.fillRect(margin + railOffset2, topMargin, railW, battleH)
+    ctx.fillStyle = fenceHighlight
+    ctx.fillRect(margin + railOffset2, topMargin, 0.8 * dpr, battleH)
+
+    // 右边围栏
+    const rightPostCount = Math.floor(battleH / postSpacing)
+    for (let i = 0; i <= rightPostCount; i++) {
+      const py = topMargin + i * postSpacing
+      ctx.fillStyle = fenceShadow
+      ctx.fillRect(w - margin - postH + 1 * dpr, py - postW / 2 + 1 * dpr, postH, postW)
+      ctx.fillStyle = fenceColor
+      ctx.fillRect(w - margin - postH, py - postW / 2, postH, postW)
+      ctx.fillStyle = fenceHighlight
+      ctx.fillRect(w - margin - postH, py - postW / 2, postH, 1.2 * dpr)
+      ctx.fillStyle = fenceHighlight
+      ctx.fillRect(w - margin - 0.5 * dpr, py - postW / 2 - 1 * dpr, 2.5 * dpr, postW + 2 * dpr)
+    }
+    ctx.fillStyle = fenceShadow
+    ctx.fillRect(w - margin - railOffset2 + 1 * dpr, topMargin, railW, battleH)
+    ctx.fillStyle = fenceColor
+    ctx.fillRect(w - margin - railOffset2, topMargin, railW, battleH)
+    ctx.fillStyle = fenceHighlight
+    ctx.fillRect(w - margin - railOffset2, topMargin, 0.8 * dpr, battleH)
+    ctx.fillStyle = fenceShadow
+    ctx.fillRect(w - margin - railOffset1 + 1 * dpr, topMargin, railW, battleH)
+    ctx.fillStyle = fenceColor
+    ctx.fillRect(w - margin - railOffset1, topMargin, railW, battleH)
+    ctx.fillStyle = fenceHighlight
+    ctx.fillRect(w - margin - railOffset1, topMargin, 0.8 * dpr, battleH)
+
     // 敌人区域（不含精灵）
     if (!this.enemyAttacking) {
       this._renderEnemyUI(ctx)
@@ -4256,9 +5492,9 @@ export class BattleScene {
 
       // 敌人名称和等级（在HP条上方）
       ctx.font = `bold ${13 * dpr}px sans-serif`
-      ctx.fillStyle = enemy.isBoss ? '#ff4757' : '#ffffff'
+      ctx.fillStyle = enemy.isBoss ? '#ff4757' : (enemy.isElite ? '#a55eea' : '#ffffff')
       ctx.textAlign = 'center'
-      const title = enemy.isBoss ? `👑 ${enemy.name}` : enemy.name
+      const title = enemy.isBoss ? `👑 ${enemy.name}` : (enemy.isElite ? `⚔️ ${enemy.name}` : enemy.name)
       ctx.fillText(title, ex, hpBarY - 12 * dpr)
 
       ctx.font = `${10 * dpr}px sans-serif`
@@ -4326,6 +5562,26 @@ export class BattleScene {
 
       this._drawEnemySprite(ctx, pos.x, pos.y, enemy)
 
+      // 逃跑状态：头上显示恐慌特效（闪烁的"!" + 抖动）
+      const estate = this.unitStates['enemy_' + index]
+      if (estate && estate.state === 'fleeing') {
+        const dpr = this.dpr
+        const panicY = pos.y - 30 * dpr
+        const shake = Math.sin(this.battleTime * 15) * 2 * dpr
+        // 闪烁的感叹号
+        const panicAlpha = 0.6 + Math.sin(this.battleTime * 8) * 0.4
+        ctx.globalAlpha = panicAlpha
+        ctx.fillStyle = '#FF4444'
+        ctx.font = `bold ${16 * dpr}px sans-serif`
+        ctx.textAlign = 'center'
+        ctx.textBaseline = 'middle'
+        ctx.fillText('!', pos.x + shake, panicY)
+        // 恐慌文字
+        ctx.font = `${10 * dpr}px sans-serif`
+        ctx.fillText('逃跑', pos.x + shake, panicY - 14 * dpr)
+        ctx.globalAlpha = 1.0
+      }
+
       if (isDead && deathAnim) {
         ctx.globalAlpha = 1.0
       }
@@ -4335,8 +5591,21 @@ export class BattleScene {
   _drawEnemySprite(ctx, x, y, enemy) {
     const dpr = this.dpr
     // 非Boss怪物缩小，与角色视觉协调；Boss保持较大体型
+    // 不同怪物帧中动物占画布比例不同，需分别调整使视觉大小一致（以slime_cat为基准）
     const isBoss = enemy.isBoss
-    const size = isBoss ? 65 * dpr : 40 * dpr
+    const animType = this.enemyAnimStates[this.enemies.indexOf(enemy)]?.type
+    let size
+    if (isBoss) {
+      size = 65 * dpr
+    } else if (animType === 'slime_cat') {
+      size = 40 * dpr   // 基准：动物占画布较小
+    } else if (animType === 'shadow_mouse') {
+      size = 30 * dpr   // 暗影鼠：动物几乎填满画布，需缩小
+    } else if (animType === 'wild_cat') {
+      size = 33 * dpr   // 野猫：动物占比大，需适当缩小
+    } else {
+      size = 36 * dpr   // 默认非Boss
+    }
     // 行走时不加呼吸动画（保持稳定），idle时保留呼吸感
     const enemyIndex = this.enemies.indexOf(enemy)
     const animState = this.enemyAnimStates[enemyIndex]
@@ -4354,11 +5623,15 @@ export class BattleScene {
         ctx.save()
         ctx.translate(x, y + bounce)
 
-        // 移动时根据方向水平翻转：向左走时镜像
-        if (isWalking) {
-          const estate = this.unitStates['enemy_' + enemyIndex]
-          if (estate && estate.targetX !== null && estate.targetX < estate.x) {
-            ctx.scale(-1, 1)  // 向左走，镜像翻转
+        // 所有怪物原始帧都是面朝左的
+        // 敌人在右侧，战斗时不需要翻转（本来就面朝左边/面向英雄）
+        // 只有逃跑向右或返回时才翻转成面朝右
+        const eState = this.unitStates['enemy_' + enemyIndex]
+        const isEnemyInCombat = eState && (eState.state === 'moving_to_attack' || eState.state === 'in_range' || eState.state === 'attacking')
+        if (!isEnemyInCombat && isWalking && eState && eState.targetX !== null) {
+          // 非战斗移动（逃跑/返回）：目标在右边时翻转为面朝右
+          if (eState.targetX > eState.x) {
+            ctx.scale(-1, 1)
           }
         }
 
@@ -4368,9 +5641,9 @@ export class BattleScene {
         ctx.ellipse(0, size * 0.4, size * 0.5, size * 0.15, 0, 0, Math.PI * 2)
         ctx.fill()
 
-        // 绘制动画帧（保持宽高比）
-        const frameWidth = animState.type === 'wild_cat' ? 816 : 832
-        const frameHeight = animState.type === 'wild_cat' ? 1120 : 1072
+        // 绘制动画帧（所有怪物帧统一为93x120）
+        const frameWidth = 93
+        const frameHeight = 120
         const scale = (size * 2) / frameHeight
         const drawWidth = frameWidth * scale
         const drawHeight = frameHeight * scale
@@ -4558,6 +5831,10 @@ export class BattleScene {
     const anim = this.attackAnim
     const dpr = this.dpr
 
+    // ★ 施法期间不画旧动画系统（cast帧已作为角色图像绑定绘制，避免重复+放大）
+    const hAnimState = this.heroAnimStates[hero.id]
+    if (hAnimState && (hAnimState._isCastingSkill || hAnimState.state === 'cast')) return
+
     const heroImgKey = this._getHeroImageKey(hero.id)
     const heroImg = this.game.assets.get(heroImgKey)
     const avatarSize = 70 * dpr
@@ -4712,34 +5989,123 @@ export class BattleScene {
 
       // ====== 判断角色是否在战场移动/战斗中 ======
       const uState = this.unitStates[hero.id]
-      const isOnBattlefield = uState && (
+      // ★ 关键修复：auto_battle阶段下所有状态（含idle）都走战斗路径渲染
+      // 这样角色从进入战斗开始就在底部战场位置，不会出现"中间→底部"的瞬移
+      const isInBattlePhase = (this.phase === 'auto_battle' || this.phase === 'animating')
+      const isActiveCombatState = uState && (
         uState.state === 'moving_to_attack' ||
         uState.state === 'in_range' ||
         uState.state === 'attacking' ||
         uState.state === 'returning'
       )
+      const isOnBattlefield = isInBattlePhase && uState  // 有战斗单位数据就按战斗位置渲染
       // 基础布局参数（两个分支共用）
       const centerX = x + cardW / 2
 
       if (isOnBattlefield) {
-        // ====== 战斗状态：所有UI（名字+HP+MP+精灵）跟随角色动态位置 ======
+        // ====== 战斗状态：精灵先画底层，UI叠在上面 ======
         const spriteSize = 60 * dpr
+        // 基础位置（攻击突进位移在UI绘制时才应用）
         const bx = uState.x
         const by = uState.y
 
-        // 名字 + 等级（头顶）
+        // ★ 角色精灵先绘制（作为底层），避免遮挡HP/MP条
+        // 攻击突进位移：攻击前半段前冲，后半段回收（和UI元素同步偏移）
+        let attackLungeX = 0
+        if (isAttacking && hAnimState && hAnimState.state === 'attack') {
+          const progress = hAnimState.frame / Math.max(hAnimState.totalSlashFrames || 8, 1)
+          if (progress < 0.45) {
+            attackLungeX = Math.sin(progress / 0.45 * Math.PI * 0.5) * 18 * dpr
+          } else if (progress < 0.8) {
+            attackLungeX = 18 * dpr
+          } else {
+            attackLungeX = 18 * dpr * (1 - (progress - 0.8) / 0.2)
+          }
+        }
+        // 精灵实际绘制位置（含攻击突进）
+        const drawX = bx + attackLungeX
+        const drawY = by
+
+        const hAnimState = this.heroAnimStates[hero.id]
+        // ★ 施法期间：cast特效帧直接作为角色图像（绑定，不走两套管线）
+        const isCastingBody = hAnimState && (hAnimState._isCastingSkill || hAnimState.state === 'cast')
+        // 施法时从SkillEffectManager取当前帧图片作为角色图像（含角色+特效的完整帧）
+        let castFrameImg = null
+        if (isCastingBody && this.lastCastEffectType) {
+          const castEffectType = this.lastCastEffectType[hero.id] || null
+          if (castEffectType) {
+            const frameInfo = this.game.effects.getCurrentFrame(castEffectType)
+            if (frameInfo && frameInfo.image) {
+              castFrameImg = frameInfo.image
+            }
+            // ★ 无论是否取到帧都标记消耗（防止旧特效残留叠层）
+            this.game.effects.consumeByCharacter(castEffectType)
+          }
+        }
+        let heroImgKey = null
+        let heroImg = null
+        if (isCastingBody) {
+          // ★ 施法中统一走cast帧路径：
+          //   有帧 → 画cast特效帧（含完整角色+光效）
+          //   无帧（刚创建/已结束）→ 不画！避免idle/walk叠层
+          heroImg = castFrameImg || null
+        } else if (hAnimState && hAnimState.state === 'walk') {
+          heroImgKey = this._getHeroWalkImageKey(hero.id, hAnimState.frame)
+          heroImg = heroImgKey ? this.game.assets.get(heroImgKey) || this.game.assets.get(this._getHeroImageKey(hero.id)) : null
+        } else if (hAnimState && hAnimState.state === 'attack') {
+          heroImgKey = this._getHeroSlashImageKey(hero.id, hAnimState.frame)
+          heroImg = heroImgKey ? this.game.assets.get(heroImgKey) || this.game.assets.get(this._getHeroImageKey(hero.id)) : null
+        } else {
+          heroImgKey = this._getHeroIdleImageKey(hero.id, hAnimState ? hAnimState.frame : 0)
+          heroImg = heroImgKey ? this.game.assets.get(heroImgKey) || this.game.assets.get(this._getHeroImageKey(hero.id)) : null
+        }
+
+        if (heroImg) {
+          const isInCombat = (uState.state === 'moving_to_attack' || uState.state === 'in_range' || uState.state === 'attacking')
+          // ★ 战斗阶段下idle也默认面向右（敌人方向），避免角色背对敌人
+          const facingRight = isInCombat || isInBattlePhase || (uState.targetX !== null && uState.targetX > uState.x)
+
+          const heroFacesLeft = (hero.id === 'zhenbao' || hero.id === 'amy' || hero.id === 'qianduoduo')
+          const needsFlip = facingRight ? heroFacesLeft : !heroFacesLeft
+
+          const heroScale = this._getHeroScale(hero.id)
+          const drawSize = spriteSize * heroScale
+
+          ctx.save()
+
+          if (needsFlip) {
+            ctx.translate(drawX, drawY)
+            ctx.scale(-1, 1)
+            ctx.drawImage(heroImg, -drawSize / 2, -drawSize / 2, drawSize, drawSize)
+          } else {
+            ctx.drawImage(heroImg, drawX - drawSize / 2, drawY - drawSize / 2, drawSize, drawSize)
+          }
+
+          if (isAttacking && hAnimState && hAnimState.state === 'attack') {
+            const attackProgress = hAnimState.frame / Math.max(hAnimState.totalSlashFrames || 8, 1)
+            if (attackProgress < 0.5) {
+              ctx.globalAlpha = 0.7 + Math.sin(attackProgress * Math.PI) * 0.3
+            }
+          }
+
+          ctx.restore()
+          ctx.shadowBlur = 0
+          ctx.shadowColor = 'transparent'
+        }
+
+        // 名字 + 等级（精灵头顶上方）
         ctx.font = `bold ${11 * dpr}px sans-serif`
         ctx.fillStyle = isDead ? '#666' : (isAttacking ? '#FF9F43' : '#fff')
         ctx.textAlign = 'center'
         ctx.textBaseline = 'alphabetic'
         const levelText = hero.level ? `Lv.${hero.level}` : ''
-        ctx.fillText(`${hero.name} ${levelText}`, bx, by - spriteSize / 2 - 6 * dpr)
+        ctx.fillText(`${hero.name} ${levelText}`, bx + attackLungeX, by - spriteSize / 2 - 6 * dpr)
 
-        // HP 条
+        // HP 条（精灵底部下方，不被遮挡）
         const hpRatio = Math.min(1, Math.max(0, hero.hp / hero.maxHp))
         const barW = spriteSize * 0.8
-        const hpBarX = bx - barW / 2
-        const hpBarY = by - spriteSize / 2 + 2 * dpr
+        const hpBarX = bx + attackLungeX - barW / 2
+        const hpBarY = by + spriteSize / 2 + 4 * dpr   // ★ 移到精灵底部下方
         const hpBarH = 5 * dpr
         ctx.fillStyle = 'rgba(0, 0, 0, 0.7)'
         ctx.fillRect(hpBarX, hpBarY, barW, hpBarH)
@@ -4748,7 +6114,7 @@ export class BattleScene {
           ctx.fillRect(hpBarX, hpBarY, barW * hpRatio, hpBarH)
         }
 
-        // MP 条
+        // MP 条（HP条下方）
         const mpRatio = Math.min(1, Math.max(0, hero.mp / hero.maxMp))
         const mpBarY = hpBarY + hpBarH + 2 * dpr
         const mpBarH = 4 * dpr
@@ -4757,49 +6123,6 @@ export class BattleScene {
         if (mpRatio > 0.001) {
           ctx.fillStyle = '#5F9FFF'
           ctx.fillRect(hpBarX, mpBarY, barW * mpRatio, mpBarH)
-        }
-
-        // 角色精灵 - 根据动画状态选择帧（walk / idle / attack-slash）
-        const hAnimState = this.heroAnimStates[hero.id]
-        let heroImgKey
-        if (hAnimState && hAnimState.state === 'walk') {
-          heroImgKey = this._getHeroWalkImageKey(hero.id, hAnimState.frame)
-        } else if (hAnimState && hAnimState.state === 'attack') {
-          // 攻击状态：使用斩击/攻击帧
-          heroImgKey = this._getHeroSlashImageKey(hero.id, hAnimState.frame)
-        } else {
-          heroImgKey = this._getHeroIdleImageKey(hero.id, hAnimState ? hAnimState.frame : 0)
-        }
-        const heroImg = this.game.assets.get(heroImgKey) || this.game.assets.get(this._getHeroImageKey(hero.id))
-
-        if (heroImg) {
-          const facingRight = (uState.targetX !== null && uState.targetX > uState.x) ||
-                              (uState.state === 'attacking')
-          
-          // 角色独立缩放：让所有角色视觉大小一致
-          const heroScale = this._getHeroScale(hero.id)
-          const drawSize = spriteSize * heroScale
-
-          ctx.save()
-
-          if (!facingRight) {
-            ctx.translate(bx, by)
-            ctx.scale(-1, 1)
-            ctx.drawImage(heroImg, -drawSize / 2, -drawSize / 2, drawSize, drawSize)
-          } else {
-            ctx.drawImage(heroImg, bx - drawSize / 2, by - drawSize / 2, drawSize, drawSize)
-          }
-
-          // 攻击中不再叠加额外特效（保持底图精灵不变即可）
-          if (isAttacking) {
-            // 预留：可在此处添加攻击状态视觉反馈
-          }
-
-          ctx.restore()
-          
-          // 清除阴影设置
-          ctx.shadowBlur = 0
-          ctx.shadowColor = 'transparent'
         }
       } else {
         // ====== 空闲/死亡：卡片内正常布局 ======
@@ -4841,10 +6164,14 @@ export class BattleScene {
         const hAnimState = this.heroAnimStates[hero.id]
         let heroImgKey
         
-        // 卡片状态：始终使用idle帧动画（不切换到attack图）
-        heroImgKey = this._getHeroIdleImageKey(hero.id, hAnimState ? hAnimState.frame : 0)
+        // ★ 施法期间跳过卡片立绘（cast帧已作为战斗精灵绘制，避免重复+放大）
+        const isCastingAvatar = hAnimState && (hAnimState._isCastingSkill || hAnimState.state === 'cast')
+        if (!isCastingAvatar) {
+          // 卡片状态：始终使用idle帧动画（不切换到attack图）
+          heroImgKey = this._getHeroIdleImageKey(hero.id, hAnimState ? hAnimState.frame : 0)
+        }
         
-        const heroImg = this.game.assets.get(heroImgKey) || this.game.assets.get(this._getHeroImageKey(hero.id))
+        const heroImg = heroImgKey ? (this.game.assets.get(heroImgKey) || this.game.assets.get(this._getHeroImageKey(hero.id))) : null
         const avatarX = centerX - avatarSize / 2
         const avatarY = mpBarY + mpBarH + 8 * dpr
 
@@ -5746,15 +7073,20 @@ export class BattleScene {
 
   /**
    * 获取角色攻击帧（如臻宝斩击）
+   * 非臻宝角色：使用walk帧快速播放模拟前冲/挥砍/施法
    */
   _getHeroSlashImageKey(heroId, frameNum) {
-    // 尝试 HERO_ZHENBAO_SLASH_01 ~ SLASH_20
-    const padded = String(frameNum).padStart(2, '0')
-    const slashKey = `HERO_${heroId.toUpperCase()}_SLASH_${padded}`
-    if (this.game.assets.get(slashKey)) return slashKey
+    // 臻宝有专用斩击帧（SLASH_01~SLASH_13，从1开始编号）
+    if (heroId === 'zhenbao') {
+      // 动画从frame=0开始播放，但资源名从01开始，需要+1偏移
+      const actualFrame = Math.min(frameNum + 1, 13)
+      const padded = String(actualFrame).padStart(2, '0')
+      const slashKey = `HERO_ZHENBAO_SLASH_${padded}`
+      if (this.game.assets.get(slashKey)) return slashKey
+    }
 
-    // 没有攻击帧则 fallback 到 idle 帧
-    return this._getHeroIdleImageKey(heroId, frameNum)
+    // 其他角色：用walk帧快速播放模拟攻击动作（挥砍/前冲）
+    return this._getHeroWalkImageKey(heroId, frameNum)
   }
 
 

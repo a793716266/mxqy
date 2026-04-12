@@ -146,7 +146,7 @@ export const EQUIPMENT_CH1 = {
     rarity: 'legendary',
     desc: '阳光草原的守护神兵，散发着温暖的光芒',
     stats: {
-      atk: 300,
+      atk: 1,
       def: 8,
       crit: 0.12,
       maxHp: 50

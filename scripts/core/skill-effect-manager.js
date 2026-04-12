@@ -89,7 +89,10 @@ export class SkillEffectManager {
       'ice_shard_hit': 'EFFECT_ICE_SHARD_HIT',
       'lightning_cast': 'EFFECT_LIGHTNING_CAST',
       'lightning_hit': 'EFFECT_LIGHTNING_HIT',
-      'thunder': 'EFFECT_THUNDER'
+      'thunder': 'EFFECT_THUNDER',
+      // 物理攻击命中特效（复用闪电击中帧作为通用打击效果）
+      'slash_hit': 'EFFECT_LIGHTNING_HIT',
+      'staff_strike_hit': 'EFFECT_LIGHTNING_HIT'
     }
     return typeMap[type] || type.toUpperCase()
   }
@@ -152,6 +155,8 @@ export class SkillEffectManager {
     for (const effect of this.effects) {
       if (!effect.isPlaying) continue
       if (!effect.images || effect.images.length === 0) continue
+      // ★ 已被角色绑定的特效不再重复绘制（避免两套画面）
+      if (effect._consumedByChar) continue
 
       const currentImage = effect.images[effect.currentFrame]
       if (!currentImage) continue
@@ -243,5 +248,34 @@ export class SkillEffectManager {
    */
   getActiveCount() {
     return this.effects.filter(e => e.isPlaying).length
+  }
+
+  /**
+   * ★ 获取指定类型特效的当前帧图片（用于绑定到角色渲染）
+   * 返回 null 表示没有匹配的活跃特效
+   */
+  getCurrentFrame(type) {
+    const effect = this.effects.find(e => e.isPlaying && e.type === type)
+    if (!effect || !effect.images || effect.images.length === 0) return null
+    const idx = Math.min(effect.currentFrame, effect.images.length - 1)
+    return {
+      image: effect.images[idx],
+      frameIndex: effect.currentFrame,
+      totalFrames: effect.frameCount,
+      isPlaying: effect.isPlaying,
+      scale: effect.scale
+    }
+  }
+
+  /**
+   * ★ 标记指定类型的特效为"已被角色消耗"（render时跳过）
+   * 用于施法动画绑定：特效帧已作为角色图像画过一次，不需要再叠一层
+   */
+  consumeByCharacter(type) {
+    for (const effect of this.effects) {
+      if (effect.type === type && !effect._consumedByChar) {
+        effect._consumedByChar = true
+      }
+    }
   }
 }

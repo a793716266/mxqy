@@ -55,10 +55,12 @@ export function getEnemyByLevel(enemyData, level = 1) {
     }
   }
 
-  // 初始化当前HP
+  // 初始化当前HP/MP
   finalEnemy.hp = finalEnemy.maxHp
+  finalEnemy.maxMp = enemyData.maxMp || (enemyData.isBoss ? 100 : (enemyData.isElite ? 50 : 30))
+  finalEnemy.mp = finalEnemy.maxMp
 
-  console.log(`[Enemy] ${enemyData.name} Lv.${level} - HP:${finalEnemy.maxHp}, ATK:${finalEnemy.atk}, DEF:${finalEnemy.def}, CRIT:${(finalEnemy.crit * 100).toFixed(1)}%`)
+  console.log(`[Enemy] ${enemyData.name} Lv.${level} - HP:${finalEnemy.maxHp}, ATK:${finalEnemy.atk}, DEF:${finalEnemy.def}, CRIT:${(finalEnemy.crit * 100).toFixed(1)}%, MP:${finalEnemy.maxMp}`)
 
   return finalEnemy
 }
@@ -77,8 +79,8 @@ export const ENEMIES_CH1 = {
     exp: 15,         // 奖励提升
     gold: 8,
     skills: [
-      { name: '抓挠', power: 1.2, type: 'attack' },          // 1.0 → 1.2
-      { name: '狂抓', power: 1.5, type: 'attack' }           // 新增技能
+      { name: '抓挠', power: 1.2, type: 'attack', mpCost: 0 },          // 1.0 → 1.2
+      { name: '狂抓', power: 1.5, type: 'attack', mpCost: 5 }           // 新增技能
     ],
     drop: [{ id: 'fish', name: '小鱼干', chance: 0.3 }]
   },
@@ -86,36 +88,48 @@ export const ENEMIES_CH1 = {
     id: 'slime_cat',
     type: 'slime_cat',  // 添加类型标记，用于动画识别
     name: '史莱姆猫',
-    level: 2,
-    maxHp: 70,       // 40 → 70 (+75%)
-    atk: 10,         // 6 → 10 (+67%)
-    def: 8,          // 5 → 8 (+60%)
+    level: 3,
+    maxHp: 110,       // 70 → 110 (精英加强)
+    atk: 12,
+    def: 14,          // 8 → 14 (防御加强)
     spd: 6,
-    crit: 0.05,
-    exp: 18,         // 奖励提升
-    gold: 12,
+    crit: 0.08,       // 0.05 → 0.08 (精英暴击)
+    exp: 30,          // 经验提升
+    gold: 18,
+    isElite: true,    // 升级为精英怪
+    equipment: {      // 精英自带装备加成
+      name: '黏液护甲',
+      type: 'armor',
+      stats: { def: 6, maxHp: 20 }
+    },
     skills: [
-      { name: '黏液喷射', power: 1.1, type: 'attack', effect: 'slime_spray' },
-      { name: '黏液包裹', power: 1.3, type: 'attack', effect: 'slime_wrap', restrictChance: 0.3 }
+      { name: '黏液喷射', power: 1.2, type: 'attack', effect: 'slime_spray', mpCost: 8 },
+      { name: '黏液包裹', power: 1.4, type: 'attack', effect: 'slime_wrap', restrictChance: 0.35, mpCost: 15 }
     ],
-    drop: [{ id: 'gel', name: '黏液', chance: 0.2 }]
+    drop: [{ id: 'gel', name: '黏液', chance: 0.25 }]
   },
   shadow_mouse: {
     id: 'shadow_mouse',
     name: '暗影鼠',
-    level: 2,
-    maxHp: 45,       // 25 → 45 (+80%)
-    atk: 15,         // 10 → 15 (+50%)
-    def: 4,          // 2 → 4
-    spd: 16,         // 14 → 16 (更快)
-    crit: 0.08,      // 速度型敌人暴击率稍高
-    exp: 12,         // 奖励提升
-    gold: 6,
+    level: 3,
+    maxHp: 80,       // 45 → 80 (精英加强)
+    atk: 16,
+    def: 10,         // 4 → 10 (防御大幅加强)
+    spd: 17,         // 速度微提
+    crit: 0.12,      // 0.08 → 0.12 (精英暴击)
+    exp: 25,         // 经验提升
+    gold: 12,
+    isElite: true,   // 升级为精英怪
+    equipment: {     // 精英自带装备
+      name: '暗影匕首',
+      type: 'weapon',
+      stats: { atk: 4, crit: 0.04 }
+    },
     skills: [
-      { name: '暗影咬', power: 1.3, type: 'attack' },        // 1.1 → 1.3
-      { name: '暗影突袭', power: 1.8, type: 'attack' }       // 新增高伤技能
+      { name: '暗影咬', power: 1.4, type: 'attack', mpCost: 6 },        // 1.3 → 1.4
+      { name: '暗影突袭', power: 2.0, type: 'attack', mpCost: 18 }       // 保持高伤
     ],
-    drop: [{ id: 'cheese', name: '奶酪', chance: 0.4 }]
+    drop: [{ id: 'cheese', name: '奶酪', chance: 0.45 }]
   },
   // 精英怪 - 大幅加强
   stray_leader: {
@@ -136,10 +150,10 @@ export const ENEMIES_CH1 = {
       stats: { atk: 8, crit: 0.05 }
     },
     skills: [
-      { name: '利爪连击', power: 1.5, type: 'attack' },      // 1.2 → 1.5
-      { name: '召唤小弟', power: 0, type: 'summon', summonId: 'wild_cat' },
-      { name: '怒吼', power: 1.0, type: 'attack', target: 'all', effect: 'stun' },  // 0.5 → 1.0
-      { name: '撕裂', power: 2.0, type: 'attack' }           // 新增强力技能
+      { name: '利爪连击', power: 1.5, type: 'attack', mpCost: 8 },      // 1.2 → 1.5
+      { name: '召唤小弟', power: 0, type: 'summon', summonId: 'wild_cat', mpCost: 20 },
+      { name: '怒吼', power: 1.0, type: 'attack', target: 'all', effect: 'stun', mpCost: 12 },  // 0.5 → 1.0
+      { name: '撕裂', power: 2.0, type: 'attack', mpCost: 22 }           // 新增强力技能
     ],
     drop: [{ id: 'cat_collar', name: '猫项圈', chance: 0.5 }]
   },
@@ -163,11 +177,11 @@ export const ENEMIES_CH1 = {
       stats: { maxHp: 50, def: 6, crit: 0.05 }
     },
     skills: [
-      { name: '治愈之爪', power: 1.3, type: 'attack' },
-      { name: '生命波纹', power: 0.8, type: 'attack', target: 'all' },
-      { name: '自我治愈', power: 0, type: 'heal_self', healAmount: 40 },
-      { name: '净化之光', power: 1.6, type: 'magic' },
-      { name: '治愈冲击', power: 2.2, type: 'magic' }
+      { name: '治愈之爪', power: 1.3, type: 'attack', mpCost: 5 },
+      { name: '生命波纹', power: 0.8, type: 'attack', target: 'all', mpCost: 15 },
+      { name: '自我治愈', power: 0, type: 'heal_self', healAmount: 40, mpCost: 25 },
+      { name: '净化之光', power: 1.6, type: 'magic', mpCost: 18 },
+      { name: '治愈冲击', power: 2.2, type: 'magic', mpCost: 30 }
     ],
     drop: [{ id: 'healing_herb', name: '治愈草药', chance: 1.0 }],
     dialogue: [
@@ -200,11 +214,11 @@ export const ENEMIES_CH1 = {
       stats: { atk: 15, def: 10, maxHp: 80, crit: 0.05 }
     },
     skills: [
-      { name: '暗影爪击', power: 1.8, type: 'attack' },      // 1.3 → 1.8
-      { name: '暗影领域', power: 1.2, type: 'attack', target: 'all' },  // 0.8 → 1.2
-      { name: '生命吸取', power: 1.5, type: 'attack', effect: 'drain' }, // 1.0 → 1.5
-      { name: '暗影爆发', power: 2.5, type: 'attack' },      // 2.0 → 2.5
-      { name: '暗影之怒', power: 3.0, type: 'attack' }       // 新增大招
+      { name: '暗影爪击', power: 1.8, type: 'attack', mpCost: 10 },      // 1.3 → 1.8
+      { name: '暗影领域', power: 1.2, type: 'attack', target: 'all', mpCost: 20 },  // 0.8 → 1.2
+      { name: '生命吸取', power: 1.5, type: 'attack', effect: 'drain', mpCost: 15 }, // 1.0 → 1.5
+      { name: '暗影爆发', power: 2.5, type: 'attack', mpCost: 28 },      // 2.0 → 2.5
+      { name: '暗影之怒', power: 3.0, type: 'attack', mpCost: 40 }       // 新增大招
     ],
     drop: [{ id: 'dark_gem', name: '暗影宝石', chance: 1.0 }],
     dialogue: [
@@ -230,8 +244,8 @@ export const ENEMIES_CH2 = {
     exp: 25,
     gold: 15,
     skills: [
-      { name: '魔法弹', power: 1.4, type: 'magic' },
-      { name: '魔力风暴', power: 1.8, type: 'magic' }
+      { name: '魔法弹', power: 1.4, type: 'magic', mpCost: 8 },
+      { name: '魔力风暴', power: 1.8, type: 'magic', mpCost: 18 }
     ],
     drop: [{ id: 'magic_dust', name: '魔法粉尘', chance: 0.3 }]
   },
@@ -247,8 +261,8 @@ export const ENEMIES_CH2 = {
     exp: 30,
     gold: 20,
     skills: [
-      { name: '岩石冲击', power: 1.5, type: 'attack' },
-      { name: '地震', power: 1.2, type: 'attack', target: 'all' }
+      { name: '岩石冲击', power: 1.5, type: 'attack', mpCost: 6 },
+      { name: '地震', power: 1.2, type: 'attack', target: 'all', mpCost: 15 }
     ],
     drop: [{ id: 'stone_core', name: '石核', chance: 0.25 }]
   },
@@ -264,8 +278,8 @@ export const ENEMIES_CH2 = {
     exp: 28,
     gold: 18,
     skills: [
-      { name: '幽灵爪', power: 1.6, type: 'attack' },
-      { name: '穿墙袭击', power: 2.0, type: 'attack' }
+      { name: '幽灵爪', power: 1.6, type: 'attack', mpCost: 8 },
+      { name: '穿墙袭击', power: 2.0, type: 'attack', mpCost: 20 }
     ],
     drop: [{ id: 'ghost_essence', name: '幽灵精华', chance: 0.3 }]
   },
@@ -289,9 +303,9 @@ export const ENEMIES_CH2 = {
       stats: { def: 12, maxHp: 40 }
     },
     skills: [
-      { name: '守护一击', power: 1.8, type: 'attack' },
-      { name: '嘲讽怒吼', power: 0.8, type: 'attack', target: 'all' },
-      { name: '钢铁防御', power: 0, type: 'buff', effect: 'defense_up' }
+      { name: '守护一击', power: 1.8, type: 'attack', mpCost: 8 },
+      { name: '嘲讽怒吼', power: 0.8, type: 'attack', target: 'all', mpCost: 12 },
+      { name: '钢铁防御', power: 0, type: 'buff', effect: 'defense_up', mpCost: 15 }
     ],
     drop: [{ id: 'guardian_shield', name: '守护者盾牌', chance: 0.5 }]
   },
@@ -316,10 +330,10 @@ export const ENEMIES_CH2 = {
       stats: { atk: 20, crit: 0.08 }
     },
     skills: [
-      { name: '水晶碎片', power: 1.6, type: 'magic' },
-      { name: '水晶风暴', power: 1.4, type: 'magic', target: 'all' },
-      { name: '魔力汲取', power: 2.0, type: 'magic', effect: 'drain' },
-      { name: '水晶封印', power: 2.8, type: 'magic' }
+      { name: '水晶碎片', power: 1.6, type: 'magic', mpCost: 12 },
+      { name: '水晶风暴', power: 1.4, type: 'magic', target: 'all', mpCost: 22 },
+      { name: '魔力汲取', power: 2.0, type: 'magic', effect: 'drain', mpCost: 18 },
+      { name: '水晶封印', power: 2.8, type: 'magic', mpCost: 35 }
     ],
     drop: [{ id: 'crystal_heart', name: '水晶之心', chance: 1.0 }],
     dialogue: [
