@@ -2,6 +2,47 @@
 
 ## 📅 更新日志
 
+### 2026-04-13（凌晨）
+
+**提交记录：**
+- 提交ID：1e7368b
+- 提交信息：feat: 重构战斗施法动画系统，修复双动画并存问题
+- 提交时间：2026-04-13 00:11
+- 变更规模：191个文件，+2178/-571行
+
+**重大重构：战斗施法动画架构升级**
+
+**问题现象：**
+- 李小宝释放魔法技能（火球术/冰晶术/雷击术）时，cast特效帧和idle帧同时显示，出现"两个角色"的视觉效果
+- 冰晶术偶尔会出现放大+双动画的问题
+- 快速连招时偶尔出现2组动画并存
+
+**根本原因：**
+- 三重绘制路径（_renderParty战斗精灵、卡片立绘、_renderAttackingHero旧攻击系统）同时渲染角色图像
+- setTimeout硬编码时长猜测动画结束时间，与实际动画不同步导致竞态条件
+- cast特效帧本身已包含完整角色图像，却仍叠加绘制底层idle帧
+
+**解决方案 — 架构级重构：**
+1. **动画驱动结算**：将setTimeout(400)改为cast特效onComplete回调驱动伤害结算
+2. **单管线绑定渲染**：cast特效帧直接作为角色图像绑定到_renderParty绘制路径，不再走独立特效管线
+3. **三重路径防护**：_renderParty、卡片立绘分支、_renderAttackingHero全部添加isCastingSkill检查
+4. **consume机制**：SkillEffectManager新增getCurrentFrame()/consumeByCharacter()接口，已消费的帧在render()中跳过
+5. **竞态清理**：快速连招时自动清理旧cast特效
+6. **统一清理**：新增_finishHeroAttack()方法集中处理所有攻击后状态重置
+
+**涉及文件：**
+- `scripts/scenes/battle-scene.js` — 核心重构（+2074/-571行）
+- `scripts/core/skill-effect-manager.js` — 新增绑定渲染接口
+- `scripts/core/asset-manager.js` — 资源路径更新
+- `scripts/data/enemies.js` / `scripts/data/equipment.js` — 数据调整
+
+**资源变更：**
+- 删除废弃的cat_idle(8帧)、cat_walk(12帧)动画文件
+- 清理未使用的lixiaobao透明idle帧
+- 整理fireball_cast/hit、ice_shard_cast/hit、lightning_cast/hit等特效帧
+- 更新shadow_mouse攻击/待机动画帧（去水印）
+- 更新hero_lixiaobao.png立绘、bg_grassland.png背景图
+
 ### 2026-04-08（晚）
 
 **提交记录：**
