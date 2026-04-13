@@ -267,8 +267,7 @@ export class SkillEffectManager {
   getCurrentFrame(type) {
     const effect = this.effects.find(e => e.isPlaying && e.type === type && !e._consumedByChar)
     if (!effect || !effect.images || effect.images.length === 0) return null
-    // ★ 立即消耗，防止同一特效帧被多帧重复引用
-    effect._consumedByChar = true
+    // ★ 只读取当前帧，不标记消耗（由 consumeByCharacter 统一管理）
     const idx = Math.min(effect.currentFrame, effect.images.length - 1)
     return {
       image: effect.images[idx],
