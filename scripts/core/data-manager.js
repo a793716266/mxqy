@@ -246,7 +246,7 @@ export class DataManager {
         if (!this._validate()) {
           console.warn('[存档] 校验失败，数据被重置')
           this.data = this._defaultData()
-          return false
+          return false  // ★ 校验失败也返回 false
         }
         console.log('[存档] 读档成功，版本:', this.data.version)
         return true
@@ -269,7 +269,8 @@ export class DataManager {
   clear() {
     this.data = this._defaultData()
     try {
-      wx.removeStorageSync(this.saveKey)
+      // ★ 写 null 而非 removeSync：让 load() 时 parse(null) 进 catch，回退默认数据
+      wx.setStorageSync(this.saveKey, null)
       console.log('[存档] 清除成功')
       return true
     } catch (e) {
@@ -345,16 +346,36 @@ export class DataManager {
   }
 
   /**
-   * 用默认值补全缺失字段（迁移后字段补全 + 未来版本升级用）
+   * 递归深合并 stored（高优先级）覆盖 defaults（低优先级）
+   * - undefined 值不覆盖
+   * - 数组直接替换（而非合并）
+   * - 嵌套 object 递归合并
    */
-  _mergeDefaults(stored, defaults) {
+  _deepMerge(stored, defaults) {
     const result = JSON.parse(JSON.stringify(defaults))  // 深拷贝默认值
     for (const key of Object.keys(stored)) {
-      if (stored[key] !== undefined) {
+      if (stored[key] === undefined) continue
+      if (
+        stored[key] !== null &&
+        typeof stored[key] === 'object' &&
+        !Array.isArray(stored[key]) &&
+        typeof result[key] === 'object' &&
+        result[key] !== null &&
+        !Array.isArray(result[key])
+      ) {
+        result[key] = this._deepMerge(stored[key], result[key])
+      } else {
         result[key] = stored[key]
       }
     }
     return result
+  }
+
+  /**
+   * 用默认值补全缺失字段（迁移后字段补全 + 未来版本升级用）
+   */
+  _mergeDefaults(stored, defaults) {
+    return this._deepMerge(stored, defaults)
   }
 
   /**

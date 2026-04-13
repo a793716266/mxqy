@@ -1,5 +1,13 @@
 {
+  "scripts": {
+    "test": "jest",
+    "test:coverage": "jest --coverage",
+    "check": "node scripts/tools/check_syntax.js"
+  },
   "devDependencies": {
-    "@babel/parser": "^7.29.2"
+    "@babel/core": "^7.29.0",
+    "@babel/parser": "^7.29.2",
+    "@babel/preset-env": "^7.29.2",
+    "jest": "^29.7.0"
   }
 }
