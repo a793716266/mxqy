@@ -103,6 +103,12 @@ export const ASSETS = {
   HERO_ZHENBAO_SLASH_11: BATTLE_PKG + 'images/characters_anim/transparent/zhenbao/slash/zhenbao_slash_11.png',
   HERO_ZHENBAO_SLASH_12: BATTLE_PKG + 'images/characters_anim/transparent/zhenbao/slash/zhenbao_slash_12.png',
   HERO_ZHENBAO_SLASH_13: BATTLE_PKG + 'images/characters_anim/transparent/zhenbao/slash/zhenbao_slash_13.png',
+
+  // zhenbao 普攻帧（4帧，轻攻击）
+  HERO_ZHENBAO_ATTACK_01: BATTLE_PKG + 'images/characters_anim/transparent/zhenbao/attack/attack_01.png',
+  HERO_ZHENBAO_ATTACK_02: BATTLE_PKG + 'images/characters_anim/transparent/zhenbao/attack/attack_02.png',
+  HERO_ZHENBAO_ATTACK_03: BATTLE_PKG + 'images/characters_anim/transparent/zhenbao/attack/attack_03.png',
+  HERO_ZHENBAO_ATTACK_04: BATTLE_PKG + 'images/characters_anim/transparent/zhenbao/attack/attack_04.png',
   
   // 李小宝: 8帧walk + 2帧idle（battle分包，独立目录管理）
   HERO_LIXIAOBAO_WALK_0: BATTLE_PKG + 'images/characters_anim/transparent/lixiaobao/walk/lixiaobao_walk_0.png',
@@ -115,6 +121,113 @@ export const ASSETS = {
   HERO_LIXIAOBAO_WALK_7: BATTLE_PKG + 'images/characters_anim/transparent/lixiaobao/walk/lixiaobao_walk_7.png',
   HERO_LIXIAOBAO_IDLE_0: BATTLE_PKG + 'images/characters_anim/transparent/lixiaobao/idle/lixiaobao_idle_0.png',
   HERO_LIXIAOBAO_IDLE_1: BATTLE_PKG + 'images/characters_anim/transparent/lixiaobao/idle/lixiaobao_idle_1.png',
+
+  // 李小宝: attack(5帧)
+  HERO_LIXIAOBAO_ATTACK_01: BATTLE_PKG + 'images/characters_anim/transparent/lixiaobao/attack/attack_01.png',
+  HERO_LIXIAOBAO_ATTACK_02: BATTLE_PKG + 'images/characters_anim/transparent/lixiaobao/attack/attack_02.png',
+  HERO_LIXIAOBAO_ATTACK_03: BATTLE_PKG + 'images/characters_anim/transparent/lixiaobao/attack/attack_03.png',
+  HERO_LIXIAOBAO_ATTACK_04: BATTLE_PKG + 'images/characters_anim/transparent/lixiaobao/attack/attack_04.png',
+  HERO_LIXIAOBAO_ATTACK_05: BATTLE_PKG + 'images/characters_anim/transparent/lixiaobao/attack/attack_05.png',
+
+  // 李小宝: cast_attack(5帧) - 法杖攻击
+  HERO_LIXIAOBAO_CAST_ATK_01: BATTLE_PKG + 'images/characters_anim/transparent/lixiaobao/cast_attack/cast_attack_01.png',
+  HERO_LIXIAOBAO_CAST_ATK_02: BATTLE_PKG + 'images/characters_anim/transparent/lixiaobao/cast_attack/cast_attack_02.png',
+  HERO_LIXIAOBAO_CAST_ATK_03: BATTLE_PKG + 'images/characters_anim/transparent/lixiaobao/cast_attack/cast_attack_03.png',
+  HERO_LIXIAOBAO_CAST_ATK_04: BATTLE_PKG + 'images/characters_anim/transparent/lixiaobao/cast_attack/cast_attack_04.png',
+  HERO_LIXIAOBAO_CAST_ATK_05: BATTLE_PKG + 'images/characters_anim/transparent/lixiaobao/cast_attack/cast_attack_05.png',
+
+  // 李小宝: cast_fireball(11帧)
+  HERO_LIXIAOBAO_FIREBALL_01: BATTLE_PKG + 'images/characters_anim/transparent/lixiaobao/cast_fireball/fireball_cast_01.png',
+  HERO_LIXIAOBAO_FIREBALL_02: BATTLE_PKG + 'images/characters_anim/transparent/lixiaobao/cast_fireball/fireball_cast_02.png',
+  HERO_LIXIAOBAO_FIREBALL_03: BATTLE_PKG + 'images/characters_anim/transparent/lixiaobao/cast_fireball/fireball_cast_03.png',
+  HERO_LIXIAOBAO_FIREBALL_04: BATTLE_PKG + 'images/characters_anim/transparent/lixiaobao/cast_fireball/fireball_cast_04.png',
+  HERO_LIXIAOBAO_FIREBALL_05: BATTLE_PKG + 'images/characters_anim/transparent/lixiaobao/cast_fireball/fireball_cast_05.png',
+  HERO_LIXIAOBAO_FIREBALL_06: BATTLE_PKG + 'images/characters_anim/transparent/lixiaobao/cast_fireball/fireball_cast_06.png',
+  HERO_LIXIAOBAO_FIREBALL_07: BATTLE_PKG + 'images/characters_anim/transparent/lixiaobao/cast_fireball/fireball_cast_07.png',
+  HERO_LIXIAOBAO_FIREBALL_08: BATTLE_PKG + 'images/characters_anim/transparent/lixiaobao/cast_fireball/fireball_cast_08.png',
+  HERO_LIXIAOBAO_FIREBALL_09: BATTLE_PKG + 'images/characters_anim/transparent/lixiaobao/cast_fireball/fireball_cast_09.png',
+  HERO_LIXIAOBAO_FIREBALL_10: BATTLE_PKG + 'images/characters_anim/transparent/lixiaobao/cast_fireball/fireball_cast_10.png',
+  HERO_LIXIAOBAO_FIREBALL_11: BATTLE_PKG + 'images/characters_anim/transparent/lixiaobao/cast_fireball/fireball_cast_11.png',
+
+  // 李小宝: cast_ice(8帧)
+  HERO_LIXIAOBAO_ICE_01: BATTLE_PKG + 'images/characters_anim/transparent/lixiaobao/cast_ice/ice_shard_cast_01.png',
+  HERO_LIXIAOBAO_ICE_02: BATTLE_PKG + 'images/characters_anim/transparent/lixiaobao/cast_ice/ice_shard_cast_02.png',
+  HERO_LIXIAOBAO_ICE_03: BATTLE_PKG + 'images/characters_anim/transparent/lixiaobao/cast_ice/ice_shard_cast_03.png',
+  HERO_LIXIAOBAO_ICE_04: BATTLE_PKG + 'images/characters_anim/transparent/lixiaobao/cast_ice/ice_shard_cast_04.png',
+  HERO_LIXIAOBAO_ICE_05: BATTLE_PKG + 'images/characters_anim/transparent/lixiaobao/cast_ice/ice_shard_cast_05.png',
+  HERO_LIXIAOBAO_ICE_06: BATTLE_PKG + 'images/characters_anim/transparent/lixiaobao/cast_ice/ice_shard_cast_06.png',
+  HERO_LIXIAOBAO_ICE_07: BATTLE_PKG + 'images/characters_anim/transparent/lixiaobao/cast_ice/ice_shard_cast_07.png',
+  HERO_LIXIAOBAO_ICE_08: BATTLE_PKG + 'images/characters_anim/transparent/lixiaobao/cast_ice/ice_shard_cast_08.png',
+
+  // 李小宝: cast_lightning(15帧)
+  HERO_LIXIAOBAO_LIGHTNING_01: BATTLE_PKG + 'images/characters_anim/transparent/lixiaobao/cast_lightning/lightning_cast_01.png',
+  HERO_LIXIAOBAO_LIGHTNING_02: BATTLE_PKG + 'images/characters_anim/transparent/lixiaobao/cast_lightning/lightning_cast_02.png',
+  HERO_LIXIAOBAO_LIGHTNING_03: BATTLE_PKG + 'images/characters_anim/transparent/lixiaobao/cast_lightning/lightning_cast_03.png',
+  HERO_LIXIAOBAO_LIGHTNING_04: BATTLE_PKG + 'images/characters_anim/transparent/lixiaobao/cast_lightning/lightning_cast_04.png',
+  HERO_LIXIAOBAO_LIGHTNING_05: BATTLE_PKG + 'images/characters_anim/transparent/lixiaobao/cast_lightning/lightning_cast_05.png',
+  HERO_LIXIAOBAO_LIGHTNING_06: BATTLE_PKG + 'images/characters_anim/transparent/lixiaobao/cast_lightning/lightning_cast_06.png',
+  HERO_LIXIAOBAO_LIGHTNING_07: BATTLE_PKG + 'images/characters_anim/transparent/lixiaobao/cast_lightning/lightning_cast_07.png',
+  HERO_LIXIAOBAO_LIGHTNING_08: BATTLE_PKG + 'images/characters_anim/transparent/lixiaobao/cast_lightning/lightning_cast_08.png',
+  HERO_LIXIAOBAO_LIGHTNING_09: BATTLE_PKG + 'images/characters_anim/transparent/lixiaobao/cast_lightning/lightning_cast_09.png',
+  HERO_LIXIAOBAO_LIGHTNING_10: BATTLE_PKG + 'images/characters_anim/transparent/lixiaobao/cast_lightning/lightning_cast_10.png',
+  HERO_LIXIAOBAO_LIGHTNING_11: BATTLE_PKG + 'images/characters_anim/transparent/lixiaobao/cast_lightning/lightning_cast_11.png',
+  HERO_LIXIAOBAO_LIGHTNING_12: BATTLE_PKG + 'images/characters_anim/transparent/lixiaobao/cast_lightning/lightning_cast_12.png',
+  HERO_LIXIAOBAO_LIGHTNING_13: BATTLE_PKG + 'images/characters_anim/transparent/lixiaobao/cast_lightning/lightning_cast_13.png',
+  HERO_LIXIAOBAO_LIGHTNING_14: BATTLE_PKG + 'images/characters_anim/transparent/lixiaobao/cast_lightning/lightning_cast_14.png',
+  HERO_LIXIAOBAO_LIGHTNING_15: BATTLE_PKG + 'images/characters_anim/transparent/lixiaobao/cast_lightning/lightning_cast_15.png',
+
+  // 李小宝: hit_fireball(24帧) - 火球命中特效
+  LXB_HIT_FIREBALL_01: BATTLE_PKG + 'images/characters_anim/transparent/lixiaobao/hit_fireball/fireball_hit_01.png',
+  LXB_HIT_FIREBALL_02: BATTLE_PKG + 'images/characters_anim/transparent/lixiaobao/hit_fireball/fireball_hit_02.png',
+  LXB_HIT_FIREBALL_03: BATTLE_PKG + 'images/characters_anim/transparent/lixiaobao/hit_fireball/fireball_hit_03.png',
+  LXB_HIT_FIREBALL_04: BATTLE_PKG + 'images/characters_anim/transparent/lixiaobao/hit_fireball/fireball_hit_04.png',
+  LXB_HIT_FIREBALL_05: BATTLE_PKG + 'images/characters_anim/transparent/lixiaobao/hit_fireball/fireball_hit_05.png',
+  LXB_HIT_FIREBALL_06: BATTLE_PKG + 'images/characters_anim/transparent/lixiaobao/hit_fireball/fireball_hit_06.png',
+  LXB_HIT_FIREBALL_07: BATTLE_PKG + 'images/characters_anim/transparent/lixiaobao/hit_fireball/fireball_hit_07.png',
+  LXB_HIT_FIREBALL_08: BATTLE_PKG + 'images/characters_anim/transparent/lixiaobao/hit_fireball/fireball_hit_08.png',
+  LXB_HIT_FIREBALL_09: BATTLE_PKG + 'images/characters_anim/transparent/lixiaobao/hit_fireball/fireball_hit_09.png',
+  LXB_HIT_FIREBALL_10: BATTLE_PKG + 'images/characters_anim/transparent/lixiaobao/hit_fireball/fireball_hit_10.png',
+  LXB_HIT_FIREBALL_11: BATTLE_PKG + 'images/characters_anim/transparent/lixiaobao/hit_fireball/fireball_hit_11.png',
+  LXB_HIT_FIREBALL_12: BATTLE_PKG + 'images/characters_anim/transparent/lixiaobao/hit_fireball/fireball_hit_12.png',
+  LXB_HIT_FIREBALL_13: BATTLE_PKG + 'images/characters_anim/transparent/lixiaobao/hit_fireball/fireball_hit_13.png',
+  LXB_HIT_FIREBALL_14: BATTLE_PKG + 'images/characters_anim/transparent/lixiaobao/hit_fireball/fireball_hit_14.png',
+  LXB_HIT_FIREBALL_15: BATTLE_PKG + 'images/characters_anim/transparent/lixiaobao/hit_fireball/fireball_hit_15.png',
+  LXB_HIT_FIREBALL_16: BATTLE_PKG + 'images/characters_anim/transparent/lixiaobao/hit_fireball/fireball_hit_16.png',
+  LXB_HIT_FIREBALL_17: BATTLE_PKG + 'images/characters_anim/transparent/lixiaobao/hit_fireball/fireball_hit_17.png',
+  LXB_HIT_FIREBALL_18: BATTLE_PKG + 'images/characters_anim/transparent/lixiaobao/hit_fireball/fireball_hit_18.png',
+  LXB_HIT_FIREBALL_19: BATTLE_PKG + 'images/characters_anim/transparent/lixiaobao/hit_fireball/fireball_hit_19.png',
+  LXB_HIT_FIREBALL_20: BATTLE_PKG + 'images/characters_anim/transparent/lixiaobao/hit_fireball/fireball_hit_20.png',
+  LXB_HIT_FIREBALL_21: BATTLE_PKG + 'images/characters_anim/transparent/lixiaobao/hit_fireball/fireball_hit_21.png',
+  LXB_HIT_FIREBALL_22: BATTLE_PKG + 'images/characters_anim/transparent/lixiaobao/hit_fireball/fireball_hit_22.png',
+  LXB_HIT_FIREBALL_23: BATTLE_PKG + 'images/characters_anim/transparent/lixiaobao/hit_fireball/fireball_hit_23.png',
+  LXB_HIT_FIREBALL_24: BATTLE_PKG + 'images/characters_anim/transparent/lixiaobao/hit_fireball/fireball_hit_24.png',
+
+  // 李小宝: hit_ice(11帧) - 冰晶命中特效
+  LXB_HIT_ICE_01: BATTLE_PKG + 'images/characters_anim/transparent/lixiaobao/hit_ice/ice_shard_hit_01.png',
+  LXB_HIT_ICE_02: BATTLE_PKG + 'images/characters_anim/transparent/lixiaobao/hit_ice/ice_shard_hit_02.png',
+  LXB_HIT_ICE_03: BATTLE_PKG + 'images/characters_anim/transparent/lixiaobao/hit_ice/ice_shard_hit_03.png',
+  LXB_HIT_ICE_04: BATTLE_PKG + 'images/characters_anim/transparent/lixiaobao/hit_ice/ice_shard_hit_04.png',
+  LXB_HIT_ICE_05: BATTLE_PKG + 'images/characters_anim/transparent/lixiaobao/hit_ice/ice_shard_hit_05.png',
+  LXB_HIT_ICE_06: BATTLE_PKG + 'images/characters_anim/transparent/lixiaobao/hit_ice/ice_shard_hit_06.png',
+  LXB_HIT_ICE_07: BATTLE_PKG + 'images/characters_anim/transparent/lixiaobao/hit_ice/ice_shard_hit_07.png',
+  LXB_HIT_ICE_08: BATTLE_PKG + 'images/characters_anim/transparent/lixiaobao/hit_ice/ice_shard_hit_08.png',
+  LXB_HIT_ICE_09: BATTLE_PKG + 'images/characters_anim/transparent/lixiaobao/hit_ice/ice_shard_hit_09.png',
+  LXB_HIT_ICE_10: BATTLE_PKG + 'images/characters_anim/transparent/lixiaobao/hit_ice/ice_shard_hit_10.png',
+  LXB_HIT_ICE_11: BATTLE_PKG + 'images/characters_anim/transparent/lixiaobao/hit_ice/ice_shard_hit_11.png',
+
+  // 李小宝: hit_lightning(12帧) - 雷电命中特效
+  LXB_HIT_LIGHTNING_01: BATTLE_PKG + 'images/characters_anim/transparent/lixiaobao/hit_lightning/lightning_hit_01.png',
+  LXB_HIT_LIGHTNING_02: BATTLE_PKG + 'images/characters_anim/transparent/lixiaobao/hit_lightning/lightning_hit_02.png',
+  LXB_HIT_LIGHTNING_03: BATTLE_PKG + 'images/characters_anim/transparent/lixiaobao/hit_lightning/lightning_hit_03.png',
+  LXB_HIT_LIGHTNING_04: BATTLE_PKG + 'images/characters_anim/transparent/lixiaobao/hit_lightning/lightning_hit_04.png',
+  LXB_HIT_LIGHTNING_05: BATTLE_PKG + 'images/characters_anim/transparent/lixiaobao/hit_lightning/lightning_hit_05.png',
+  LXB_HIT_LIGHTNING_06: BATTLE_PKG + 'images/characters_anim/transparent/lixiaobao/hit_lightning/lightning_hit_06.png',
+  LXB_HIT_LIGHTNING_07: BATTLE_PKG + 'images/characters_anim/transparent/lixiaobao/hit_lightning/lightning_hit_07.png',
+  LXB_HIT_LIGHTNING_08: BATTLE_PKG + 'images/characters_anim/transparent/lixiaobao/hit_lightning/lightning_hit_08.png',
+  LXB_HIT_LIGHTNING_09: BATTLE_PKG + 'images/characters_anim/transparent/lixiaobao/hit_lightning/lightning_hit_09.png',
+  LXB_HIT_LIGHTNING_10: BATTLE_PKG + 'images/characters_anim/transparent/lixiaobao/hit_lightning/lightning_hit_10.png',
+  LXB_HIT_LIGHTNING_11: BATTLE_PKG + 'images/characters_anim/transparent/lixiaobao/hit_lightning/lightning_hit_11.png',
+  LXB_HIT_LIGHTNING_12: BATTLE_PKG + 'images/characters_anim/transparent/lixiaobao/hit_lightning/lightning_hit_12.png',
   
   // 猫咪主角动画（探索地图用，减帧版，统一放在 transparent/cat/ 目录管理）
   // idle: 8帧静止动画

@@ -1,0 +1,3317 @@
+/**
+ * tower-battle.js - 闯关战斗核心（重写版）
+ *
+ * 核心机制：
+ * - ARPG式实时战斗：平A自动 + 技能手动（底部4技能栏）
+ * - 敌方水晶无限刷怪，摧毁水晶即胜利
+ * - 角色死亡后复活，保留等级/装备/技能（类似英雄联盟）
+ * - 击杀怪物获得经验和装备掉落，升级解锁技能
+ * - 开局卡牌选择：从3张随机属性卡中选1张
+ * - 掉落装备有拾取时限（8秒），需手动点击收集
+ * - 装备品质分级特效：传说>史诗>稀有>普通
+ *
+ * 渲染资源：
+ * - 角色：使用真实动画帧精灵（walk/idle/attack/cast）
+ * - 怪物：使用真实怪物精灵（slime_cat/shadow_mouse）
+ * - 特效：施法帧 + 击中帧粒子
+ */
+
+import { getRandomEquipment } from '../../data/equipment.js'
+
+// ========== 常量定义 ==========
+
+const QUALITY_COLORS = {
+  legendary: '#ff8c00',
+  epic: '#a335ee',
+  rare: '#0070dd',
+  common: '#9d9d9d'
+}
+
+const QUALITY_NAMES = {
+  legendary: '传说',
+  epic: '史诗',
+  rare: '稀有',
+  common: '普通'
+}
+
+const QUALITY_DROP_CHANCE = {
+  legendary: 0.02,
+  epic: 0.08,
+  rare: 0.25,
+  common: 0.65
+}
+
+const DROP_LIFETIME = 8000 // 8秒拾取时限
+
+// 复活时间表（秒） = 等级 * 2
+const RESPAWN_TABLE = {}
+for (let lv = 1; lv <= 100; lv++) RESPAWN_TABLE[lv] = lv * 2
+
+// 经验值表（每级所需经验）
+const EXP_TABLE = []
+for (let lv = 1; lv <= 50; lv++) EXP_TABLE[lv] = Math.floor(30 * Math.pow(1.15, lv))
+
+// 分包路径前缀
+const PKG = 'subpackages/battle/'
+
+// ========== 精灵帧映射表 ==========
+
+/** 角色动画帧 key 列表 */
+const HERO_SPRITES = {
+  zhenbao: {
+    walk: [
+      'HERO_ZHENBAO_WALK_03', 'HERO_ZHENBAO_WALK_04', 'HERO_ZHENBAO_WALK_05',
+      'HERO_ZHENBAO_WALK_06', 'HERO_ZHENBAO_WALK_07', 'HERO_ZHENBAO_WALK_08',
+      'HERO_ZHENBAO_WALK_09', 'HERO_ZHENBAO_WALK_10'
+    ],
+    idle: [
+      'HERO_ZHENBAO_IDLE_01', 'HERO_ZHENBAO_IDLE_02', 'HERO_ZHENBAO_IDLE_03',
+      'HERO_ZHENBAO_IDLE_04', 'HERO_ZHENBAO_IDLE_05'
+    ],
+    // 普攻（4帧轻攻击）
+    attack: [
+      'HERO_ZHENBAO_ATTACK_01', 'HERO_ZHENBAO_ATTACK_02', 'HERO_ZHENBAO_ATTACK_03',
+      'HERO_ZHENBAO_ATTACK_04'
+    ],
+    // 斩击/大招（13帧重击，用于技能）
+    slash: [
+      'HERO_ZHENBAO_SLASH_01', 'HERO_ZHENBAO_SLASH_02', 'HERO_ZHENBAO_SLASH_03',
+      'HERO_ZHENBAO_SLASH_04', 'HERO_ZHENBAO_SLASH_05', 'HERO_ZHENBAO_SLASH_06',
+      'HERO_ZHENBAO_SLASH_07', 'HERO_ZHENBAO_SLASH_08', 'HERO_ZHENBAO_SLASH_09',
+      'HERO_ZHENBAO_SLASH_10', 'HERO_ZHENBAO_SLASH_11', 'HERO_ZHENBAO_SLASH_12',
+      'HERO_ZHENBAO_SLASH_13'
+    ],
+    frameRate: { walk: 150, idle: 300, attack: 80, slash: 70 }
+  },
+  lixiaobao: {
+    walk: [
+      'HERO_LIXIAOBAO_WALK_0', 'HERO_LIXIAOBAO_WALK_1', 'HERO_LIXIAOBAO_WALK_2',
+      'HERO_LIXIAOBAO_WALK_3', 'HERO_LIXIAOBAO_WALK_4', 'HERO_LIXIAOBAO_WALK_5',
+      'HERO_LIXIAOBAO_WALK_6', 'HERO_LIXIAOBAO_WALK_7'
+    ],
+    idle: ['HERO_LIXIAOBAO_IDLE_0', 'HERO_LIXIAOBAO_IDLE_1'],
+    // 真实攻击帧：法杖敲击（5帧）
+    attack: [
+      'HERO_LIXIAOBAO_ATTACK_01', 'HERO_LIXIAOBAO_ATTACK_02', 'HERO_LIXIAOBAO_ATTACK_03',
+      'HERO_LIXIAOBAO_ATTACK_04', 'HERO_LIXIAOBAO_ATTACK_05'
+    ],
+    // 法杖施法（5帧，用于非元素技能）
+    cast_attack: [
+      'HERO_LIXIAOBAO_CAST_ATK_01', 'HERO_LIXIAOBAO_CAST_ATK_02', 'HERO_LIXIAOBAO_CAST_ATK_03',
+      'HERO_LIXIAOBAO_CAST_ATK_04', 'HERO_LIXIAOBAO_CAST_ATK_05'
+    ],
+    // 火球施法（11帧）
+    cast_fireball: [
+      'HERO_LIXIAOBAO_FIREBALL_01', 'HERO_LIXIAOBAO_FIREBALL_02', 'HERO_LIXIAOBAO_FIREBALL_03',
+      'HERO_LIXIAOBAO_FIREBALL_04', 'HERO_LIXIAOBAO_FIREBALL_05', 'HERO_LIXIAOBAO_FIREBALL_06',
+      'HERO_LIXIAOBAO_FIREBALL_07', 'HERO_LIXIAOBAO_FIREBALL_08', 'HERO_LIXIAOBAO_FIREBALL_09',
+      'HERO_LIXIAOBAO_FIREBALL_10', 'HERO_LIXIAOBAO_FIREBALL_11'
+    ],
+    // 冰晶施法（8帧）
+    cast_ice: [
+      'HERO_LIXIAOBAO_ICE_01', 'HERO_LIXIAOBAO_ICE_02', 'HERO_LIXIAOBAO_ICE_03',
+      'HERO_LIXIAOBAO_ICE_04', 'HERO_LIXIAOBAO_ICE_05', 'HERO_LIXIAOBAO_ICE_06',
+      'HERO_LIXIAOBAO_ICE_07', 'HERO_LIXIAOBAO_ICE_08'
+    ],
+    // 雷电施法（15帧，替代流星雨）
+    cast_lightning: [
+      'HERO_LIXIAOBAO_LIGHTNING_01', 'HERO_LIXIAOBAO_LIGHTNING_02', 'HERO_LIXIAOBAO_LIGHTNING_03',
+      'HERO_LIXIAOBAO_LIGHTNING_04', 'HERO_LIXIAOBAO_LIGHTNING_05', 'HERO_LIXIAOBAO_LIGHTNING_06',
+      'HERO_LIXIAOBAO_LIGHTNING_07', 'HERO_LIXIAOBAO_LIGHTNING_08', 'HERO_LIXIAOBAO_LIGHTNING_09',
+      'HERO_LIXIAOBAO_LIGHTNING_10', 'HERO_LIXIAOBAO_LIGHTNING_11', 'HERO_LIXIAOBAO_LIGHTNING_12',
+      'HERO_LIXIAOBAO_LIGHTNING_13', 'HERO_LIXIAOBAO_LIGHTNING_14', 'HERO_LIXIAOBAO_LIGHTNING_15'
+    ],
+    frameRate: { walk: 150, idle: 300, attack: 80, cast_attack: 90, cast_fireball: 100, cast_ice: 120, cast_lightning: 80 }
+  },
+  // 路飞、糖果用猫精灵代替
+  cat: {
+    walk: [
+      'CAT_WALK_01', 'CAT_WALK_02', 'CAT_WALK_03', 'CAT_WALK_04', 'CAT_WALK_05',
+      'CAT_WALK_06', 'CAT_WALK_07', 'CAT_WALK_08', 'CAT_WALK_09', 'CAT_WALK_10',
+      'CAT_WALK_11', 'CAT_WALK_12'
+    ],
+    idle: [
+      'CAT_IDLE_01', 'CAT_IDLE_02', 'CAT_IDLE_03', 'CAT_IDLE_04',
+      'CAT_IDLE_05', 'CAT_IDLE_06', 'CAT_IDLE_07', 'CAT_IDLE_08'
+    ],
+    // 普攻+施法都复用walk帧
+    attack: [
+      'CAT_WALK_01', 'CAT_WALK_02', 'CAT_WALK_03', 'CAT_WALK_04', 'CAT_WALK_05',
+      'CAT_WALK_06', 'CAT_WALK_07', 'CAT_WALK_08', 'CAT_WALK_09', 'CAT_WALK_10'
+    ],
+    cast: [
+      'CAT_WALK_01', 'CAT_WALK_02', 'CAT_WALK_03', 'CAT_WALK_04', 'CAT_WALK_05',
+      'CAT_WALK_06', 'CAT_WALK_07', 'CAT_WALK_08'
+    ],
+    frameRate: { walk: 120, idle: 250, attack: 65, cast: 90 }
+  }
+}
+
+/** 怪物精灵映射 */
+const MONSTER_SPRITES = {
+  slime: {
+    type: 'slime_cat',
+    idle: ['SLIME_CAT_IDLE_1', 'SLIME_CAT_IDLE_2', 'SLIME_CAT_IDLE_3', 'SLIME_CAT_IDLE_4', 'SLIME_CAT_IDLE_5', 'SLIME_CAT_IDLE_6', 'SLIME_CAT_IDLE_7'],
+    attack: ['SLIME_CAT_ATTACK_0008', 'SLIME_CAT_ATTACK_0010', 'SLIME_CAT_ATTACK_0012', 'SLIME_CAT_ATTACK_0014', 'SLIME_CAT_ATTACK_0016', 'SLIME_CAT_ATTACK_0018', 'SLIME_CAT_ATTACK_0020', 'SLIME_CAT_ATTACK_0022'],
+    walk: ['SLIME_CAT_WALK_01', 'SLIME_CAT_WALK_02', 'SLIME_CAT_WALK_03', 'SLIME_CAT_WALK_04', 'SLIME_CAT_WALK_05', 'SLIME_CAT_WALK_06', 'SLIME_CAT_WALK_07', 'SLIME_CAT_WALK_08', 'SLIME_CAT_WALK_09', 'SLIME_CAT_WALK_10', 'SLIME_CAT_WALK_11', 'SLIME_CAT_WALK_12'],
+    frameRate: { idle: 300, attack: 120, walk: 140 },
+    scale: 1.2
+  },
+  goblin: {
+    type: 'shadow_mouse',
+    idle: ['SHADOW_MOUSE_IDLE_01', 'SHADOW_MOUSE_IDLE_02', 'SHADOW_MOUSE_IDLE_03', 'SHADOW_MOUSE_IDLE_04', 'SHADOW_MOUSE_IDLE_05', 'SHADOW_MOUSE_IDLE_06'],
+    attack: ['SHADOW_MOUSE_ATTACK_01', 'SHADOW_MOUSE_ATTACK_02', 'SHADOW_MOUSE_ATTACK_03', 'SHADOW_MOUSE_ATTACK_04', 'SHADOW_MOUSE_ATTACK_05', 'SHADOW_MOUSE_ATTACK_06', 'SHADOW_MOUSE_ATTACK_07'],
+    walk: ['SHADOW_MOUSE_WALK_01', 'SHADOW_MOUSE_WALK_02', 'SHADOW_MOUSE_WALK_03', 'SHADOW_MOUSE_WALK_04', 'SHADOW_MOUSE_WALK_05', 'SHADOW_MOUSE_WALK_06', 'SHADOW_MOUSE_WALK_07', 'SHADOW_MOUSE_WALK_08', 'SHADOW_MOUSE_WALK_09', 'SHADOW_MOUSE_WALK_10', 'SHADOW_MOUSE_WALK_11', 'SHADOW_MOUSE_WALK_12'],
+    frameRate: { idle: 280, attack: 100, walk: 130 },
+    scale: 1.0
+  },
+  orc: {
+    type: 'slime_cat',
+    idle: ['SLIME_CAT_IDLE_1', 'SLIME_CAT_IDLE_2', 'SLIME_CAT_IDLE_3', 'SLIME_CAT_IDLE_4', 'SLIME_CAT_IDLE_5', 'SLIME_CAT_IDLE_6', 'SLIME_CAT_IDLE_7'],
+    attack: ['SLIME_CAT_ATTACK_0008', 'SLIME_CAT_ATTACK_0010', 'SLIME_CAT_ATTACK_0012', 'SLIME_CAT_ATTACK_0014', 'SLIME_CAT_ATTACK_0016', 'SLIME_CAT_ATTACK_0018', 'SLIME_CAT_ATTACK_0020', 'SLIME_CAT_ATTACK_0022'],
+    walk: ['SLIME_CAT_WALK_01', 'SLIME_CAT_WALK_02', 'SLIME_CAT_WALK_03', 'SLIME_CAT_WALK_04', 'SLIME_CAT_WALK_05', 'SLIME_CAT_WALK_06', 'SLIME_CAT_WALK_07', 'SLIME_CAT_WALK_08', 'SLIME_CAT_WALK_09', 'SLIME_CAT_WALK_10', 'SLIME_CAT_WALK_11', 'SLIME_CAT_WALK_12'],
+    frameRate: { idle: 280, attack: 100, walk: 130 },
+    scale: 1.5,
+    tint: '#8b5e3c'  // 兽人偏棕色
+  },
+  wolf: {
+    type: 'shadow_mouse',
+    idle: ['SHADOW_MOUSE_IDLE_01', 'SHADOW_MOUSE_IDLE_02', 'SHADOW_MOUSE_IDLE_03', 'SHADOW_MOUSE_IDLE_04', 'SHADOW_MOUSE_IDLE_05', 'SHADOW_MOUSE_IDLE_06'],
+    attack: ['SHADOW_MOUSE_ATTACK_01', 'SHADOW_MOUSE_ATTACK_02', 'SHADOW_MOUSE_ATTACK_03', 'SHADOW_MOUSE_ATTACK_04', 'SHADOW_MOUSE_ATTACK_05', 'SHADOW_MOUSE_ATTACK_06', 'SHADOW_MOUSE_ATTACK_07'],
+    walk: ['SHADOW_MOUSE_WALK_01', 'SHADOW_MOUSE_WALK_02', 'SHADOW_MOUSE_WALK_03', 'SHADOW_MOUSE_WALK_04', 'SHADOW_MOUSE_WALK_05', 'SHADOW_MOUSE_WALK_06', 'SHADOW_MOUSE_WALK_07', 'SHADOW_MOUSE_WALK_08', 'SHADOW_MOUSE_WALK_09', 'SHADOW_MOUSE_WALK_10', 'SHADOW_MOUSE_WALK_11', 'SHADOW_MOUSE_WALK_12'],
+    frameRate: { idle: 200, attack: 70, walk: 100 },
+    scale: 1.1,
+    tint: '#7a7a7a'
+  },
+  undead: {
+    type: 'shadow_mouse',
+    idle: ['SHADOW_MOUSE_IDLE_01', 'SHADOW_MOUSE_IDLE_02', 'SHADOW_MOUSE_IDLE_03', 'SHADOW_MOUSE_IDLE_04', 'SHADOW_MOUSE_IDLE_05', 'SHADOW_MOUSE_IDLE_06'],
+    attack: ['SHADOW_MOUSE_ATTACK_01', 'SHADOW_MOUSE_ATTACK_02', 'SHADOW_MOUSE_ATTACK_03', 'SHADOW_MOUSE_ATTACK_04', 'SHADOW_MOUSE_ATTACK_05', 'SHADOW_MOUSE_ATTACK_06', 'SHADOW_MOUSE_ATTACK_07'],
+    walk: ['SHADOW_MOUSE_WALK_01', 'SHADOW_MOUSE_WALK_02', 'SHADOW_MOUSE_WALK_03', 'SHADOW_MOUSE_WALK_04', 'SHADOW_MOUSE_WALK_05', 'SHADOW_MOUSE_WALK_06', 'SHADOW_MOUSE_WALK_07', 'SHADOW_MOUSE_WALK_08', 'SHADOW_MOUSE_WALK_09', 'SHADOW_MOUSE_WALK_10', 'SHADOW_MOUSE_WALK_11', 'SHADOW_MOUSE_WALK_12'],
+    frameRate: { idle: 350, attack: 140, walk: 160 },
+    scale: 1.15,
+    tint: '#9b8fb4'
+  },
+  demon: {
+    type: 'slime_cat',
+    idle: ['SLIME_CAT_IDLE_1', 'SLIME_CAT_IDLE_2', 'SLIME_CAT_IDLE_3', 'SLIME_CAT_IDLE_4', 'SLIME_CAT_IDLE_5', 'SLIME_CAT_IDLE_6', 'SLIME_CAT_IDLE_7'],
+    attack: ['SLIME_CAT_ATTACK_0008', 'SLIME_CAT_ATTACK_0010', 'SLIME_CAT_ATTACK_0012', 'SLIME_CAT_ATTACK_0014', 'SLIME_CAT_ATTACK_0016', 'SLIME_CAT_ATTACK_0018', 'SLIME_CAT_ATTACK_0020', 'SLIME_CAT_ATTACK_0022'],
+    walk: ['SLIME_CAT_WALK_01', 'SLIME_CAT_WALK_02', 'SLIME_CAT_WALK_03', 'SLIME_CAT_WALK_04', 'SLIME_CAT_WALK_05', 'SLIME_CAT_WALK_06', 'SLIME_CAT_WALK_07', 'SLIME_CAT_WALK_08', 'SLIME_CAT_WALK_09', 'SLIME_CAT_WALK_10', 'SLIME_CAT_WALK_11', 'SLIME_CAT_WALK_12'],
+    frameRate: { idle: 250, attack: 90, walk: 110 },
+    scale: 1.6,
+    tint: '#c0392b'
+  },
+  dragon: {
+    type: 'slime_cat',
+    idle: ['SLIME_CAT_IDLE_1', 'SLIME_CAT_IDLE_2', 'SLIME_CAT_IDLE_3', 'SLIME_CAT_IDLE_4', 'SLIME_CAT_IDLE_5', 'SLIME_CAT_IDLE_6', 'SLIME_CAT_IDLE_7'],
+    attack: ['SLIME_CAT_ATTACK_0008', 'SLIME_CAT_ATTACK_0010', 'SLIME_CAT_ATTACK_0012', 'SLIME_CAT_ATTACK_0014', 'SLIME_CAT_ATTACK_0016', 'SLIME_CAT_ATTACK_0018', 'SLIME_CAT_ATTACK_0020', 'SLIME_CAT_ATTACK_0022'],
+    walk: ['SLIME_CAT_WALK_01', 'SLIME_CAT_WALK_02', 'SLIME_CAT_WALK_03', 'SLIME_CAT_WALK_04', 'SLIME_CAT_WALK_05', 'SLIME_CAT_WALK_06', 'SLIME_CAT_WALK_07', 'SLIME_CAT_WALK_08', 'SLIME_CAT_WALK_09', 'SLIME_CAT_WALK_10', 'SLIME_CAT_WALK_11', 'SLIME_CAT_WALK_12'],
+    frameRate: { idle: 300, attack: 130, walk: 150 },
+    scale: 2.0,
+    tint: '#e74c3c'
+  }
+}
+
+/** 命中特效帧定义（hit帧——在目标位置播放的命中动画） */
+const HIT_EFFECTS = {
+  // 普攻命中（法杖敲击/物理打击）
+  attack: {
+    frames: [
+      'HERO_LIXIAOBAO_ATTACK_01','HERO_LIXIAOBAO_ATTACK_02','HERO_LIXIAOBAO_ATTACK_03',
+      'HERO_LIXIAOBAO_ATTACK_04','HERO_LIXIAOBAO_ATTACK_05'
+    ],
+    frameRate: 70
+  },
+  fireball: {
+    frames: [
+      'LXB_HIT_FIREBALL_01','LXB_HIT_FIREBALL_02','LXB_HIT_FIREBALL_03',
+      'LXB_HIT_FIREBALL_04','LXB_HIT_FIREBALL_05','LXB_HIT_FIREBALL_06',
+      'LXB_HIT_FIREBALL_07','LXB_HIT_FIREBALL_08','LXB_HIT_FIREBALL_09',
+      'LXB_HIT_FIREBALL_10','LXB_HIT_FIREBALL_11','LXB_HIT_FIREBALL_12',
+      'LXB_HIT_FIREBALL_13','LXB_HIT_FIREBALL_14','LXB_HIT_FIREBALL_15',
+      'LXB_HIT_FIREBALL_16','LXB_HIT_FIREBALL_17','LXB_HIT_FIREBALL_18',
+      'LXB_HIT_FIREBALL_19','LXB_HIT_FIREBALL_20','LXB_HIT_FIREBALL_21',
+      'LXB_HIT_FIREBALL_22','LXB_HIT_FIREBALL_23','LXB_HIT_FIREBALL_24'
+    ],
+    frameRate: 20
+  },
+  ice: {
+    frames: [
+      'LXB_HIT_ICE_01','LXB_HIT_ICE_02','LXB_HIT_ICE_03','LXB_HIT_ICE_04',
+      'LXB_HIT_ICE_05','LXB_HIT_ICE_06','LXB_HIT_ICE_07','LXB_HIT_ICE_08',
+      'LXB_HIT_ICE_09','LXB_HIT_ICE_10','LXB_HIT_ICE_11'
+    ],
+    frameRate: 44
+  },
+  lightning: {
+    frames: [
+      'LXB_HIT_LIGHTNING_01','LXB_HIT_LIGHTNING_02','LXB_HIT_LIGHTNING_03',
+      'LXB_HIT_LIGHTNING_04','LXB_HIT_LIGHTNING_05','LXB_HIT_LIGHTNING_06',
+      'LXB_HIT_LIGHTNING_07','LXB_HIT_LIGHTNING_08','LXB_HIT_LIGHTNING_09',
+      'LXB_HIT_LIGHTNING_10','LXB_HIT_LIGHTNING_11','LXB_HIT_LIGHTNING_12'
+    ],
+    frameRate: 40
+  }
+}
+
+// ========== 战前卡牌定义 ==========
+
+const CARD_POOL = [
+  // === 攻击类 ===
+  { id: 'atk_boost_1', name: '锋利之刃', desc: '全体攻击+15%', icon: '⚔', color: '#e74c3c', effect: { type: 'atk_mul', value: 0.15 } },
+  { id: 'atk_boost_2', name: '狂暴之力', desc: '全体攻击+25%', icon: '🔥', color: '#ff4444', effect: { type: 'atk_mul', value: 0.25 }, rare: true },
+  { id: 'crit_card', name: '致命一击', desc: '暴击率+20%', icon: '💥', color: '#f39c12', effect: { type: 'crit', value: 0.2 } },
+  { id: 'spd_boost', name: '疾风步', desc: '全体速度+20%', icon: '💨', color: '#3498db', effect: { type: 'spd_mul', value: 0.2 } },
+
+  // === 防御类 ===
+  { id: 'def_boost_1', name: '铁壁守护', desc: '全体防御+20%', icon: '🛡', color: '#3498db', effect: { type: 'def_mul', value: 0.2 } },
+  { id: 'def_boost_2', name: '不朽意志', desc: '全体防御+35%', icon: '🏰', color: '#2980b9', effect: { type: 'def_mul', value: 0.35 }, rare: true },
+  { id: 'hp_boost_1', name: '生命源泉', desc: '全体生命+20%', icon: '❤', color: '#2ecc71', effect: { type: 'hp_mul', value: 0.2 } },
+  { id: 'hp_boost_2', name: '巨人之血', desc: '全体生命+35%', icon: '💚', color: '#27ae60', effect: { type: 'hp_mul', value: 0.35 }, rare: true },
+
+  // === 功能类 ===
+  { id: 'exp_boost', name: '知识结晶', desc: '经验获取+50%', icon: '📖', color: '#9b59b6', effect: { type: 'exp_mul', value: 0.5 } },
+  { id: 'drop_boost', name: '幸运之星', desc: '装备掉率+30%（高品质概率提升）', icon: '🍀', color: '#f1c40f', effect: { type: 'drop_rare', value: 0.3 } },
+  { id: 'respawn_fast', name: '不死鸟羽', desc: '复活速度-40%', icon: '🕊', color: '#e67e22', effect: { type: 'respawn_faster', value: 0.4 } },
+  { id: 'start_mp', name: '魔力涌动', desc: '开局MP全满', icon: '✨', color: '#9b59b6', effect: { type: 'full_mp', value: 1 } },
+
+  // === 经济类 ===
+  { id: 'gold_start', name: '金币祝福', desc: '额外获得金币奖励', icon: '💰', color: '#f1c40f', effect: { type: 'gold_bonus', value: 200 } },
+]
+
+// ========== 主类 ==========
+
+export class TowerBattle {
+  constructor(scene, stage, party) {
+    this.scene = scene
+    this.game = scene.game
+    this.ctx = scene.ctx
+    this.width = scene.width
+    this.height = scene.height
+    this.dpr = scene.dpr || 1
+    this.stage = stage
+    this.party = party
+
+    // 阶段: card_select | battle | victory | defeat
+    this.phase = 'card_select'
+
+    // 战斗时间
+    this.battleTime = 0
+    this.stats = { kills: 0, dropsCollected: 0, time: 0, damageDealt: 0, goldEarned: 0 }
+
+    // 资源管理器引用
+    this.assets = this.game.assets
+
+    // 卡牌选择状态
+    this._initCardPhase()
+
+    // 敌人水晶
+    this.crystal = null
+    this._initCrystal()
+
+    // 刷怪波次系统（10波固定，从水晶生成）
+    this.spawnQueue = []
+    this.spawnTimer = 0
+    this.spawnInterval = 2500  // 波次间隔2.5s
+    this.waveIndex = 0           // 当前波次（0-9，共10波）
+    this.totalWaves = 10        // 总波数
+    this.currentWaveMonsters = [] // 当前波次的剩余怪物（未生成的）
+    this.waveSpawnedCount = 0   // 当前波已生成数量
+    this.waveTotalCount = 0     // 当前波总数量
+    this.waveActive = false     // 当前波是否在活跃中
+    this.waveCooldownTimer = 0  // 波次间冷却计时器
+    this.waveCooldown = 3000    // 波次间冷却3秒
+    this.allWavesDone = false   // 所有波次是否已完成
+    this._waveClearCooldownActive = false  // 当前波怪物死完后的冷却阶段
+
+    // 波次定义：每波怪物类型和数量（渐进难度）
+    this._initWaveDefinitions()
+
+    // 实体数组
+    this.monsters = []
+    this.droppedItems = []
+    this.projectiles = []
+    this.effects = []
+    this.particles = []
+
+    // 视角/相机
+    this.camera = { x: 0, y: 0, targetX: 0, targetY: 0, shakeX: 0, shakeY: 0 }
+
+    // 点击相关
+    this.tapPos = null
+    this.selectedCharIndex = 0 // 当前选中的角色索引
+    this.lastTapTime = 0
+
+    // 技能弧形菜单状态（点击角色后弹出）
+    this.skillMenu = {
+      visible: false,
+      charIndex: -1,     // 哪个角色被选中
+      openTimer: 0,
+      maxDuration: 3000  // 3秒后自动关闭
+    }
+
+    // 角色位置初始化（战斗阶段才调用）
+    if (this.phase !== 'card_select') {
+      this._initPositions()
+      // 启动波次系统（延迟1秒后开始第一波）
+      this.waveCooldownTimer = 1000
+    }
+
+    // 浮动文字队列（用于升级提示等）
+    this.floatingTexts = []
+  }
+
+  // ==================== 卡牌选择阶段 ====================
+
+  _initCardPhase() {
+    // 从卡池随机抽3张（保证至少1张非稀有）
+    const pool = [...CARD_POOL]
+    const cards = []
+    // 洗牌
+    for (let i = pool.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1))
+      ;[pool[i], pool[j]] = [pool[j], pool[i]]
+    }
+    // 取3张
+    cards.push(pool.shift())
+    cards.push(pool.shift())
+    cards.push(pool.find(c => !c.rare) || pool.shift())
+
+    this.cardPhase = {
+      cards,
+      selectedIndex: -1,
+      confirmed: false,
+      animTimer: 0,
+      appliedEffects: [] // 已应用的加成效果
+    }
+  }
+
+  /** 应用选中的卡牌效果到队伍 */
+  _applyCardEffect(card) {
+    const eff = card.effect
+    for (const c of this.party) {
+      switch (eff.type) {
+        case 'atk_mul':
+          c.atk = Math.floor(c.atk * (1 + eff.value))
+          break
+        case 'def_mul':
+          c.def = Math.floor(c.def * (1 + eff.value))
+          break
+        case 'hp_mul':
+          c.maxHp = Math.floor(c.maxHp * (1 + eff.value))
+          c.currentHp = c.maxHp
+          break
+        case 'spd_mul':
+          c.spd = Math.floor(c.spd * (1 + eff.value))
+          break
+        case 'crit':
+          c.critChance = (c.critChance || 0) + eff.value
+          break
+        case 'exp_mul':
+          c.expBonus = (c.expBonus || 0) + eff.value
+          break
+        case 'drop_rare':
+          this._dropRareBoost = (this._dropRareBoost || 0) + eff.value
+          break
+        case 'respawn_faster':
+          this._respawnBoost = (this._respawnBoost || 0) + eff.value
+          break
+        case 'full_mp':
+          c.currentMp = c.maxMp
+          break
+        case 'gold_bonus':
+          this.stats.goldEarned += eff.value
+          break
+      }
+    }
+    this.cardPhase.appliedEffects.push(card.id)
+  }
+
+  /** 确认卡牌选择，进入战斗 */
+  _confirmCards() {
+    if (this.cardPhase.selectedIndex < 0) return
+    const card = this.cardPhase.cards[this.cardPhase.selectedIndex]
+    this._applyCardEffect(card)
+    this.phase = 'battle'
+    this._initPositions()
+    // 启动波次系统（延迟1秒后开始第一波）
+    this.waveCooldownTimer = 1000
+  }
+
+  // ==================== 初始化 ====================
+
+  _initCrystal() {
+    this.crystal = {
+      x: this.width * 0.78,
+      y: this.height * 0.5,
+      hp: this.stage.crystalHp,
+      maxHp: this.stage.crystalHp,
+      atk: 0,
+      atkInterval: 9999,
+      atkTimer: 0,
+      hurtTimer: 0,
+      shakeX: 0,
+      shakeY: 0,
+      scale: 1,
+      hurtFlash: 0,
+      isDead: false,
+      deadTimer: 0,
+      deathAnim: 0,
+      // ===== 新增：可攻击状态 =====
+      isAttackable: false,    // 初始不可攻击（10波怪物全部消灭后变为true）
+      attackableFlash: 0,    // 变为可攻击时的闪烁提示
+      arrowAnimTimer: 0,     // 箭头指引动画计时器
+    }
+  }
+
+  /**
+   * 初始化10波波次定义（渐进难度）
+   * 波次1-3：纯史莱姆猫
+   * 波次4-6：史莱姆猫 + 暗影鼠
+   * 波次7-8：+ 兽人/狼等更强怪
+   * 波次9：混合大军
+   * 波次10：最终决战波
+   */
+  _initWaveDefinitions() {
+    this.waveDefs = [
+      { waveNum: 1, monsters: [{ type: 'slime', count: 3 }] },                          // 3只史莱姆
+      { waveNum: 2, monsters: [{ type: 'slime', count: 4 }] },                          // 4只史莱姆
+      { waveNum: 3, monsters: [{ type: 'slime', count: 5 }] },                          // 5只史莱姆
+      { waveNum: 4, monsters: [{ type: 'slime', count: 3 }, { type: 'shadow_mouse', count: 2 }] }, // 史莱姆+暗影鼠
+      { waveNum: 5, monsters: [{ type: 'slime', count: 3 }, { type: 'shadow_mouse', count: 3 }] },
+      { waveNum: 6, monsters: [{ type: 'slime', count: 2 }, { type: 'shadow_mouse', count: 4 }] },
+      { waveNum: 7, monsters: [{ type: 'slime', count: 2 }, { type: 'shadow_mouse', count: 3 }, { type: 'goblin', count: 2 }] },
+      { waveNum: 8, monsters: [{ type: 'slime', count: 2 }, { type: 'shadow_mouse', count: 3 }, { type: 'goblin', count: 3 }] },
+      { waveNum: 9, monsters: [{ type: 'slime', count: 3 }, { type: 'shadow_mouse', count: 4 }, { type: 'goblin', count: 3 }, { type: 'orc', count: 1 }] },
+      { waveNum: 10, monsters: [{ type: 'slime', count: 5 }, { type: 'shadow_mouse', count: 5 }, { type: 'goblin', count: 4 }, { type: 'orc', count: 3 }] },
+    ]
+    // 计算总怪物数用于UI显示
+    this.totalMonstersAllWaves = 0
+    for (const w of this.waveDefs) {
+      for (const m of w.monsters) {
+        this.totalMonstersAllWaves += m.count
+      }
+    }
+  }
+
+  _initPositions() {
+    const startX = this.width * 0.12
+    const centerY = this.height * 0.5
+    const spacing = this.height * 0.12
+    for (let i = 0; i < this.party.length; i++) {
+      const c = this.party[i]
+      c.x = c.targetX = startX + (i % 2) * 45
+      c.y = c.targetY = centerY + (i - this.party.length / 2) * spacing
+      c.attackTimer = Math.random() * 500
+      c.skillCDs = {}
+      c.attackAnimTimer = 0
+      c.hurtTimer = 0
+      c.hurtFlash = 0
+      c.moveSpeed = 120 + (c.spd || 10) * 5
+      // 攻击范围：近战角色短距离，法系远程
+      c.atkRange = (c.role === 'mage') ? 120 : 55
+      c.isDead = false
+      c.respawnTimer = 0
+
+      // 动画状态
+      c.animState = 'idle'     // idle | walk | attack | cast | dead
+      c.animFrame = 0
+      c.animTimer = 0
+      c.castSkillId = null      // 正在施放的技能ID
+
+      // 朝向（true=朝右，false=朝左）
+      c.facingRight = true
+
+      // 自动技能计时
+      c.autoSkillTimer = 0     // 自动施法间隔
+      c.autoSkillInterval = 5000 // 每5秒自动释放一次技能（优先CD好的）
+
+      // 升级相关
+      c.totalExp = 0            // 本场总经验
+      c.levelUpFlash = 0       // 升级闪烁
+    }
+    // 默认选中第一个存活角色
+    this.selectedCharIndex = this.party.findIndex(c => !c.isDead) || 0
+  }
+
+  // ==================== 刷怪 ====================
+
+  // ==================== 波次系统（10波从水晶生成）====================
+
+  /**
+   * 开始新一波次：将波次定义中的怪物加入生成队列
+   */
+  _startNextWave() {
+    if (this.waveIndex >= this.totalWaves || this.allWavesDone) {
+      // 所有波次已完成！
+      this._onAllWavesComplete()
+      return
+    }
+
+    const waveDef = this.waveDefs[this.waveIndex]
+    if (!waveDef) {
+      this.allWavesDone = true
+      this._onAllWavesComplete()
+      return
+    }
+
+    // 构建当前波次的怪物队列（打乱顺序，逐个生成）
+    this.currentWaveMonsters = []
+    for (const entry of waveDef.monsters) {
+      for (let i = 0; i < entry.count; i++) {
+        this.currentWaveMonsters.push(entry.type)
+      }
+    }
+    // 打乱顺序让不同类型交错出现
+    for (let i = this.currentWaveMonsters.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1))
+        ;[this.currentWaveMonsters[i], this.currentWaveMonsters[j]] = [this.currentWaveMonsters[j], this.currentWaveMonsters[i]]
+    }
+    this.waveSpawnedCount = 0
+    this.waveTotalCount = this.currentWaveMonsters.length
+    this.waveActive = true
+    const displayWaveNum = this.waveIndex + 1
+    this.waveIndex++
+    console.log(`[Tower] 第${displayWaveNum}波开始: ${this.waveTotalCount}只怪物`)
+  }
+
+  /**
+   * 检查是否需要开始新波次或继续生成当前波次的怪物
+   * 核心逻辑：当前波怪物全部死亡 → 冷却 → 开始下一波
+   */
+  _checkWaveSpawn(dt) {
+    // 所有波次已完成，不再刷怪
+    if (this.allWavesDone) return
+
+    // 统计场上的存活怪物数
+    const aliveMonsters = this.monsters.filter(m => !m.isDead).length
+
+    if (this.waveActive) {
+      // ===== 当前波活跃中：继续逐个生成 =====
+      this.spawnTimer -= dt
+      if (this.spawnTimer <= 0 && this.waveSpawnedCount < this.waveTotalCount) {
+        const type = this.currentWaveMonsters[this.waveSpawnedCount]
+        this._spawnMonster(type)
+        this.waveSpawnedCount++
+        this.spawnTimer = this.spawnInterval // 每2.5s生成一只
+      }
+
+      // 当前波所有怪物已生成完毕 → 标记为等待清场
+      if (this.waveSpawnedCount >= this.waveTotalCount && this.waveActive) {
+        this.waveActive = false
+        console.log(`[Tower] 第${this.waveIndex}波全部生成(${this.waveTotalCount}只)，等待消灭...`)
+        // 注意：不设cooldown！等怪物死完后再进入冷却
+      }
+      return
+    }
+
+    // ===== 当前波已生成完毕但还没开始下一波 =====
+
+    // 还有存活怪物 → 等它们死完（不开始新波）
+    if (aliveMonsters > 0) return
+
+    // 所有怪物已死完 → 进入冷却阶段
+    if (!this._waveClearCooldownActive) {
+      this._waveClearCooldownActive = true
+      this.waveCooldownTimer = this.waveCooldown
+      console.log(`[Tower] 第${this.waveIndex}波消灭完毕，冷却 ${this.waveCooldown/1000}s...`)
+    }
+
+    this.waveCooldownTimer -= dt
+    if (this.waveCooldownTimer <= 0) {
+      this._waveClearCooldownActive = false
+      this._startNextWave()
+    }
+  }
+
+  /**
+   * 所有10波怪物消灭完毕 → 水晶变为可攻击状态 + 箭头指引
+   */
+  _onAllWavesComplete() {
+    if (this.allWavesDone && this.crystal.isAttackable) return  // 防止重复触发
+    this.allWavesDone = true
+    this.crystal.isAttackable = true
+    this.crystal.attackableFlash = 3.0  // 闪烁提示3秒
+    this.crystal.arrowAnimTimer = 0
+
+    // 浮动文字提示
+    this._addFloatingText(this.crystal.x, this.crystal.y - 80,
+      '⚠ 水晶可攻击了！', '#ff4444', 3.0)
+
+    console.log('[Tower] ===== 全部10波怪物消灭完毕！水晶变为可攻击状态 =====')
+  }
+
+  /**
+   * 检查是否所有波次的怪物都已清空（由 _updateMonsters 调用）
+   * 条件：所有波次已生成 + 无活跃波次 + 冷却不在进行中 + 场上无存活怪物
+   */
+  _checkAllWavesCleared() {
+    if (this.allWavesDone) return
+    const wavesSpawned = this.waveIndex >= this.totalWaves
+    const noActiveWave = !this.waveActive && !this._waveClearCooldownActive
+    const aliveMonsters = this.monsters.filter(m => !m.isDead).length
+
+    if (wavesSpawned && noActiveWave && aliveMonsters === 0) {
+      this._onAllWavesComplete()
+    }
+  }
+
+  _spawnMonsterRandom() {
+    // 兼容旧调用：随机生成一只（用于stage自定义waves的情况）
+    const types = ['slime', 'goblin']
+    const type = types[Math.floor(Math.random() * types.length)]
+    this._spawnMonster(type)
+  }
+
+  _spawnMonster(type, x, y) {
+    const tmpl = this._getMonsterTemplate(type)
+    // 默认从水晶位置生成（在水晶周围扇形区域随机散开）
+    const cx = this.crystal.x
+    const cy = this.crystal.y
+    const spawnAngle = (Math.random() - 0.5) * Math.PI * 0.7  // 水晶前方±63°扇形
+    const spawnDist = 45 + Math.random() * 35            // 距离水晶45~80px
+    const defaultX = cx + Math.cos(spawnAngle) * spawnDist
+    const defaultY = cy + Math.sin(spawnAngle) * spawnDist
+
+    const m = {
+      id: `m_${Date.now()}_${Math.random().toString(36).slice(2)}`,
+      type,
+      name: tmpl.name,
+      hp: tmpl.hp,
+      maxHp: tmpl.hp,
+      atk: tmpl.atk,
+      def: tmpl.def,
+      spd: tmpl.spd || 8,
+      atkInterval: tmpl.atkInterval || 1500,
+      atkTimer: Math.random() * 1000,
+      x: x || defaultX,
+      y: y || defaultY,
+      targetX: 0, targetY: 0,
+      moveSpeed: tmpl.moveSpeed || (50 + Math.random() * 30),
+      atkRange: tmpl.atkRange || (tmpl.isRanged ? 140 : 55),
+      isRanged: tmpl.isRanged || false,
+      skills: tmpl.skills || null,
+      scale: 1,
+      hurtTimer: 0,
+      hurtFlash: 0,
+      isDead: false,
+      deathTimer: 0,
+      isAttacking: false,
+      attackAnimTimer: 0,
+      // 状态效果（冻结等）
+      statusEffects: [],
+      frozenTimer: 0,
+      // 掉落
+      dropQuality: this._rollDropQuality(),
+      dropItem: null,
+      hasDropped: false,
+      // 动画状态
+      animState: 'idle',
+      animFrame: 0,
+      animTimer: 0,
+      // 经验值
+      expReward: tmpl.expReward || Math.floor(tmpl.hp / 3),
+    }
+    m.targetX = m.x
+    m.targetY = m.y
+    this.monsters.push(m)
+    return m
+  }
+
+  _getMonsterTemplate(type) {
+    const templates = {
+      // 史莱姆猫 —— 远程攻击，有技能（黏液喷射/包裹，可冻结）
+      slime:   { name: '史莱姆猫', hp: 90, atk: 10, def: 4, spd: 5, atkInterval: 2200, isRanged: true,
+                   atkRange: 140, moveSpeed: 35, skills: [
+                     { name: '黏液喷射', power: 1.2, type: 'magic', effect: 'freeze', freezeChance: 0.25, freezeDuration: 2000, mpCost: 8 },
+                     { name: '黏液包裹', power: 1.4, type: 'magic', effect: 'freeze', freezeChance: 0.40, freezeDuration: 3000, mpCost: 15 }
+                 ]},
+      // 暗影鼠 —— 快速近战
+      goblin:  { name: '暗影鼠', hp: 80, atk: 16, def: 6, spd: 17, atkInterval: 1200, isRanged: false,
+                   atkRange: 50, moveSpeed: 85, skills: [
+                     { name: '暗影咬', power: 1.4, type: 'attack', mpCost: 6 },
+                     { name: '暗影突袭', power: 2.0, type: 'attack', mpCost: 18 }
+                 ]},
+      // 兽人 —— 肉盾近战
+      orc:     { name: '兽人', hp: 180, atk: 18, def: 8, spd: 7, atkInterval: 1800, isRanged: false,
+                   atkRange: 48, moveSpeed: 45 },
+      // 恶狼 —— 快速近战群攻
+      wolf:    { name: '恶狼', hp: 90, atk: 15, def: 3, spd: 14, atkInterval: 1000, isRanged: false,
+                   atkRange: 55, moveSpeed: 95 },
+      // 亡灵 —— 中速近战
+      undead:  { name: '亡灵', hp: 140, atk: 14, def: 6, spd: 9, atkInterval: 1600, isRanged: false,
+                   atkRange: 50, moveSpeed: 50 },
+      // 恶魔 —— 慢但强力近战
+      demon:   { name: '恶魔', hp: 280, atk: 22, def: 12, spd: 8, atkInterval: 2000, isRanged: false,
+                   atkRange: 52, moveSpeed: 38 },
+      // 幼龙 —— BOSS级
+      dragon:  { name: '幼龙', hp: 450, atk: 28, def: 18, spd: 4, atkInterval: 2500, isRanged: false,
+                   atkRange: 60, moveSpeed: 28 }
+    }
+    return templates[type] || templates.slime
+  }
+
+  _rollDropQuality() {
+    const boost = this._dropRareBoost || 0
+    const r = Math.random()
+    let cumulative = 0
+    for (const [q, p] of Object.entries(QUALITY_DROP_CHANCE)) {
+      cumulative += (q === 'legendary' || q === 'epic') ? p * (1 + boost * 0.5) : p
+      if (r <= cumulative) return q
+    }
+    return 'common'
+  }
+
+  // ==================== 更新循环 ====================
+
+  update(dt) {
+    // Game主循环传入的dt单位是秒，内部逻辑需要毫秒
+    const dtMs = dt * 1000
+
+    if (this.phase !== 'battle') {
+      if (this.phase === 'card_select') {
+        this.cardPhase.animTimer += dtMs
+      }
+      return
+    }
+    this.battleTime += dtMs
+
+    this._updateCharacters(dtMs)
+    this._updateMonsters(dtMs)
+    this._updateCrystal(dtMs)
+    this._updateSpawner(dtMs)  // 波次刷怪系统
+    this._updateDroppedItems(dtMs)
+    this._updateProjectiles(dtMs)
+    this._updateEffects(dtMs)
+    this._updateParticles(dtMs)
+    this._updateFloatingTexts(dtMs)
+    this._updateCamera(dtMs)
+    this._checkWinLose()
+  }
+
+  _updateCharacters(dt) {
+    // 技能菜单计时
+    if (this.skillMenu.visible) {
+      const elapsed = Date.now() - this.skillMenu.openTimer
+      if (elapsed > this.skillMenu.maxDuration) {
+        this.skillMenu.visible = false
+      }
+    }
+
+    for (let i = 0; i < this.party.length; i++) {
+      const c = this.party[i]
+
+      // 死亡倒计时
+      if (c.isDead) {
+        c.respawnTimer -= dt
+        if (c.respawnTimer <= 0) {
+          this._respawnChar(c)
+        }
+        continue
+      }
+
+      // 攻击计时
+      c.attackTimer -= dt
+
+      // 技能CD递减
+      for (const sid in c.skillCDs) {
+        if (c.skillCDs[sid] > 0) c.skillCDs[sid] -= dt
+      }
+
+      // 自动技能计时（仅在AI自动模式开启时生效）
+      c.autoSkillTimer = (c.autoSkillTimer || 0) - dt
+      if (c.autoSkillTimer <= 0 && !c.isDead && c.autoAttackEnabled) {
+        c.autoSkillTimer = c.autoSkillInterval || 5000
+        this._tryAutoCastSkill(c)
+      }
+
+      // 状态效果衰减
+      c.hurtFlash = Math.max(0, c.hurtFlash - dt)
+      c.hurtTimer = Math.max(0, c.hurtTimer - dt)
+      c.levelUpFlash = Math.max(0, c.levelUpFlash - dt)
+
+      // 攻击动画计时
+      if (c.attackAnimTimer > 0) {
+        c.attackAnimTimer -= dt
+        if (c.attackAnimTimer <= 0) {
+          c.animState = 'idle'
+          c.animFrame = 0
+          c.castSkillId = null
+          c.isCasting = false // 施法动画结束，解锁（可释放下一个技能）
+        }
+      }
+
+      // 动画帧更新
+      this._updateCharAnim(c, dt)
+
+      // 移动逻辑
+      const isMoving = Math.abs(c.x - c.targetX) > 5 || Math.abs(c.y - c.targetY) > 5
+
+      // ===== AI自动寻敌：开启时自动向最近的敌人移动 =====
+      if (c.autoAttackEnabled && !isMoving && !c.isCasting) {
+        const nearestEnemy = this._findNearestEnemy(c)
+        if (nearestEnemy) {
+          const eDx = nearestEnemy.obj.x - c.x
+          const eDy = nearestEnemy.obj.y - c.y
+          const eDist = Math.sqrt(eDx * eDx + eDy * eDy)
+          // 超出攻击范围 → 自动走到敌人身边（留一点距离避免重叠）
+          if (eDist > c.atkRange + 10) {
+            // 目标点：朝敌人方向移动，停在攻击范围内
+            const ratio = (eDist - c.atkRange + 15) / eDist
+            c.targetX = c.x + eDx * ratio
+            c.targetY = c.y + eDy * ratio
+            // 边界钳制
+            c.targetX = Math.max(20, Math.min(c.targetX, this.width - 20))
+            c.targetY = Math.max(55, Math.min(c.targetY, this.height - 20))
+            // 更新朝向
+            if (Math.abs(eDx) > 3) {
+              c.facingRight = eDx > 0
+            }
+          }
+        }
+      }
+
+      if (isMoving && c.animState === 'idle') {
+        c.animState = 'walk'
+      } else if (!isMoving && c.animState === 'walk' && c.attackAnimTimer <= 0) {
+        c.animState = 'idle'
+        c.animFrame = 0
+      }
+
+      if (isMoving) {
+        const dx = c.targetX - c.x
+        const dy = c.targetY - c.y
+        const dist = Math.sqrt(dx * dx + dy * dy)
+        if (dist > 1) {
+          c.x += (dx / dist) * c.moveSpeed * (dt / 1000)
+          c.y += (dy / dist) * c.moveSpeed * (dt / 1000)
+          // 移动中根据方向更新朝向
+          if (Math.abs(dx) > 3) {
+            c.facingRight = dx > 0
+          }
+        }
+      }
+
+      // 自动攻击最近敌人（到达攻击范围后自动普攻，不需要AI模式）
+      if (c.attackAnimTimer <= 0 && c.castSkillId === null && c.attackTimer <= 0) {
+        const target = this._findNearestEnemy(c)
+        if (target) {
+          // 根据敌人位置更新朝向
+          const dx2 = target.obj.x - c.x
+          if (Math.abs(dx2) > 3) {
+            c.facingRight = dx2 > 0
+          }
+
+          // 检查是否在攻击范围内
+          const dy2 = target.obj.y - c.y
+          const dist2 = Math.sqrt(dx2 * dx2 + dy2 * dy2)
+          if (dist2 <= c.atkRange) {
+            this._charAttack(c, target)
+          }
+        }
+      }
+    }
+
+    // 角色间分离（防止重叠）——在所有角色移动后统一处理
+    this._separateCharacters(dt)
+  }
+
+  /**
+   * 角色间碰撞分离：当两个存活角色距离过近时互相推开
+   */
+  _separateCharacters(dt) {
+    const aliveChars = this.party.filter(c => !c.isDead)
+    if (aliveChars.length < 2) return
+    const minDist = 120   // 最小间距（像素）——角色宽~100px，需留出间隙
+    const pushSpeed = 800 // 推开速度 px/s
+
+    // 多次迭代收敛
+    for (let iter = 0; iter < 3; iter++) {
+      for (let i = 0; i < aliveChars.length; i++) {
+        for (let j = i + 1; j < aliveChars.length; j++) {
+          const a = aliveChars[i]
+          const b = aliveChars[j]
+          const dx = b.x - a.x
+          const dy = b.y - a.y
+          const dist = Math.sqrt(dx * dx + dy * dy)
+
+          if (dist < minDist && dist > 0.1) {
+            const overlap = minDist - dist
+            const nx = dx / dist
+            const ny = dy / dist
+            const pushAmt = Math.min(overlap * 0.6, pushSpeed * dt / 1000)
+
+            // 推开实际位置
+            a.x -= nx * pushAmt
+            a.y -= ny * pushAmt
+            b.x += nx * pushAmt
+            b.y += ny * pushAmt
+
+            // 边界钳制
+            a.x = Math.max(20, Math.min(a.x, this.width - 20))
+            a.y = Math.max(55, Math.min(a.y, this.height - 20))
+            b.x = Math.max(20, Math.min(b.x, this.width - 20))
+            b.y = Math.max(55, Math.min(b.y, this.height - 20))
+
+            // 对已静止的角色同步修正 target，防止下一帧又被拉回去
+            const aArrived = Math.abs(a.x - a.targetX) < 8 && Math.abs(a.y - a.targetY) < 8
+            const bArrived = Math.abs(b.x - b.targetX) < 8 && Math.abs(b.y - b.targetY) < 8
+            if (aArrived) { a.targetX = a.x; a.targetY = a.y }
+            if (bArrived) { b.targetX = b.x; b.targetY = b.y }
+          }
+        }
+      }
+    }
+  }
+
+  /**
+   * 更新角色动画帧
+   */
+  _updateCharAnim(c, dt) {
+    const spriteKey = this._getHeroSpriteKey(c.id)
+    const spriteData = HERO_SPRITES[spriteKey]
+    if (!spriteData) return
+
+    let state
+    if (c.castSkillId && c.attackAnimTimer > 0) {
+      state = 'cast_' + c.castSkillId
+    } else {
+      state = c.animState
+    }
+
+    // 状态缺失时逐级fallback
+    let frames = spriteData[state]
+    if (!frames || frames.length === 0) {
+      frames = spriteData['cast_default'] || spriteData['attack'] || spriteData['walk'] || spriteData['idle']
+    }
+    if (!frames || frames.length === 0) return
+
+    const rate = spriteData.frameRate[state] || spriteData.frameRate['walk'] || spriteData.frameRate['idle'] || 150
+    c.animTimer += dt
+    if (c.animTimer >= rate) {
+      c.animTimer = 0
+      c.animFrame = (c.animFrame + 1) % frames.length
+    }
+  }
+
+  /**
+   * 根据角色ID获取对应的精灵key
+   */
+  _getHeroSpriteKey(id) {
+    if (id === 'zhenbao') return 'zhenbao'
+    if (id === 'lixiaobao') return 'lixiaobao'
+    return 'cat'  // lufei, tangguo 用猫精灵
+  }
+
+  /** 获取当前角色应该绘制的图片 */
+  _getCharFrameImage(c) {
+    const spriteKey = this._getHeroSpriteKey(c.id)
+    const spriteData = HERO_SPRITES[spriteKey]
+    if (!spriteData) return null
+
+    // 优先级：cast > attack > walk > idle
+    let state
+    if (c.castSkillId && c.attackAnimTimer > 0) {
+      state = 'cast_' + c.castSkillId
+    } else {
+      state = c.animState
+    }
+
+    let frames = spriteData[state]
+    
+    // 状态缺失时逐级fallback: cast → cast_default → attack → walk → idle → null
+    if (!frames || frames.length === 0) {
+      frames = spriteData['cast_default'] || spriteData['attack'] || spriteData['walk'] || spriteData['idle']
+    }
+    if (!frames || frames.length === 0) return null
+
+    const key = frames[Math.min(c.animFrame, frames.length - 1)]
+    return this.assets.get(key)
+  }
+
+  _findNearestEnemy(char) {
+    let nearest = null
+    let nearestDist = Infinity
+    const cx = char.x
+    const cy = char.y
+
+    // ===== 只在水晶可攻击时才将其作为目标 =====
+    if (!this.crystal.isDead && this.crystal.isAttackable) {
+      const dx = this.crystal.x - cx
+      const dy = this.crystal.y - cy
+      const dist = Math.sqrt(dx * dx + dy * dy)
+      nearestDist = dist
+      nearest = { type: 'crystal', obj: this.crystal, dist }
+    }
+
+    for (const m of this.monsters) {
+      if (m.isDead) continue
+      const dx = m.x - char.x
+      const dy = m.y - char.y
+      const dist = Math.sqrt(dx * dx + dy * dy)
+      if (dist < nearestDist) {
+        nearestDist = dist
+        nearest = { type: 'monster', obj: m, dist }
+      }
+    }
+    return nearest
+  }
+
+  _charAttack(char, target) {
+    // 远程角色(法系)：普攻=施法姿势+投射物
+    // 近战角色(warrior/fighter)：普攻=直接挥砍伤害（无投射物，必须贴身）
+    const isRanged = char.role === 'mage'
+    if (isRanged) {
+      // 远程：施法姿势（cast_attack帧）
+      char.animState = 'cast'
+      char.castSkillId = 'attack'
+      char.attackAnimTimer = 400
+    } else {
+      // 近战：攻击动作（attack帧或slash帧）
+      char.animState = 'attack'
+      char.castSkillId = null
+      char.attackAnimTimer = 350
+    }
+    char.animFrame = 0
+    char.animTimer = 0
+    char.isAttacking = true
+
+    const isCrystal = target.type === 'crystal'
+
+    if (!isRanged) {
+      // ===== 纯近战：直接造成伤害（无需投射物） =====
+      // 只有在攻击范围内才造成伤害（已在调用方检查过 dist <= atkRange）
+      const dmg = this._calcDamage(char.atk, isCrystal ? 0 : target.obj.def)
+      const critChance = char.critChance || 0
+      const isCrit = Math.random() < critChance
+      const finalDmg = Math.max(1, Math.floor(dmg * (isCrit ? 1.8 : (0.85 + Math.random() * 0.3))))
+      this._applyDamage(target.obj, target.type, finalDmg)
+      const projColor = isCrit ? '#ffff00' : '#ff6b6b'
+      this._spawnHitEffect(target.obj.x, target.obj.y, finalDmg, projColor, isCrit)
+      // 攻击间隔
+      char.attackTimer = 1000 / (1 + (char.spd || 10) / 20)
+      return
+    }
+
+    // ===== 远程：生成投射物 =====
+    const dmg = this._calcDamage(char.atk, isCrystal ? 0 : target.obj.def)
+    const critChance = char.critChance || 0
+    const isCrit = Math.random() < critChance
+    const finalDmg = Math.max(1, Math.floor(dmg * (isCrit ? 1.8 : (0.85 + Math.random() * 0.3))))
+    const projColor = isCrit ? '#ffff00' : (isCrystal ? '#ffd700' : '#ff6b6b')
+    this.projectiles.push({
+      x: char.x, y: char.y,
+      targetX: target.obj.x, targetY: target.obj.y,
+      target: target.obj,
+      targetType: target.type,
+      dmg: finalDmg,
+      speed: 420,
+      color: projColor,
+      size: isCrit ? 9 : 6,
+      trail: [],
+      isCrit,
+      ownerRole: char.role || 'fighter',
+      onHit: () => {
+        this._applyDamage(target.obj, target.type, finalDmg)
+        this._spawnHitEffect(target.obj.x, target.obj.y, finalDmg, projColor, isCrit)
+        this._spawnCharHitEffect(target.obj, char, 'attack')
+      }
+    })
+    char.attackTimer = 1000 / (1 + (char.spd || 10) / 20)
+  }
+
+  /** 角色命中特效（hit帧）—— 仅元素技能触发 */
+  _spawnCharHitEffect(targetObj, attacker, skillId) {
+    if (!targetObj || !attacker || !skillId) return
+    // 根据技能ID选择命中特效类型（普攻 + 元素技能）
+    let hitType = null
+    if (attacker.id === 'lixiaobao') {
+      if (skillId === 'fireball') hitType = 'fireball'
+      else if (skillId === 'ice_shard') hitType = 'ice'
+      else if (skillId === 'meteor' || skillId === 'lightning') hitType = 'lightning'
+      else if (skillId === 'attack') hitType = 'attack' // 普攻命中
+      else if (!skillId) hitType = 'attack' // 兼容：无skillId时默认用attack
+    }
+    if (!hitType) return
+
+    this.effects.push({
+      type: 'char_hit',
+      x: targetObj.x,
+      y: targetObj.y,
+      hitType,
+      timer: 0,
+      duration: 480,
+    })
+  }
+
+  /**
+   * 自动施法：尝试释放一个CD就绪的技能（按优先级）
+   * 近战角色只有在攻击范围内有敌人时才施放
+   */
+  _tryAutoCastSkill(char) {
+    if (!char.skills || char.isDead) return
+    if (char.attackAnimTimer > 0 || char.castSkillId || char.isCasting) return
+
+    // 近战角色：必须先确认攻击范围内有敌人才放技能
+    if (char.role !== 'mage') {
+      const nearTarget = this._findNearestEnemy(char)
+      if (!nearTarget) return
+      const dx = nearTarget.obj.x - char.x
+      const dy = nearTarget.obj.y - char.y
+      const dist = Math.sqrt(dx * dx + dy * dy)
+      // 范围外不放技能（让近战角色先走过去平A）
+      if (dist > char.atkRange + 15) return
+    }
+
+    // 找一个CD已好、MP足够的技能（优先高优先级的）
+    for (let i = 0; i < char.skills.length; i++) {
+      const sk = char.skills[i]
+      if (!sk.unlocked && sk.unlockLevel) continue
+      if ((char.skillCDs[sk.id] || 0) > 0) continue // CD中
+      if ((char.currentMp || 0) < (sk.mpCost || 0)) continue // MP不足
+
+      this._castSkill(char, i)
+      return
+    }
+  }
+
+  /**
+   * 施放技能 —— 支持穿透（pierceCount）
+   * - 火球术: pierceCount=3，穿透3个敌人
+   * - 冰晶术: pierceCount=5，穿透5个敌人
+   * - 雷击术: pierceCount=10，穿透10个敌人
+   */
+  _castSkill(char, skillIdx) {
+    const skills = char.skills
+    if (!skills || skillIdx >= skills.length) return
+    const skill = skills[skillIdx]
+
+    // 正在施法中（上一个技能动画还没结束）—— 等待完成
+    if (char.isCasting) return
+
+    // 检查CD和MP
+    if ((char.skillCDs[skill.id] || 0) > 0) return
+    if ((char.currentMp || 0) < (skill.mpCost || 0)) return
+
+    // 消耗MP
+    char.currentMp -= (skill.mpCost || 0)
+
+    // ===== 施法锁定：动画期间不能再放其他技能 =====
+    char.isCasting = true
+
+    // 设置施法动画状态
+    char.animState = 'cast'
+    char.animFrame = 0
+    char.animTimer = 0
+
+    // 根据角色和技能类型决定施法特效（每个技能独立动画帧！）
+    if (char.id === 'lixiaobao') {
+      if (skill.id === 'fireball') char.castSkillId = 'fireball'       // 火球施法(11帧)
+      else if (skill.id === 'ice_shard') char.castSkillId = 'ice'       // 冰晶施法(8帧)
+      else if (skill.id === 'lightning') char.castSkillId = 'lightning' // 雷电施法(15帧)
+      else char.castSkillId = 'attack'
+    } else if (char.id === 'zhenbao') {
+      char.castSkillId = 'slash'
+    } else {
+      char.castSkillId = null
+    }
+
+    // ===== 动态计算施法动画总时长（根据实际帧数×帧率）=====
+    const spriteKey = this._getHeroSpriteKey(char.id)
+    const spriteData = HERO_SPRITES[spriteKey]
+    let actualAnimDuration = 600 // 默认值
+    if (spriteData && char.castSkillId) {
+      const castState = 'cast_' + char.castSkillId
+      const animFrames = spriteData[castState]
+      const animRate = (spriteData.frameRate && spriteData.frameRate[castState]) || 100
+      if (animFrames && animFrames.length > 0) {
+        actualAnimDuration = animFrames.length * animRate
+      }
+    }
+    char.attackAnimTimer = actualAnimDuration
+
+    // 设置CD
+    char.skillCDs[skill.id] = (skill.cd || 5000)
+
+    // ===== 近战角色（warrior/fighter）：技能也是近战，直接伤害无投射物 =====
+    if (char.role !== 'mage') {
+      const baseTarget = this._findNearestEnemy(char)
+      if (!baseTarget || baseTarget.type === 'crystal') return
+
+      // 延迟造成近战技能伤害（施法动画最后一段生效，视觉同步：动作做完才出伤害）
+      const castDelay = Math.floor(char.attackAnimTimer * 0.85)
+      setTimeout(() => {
+        if (this.phase !== 'battle' || char.isDead) return
+        // 近战范围检查：只有攻击范围内的目标才受伤害
+        const tgt = baseTarget.obj
+        const dx = tgt.x - char.x
+        const dy = tgt.y - char.y
+        const dist = Math.sqrt(dx * dx + dy * dy)
+        if (dist > (char.atkRange + 20)) return // 超出近战范围则无效
+
+        let baseDmg = char.atk * (skill.power || 1.0)
+        const finalDmg = Math.max(1, Math.floor(baseDmg * (0.9 + Math.random() * 0.2)))
+        this._applyDamage(tgt, 'monster', finalDmg)
+        this._spawnSkillHitEffect(tgt.x, tgt.y, finalDmg, '#ff6b6b', skill.id)
+      }, castDelay)
+      return
+    }
+
+    // ===== 远程角色（mage）：穿透投射物逻辑 =====
+    // 寻找最近的目标方向（用于穿透排序的基准方向）
+    const baseTarget = this._findNearestEnemy(char)
+    if (!baseTarget) return
+
+    let baseDmg = char.atk * (skill.power || 1.0)
+    const finalDmg = Math.max(1, Math.floor(baseDmg * (0.9 + Math.random() * 0.2)))
+
+    // 延迟生成投射物（施法动画最后一段才发射，视觉同步：手势做完才出弹）
+    const castDelay = Math.floor(char.attackAnimTimer * 0.88)
+    setTimeout(() => {
+      if (this.phase !== 'battle') return
+
+      // 技能颜色映射
+      const skillColors = {
+        fireball: { proj: '#ff6600', hit: '#ff4400' },
+        ice_shard: { proj: '#00ccff', hit: '#00aaff' },
+        lightning: { proj: '#ffee00', hit: '#ffdd00' },
+        default: { proj: '#aa66ff', hit: '#8844ff' }
+      }
+      const colors = skillColors[skill.id] || skillColors.default
+
+      // ===== 穿透逻辑：按距离排序，取最近的 pierceCount 个敌人 =====
+      const pierceCount = skill.pierceCount || 1
+      const aliveMonsters = this.monsters.filter(m => !m.isDead)
+      // 按到施法者距离升序排列
+      aliveMonsters.sort((a, b) => {
+        const distA = Math.sqrt((a.x - char.x) ** 2 + (a.y - char.y) ** 2)
+        const distB = Math.sqrt((b.x - char.x) ** 2 + (b.y - char.y) ** 2)
+        return distA - distB
+      })
+      // 取前 pierceCount 个目标
+      const pierceTargets = aliveMonsters.slice(0, pierceCount)
+      if (pierceTargets.length === 0) return
+
+      for (const t of pierceTargets) {
+        this.projectiles.push({
+          x: char.x, y: char.y,
+          targetX: t.x, targetY: t.y,
+          target: t,
+          targetType: 'monster',
+          dmg: finalDmg,
+          speed: 500 + Math.random() * 100, // 轻微速度差异让投射物不重叠
+          color: colors.proj,
+          size: 10,
+          trail: [],
+          isSkill: true,
+          skillType: skill.id,
+          onHit: () => {
+            this._applyDamage(t, 'monster', finalDmg)
+            this._spawnSkillHitEffect(t.x, t.y, finalDmg, colors.hit, skill.id)
+            // 命中特效（hit帧）—— 根据技能类型选择对应特效
+            let hitType = null
+            if (skill.id === 'fireball') hitType = 'fireball'
+            else if (skill.id === 'ice_shard') hitType = 'ice'
+            else if (skill.id === 'lightning') hitType = 'lightning'
+            if (hitType && HIT_EFFECTS[hitType]) {
+              this.effects.push({
+                type: 'char_hit',
+                x: t.x,
+                y: t.y,
+                hitType,
+                timer: 0,
+                duration: HIT_EFFECTS[hitType].frames.length * HIT_EFFECTS[hitType].frameRate,
+              })
+            }
+          }
+        })
+      }
+    }, castDelay)
+  }
+
+  _calcDamage(atk, def) {
+    return Math.max(1, atk - def * 0.5)
+  }
+
+  _applyDamage(target, type, dmg) {
+    target.hp -= dmg
+    target.hurtTimer = 200
+    target.hurtFlash = 150
+    target.shakeX = (Math.random() - 0.5) * 10
+    target.shakeY = (Math.random() - 0.5) * 10
+    this.stats.damageDealt += dmg
+
+    if (target.hp <= 0) {
+      if (type === 'monster') this._killMonster(target)
+      else if (type === 'crystal') this._killCrystal(target)
+    }
+  }
+
+  _killMonster(monster) {
+    monster.isDead = true
+    monster.deathTimer = 450
+    this.stats.kills++
+
+    // 给附近角色分经验
+    const aliveChars = this.party.filter(c => !c.isDead)
+    const expPerChar = Math.floor(monster.expReward / Math.max(1, aliveChars.length))
+    for (const c of aliveChars) {
+      const bonus = c.expBonus || 0
+      const expGain = Math.floor(expPerChar * (1 + bonus))
+      c.totalExp = (c.totalExp || 0) + expGain
+      this._checkLevelUp(c, expGain)
+    }
+
+    this._spawnDeathEffect(monster.x, monster.y, '#ff6b6b')
+    this.camera.shakeX = 3
+    this.camera.shakeY = 2
+
+    // 掉落装备
+    if (!monster.hasDropped) {
+      monster.hasDropped = true
+      const item = this._generateDrop(monster)
+      if (item) this.droppedItems.push(item)
+    }
+
+    // 延迟移除
+    setTimeout(() => {
+      const idx = this.monsters.indexOf(monster)
+      if (idx >= 0) this.monsters.splice(idx, 1)
+    }, 480)
+  }
+
+  /**
+   * 检查并处理角色升级
+   */
+  _checkLevelUp(char, expGain) {
+    while (true) {
+      const nextExp = EXP_TABLE[char.level + 1]
+      if (!nextExp) break
+      if (char.totalExp >= nextExp) {
+        char.level++
+        // 属性成长
+        const hpUp = Math.floor(10 + char.level * 2)
+        const mpUp = Math.floor(4 + char.level)
+        const atkUp = Math.floor(2 + char.level * 0.5)
+        const defUp = Math.floor(1 + char.level * 0.3)
+        const spdUp = 0.5
+
+        char.maxHp += hpUp
+        char.currentHp = Math.min(char.currentHp + hpUp, char.maxHp)
+        char.maxMp = (char.maxMp || 30) + mpUp
+        char.currentMp = Math.min((char.currentMp || 0) + mpUp, char.maxMp)
+        char.atk += atkUp
+        char.def = (char.def || 5) + defUp
+        char.spd += spdUp
+
+        // 解锁技能检查
+        this._checkSkillUnlock(char)
+
+        // 升级视觉反馈
+        char.levelUpFlash = 1.5
+        this._addFloatingText(char.x, char.y - 40, `⬆ Lv.${char.level}!`, '#ffd700', 2.0)
+
+        // 升级粒子
+        for (let i = 0; i < 20; i++) {
+          const angle = (i / 20) * Math.PI * 2
+          this.particles.push({
+            x: char.x, y: char.y,
+            vx: Math.cos(angle) * 60,
+            vy: Math.sin(angle) * 60,
+            size: 4,
+            color: '#ffd700',
+            life: 1,
+            decay: 1.5
+          })
+        }
+      } else {
+        break
+      }
+    }
+  }
+
+  /**
+   * 检查技能解锁
+   */
+  _checkSkillUnlock(char) {
+    const skills = char.skills
+    if (!skills) return
+    for (let i = 0; i < skills.length; i++) {
+      const s = skills[i]
+      if (s.unlockLevel && !s.unlocked && char.level >= s.unlockLevel) {
+        s.unlocked = true
+        this._addFloatingText(char.x, char.y - 65, `✨ ${s.name}已解锁!`, '#a335ee', 2.5)
+      }
+    }
+  }
+
+  _respawnChar(char) {
+    char.isDead = false
+    char.currentHp = Math.floor(char.maxHp * 0.5) // 以半血复活
+    char.currentMp = Math.floor(char.maxMp * 0.5)
+    char.respawnTimer = 0
+    char.x = this.width * 0.1 + Math.random() * 30
+    char.y = this.height * 0.4 + Math.random() * (this.height * 0.2)
+    char.targetX = char.x
+    char.targetY = char.y
+    char.hurtFlash = 0
+    char.animState = 'idle'
+    char.animFrame = 0
+    this._spawnRespawnEffect(char.x, char.y)
+  }
+
+  _generateDrop(monster) {
+    const quality = monster.dropQuality || 'common'
+    const tpl = getRandomEquipment(quality)
+    if (!tpl) return null
+    return {
+      id: `drop_${Date.now()}`,
+      templateId: tpl.id,
+      quality,
+      name: tpl.name,
+      slot: tpl.type,
+      bonusHp: tpl.stats?.maxHp || 0,
+      bonusAtk: tpl.stats?.atk || 0,
+      bonusDef: tpl.stats?.def || 0,
+      bonusSpd: tpl.stats?.spd || 0,
+      x: monster.x,
+      y: monster.y,
+      spawnTime: Date.now(),
+      lifetime: DROP_LIFETIME,
+      remaining: DROP_LIFETIME,
+      collected: false,
+      collectAnim: 0,
+      // 品质光效参数
+      glowIntensity: quality === 'legendary' ? 25 : quality === 'epic' ? 18 : quality === 'rare' ? 12 : 6,
+      pulseSpeed: quality === 'legendary' ? 3 : quality === 'epic' ? 4 : quality === 'rare' ? 5 : 6
+    }
+  }
+
+  // ========== 怪物AI ==========
+
+  _updateMonsters(dt) {
+    for (const m of this.monsters) {
+      if (m.isDead) {
+        m.deathTimer -= dt
+        continue
+      }
+
+      m.hurtFlash = Math.max(0, m.hurtFlash - dt)
+      m.hurtTimer = Math.max(0, m.hurtTimer - dt)
+      if (m.attackAnimTimer > 0) {
+        m.attackAnimTimer -= dt
+        if (m.attackAnimTimer <= 0) {
+          m.animState = 'idle'
+          m.animFrame = 0
+        }
+      }
+
+      // ===== 冻结状态效果 =====
+      if (m.frozenTimer > 0) {
+        m.frozenTimer -= dt
+        // 冻结时：减速移动+攻击，显示冰冻视觉
+        if (m.frozenTimer > 0) continue  // 完全冻结无法行动（可选：可改为减速）
+      }
+
+      // 更新怪物动画帧
+      this._updateMonsterAnim(m, dt)
+
+      // 追踪最近的角色
+      const target = this._findNearestChar(m)
+      if (target) {
+        const dx = target.x - m.x
+        const dy = target.y - m.y
+        const dist = Math.sqrt(dx * dx + dy * dy)
+
+        // 远程怪物（史莱姆猫）：保持距离攻击
+        if (m.isRanged) {
+          const minRange = m.atkRange * 0.6   // 最小安全距离
+          const maxRange = m.atkRange * 1.1    // 最大有效距离
+
+          if (dist < minRange) {
+            // 太近了，后退
+            m.x -= (dx / dist) * m.moveSpeed * (dt / 1000) * 0.6
+            m.y -= (dy / dist) * m.moveSpeed * (dt / 1000) * 0.6
+            if (m.animState !== 'walk') { m.animState = 'walk'; m.animFrame = 0 }
+          } else if (dist > maxRange) {
+            // 太远了，靠近
+            m.x += (dx / dist) * m.moveSpeed * (dt / 1000)
+            m.y += (dy / dist) * m.moveSpeed * (dt / 1000)
+            if (m.animState !== 'walk') { m.animState = 'walk'; m.animFrame = 0 }
+          } else {
+            // 在攻击范围内：施法攻击
+            if (m.animState !== 'attack') { m.animState = 'attack'; m.animFrame = 0 }
+            m.atkTimer -= dt
+            if (m.atkTimer <= 0 && !m.isAttacking) {
+              this._monsterRangedAttack(m, target)
+            }
+          }
+        } else {
+          // 近战怪物：贴身攻击
+          if (dist > m.atkRange) {
+            m.x += (dx / dist) * m.moveSpeed * (dt / 1000)
+            m.y += (dy / dist) * m.moveSpeed * (dt / 1000)
+            if (m.animState !== 'walk') { m.animState = 'walk'; m.animFrame = 0 }
+          } else {
+            if (m.animState !== 'attack') { m.animState = 'attack'; m.animFrame = 0 }
+            m.atkTimer -= dt
+            if (m.atkTimer <= 0 && !m.isAttacking) {
+              this._monsterMeleeAttack(m, target)
+            }
+          }
+        }
+      } else if (m.animState === 'walk') {
+        m.animState = 'idle'
+        m.animFrame = 0
+      }
+    }
+
+    // 检查所有波次怪物是否都死完了 → 触发水晶可攻击
+    this._checkAllWavesCleared()
+  }
+
+  _updateMonsterAnim(m, dt) {
+    const spr = MONSTER_SPRITES[m.type] || MONSTER_SPRITES.slime
+    const frames = spr[m.animState] || spr.idle
+    if (!frames || frames.length === 0) return
+    const rate = spr.frameRate[m.animState] || spr.frameRate.idle || 250
+    m.animTimer += dt
+    if (m.animTimer >= rate) {
+      m.animTimer = 0
+      m.animFrame = (m.animFrame + 1) % frames.length
+    }
+  }
+
+  /** 获取怪物当前帧图片 */
+  _getMonsterFrameImage(m) {
+    const spr = MONSTER_SPRITES[m.type] || MONSTER_SPRITES.slime
+    const frames = spr[m.animState] || spr.idle
+    if (!frames || frames.length === 0) return null
+    const key = frames[Math.min(m.animFrame, frames.length - 1)]
+    return this.assets.get(key)
+  }
+
+  _findNearestChar(monster) {
+    let nearest = null
+    let nearestDist = Infinity
+    for (const c of this.party) {
+      if (c.isDead) continue
+      const dx = c.x - monster.x
+      const dy = c.y - monster.y
+      const dist = Math.sqrt(dx * dx + dy * dy)
+      if (dist < nearestDist) {
+        nearestDist = dist
+        nearest = c
+      }
+    }
+    return nearest
+  }
+
+  _monsterMeleeAttack(monster, target) {
+    monster.isAttacking = true
+    monster.attackAnimTimer = 280
+    const dmg = Math.max(1, monster.atk - (target.def || 0) * 0.5)
+    const finalDmg = Math.floor(dmg * (0.85 + Math.random() * 0.3))
+
+    // 近战：即时伤害（挥砍特效+伤害）
+    this._charTakeDamage(target, finalDmg)
+    this._spawnHitEffect(target.x, target.y, finalDmg, '#ff4444')
+
+    monster.atkTimer = monster.atkInterval
+  }
+
+  /**
+   * 远程怪物攻击（史莱姆猫）：投射物 + 技能（可能触发冻结）
+   */
+  _monsterRangedAttack(monster, target) {
+    monster.isAttacking = true
+    monster.attackAnimTimer = 350
+
+    // 决定是否释放技能（有概率使用技能而非普攻）
+    const useSkill = monster.skills && monster.skills.length > 0 && Math.random() < 0.35
+    let skill = null
+    if (useSkill) {
+      // 随机选一个技能（MP足够的话）
+      const availableSkills = monster.skills.filter(s => !s.mpCost || Math.random() > 0.3)
+      skill = availableSkills[Math.floor(Math.random() * availableSkills.length)]
+    }
+
+    // 基础伤害
+    let baseDmg = Math.max(1, monster.atk - (target.def || 0) * 0.3)  // 远程防御减成更低
+    if (skill) baseDmg = Math.floor(baseDmg * skill.power)
+    const finalDmg = Math.floor(baseDmg * (0.85 + Math.random() * 0.3))
+
+    const projColor = skill ? '#66ccff' : '#44aaff'  // 技能投射物偏蓝色
+
+    // 生成投射物飞向角色
+    this.projectiles.push({
+      x: monster.x,
+      y: monster.y - 10,
+      targetX: target.x,
+      targetY: target.y,
+      target,
+      targetType: 'char',
+      dmg: finalDmg,
+      speed: 220 + Math.random() * 80,
+      color: projColor,
+      size: skill ? 7 : 5,
+      trail: [],
+      skillEffect: skill?.effect || null,
+      freezeChance: skill?.freezeChance || 0,
+      freezeDuration: skill?.freezeDuration || 0,
+      onHit: (proj) => {
+        this._charTakeDamage(target, proj.dmg)
+        this._spawnHitEffect(target.x, target.y, proj.dmg, proj.color)
+
+        // ===== 冻结效果判定 =====
+        if (proj.skillEffect === 'freeze' && proj.freezeChance > 0) {
+          if (Math.random() < proj.freezeChance) {
+            // 对角色施加冻结效果（这里简化为减速/冻结提示）
+            this._addFloatingText(target.x, target.y - 30, '❄ 冰冻!', '#66ccff', 1.5)
+            // 可以扩展：给目标添加frozenTimer状态
+          }
+        }
+      }
+    })
+
+    monster.atkTimer = monster.atkInterval
+  }
+
+  _charTakeDamage(char, dmg) {
+    char.currentHp -= dmg
+    char.hurtTimer = 200
+    char.hurtFlash = 150
+    char.shakeX = (Math.random() - 0.5) * 8
+    char.shakeY = (Math.random() - 0.5) * 8
+    if (char.currentHp <= 0) this._charDie(char)
+  }
+
+  _charDie(char) {
+    char.isDead = true
+    const respawnSec = RESPAWN_TABLE[char.level] || char.level * 2
+    const boost = this._respawnBoost || 0
+    char.respawnTimer = respawnSec * 1000 * (1 - boost)
+    char.currentHp = 0
+    char.animState = 'dead'
+    this._spawnDeathEffect(char.x, char.y, '#58a6ff')
+    this.camera.shakeX = 5
+    this.camera.shakeY = 4
+
+    const allDead = this.party.every(c => c.isDead)
+    if (allDead) {
+      setTimeout(() => {
+        if (this.phase === 'battle') this.phase = 'defeat'
+      }, 1200)
+    }
+  }
+
+  // ========== 水晶系统 ==========
+
+  _updateCrystal(dt) {
+    const c = this.crystal
+    if (c.isDead) {
+      c.deathAnim += dt / 1800
+      if (c.deathAnim < 1) c.scale = 1 + c.deathAnim * 0.6
+      else c.scale = 0
+      return
+    }
+    c.hurtTimer = Math.max(0, c.hurtTimer - dt)
+    c.hurtFlash = Math.max(0, c.hurtFlash - dt)
+    c.shakeX *= 0.9
+    c.shakeY *= 0.9
+    // 可攻击闪烁计时器
+    if (c.attackableFlash > 0) c.attackableFlash -= dt / 1000
+    if (c.arrowAnimTimer !== undefined) c.arrowAnimTimer += dt / 1000
+  }
+
+  _killCrystal(crystal) {
+    crystal.isDead = true
+    crystal.deathAnim = 0
+    this.camera.shakeX = 12
+    this.camera.shakeY = 12
+    this.stats.time = this.battleTime
+
+    // 大爆炸粒子
+    for (let i = 0; i < 50; i++) {
+      const angle = (i / 50) * Math.PI * 2
+      const speed = 100 + Math.random() * 220
+      this.particles.push({
+        x: crystal.x, y: crystal.y,
+        vx: Math.cos(angle) * speed,
+        vy: Math.sin(angle) * speed,
+        size: 3 + Math.random() * 7,
+        color: ['#ffd700', '#ff8c00', '#ffffff', '#ff4444'][Math.floor(Math.random() * 4)],
+        life: 1,
+        decay: 0.4 + Math.random() * 0.6
+      })
+    }
+
+    this.scene.saveProgress(this.stage.id - 1)
+    this.phase = 'victory'
+  }
+
+  // ========== 刷怪调度 ==========
+
+  _updateSpawner(dt) {
+    if (this.crystal.isDead) return
+    // 使用新的波次系统替代原来的随机刷怪
+    this._checkWaveSpawn(dt)
+  }
+
+  // ========== 掉落物品 ==========
+
+  _updateDroppedItems(dt) {
+    const now = Date.now()
+    for (const item of this.droppedItems) {
+      if (item.collected) {
+        item.collectAnim += dt / 350
+        continue
+      }
+      const age = now - item.spawnTime
+      item.remaining = Math.max(0, DROP_LIFETIME - age)
+      const timeLeft = item.remaining / 1000
+      if (timeLeft < 2.5) item.blink = Math.sin(age / 80 * Math.PI) > 0
+    }
+    this.droppedItems = this.droppedItems.filter(i => !(i.collected && i.collectAnim >= 1))
+
+    // 过期消失
+    const expired = this.droppedItems.filter(i => !i.collected && i.remaining <= 0)
+    for (const item of expired) {
+      for (let j = 0; j < 6; j++) {
+        this.particles.push({
+          x: item.x + (Math.random() - 0.5) * 20,
+          y: item.y + (Math.random() - 0.5) * 20,
+          vx: (Math.random() - 0.5) * 30,
+          vy: (Math.random() - 0.5) * 30,
+          size: 2 + Math.random() * 3,
+          color: QUALITY_COLORS[item.quality],
+          life: 1,
+          decay: 2.5
+        })
+      }
+    }
+    this.droppedItems = this.droppedItems.filter(i => !(i.remaining <= 0 && !i.collected))
+  }
+
+  // ========== 投射物 ==========
+
+  _updateProjectiles(dt) {
+    for (const p of this.projectiles) {
+      const dx = p.targetX - p.x
+      const dy = p.targetY - p.y
+      const dist = Math.sqrt(dx * dx + dy * dy)
+      if (dist < 18) {
+        p.hit = true
+        if (p.onHit) p.onHit(p)
+      } else {
+        p.x += (dx / dist) * p.speed * (dt / 1000)
+        p.y += (dy / dist) * p.speed * (dt / 1000)
+        p.trail.push({ x: p.x, y: p.y })
+        if (p.trail.length > 10) p.trail.shift()
+      }
+    }
+    this.projectiles = this.projectiles.filter(p => !p.hit)
+  }
+
+  // ========== 特效系统 ==========
+
+  _spawnHitEffect(x, y, dmg, color, isCrit) {
+    // 伤害数字
+    this.effects.push({
+      type: 'dmg_number',
+      x: x + (Math.random() - 0.5) * 24,
+      y: y - 22,
+      value: dmg,
+      color: isCrit ? '#ffff00' : color,
+      scale: isCrit ? 1.6 : 1,
+      life: 1.2,
+      vy: -70
+    })
+
+    // 击中粒子数量根据暴击调整
+    const count = isCrit ? 12 : 6
+    for (let i = 0; i < count; i++) {
+      this.particles.push({
+        x, y,
+        vx: (Math.random() - 0.5) * (isCrit ? 120 : 80),
+        vy: (Math.random() - 0.5) * (isCrit ? 120 : 80),
+        size: 2 + Math.random() * (isCrit ? 4 : 3),
+        color,
+        life: 1,
+        decay: 2 + Math.random()
+      })
+    }
+  }
+
+  _spawnSkillHitEffect(x, y, dmg, color, skillId) {
+    this.effects.push({
+      type: 'dmg_number',
+      x, y: y - 26,
+      value: dmg,
+      color,
+      scale: 1.4,
+      life: 1.4,
+      vy: -80
+    })
+
+    // 技能击中粒子更密集
+    for (let i = 0; i < 16; i++) {
+      const angle = (i / 16) * Math.PI * 2
+      const speed = 40 + Math.random() * 80
+      this.particles.push({
+        x, y,
+        vx: Math.cos(angle) * speed,
+        vy: Math.sin(angle) * speed,
+        size: 3 + Math.random() * 4,
+        color,
+        life: 1,
+        decay: 1.5 + Math.random()
+      })
+    }
+
+    // 如果有击中帧特效图片，也添加一个特效对象
+    let hitFrames = null
+    if (skillId === 'fireball') hitFrames = 'fireball_hit'
+    else if (skillId === 'ice_shard') hitFrames = 'ice_hit'
+    else if (skillId === 'lightning' || skillId === 'meteor') hitFrames = 'lightning_hit'
+
+    if (hitFrames) {
+      this.effects.push({
+        type: 'skill_effect_frames',
+        x, y,
+        skillType: hitFrames,
+        frame: 0,
+        life: 1.0,  // 总播放时长
+        frameRate: 50 // 帧率ms
+      })
+    }
+  }
+
+  _spawnDeathEffect(x, y, color) {
+    for (let i = 0; i < 18; i++) {
+      const angle = Math.random() * Math.PI * 2
+      const speed = 30 + Math.random() * 80
+      this.particles.push({
+        x, y,
+        vx: Math.cos(angle) * speed,
+        vy: Math.sin(angle) * speed,
+        size: 3 + Math.random() * 5,
+        color,
+        life: 1,
+        decay: 1 + Math.random()
+      })
+    }
+  }
+
+  _spawnRespawnEffect(x, y) {
+    for (let i = 0; i < 25; i++) {
+      const angle = (i / 25) * Math.PI * 2
+      this.particles.push({
+        x: x + Math.cos(angle) * 30,
+        y: y + Math.sin(angle) * 30,
+        vx: -Math.cos(angle) * 40,
+        vy: -Math.sin(angle) * 40,
+        size: 4,
+        color: '#58a6ff',
+        life: 1,
+        decay: 1.5
+      })
+    }
+  }
+
+  _updateEffects(dt) {
+    for (const e of this.effects) {
+      if (e.type === 'dmg_number') {
+        e.y += e.vy * (dt / 1000)
+        e.life -= dt / 1000
+      } else if (e.type === 'skill_effect_frames') {
+        e.life -= dt / 1000
+        e.frameTimer = (e.frameTimer || 0) + dt
+        if (e.frameTimer >= e.frameRate) {
+          e.frameTimer = 0
+          e.frame++
+        }
+      } else if (e.type === 'char_hit') {
+        // 命中特效帧更新
+        e.timer = (e.timer || 0) + dt
+        const hitData = HIT_EFFECTS[e.hitType]
+        if (hitData) {
+          const totalFrames = hitData.frames.length
+          e.frame = Math.min(Math.floor(e.timer / hitData.frameRate), totalFrames - 1)
+          e.life = Math.max(0, e.duration - e.timer)
+        }
+      }
+    }
+    this.effects = this.effects.filter(e => e.life > 0)
+  }
+
+  _updateParticles(dt) {
+    for (const p of this.particles) {
+      p.x += p.vx * (dt / 1000)
+      p.y += p.vy * (dt / 1000)
+      p.vx *= 0.94
+      p.vy *= 0.94
+      p.life -= p.decay * (dt / 1000)
+    }
+    this.particles = this.particles.filter(p => p.life > 0)
+  }
+
+  /** 浮动文字（升级提示等） */
+  _addFloatingText(x, y, text, color, duration) {
+    this.floatingTexts.push({ x, y, text, color, life: duration, vy: -40 })
+  }
+
+  _updateFloatingTexts(dt) {
+    for (const ft of this.floatingTexts) {
+      ft.y += ft.vy * (dt / 1000)
+      ft.life -= dt / 1000
+    }
+    this.floatingTexts = this.floatingTexts.filter(ft => ft.life > 0)
+  }
+
+  _updateCamera(dt) {
+    this.camera.shakeX *= 0.9
+    this.camera.shakeY *= 0.9
+  }
+
+  // ========== 胜负检测 ==========
+
+  _checkWinLose() {}
+
+  getStats() {
+    return { ...this.stats, time: this.battleTime / 1000 }
+  }
+
+  // ========== 输入/触控 ==========
+
+  onTap(x, y) {
+    // 卡牌选择阶段
+    if (this.phase === 'card_select') {
+      this._handleCardTap(x, y)
+      return
+    }
+    if (this.phase !== 'battle') return
+    this.tapPos = { x, y }
+    this.lastTapTime = Date.now()
+
+    // 1. 优先检查掉落物拾取
+    for (const item of this.droppedItems) {
+      if (item.collected) continue
+      const dx = x - item.x
+      const dy = y - item.y
+      if (Math.sqrt(dx * dx + dy * dy) < 42) {
+        this._collectItem(item)
+        this.skillMenu.visible = false
+        return
+      }
+    }
+
+    // 2. 检查是否点击了技能菜单中的按钮（优先级最高）
+    if (this.skillMenu.visible && this.skillMenu.buttons) {
+      for (const btn of this.skillMenu.buttons) {
+        if (!btn) continue
+        const dx = x - btn.x
+        const dy = y - btn.y
+        if (dx * dx + dy * dy < btn.r * btn.r) {
+          // 释放该技能
+          const char = this.party[btn.charIndex]
+          if (!char.isDead && char.skills[btn.skillIdx]) {
+            const sk = char.skills[btn.skillIdx]
+            // 检查等级解锁
+            if (sk.unlockLevel && char.level < sk.unlockLevel) {
+              // 等级不足，不释放（显示反馈：菜单保持打开让玩家看到Lv标记）
+              return
+            }
+            this._castSkill(char, btn.skillIdx)
+          }
+          this.skillMenu.visible = false
+          return
+        }
+      }
+    }
+
+    // 2.5 检查是否点击了AI自动攻击切换按钮
+    if (this.skillMenu.visible && this.skillMenu.aiButton) {
+      const aiBtn = this.skillMenu.aiButton
+      if (x >= aiBtn.x && x <= aiBtn.x + aiBtn.w && y >= aiBtn.y && y <= aiBtn.y + aiBtn.h) {
+        const char = this.party[aiBtn.charIndex]
+        if (char && !char.isDead) {
+          char.autoAttackEnabled = !char.autoAttackEnabled // 切换AI状态
+          // 不关闭菜单，让玩家看到状态变化
+        }
+        return
+      }
+    }
+
+    // 3. 检查是否点击了角色（打开/切换技能弧形菜单）
+    for (let i = 0; i < this.party.length; i++) {
+      const c = this.party[i]
+      if (c.isDead) continue
+      // 角色碰撞检测：覆盖完整渲染区域（200px高度 + 名字/血条区域 + 底部脚底余量）
+      const hitW = 100
+      const hitH = 240
+      if (x >= c.x - hitW / 2 && x <= c.x + hitW / 2 && y >= c.y - hitH && y <= c.y + 25) {
+        this.selectedCharIndex = i
+        // 打开/切换技能弧形菜单
+        this.skillMenu = {
+          visible: true,
+          charIndex: i,
+          openTimer: Date.now(),
+          maxDuration: 4000,
+          tapX: x,
+          tapY: y
+        }
+        return
+      }
+    }
+
+    // 4. 点击地面：只移动当前选中的单个角色（近战冲前排、法师留后排）
+    const selected = this.party[this.selectedCharIndex]
+    if (selected && !selected.isDead) {
+      // 检查是否点击了水晶区域 → 不可攻击时阻止
+      if (!this.crystal.isDead) {
+        const cdx = x - this.crystal.x
+        const cdy = y - this.crystal.y
+        if (cdx * cdx + cdy * cdy < 55 * 55) {
+          if (!this.crystal.isAttackable) {
+            // 水晶不可攻击，显示提示
+            this._addFloatingText(this.crystal.x, this.crystal.y - 50,
+              '🛡 需先消灭全部怪物!', '#888888', 1.5)
+            return
+          }
+          // 水晶可攻击：角色移动到水晶附近攻击
+        }
+      }
+
+      selected.targetX = Math.max(20, Math.min(x, this.width - 20))
+      selected.targetY = Math.max(55, Math.min(y, this.height - 20))
+
+      // 根据移动方向更新朝向
+      if (Math.abs(selected.targetX - selected.x) > 3) {
+        selected.facingRight = selected.targetX > selected.x
+      }
+    }
+
+    // 关闭技能菜单
+    this.skillMenu.visible = false
+  }
+
+  onTapMove(x, y) {
+    if (this.phase !== 'battle') return
+    for (const item of this.droppedItems) {
+      if (item.collected) continue
+      const dx = x - item.x
+      const dy = y - item.y
+      if (Math.sqrt(dx * dx + dy * dy) < 42) {
+        this._collectItem(item)
+        return
+      }
+    }
+  }
+
+  onTapEnd() {
+    this.tapPos = null
+  }
+
+  /** 处理卡牌点击：点击即选中并确认 */
+  _handleCardTap(x, y) {
+    const cp = this.cardPhase
+    if (cp.confirmed) return
+
+    const W = this.width
+    const H = this.height
+    const dpr = this.dpr
+    const cardW = Math.min(100 * dpr, W * 0.28)
+    const cardH = Math.min(130 * dpr, H * 0.32)
+    const gap = 12 * dpr
+    const totalW = cp.cards.length * cardW + (cp.cards.length - 1) * gap
+    const startX = (W - totalW) / 2
+    const startY = (H - cardH) / 2 - 10 * dpr // 与渲染一致
+
+    for (let i = 0; i < cp.cards.length; i++) {
+      const cx = startX + i * (cardW + gap)
+      const cy = startY
+      if (x >= cx && x <= cx + cardW && y >= cy && y <= cy + cardH) {
+        cp.selectedIndex = i
+        cp.confirmed = true
+        this._applyCardEffect(cp.cards[i])
+        // 短暂延迟后进入战斗
+        setTimeout(() => {
+          this.phase = 'battle'
+          this._initPositions()
+          // 启动波次系统（延迟1秒后开始第一波）
+          this.waveCooldownTimer = 1000
+        }, 350)
+        return
+      }
+    }
+  }
+
+  /** 处理底部UI点击（技能/角色切换） */
+  _handleUITap(x, y) {
+    const H = this.height
+    const dpr = this.dpr
+
+    // 角色快捷槽区域
+    const slotY = H - 58
+    const slotW = 54
+    const slotSpacing = 62
+    const startX_slot = this.width / 2 - (this.party.length * slotSpacing) / 2
+
+    for (let i = 0; i < this.party.length; i++) {
+      const sx = startX_slot + i * slotSpacing
+      if (x >= sx && x <= sx + slotW && y >= slotY && y <= slotY + slotW) {
+        if (!this.party[i].isDead) this.selectedCharIndex = i
+        return
+      }
+    }
+
+    // 技能栏区域
+    const selectedChar = this.party[this.selectedCharIndex]
+    if (selectedChar && !selectedChar.isDead && selectedChar.skills) {
+      const skillAreaY = H - 125
+      const skillBtnSize = 46
+      const skillGap = 6
+      const totalSkillW = selectedChar.skills.length * skillBtnSize + (selectedChar.skills.length - 1) * skillGap
+      const skillStartX = this.width / 2 - totalSkillW / 2
+
+      for (let i = 0; i < selectedChar.skills.length; i++) {
+        const sx = skillStartX + i * (skillBtnSize + skillGap)
+        if (x >= sx && x <= sx + skillBtnSize && y >= skillAreaY && y <= skillAreaY + skillBtnSize) {
+          this._castSkill(selectedChar, i)
+          return
+        }
+      }
+    }
+  }
+
+  _collectItem(item) {
+    if (item.collected) return
+    item.collected = true
+    item.collectAnim = 0
+    this.stats.dropsCollected++
+
+    // 收集飞行动画
+    const flyTarget = { x: this.width - 44, y: this.height - 36 }
+    const startX = item.x
+    const startY = item.y
+    const dur = 340
+    const start = Date.now()
+
+    const animate = () => {
+      const t = Math.min(1, (Date.now() - start) / dur)
+      const ease = 1 - Math.pow(1 - t, 3)
+      item.x = startX + (flyTarget.x - startX) * ease
+      item.y = startY + (flyTarget.y - startY) * ease
+      if (t < 1) requestAnimationFrame(animate)
+    }
+    animate()
+
+    // 品质收集特效
+    const color = QUALITY_COLORS[item.quality]
+    const particleCount = item.quality === 'legendary' ? 24 : item.quality === 'epic' ? 18 : item.quality === 'rare' ? 12 : 8
+    for (let i = 0; i < particleCount; i++) {
+      const angle = (i / particleCount) * Math.PI * 2
+      this.particles.push({
+        x: item.x, y: item.y,
+        vx: Math.cos(angle) * 70,
+        vy: Math.sin(angle) * 70,
+        size: 3 + Math.random() * (item.quality === 'legendary' ? 5 : 3),
+        color,
+        life: 1,
+        decay: 1.8 + Math.random()
+      })
+    }
+
+    // 浮动文字提示品质
+    this._addFlyingDropText(item.name, QUALITY_NAMES[item.quality], color)
+  }
+
+  _addFlyingDropText(name, rarityName, color) {
+    this.effects.push({
+      type: 'dmg_number',
+      x: this.width - 44,
+      y: this.height - 56,
+      value: `${rarityName} ${name}`,
+      color,
+      scale: 0.85,
+      life: 2.0,
+      vy: -30,
+      isText: true
+    })
+  }
+
+  // ==================== 渲染 ====================
+
+  render() {
+    const ctx = this.ctx
+    const W = this.width
+    const H = this.height
+
+    // 注意：不使用 ctx.scale(DPR, DPR)
+    // 所有绘制直接使用设备像素坐标（canvas物理分辨率 = windowSize * DPR）
+
+    if (this.phase === 'card_select') {
+      this._renderCardSelect(ctx)
+      return
+    }
+
+    // 背景（深色但可辨识）
+    ctx.fillStyle = '#12161e'
+    ctx.fillRect(0, 0, W, H)
+
+    // 地面区域（更明显）
+    const groundY = H * 0.78
+    ctx.fillStyle = '#1a2030'
+    ctx.fillRect(0, groundY, W, H - groundY)
+
+    // 地面纹理线
+    ctx.strokeStyle = 'rgba(100,120,160,0.08)'
+    ctx.lineWidth = 1
+    for (let gx = 0; gx < W; gx += 40) {
+      ctx.beginPath(); ctx.moveTo(gx, groundY); ctx.lineTo(gx, H); ctx.stroke()
+    }
+
+    // 我方区域（左侧淡蓝色）
+    ctx.fillStyle = 'rgba(88,166,255,0.04)'
+    ctx.fillRect(0, 0, W * 0.45, groundY)
+
+    // 敌方区域（右侧淡红色）
+    ctx.fillStyle = 'rgba(255,80,80,0.04)'
+    ctx.fillRect(W * 0.45, 0, W * 0.55, groundY)
+
+    // 中线分隔
+    ctx.strokeStyle = 'rgba(255,255,255,0.06)'
+    ctx.lineWidth = 1
+    ctx.setLineDash([8, 6])
+    ctx.beginPath()
+    ctx.moveTo(W * 0.45, 50)
+    ctx.lineTo(W * 0.45, groundY)
+    ctx.stroke()
+    ctx.setLineDash([])
+
+    // 水晶区域标记
+    ctx.fillStyle = 'rgba(255,80,80,0.06)'
+    ctx.beginPath()
+    ctx.arc(this.crystal.x, this.crystal.y, 55, 0, Math.PI * 2)
+    ctx.fill()
+
+    // 相机震动
+    const camShakeX = (Math.random() - 0.5) * (this.camera.shakeX || 0) * 2
+    const camShakeY = (Math.random() - 0.5) * (this.camera.shakeY || 0) * 2
+    ctx.translate(camShakeX, camShakeY)
+
+    // 渲染层级
+    this._renderParticles(ctx)
+    this._renderDroppedItems(ctx)
+    this._renderCrystal(ctx)
+    this._renderMonsters(ctx)
+    this._renderCharacters(ctx)
+    this._renderProjectiles(ctx)
+    this._renderSkillArcMenu(ctx) // 技能弧形菜单（在角色之上）
+    this._renderEffects(ctx)
+    this._renderFloatingTexts(ctx)
+
+    ctx.restore()
+
+    // UI层（不受相机影响）
+    this._renderUI(ctx)
+  }
+
+  // ===== 卡牌选择界面渲染 =====
+
+  _renderCardSelect(ctx) {
+    const W = this.width
+    const H = this.height
+    const dpr = this.dpr
+    const cp = this.cardPhase
+
+    // 半透明遮罩背景
+    ctx.fillStyle = 'rgba(13, 17, 23, 0.95)'
+    ctx.fillRect(0, 0, W, H)
+
+    // 标题
+    ctx.fillStyle = '#ffd700'
+    ctx.font = `bold ${22 * dpr}px sans-serif`
+    ctx.textAlign = 'center'
+    ctx.textBaseline = 'top'
+    ctx.fillText('✦ 选择一张祝福卡牌 ✦', W / 2, H * 0.12)
+
+    ctx.fillStyle = '#8b949e'
+    ctx.font = `${13 * dpr}px sans-serif`
+    ctx.fillText('点击即可选择，效果持续整场战斗', W / 2, H * 0.12 + 30 * dpr)
+
+    // 卡牌参数（紧凑版——手机适配）
+    const cardW = Math.min(100 * dpr, W * 0.28)
+    const cardH = Math.min(130 * dpr, H * 0.32)
+    const gap = 12 * dpr
+    const totalW = cp.cards.length * cardW + (cp.cards.length - 1) * gap
+    const startX = (W - totalW) / 2
+    const startY = (H - cardH) / 2 - 10 * dpr // 居中偏上
+    const time = (cp.animTimer || 0) / 1000
+
+    cp.cards.forEach((card, i) => {
+      const cx = startX + i * (cardW + gap)
+      const cy = startY
+      const isSelected = cp.selectedIndex === i
+      const isConfirmed = cp.confirmed && isSelected
+
+      // 选中浮动效果
+      const floatOffset = isSelected ? Math.sin(time * 3) * 4 : 0
+      const selScale = isSelected ? 1.05 : 1
+
+      ctx.save()
+      ctx.translate(cx + cardW / 2, cy + cardH / 2 + floatOffset)
+      ctx.scale(selScale, selScale)
+      ctx.translate(-cardW / 2, -cardH / 2)
+
+      // 已确认：卡片缩小淡出动画
+      if (isConfirmed) {
+        const confirmT = Math.min(1, ((Date.now() - cp._confirmTime) || 0) / 350)
+        if (confirmT > 0.5) {
+          ctx.globalAlpha = 1 - confirmT
+          const s = 1 + confirmT * 0.15
+          ctx.scale(s, s)
+        }
+      }
+
+      // 卡牌背景
+      const cardGrad = ctx.createLinearGradient(0, 0, 0, cardH)
+      cardGrad.addColorStop(0, '#1c2128')
+      cardGrad.addColorStop(1, '#21262d')
+      ctx.fillStyle = cardGrad
+
+      // 选中发光边框
+      if (isSelected) {
+        ctx.shadowBlur = 16 + Math.sin(time * 4) * 6
+        ctx.shadowColor = card.color || '#ffd700'
+      }
+      this._roundRect(ctx, 0, 0, cardW, cardH, 10)
+      ctx.fill()
+      ctx.shadowBlur = 0
+
+      // 边框
+      ctx.strokeStyle = isSelected ? (card.color || '#ffd700') : '#30363d'
+      ctx.lineWidth = isSelected ? 2.5 : 1.5
+      this._roundRect(ctx, 0, 0, cardW, cardH, 10)
+      ctx.stroke()
+
+      // 图标（紧凑）
+      ctx.font = `${28 * dpr}px sans-serif`
+      ctx.textAlign = 'center'
+      ctx.textBaseline = 'middle'
+      ctx.fillText(card.icon, cardW / 2, cardH * 0.22)
+
+      // 名称
+      ctx.fillStyle = card.color || '#f0e6d3'
+      ctx.font = `bold ${12 * dpr}px sans-serif`
+      ctx.fillText(card.name, cardW / 2, cardH * 0.40)
+
+      // 描述（紧凑，最多2行）
+      ctx.fillStyle = '#8b949e'
+      ctx.font = `${10 * dpr}px sans-serif`
+      const maxDescW = cardW - 16
+      const desc = card.desc
+      let line = ''
+      let lineY = cardH * 0.54
+      let lineCount = 0
+      for (const ch of desc) {
+        const testLine = line + ch
+        if (ctx.measureText(testLine).width > maxDescW && line.length > 0) {
+          ctx.fillText(line, cardW / 2, lineY)
+          line = ch
+          lineY += 15 * dpr
+          lineCount++
+          if (lineCount >= 2) break
+        } else {
+          line = testLine
+        }
+      }
+      if (lineCount < 2 && line) ctx.fillText(line, cardW / 2, lineY)
+
+      // 稀有标记
+      if (card.rare) {
+        ctx.fillStyle = '#f39c12'
+        ctx.font = `bold ${10 * dpr}px sans-serif`
+        ctx.fillText('★ 稀有 ★', cardW / 2, cardH * 0.88)
+      } else {
+        // 普通卡底部提示
+        if (!isConfirmed) {
+          ctx.fillStyle = '#484f58'
+          ctx.font = `${10 * dpr}px sans-serif`
+          ctx.fillText('点击选择', cardW / 2, cardH * 0.88)
+        }
+      }
+
+      // 已选中标记（覆盖）
+      if (isConfirmed) {
+        ctx.fillStyle = 'rgba(13, 17, 23, 0.7)'
+        this._roundRect(ctx, 0, 0, cardW, cardH, 10)
+        ctx.fill()
+        ctx.fillStyle = '#3fb950'
+        ctx.font = `bold ${14 * dpr}px sans-serif`
+        ctx.fillText('✓ 已选', cardW / 2, cardH / 2)
+      }
+
+      ctx.restore()
+    })
+
+    // 底部提示
+    if (!cp.confirmed) {
+      ctx.fillStyle = '#484f58'
+      ctx.font = `${12 * dpr}px sans-serif`
+      ctx.textAlign = 'center'
+      ctx.textBaseline = 'bottom'
+      ctx.fillText('点击任意一张卡牌开始战斗', W / 2, H - 24 * dpr)
+    }
+  }
+
+  // ===== 掉落物渲染 =====
+
+  _renderDroppedItems(ctx) {
+    for (const item of this.droppedItems) {
+      if (item.collected && item.collectAnim >= 1) continue
+
+      ctx.save()
+      ctx.translate(item.x, item.y)
+
+      if (item.collected) {
+        ctx.globalAlpha = 1 - item.collectAnim
+        ctx.scale(1 - item.collectAnim * 0.5, 1 - item.collectAnim * 0.5)
+      }
+
+      // 闪烁
+      if (item.blink && !item.collected) {
+        ctx.globalAlpha = 0.25 + Math.sin(Date.now() / 50) * 0.5
+      }
+
+      const color = QUALITY_COLORS[item.quality]
+
+      // 品质光环
+      const pulse = Math.sin(Date.now() / (item.pulseSpeed * 100)) * 0.3 + 1
+      const glowR = (18 + item.glowIntensity * pulse)
+
+      if (item.quality !== 'common') {
+        const glowGrad = ctx.createRadialGradient(0, 0, 5, 0, 0, glowR)
+        glowGrad.addColorStop(0, color + '40')
+        glowGrad.addColorStop(1, color + '00')
+        ctx.fillStyle = glowGrad
+        ctx.beginPath()
+        ctx.arc(0, 0, glowR, 0, Math.PI * 2)
+        ctx.fill()
+      }
+
+      ctx.shadowBlur = item.glowIntensity * (item.quality === 'legendary' ? 1.5 : 1)
+      ctx.shadowColor = color
+
+      // 物品图标底座
+      ctx.fillStyle = '#1c2128'
+      ctx.beginPath()
+      ctx.arc(0, 0, 17, 0, Math.PI * 2)
+      ctx.fill()
+      ctx.strokeStyle = color
+      ctx.lineWidth = 2.5
+      ctx.stroke()
+
+      // 装备类型图标
+      const slotIcon = { weapon: '\u2694', armor: '\u{1F6E1}', accessory: '\u{1F48D}' }
+      ctx.fillStyle = color
+      ctx.font = 'bold 17px sans-serif'
+      ctx.textAlign = 'center'
+      ctx.textBaseline = 'middle'
+      ctx.fillText(slotIcon[item.slot] || '?', 0, 1)
+
+      // 时间条
+      if (!item.collected) {
+        const ratio = item.remaining / DROP_LIFETIME
+        const barColor = ratio > 0.5 ? color : ratio > 0.25 ? '#ff8c00' : '#ff4444'
+        ctx.fillStyle = 'rgba(0,0,0,0.7)'
+        ctx.fillRect(-16, 23, 32, 4)
+        ctx.fillStyle = barColor
+        ctx.fillRect(-16, 23, 32 * ratio, 4)
+      }
+
+      // 传说额外星光
+      if (item.quality === 'legendary' && !item.collected) {
+        for (let s = 0; s < 3; s++) {
+          const starAngle = Date.now() / 800 + s * (Math.PI * 2 / 3)
+          const starR = 24 + Math.sin(Date.now() / 400 + s * 2) * 5
+          const sx = Math.cos(starAngle) * starR
+          const sy = Math.sin(starAngle) * starR
+          ctx.fillStyle = '#ffd700'
+          ctx.globalAlpha = 0.6 + Math.sin(Date.now() / 200 + s) * 0.4
+          ctx.beginPath()
+          ctx.arc(sx, sy, 2, 0, Math.PI * 2)
+          ctx.fill()
+        }
+        ctx.globalAlpha = item.collected ? (1 - item.collectAnim) : 1
+      }
+
+      ctx.shadowBlur = 0
+      ctx.restore()
+    }
+  }
+
+  // ===== 水晶渲染 =====
+
+  _renderCrystal(ctx) {
+    const c = this.crystal
+    if (c.scale <= 0) return
+
+    ctx.save()
+    ctx.translate(c.x + c.shakeX, c.y + c.shakeY)
+    ctx.scale(c.scale, c.scale)
+
+    // ===== 可攻击状态：闪烁提示 =====
+    if (c.isAttackable && c.attackableFlash > 0) {
+      const flashAlpha = 0.3 + Math.sin(c.arrowAnimTimer * 6) * 0.3
+      ctx.fillStyle = `rgba(255,68,68,${flashAlpha})`
+      ctx.beginPath()
+      ctx.arc(0, 0, 65 + Math.sin(c.arrowAnimTimer * 4) * 5, 0, Math.PI * 2)
+      ctx.fill()
+    }
+
+    // 光环（不可攻击时暗淡）
+    const isDimmed = !c.isAttackable && !c.isDead
+    const gradient = ctx.createRadialGradient(0, 0, 5, 0, 0, 55)
+    if (isDimmed) {
+      gradient.addColorStop(0, 'rgba(100,80,40,0.4)')
+      gradient.addColorStop(0.5, 'rgba(80,60,30,0.15)')
+      gradient.addColorStop(1, 'rgba(80,60,30,0)')
+    } else {
+      gradient.addColorStop(0, 'rgba(255,215,0,0.8)')
+      gradient.addColorStop(0.5, 'rgba(255,140,0,0.3)')
+      gradient.addColorStop(1, 'rgba(255,140,0,0)')
+    }
+    ctx.fillStyle = gradient
+    ctx.beginPath()
+    ctx.arc(0, 0, 55, 0, Math.PI * 2)
+    ctx.fill()
+
+    // 水晶本体颜色（不可攻击时灰暗色）
+    ctx.shadowBlur = c.hurtTimer > 0 ? 35 : 18
+    ctx.shadowColor = c.hurtFlash > 0 ? '#ffffff' : (isDimmed ? '#666644' : '#ffd700')
+    ctx.fillStyle = c.hurtFlash > 0 ? '#ffffff' : (isDimmed ? '#666633' : '#ffd700')
+
+    // 六边形
+    ctx.beginPath()
+    for (let i = 0; i < 6; i++) {
+      const angle = (i / 6) * Math.PI * 2 - Math.PI / 2
+      const r = 37
+      const px = Math.cos(angle) * r
+      const py = Math.sin(angle) * r
+      if (i === 0) ctx.moveTo(px, py)
+      else ctx.lineTo(px, py)
+    }
+    ctx.closePath()
+    ctx.fill()
+
+    // 内核
+    ctx.fillStyle = isDimmed ? 'rgba(180,180,150,0.25)' : 'rgba(255,255,255,0.4)'
+    ctx.beginPath()
+    for (let i = 0; i < 6; i++) {
+      const angle = (i / 6) * Math.PI * 2 - Math.PI / 2
+      const r = 19
+      if (i === 0) ctx.moveTo(Math.cos(angle) * r, Math.sin(angle) * r)
+      else ctx.lineTo(Math.cos(angle) * r, Math.sin(angle) * r)
+    }
+    ctx.closePath()
+    ctx.fill()
+    ctx.shadowBlur = 0
+
+    // ===== 箭头指引（可攻击时显示）=====
+    if (c.isAttackable && c.attackableFlash <= 0) {
+      // 跳动箭头动画
+      const arrowBounce = Math.abs(Math.sin(c.arrowAnimTimer * 3))
+      const arrowY = -70 - arrowBounce * 12
+      const arrowAlpha = 0.7 + arrowBounce * 0.3
+
+      ctx.save()
+      ctx.globalAlpha = arrowAlpha
+      ctx.fillStyle = '#ff4444'
+      ctx.shadowBlur = 10
+      ctx.shadowColor = '#ff4444'
+      // 绘制箭头（向下指）
+      ctx.beginPath()
+      ctx.moveTo(-10, arrowY)
+      ctx.lineTo(10, arrowY)
+      ctx.lineTo(0, arrowY + 16)
+      ctx.closePath()
+      ctx.fill()
+      // "攻击"文字
+      ctx.font = 'bold 11px sans-serif'
+      ctx.textAlign = 'center'
+      ctx.fillText('⚔ 攻击!', 0, arrowY - 6)
+      ctx.restore()
+    }
+
+    // 不可攻击时的盾牌图标
+    if (!c.isAttackable && !c.isDead) {
+      ctx.save()
+      ctx.globalAlpha = 0.5 + Math.sin(c.arrowAnimTimer * 1.5) * 0.2
+      ctx.fillStyle = '#888888'
+      ctx.font = 'bold 14px sans-serif'
+      ctx.textAlign = 'center'
+      ctx.fillText('🛡', 0, 55)
+      ctx.font = '9px sans-serif'
+      ctx.fillText('防御中', 0, 68)
+      ctx.restore()
+    }
+
+    // 血条
+    const hpRatio = Math.max(0, c.hp / c.maxHp)
+    const barW = 64
+    ctx.fillStyle = 'rgba(0,0,0,0.75)'
+    ctx.fillRect(-barW / 2, -55, barW, 9)
+    ctx.fillStyle = hpRatio > 0.5 ? '#ffd700' : hpRatio > 0.2 ? '#ff8c00' : '#ff4444'
+    ctx.fillRect(-barW / 2, -55, barW * hpRatio, 9)
+
+    // 名称（可攻击状态改变文字和颜色）
+    ctx.fillStyle = c.isAttackable ? '#ff4444' : '#888888'
+    ctx.font = 'bold 12px sans-serif'
+    ctx.textAlign = 'center'
+    ctx.fillText(c.isAttackable ? '敌方水晶 ⚠️' : '🛡 敌方水晶', 0, -63)
+
+    ctx.restore()
+  }
+
+  // ===== 怪物渲染（真实精灵）=====
+
+  _renderMonsters(ctx) {
+    for (const m of this.monsters) {
+      if (m.isDead && m.deathTimer <= 0) continue
+
+      ctx.save()
+      ctx.translate(m.x + (m.shakeX || 0), m.y + (m.shakeY || 0))
+
+      if (m.isDead) {
+        ctx.globalAlpha = m.deathTimer / 450
+        ctx.scale(1 - (1 - m.deathTimer / 450) * 0.5, 1 - (1 - m.deathTimer / 450) * 0.5)
+      }
+
+      // 受伤闪白
+      if (m.hurtFlash > 0) {
+        ctx.shadowBlur = 20
+        ctx.shadowColor = '#ffffff'
+      }
+
+      // 获取怪物精灵图片
+      const img = this._getMonsterFrameImage(m)
+      const spr = MONSTER_SPRITES[m.type] || MONSTER_SPRITES.slime
+      const baseScale = spr.scale || 1
+      let drawH = 72 // 默认高度（回退时使用）
+
+      if (img) {
+        // 怪物尺寸：根据类型缩放，确保在手机上可见（至少60px高）
+        const rawH = img.height
+        drawH = Math.max(60, rawH * baseScale * 0.9)
+        const drawW = img.width * (drawH / rawH)
+
+        // 颜色染色（用于区分不同怪物类型但共用同一套精灵）
+        if (spr.tint && !m.isDead) {
+          ctx.globalCompositeOperation = 'multiply'
+          ctx.fillStyle = spr.tint
+          ctx.fillRect(-drawW / 2, -drawH / 2, drawW, drawH)
+          ctx.globalCompositeOperation = 'destination-over'
+        }
+
+        ctx.drawImage(img, -drawW / 2, -drawH, drawW, drawH)
+
+        // 怪物攻击挥砍特效
+        if (m.attackAnimTimer > 0) {
+          const slashP = m.attackAnimTimer / 280
+          ctx.strokeStyle = 'rgba(255,80,80,' + (slashP * 0.6).toFixed(2) + ')'
+          ctx.lineWidth = 2
+          ctx.beginPath()
+          ctx.arc(-drawW * 0.2, -drawH * 0.3, 15 + (1 - slashP) * 12,
+                   Math.PI * 0.3 + (1 - slashP) * Math.PI * 0.5,
+                   Math.PI * 0.7 + (1 - slashP) * Math.PI * 0.5)
+          ctx.stroke()
+        }
+
+        if (spr.tint) {
+          ctx.globalCompositeOperation = 'source-over'
+        }
+      } else {
+        // 回退：大号圆形怪物
+        const bodyColor = {
+          slime: '#7ec850', goblin: '#56a364', orc: '#8b5e3c',
+          wolf: '#7a7a7a', undead: '#9b8fb4', demon: '#c0392b', dragon: '#e74c3c'
+        }[m.type] || '#888'
+        ctx.fillStyle = m.hurtFlash > 0 ? '#ffffff' : bodyColor
+        ctx.beginPath()
+        ctx.arc(0, -10, 36, 0, Math.PI * 2)
+        ctx.fill()
+
+        // 怪物名首字
+        ctx.fillStyle = 'rgba(255,255,255,0.85)'
+        ctx.font = 'bold 20px sans-serif'
+        ctx.textAlign = 'center'
+        ctx.textBaseline = 'middle'
+        ctx.fillText(m.name.charAt(0), 0, 2)
+
+        // 眼睛
+        ctx.fillStyle = '#fff'
+        ctx.beginPath()
+        ctx.arc(-9, -6, 6, 0, Math.PI * 2)
+        ctx.arc(9, -6, 6, 0, Math.PI * 2)
+        ctx.fill()
+        ctx.fillStyle = '#000'
+        ctx.beginPath()
+        ctx.arc(-8, -6, 3, 0, Math.PI * 2)
+        ctx.arc(10, -6, 3, 0, Math.PI * 2)
+        ctx.fill()
+      }
+
+      // 血条
+      const hpRatio = Math.max(0, m.hp / m.maxHp)
+      const barW = 44
+      ctx.fillStyle = 'rgba(0,0,0,0.72)'
+      ctx.fillRect(-barW / 2, -52 - drawH, barW, 6)
+      ctx.fillStyle = hpRatio > 0.5 ? '#ff4444' : hpRatio > 0.2 ? '#ff8c00' : '#ff2222'
+      ctx.fillRect(-barW / 2, -52 - drawH, barW * hpRatio, 6)
+
+      // 怪物名称（小字）
+      if (!m.isDead) {
+        ctx.shadowBlur = 0
+        ctx.fillStyle = 'rgba(255,255,255,0.6)'
+        ctx.font = '9px sans-serif'
+        ctx.textAlign = 'center'
+        ctx.fillText(m.name, 0, -42)
+      }
+
+      ctx.restore()
+    }
+  }
+
+  // ===== 角色渲染（真实精灵）=====
+
+  _renderCharacters(ctx) {
+    for (let i = 0; i < this.party.length; i++) {
+      const c = this.party[i]
+      if (c.isDead && c.respawnTimer <= 0) continue
+
+      ctx.save()
+      ctx.translate(c.x, c.y)
+
+      // 朝向：朝左时水平翻转
+      if (!c.facingRight) {
+        ctx.scale(-1, 1)
+      }
+
+      if (c.isDead) {
+        // 死亡倒计时
+        ctx.globalAlpha = 0.55
+        ctx.fillStyle = '#58a6ff'
+        ctx.font = 'bold 15px sans-serif'
+        ctx.textAlign = 'center'
+        ctx.fillText(`${(c.respawnTimer / 1000).toFixed(1)}s`, 0, 0)
+
+        // 复活进度条
+        const respawnTime = (RESPAWN_TABLE[c.level] || c.level * 2) * (1 - (this._respawnBoost || 0))
+        const ratio = 1 - c.respawnTimer / (respawnTime * 1000)
+        ctx.fillStyle = 'rgba(0,0,0,0.7)'
+        ctx.fillRect(-26, 12, 52, 6)
+        ctx.fillStyle = '#58a6ff'
+        ctx.fillRect(-26, 12, 52 * ratio, 6)
+
+        ctx.restore()
+        continue
+      }
+
+      // 攻击前摇位移（向前冲 + 轻微放大）
+      if (c.attackAnimTimer > 0 && c.animState === 'attack') {
+        const progress = c.attackAnimTimer / 350 // 1→0
+        ctx.translate(16 * progress, -4 * Math.sin((1 - progress) * Math.PI))
+        const scale = 1 + (1 - progress) * 0.15
+        ctx.scale(scale, scale)
+      } else if (c.castSkillId && c.attackAnimTimer > 0) {
+        // 施法时轻微浮动+发光
+        const progress = c.attackAnimTimer / 600
+        ctx.translate(0, -6 * Math.sin(progress * Math.PI * 3))
+        const scale = 1 + Math.sin(progress * Math.PI * 2) * 0.08
+        ctx.scale(scale, scale)
+      }
+
+      // 受伤闪白
+      if (c.hurtFlash > 0) {
+        ctx.shadowBlur = 22
+        ctx.shadowColor = '#ffffff'
+      }
+
+      // 升级金光
+      if (c.levelUpFlash > 0) {
+        ctx.shadowBlur = 15 + c.levelUpFlash * 20
+        ctx.shadowColor = '#ffd700'
+      }
+
+      // 绘制角色精灵
+      const img = this._getCharFrameImage(c)
+      if (img) {
+        const drawH = 200 // 角色高度
+        const drawW = img.width * (drawH / img.height)
+        ctx.drawImage(img, -drawW / 2, -drawH, drawW, drawH)
+        // 攻击时画武器挥砍弧线
+        if (c.attackAnimTimer > 0 && c.animState === 'attack') {
+          const slashProgress = c.attackAnimTimer / 350
+          ctx.strokeStyle = 'rgba(255,220,150,' + (slashProgress * 0.7).toFixed(2) + ')'
+          ctx.lineWidth = 3
+          ctx.shadowBlur = 12
+          ctx.shadowColor = '#ffd700'
+          ctx.beginPath()
+          ctx.arc(drawW * 0.3, -drawH * 0.3, 25 + (1 - slashProgress) * 18,
+                   -Math.PI * 0.8 + (1 - slashProgress) * Math.PI * 0.6,
+                   -Math.PI * 0.3 + (1 - slashProgress) * Math.PI * 0.6, false)
+          ctx.stroke()
+          ctx.shadowBlur = 0
+        }
+      } else {
+        // 回退：大号角色块
+        const roleColor = {
+          warrior: '#3498db', mage: '#9b59b6',
+          fighter: '#e74c3c', healer: '#2ecc71'
+        }[c.role] || '#888'
+        ctx.fillStyle = c.hurtFlash > 0 ? '#ffffff' : roleColor
+        this._roundRect(ctx, -40, -170, 80, 170, 14)
+        ctx.fill()
+        // 角色名首字
+        ctx.fillStyle = 'rgba(255,255,255,0.85)'
+        ctx.font = 'bold 32px sans-serif'
+        ctx.textAlign = 'center'
+        ctx.textBaseline = 'middle'
+        ctx.fillText(c.name.charAt(0), 0, -85)
+      }
+
+      ctx.shadowBlur = 0
+
+      // 名字+等级（带升级高亮）
+      const nameColor = c.levelUpFlash > 0 ? '#ffd700' : '#f0e6d3'
+      ctx.fillStyle = nameColor
+      ctx.font = 'bold 13px sans-serif'
+      ctx.textAlign = 'center'
+      ctx.fillText(`${c.name} Lv${c.level}`, 0, -218)
+
+      // 血条
+      const hpRatio = Math.max(0, c.currentHp / c.maxHp)
+      const barW = 54
+      ctx.fillStyle = 'rgba(0,0,0,0.7)'
+      ctx.fillRect(-barW / 2, -204, barW, 6)
+      ctx.fillStyle = hpRatio > 0.5 ? '#2ecc71' : hpRatio > 0.2 ? '#f39c12' : '#e74c3c'
+      ctx.fillRect(-barW / 2, -204, barW * hpRatio, 6)
+
+      // MP条
+      const mpRatio = Math.max(0, (c.currentMp || 0) / c.maxMp)
+      ctx.fillStyle = 'rgba(0,0,0,0.45)'
+      ctx.fillRect(-barW / 2, -194, barW, 4)
+      ctx.fillStyle = '#3498db'
+      ctx.fillRect(-barW / 2, -194, barW * mpRatio, 4)
+
+      // 选中指示器
+      if (i === this.selectedCharIndex) {
+        ctx.strokeStyle = '#ffd700'
+        ctx.lineWidth = 1.5
+        ctx.setLineDash([4, 4])
+        this._roundRect(ctx, -34, -230, 68, 240, 8)
+        ctx.stroke()
+        ctx.setLineDash([])
+      }
+
+      ctx.restore()
+    }
+  }
+
+  // ===== 投射物渲染 =====
+
+  _renderProjectiles(ctx) {
+    for (const p of this.projectiles) {
+      ctx.save()
+      // 拖尾
+      for (let i = 0; i < p.trail.length; i++) {
+        const alpha = (i / p.trail.length) * 0.45
+        const size = p.size * (i / p.trail.length) * 0.8
+        ctx.globalAlpha = alpha
+        ctx.fillStyle = p.color
+        ctx.beginPath()
+        ctx.arc(p.trail[i].x, p.trail[i].y, size, 0, Math.PI * 2)
+        ctx.fill()
+      }
+      ctx.globalAlpha = 1
+
+      ctx.shadowBlur = p.isSkill ? 14 : 10
+      ctx.shadowColor = p.color
+      ctx.fillStyle = p.color
+      ctx.beginPath()
+      ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2)
+      ctx.fill()
+      ctx.shadowBlur = 0
+      ctx.restore()
+    }
+  }
+
+  // ===== 特效渲染 =====
+
+  _renderEffects(ctx) {
+    for (const e of this.effects) {
+      if (e.type === 'dmg_number') {
+        ctx.save()
+        ctx.globalAlpha = Math.min(1, e.life)
+        ctx.fillStyle = e.color
+        const fontSize = e.isText ? 12 : (14 + Math.floor(e.life * 7))
+        ctx.font = `${e.isText ? '' : 'bold '}${fontSize * (e.scale || 1)}px sans-serif`
+        ctx.textAlign = 'center'
+        if (e.isText) {
+          ctx.fillText(String(e.value), e.x, e.y)
+        } else {
+          ctx.fillText(`-${e.value}`, e.x, e.y)
+        }
+        ctx.restore()
+      } else if (e.type === 'skill_effect_frames') {
+        this._renderSkillEffectFrames(ctx, e)
+      } else if (e.type === 'char_hit') {
+        // 渲染命中特效帧（hit帧）
+        const hitData = HIT_EFFECTS[e.hitType]
+        if (hitData && hitData.frames[e.frame]) {
+          const key = hitData.frames[e.frame]
+          const img = this.assets.get(key)
+          if (img) {
+            const size = 80 + Math.min(e.timer / 10, 20) // 命中时略微放大
+            ctx.globalAlpha = Math.max(0, 1 - (e.timer / e.duration) * 0.5)
+            ctx.drawImage(img, e.x - size / 2, e.y - size / 2, size, size)
+            ctx.globalAlpha = 1
+          }
+        }
+      }
+    }
+  }
+
+  /** 渲染技能击中特效帧 */
+  _renderSkillEffectFrames(ctx, effect) {
+    const frameMap = {
+      fireball_hit: {
+        prefix: 'EFFECT_FIREBALL_HIT_', count: 24
+      },
+      ice_hit: {
+        prefix: 'EFFECT_ICE_SHARD_HIT_', count: 11
+      },
+      lightning_hit: {
+        prefix: 'EFFECT_LIGHTNING_HIT_', count: 12
+      }
+    }
+    const info = frameMap[effect.skillType]
+    if (!info) return
+    const frameIdx = Math.min(effect.frame, info.count - 1)
+    const key = `${info.prefix}${String(frameIdx + 1).padStart(2, '0')}`
+    const img = this.assets.get(key)
+    if (img) {
+      const size = 80
+      ctx.globalAlpha = Math.min(1, effect.life * 2)
+      ctx.drawImage(img, effect.x - size / 2, effect.y - size / 2, size, size)
+      ctx.globalAlpha = 1
+    }
+  }
+
+  // ===== 粒子 =====
+
+  _renderParticles(ctx) {
+    for (const p of this.particles) {
+      ctx.save()
+      ctx.globalAlpha = p.life
+      ctx.fillStyle = p.color
+      ctx.beginPath()
+      ctx.arc(p.x, p.y, p.size * p.life, 0, Math.PI * 2)
+      ctx.fill()
+      ctx.restore()
+    }
+  }
+
+  // ===== 浮动文字 =====
+
+  _renderFloatingTexts(ctx) {
+    for (const ft of this.floatingTexts) {
+      ctx.save()
+      ctx.globalAlpha = Math.min(1, ft.life)
+      ctx.fillStyle = ft.color
+      ctx.font = 'bold 13px sans-serif'
+      ctx.textAlign = 'center'
+      ctx.strokeStyle = 'rgba(0,0,0,0.6)'
+      ctx.lineWidth = 3
+      ctx.strokeText(ft.text, ft.x, ft.y)
+      ctx.fillText(ft.text, ft.x, ft.y)
+      ctx.restore()
+    }
+  }
+
+  // ===== 技能弧形菜单 =====
+
+  _renderSkillArcMenu(ctx) {
+    if (!this.skillMenu.visible || this.skillMenu.charIndex < 0) return
+    const c = this.party[this.skillMenu.charIndex]
+    if (!c) return
+    const skills = c.skills
+    if (!skills || skills.length === 0) return
+
+    const cx = c.x
+    const cy = c.y - 140 // 角色上方弹出（上移一点给AI按钮留空间）
+    const btnRadius = 34   // 按钮稍大一点
+    const arcRadius = 115 // 弧形半径加大（原85太挤）
+    const dpr = this.dpr
+
+    // 菜单淡入效果
+    const elapsed = Date.now() - (this.skillMenu.openTimer || 0)
+    const fadeIn = Math.min(1, elapsed / 200)
+    ctx.globalAlpha = fadeIn * 0.95
+
+    // 背景半透明遮罩
+    ctx.fillStyle = 'rgba(13,17,23,0.35)'
+    ctx.beginPath()
+    ctx.arc(cx, cy - 10, arcRadius + 60, 0, Math.PI * 2)
+    ctx.fill()
+
+    for (let i = 0; i < skills.length; i++) {
+      const sk = skills[i]
+      // 角度范围从 0.7*PI 扩大到 0.85*PI，按钮更分散
+      const angleOffset = ((i / (skills.length - 1 || 1)) - 0.5) * Math.PI * 0.85
+      const angle = -Math.PI / 2 + angleOffset
+      const bx = cx + Math.cos(angle) * arcRadius
+      const by = cy + Math.sin(angle) * arcRadius
+
+      const cdRemaining = (c.skillCDs[sk.id] || 0)
+      const onCD = cdRemaining > 0
+      const canAfford = (c.currentMp || 0) >= (sk.mpCost || 0)
+      const unlocked = sk.unlockLevel ? (c.level >= (sk.unlockLevel || 1)) : true
+
+      // 技能按钮圆形背景
+      const isMagic = sk.type === 'magic'
+      ctx.save()
+      ctx.translate(bx, by)
+
+      if (!unlocked) {
+        ctx.fillStyle = 'rgba(45,51,59,0.8)'
+        ctx.strokeStyle = '#30363d'
+        ctx.lineWidth = 1.5
+      } else {
+        const grad = ctx.createRadialGradient(0, 0, 2, 0, 0, btnRadius)
+        if (isMagic) {
+          grad.addColorStop(0, onCD ? 'rgba(80,40,130,0.7)' : 'rgba(100,50,180,0.8)')
+          grad.addColorStop(1, onCD ? 'rgba(60,30,100,0.6)' : 'rgba(80,40,150,0.7)')
+        } else {
+          grad.addColorStop(0, onCD ? 'rgba(55,55,65,0.7)' : 'rgba(70,80,90,0.8)')
+          grad.addColorStop(1, onCD ? 'rgba(40,42,50,0.6)' : 'rgba(55,62,72,0.7)')
+        }
+        ctx.fillStyle = grad
+        ctx.strokeStyle = onCD ? '#484f58' : '#58a6ff'
+        ctx.lineWidth = 2
+      }
+
+      ctx.beginPath()
+      ctx.arc(0, 0, btnRadius, 0, Math.PI * 2)
+      ctx.fill()
+      ctx.stroke()
+
+      // CD遮罩扇形（从12点顺时针）
+      if (onCD && sk.cd > 0) {
+        const cdRatio = cdRemaining / sk.cd
+        ctx.fillStyle = 'rgba(0,0,0,0.55)'
+        ctx.beginPath()
+        ctx.moveTo(0, 0)
+        ctx.arc(0, 0, btnRadius, -Math.PI / 2, -Math.PI / 2 + cdRatio * Math.PI * 2)
+        ctx.closePath()
+        ctx.fill()
+      }
+
+      // 技能图标/名称
+      ctx.fillStyle = !unlocked ? '#666' :
+        (canAfford ? '#f0e6d3' : '#e74c3c')
+      ctx.font = `bold ${11 * dpr}px sans-serif`
+      ctx.textAlign = 'center'
+      ctx.textBaseline = 'middle'
+      const displayName = !unlocked ? '?' : sk.name.length > 3 ? sk.name.slice(0, 3) : sk.name
+      ctx.fillText(displayName, 0, 0)
+
+      // CD倒计时文字
+      if (onCD) {
+        ctx.fillStyle = '#ffffff'
+        ctx.font = `bold ${10 * dpr}px sans-serif`
+        ctx.fillText(`${Math.ceil(cdRemaining / 1000)}s`, 0, btnRadius + 14)
+      }
+
+      // MP消耗
+      if (unlocked && (sk.mpCost || 0) > 0) {
+        ctx.fillStyle = canAfford ? '#58a6ff' : '#e74c3c'
+        ctx.font = `${8 * dpr}px sans-serif`
+        ctx.fillText(`${sk.mpCost}mp`, 0, btnRadius + 26)
+      }
+
+      // 锁定标记
+      if (!unlocked) {
+        ctx.fillStyle = 'rgba(0,0,0,0.4)'
+        ctx.beginPath()
+        ctx.arc(0, 0, btnRadius, 0, Math.PI * 2)
+        ctx.fill()
+        ctx.fillStyle = '#888'
+        ctx.font = `${14 * dpr}px sans-serif`
+        ctx.fillText(`Lv${sk.unlockLevel}`, 0, 0)
+      }
+
+      ctx.restore()
+
+      // 存储按钮位置用于点击检测
+      if (!this.skillMenu.buttons) this.skillMenu.buttons = []
+      this.skillMenu.buttons[i] = { x: bx, y: by, r: btnRadius, skillIdx: i, charIndex: this.skillMenu.charIndex }
+    }
+
+    // ===== AI自动攻击切换按钮 =====
+    const aiBtnY = cy + arcRadius + 45 // 弧形下方
+    const aiBtnW = 130 * dpr
+    const aiBtnH = 36 * dpr
+    const aiOn = !!c.autoAttackEnabled
+
+    // 记录AI按钮位置用于点击检测
+    this.skillMenu.aiButton = { x: cx - aiBtnW / 2, y: aiBtnY - aiBtnH / 2, w: aiBtnW, h: aiBtnH, charIndex: this.skillMenu.charIndex }
+
+    ctx.save()
+    // AI按钮背景
+    if (aiOn) {
+      const aiGrad = ctx.createLinearGradient(cx - aiBtnW / 2, aiBtnY, cx + aiBtnW / 2, aiBtnY)
+      aiGrad.addColorStop(0, 'rgba(46,160,67,0.8)')
+      aiGrad.addColorStop(1, 'rgba(35,134,54,0.75)')
+      ctx.fillStyle = aiGrad
+      ctx.strokeStyle = '#3fb950'
+    } else {
+      ctx.fillStyle = 'rgba(55,62,72,0.85)'
+      ctx.strokeStyle = '#58a6ff'
+    }
+    ctx.lineWidth = 1.5
+    this._roundRect(ctx, cx - aiBtnW / 2, aiBtnY - aiBtnH / 2, aiBtnW, aiBtnH, 8)
+    ctx.fill()
+    ctx.stroke()
+
+    // AI按钮文字
+    ctx.fillStyle = aiOn ? '#fff' : '#c9d1d9'
+    ctx.font = `bold ${12 * dpr}px sans-serif`
+    ctx.textAlign = 'center'
+    ctx.textBaseline = 'middle'
+    ctx.fillText(aiOn ? '🤖 AI战斗中(点关闭)' : '🤖 开启AI自动', cx, aiBtnY)
+
+    // 自动技能状态提示
+    if (aiOn) {
+      ctx.fillStyle = 'rgba(63,185,80,0.7)'
+      ctx.font = `${9 * dpr}px sans-serif`
+      ctx.fillText('自动普攻+释放技能', cx, aiBtnY + aiBtnH / 2 + 14)
+    }
+    ctx.restore()
+
+    // 提示文字
+    ctx.globalAlpha = fadeIn * 0.6
+    ctx.fillStyle = '#8b949e'
+    ctx.font = `${10 * dpr}px sans-serif`
+    ctx.textAlign = 'center'
+    ctx.fillText('点击技能释放', cx, cy - arcRadius - 20)
+
+    ctx.globalAlpha = 1
+  }
+
+  /** 圆角矩形辅助方法 */
+  _roundRect(ctx, x, y, w, h, r) {
+    ctx.beginPath()
+    ctx.moveTo(x + r, y)
+    ctx.lineTo(x + w - r, y)
+    ctx.arcTo(x + w, y, x + w, y + r, r)
+    ctx.lineTo(x + w, y + h - r)
+    ctx.arcTo(x + w, y + h, x + w - r, y + h, r)
+    ctx.lineTo(x + r, y + h)
+    ctx.arcTo(x, y + h, x, y + h - r, r)
+    ctx.lineTo(x, y + r)
+    ctx.arcTo(x, y, x + r, y, r)
+    ctx.closePath()
+  }
+
+  // ===== UI层 =====
+
+  _renderUI(ctx) {
+    const W = this.width
+    const H = this.height
+    const dpr = this.dpr
+
+    // 顶部状态栏
+    ctx.fillStyle = 'rgba(0,0,0,0.78)'
+    ctx.fillRect(0, 0, W, 52)
+
+    // 水晶血量
+    const cHpRatio = Math.max(0, this.crystal.hp / this.crystal.maxHp)
+    ctx.fillStyle = '#8b949e'
+    ctx.font = `${12 * dpr}px sans-serif`
+    ctx.textAlign = 'left'
+    ctx.fillText('敌方水晶', 10, 19)
+    ctx.fillStyle = 'rgba(255,255,255,0.18)'
+    ctx.fillRect(10, 24, 108, 9)
+    ctx.fillStyle = cHpRatio > 0.5 ? '#ffd700' : cHpRatio > 0.2 ? '#ff8c00' : '#ff4444'
+    ctx.fillRect(10, 24, 108 * cHpRatio, 9)
+    ctx.fillStyle = '#fff'
+    ctx.font = `${10 * dpr}px sans-serif`
+    ctx.fillText(`${Math.max(0, this.crystal.hp)} / ${this.crystal.maxHp}`, 12, 41)
+
+    // ===== 波次进度显示（核心信息！） =====
+    // waveIndex 是内部已递增的计数(1-based)，直接显示
+    const displayWave = Math.min(this.waveIndex, this.totalWaves)
+    const waveLabel = this.allWavesDone ? '✅ 全部完成' : `第 ${displayWave} / ${this.totalWaves} 波`
+    const waveColor = this.allWavesDone ? '#3fb950' : (this.waveActive ? '#ff8800' : '#8b949e')
+    ctx.fillStyle = waveColor
+    ctx.font = `bold ${14 * dpr}px sans-serif`
+    ctx.textAlign = 'center'
+    ctx.fillText(waveLabel, W / 2, 19)
+
+    // 波次小进度条（当前波怪物剩余）
+    if (!this.allWavesDone && this.waveTotalCount > 0) {
+      const waveProgress = this.waveSpawnedCount / this.waveTotalCount
+      const barW = 100 * dpr
+      const barX = (W - barW) / 2
+      ctx.fillStyle = 'rgba(255,255,255,0.15)'
+      ctx.fillRect(barX, 25, barW, 6)
+      ctx.fillStyle = '#ff8800'
+      ctx.fillRect(barX, 25, barW * waveProgress, 6)
+      ctx.fillStyle = '#aaa'
+      ctx.font = `${9 * dpr}px sans-serif`
+      ctx.fillText(`(${this.monsters.filter(m => !m.isDead).length} 只存活)`, W / 2, 42)
+    } else if (this.crystal.isAttackable) {
+      ctx.fillStyle = '#ff4444'
+      ctx.font = `bold ${11 * dpr}px sans-serif`
+      ctx.fillText('⚠ 攻击水晶！', W / 2, 38)
+    }
+
+    // 击杀/掉落统计
+    ctx.fillStyle = '#8b949e'
+    ctx.font = `${11 * dpr}px sans-serif`
+    ctx.textAlign = 'right'
+    ctx.fillText(`击杀: ${this.stats.kills}`, W - 10, 19)
+    ctx.fillText(`掉落: ${this.stats.dropsCollected}`, W - 10, 36)
+    ctx.fillText(`金币: +${this.stats.goldEarned}`, W - 10, 51)
+
+    // 关卡信息（底部小字）—— 显示波次提示或操作指引
+    ctx.fillStyle = '#484f58'
+    ctx.font = `${10 * dpr}px sans-serif`
+    ctx.textAlign = 'left'
+    let bottomHint = `第 ${this.stage.id} 关: ${this.stage.name}  |  `
+    if (!this.crystal.isAttackable) {
+      bottomHint += `🛡 消灭全部${this.totalMonstersAllWaves}只怪物后水晶可攻击`
+    } else {
+      bottomHint += `⚠️ 水晶已暴露！集中火力攻击！`
+    }
+    ctx.fillText(bottomHint, 10, H - 8)
+  }
+
+  // 工具方法
+  _roundRect(ctx, x, y, w, h, r) {
+    ctx.beginPath()
+    ctx.moveTo(x + r, y)
+    ctx.lineTo(x + w - r, y)
+    ctx.quadraticCurveTo(x + w, y, x + w, y + r)
+    ctx.lineTo(x + w, y + h - r)
+    ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h)
+    ctx.lineTo(x + r, y + h)
+    ctx.quadraticCurveTo(x, y + h, x, y + h - r)
+    ctx.lineTo(x, y + r)
+    ctx.quadraticCurveTo(x, y, x + r, y)
+    ctx.closePath()
+  }
+}

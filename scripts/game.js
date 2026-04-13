@@ -7,6 +7,7 @@ import { TownScene } from './scenes/town-scene.js'
 import { FieldScene } from './scenes/field-scene.js'
 import { BattleScene } from './scenes/battle-scene.js'
 import { CollectionScene } from './scenes/collection-scene.js'
+import { TowerScene } from './scenes/tower/tower-scene.js'
 import { DataManager } from './core/data-manager.js'
 import { InputManager } from './core/input-manager.js'
 import { AudioManager } from './core/audio-manager.js'
@@ -19,7 +20,8 @@ const SCENE = {
   TOWN: 'town',
   FIELD: 'field',
   BATTLE: 'battle',
-  COLLECTION: 'collection'
+  COLLECTION: 'collection',
+  TOWER: 'tower'
 }
 
 export class Game {
@@ -126,6 +128,9 @@ export class Game {
           break
         case SCENE.COLLECTION:
           this.currentScene = new CollectionScene(this)
+          break
+        case SCENE.TOWER:
+          this.currentScene = new TowerScene(this)
           break
       }
 

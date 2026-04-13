@@ -332,6 +332,14 @@ export class TownScene {
         color: '#2ecc71'
       },
       {
+        id: 'tower',
+        name: '⚔️ 闯关模式',
+        desc: '挑战层层关卡，收集强力装备',
+        area: 'tower',
+        unlocked: true,
+        color: '#f39c12'
+      },
+      {
         id: 'magic_tower',
         name: '探索魔法塔危机',
         desc: `等级 4-6 | ${amyDefeated ? '已击败艾米' : '需击败艾米'} ${partyLevel > 3 ? '✓' : `需等级>3 (${partyLevel})`}`,
@@ -427,7 +435,11 @@ export class TownScene {
         if (dungeon.unlocked) {
           console.log(`[Town] 选择副本: ${dungeon.name}`)
           this.exploreMenu = null
-          this.game.changeScene('field', { area: dungeon.area })
+          if (dungeon.area === 'tower') {
+            this.game.changeScene('tower')
+          } else {
+            this.game.changeScene('field', { area: dungeon.area })
+          }
         } else {
           console.log(`[Town] 副本未解锁: ${dungeon.name}`)
           // 显示解锁条件
