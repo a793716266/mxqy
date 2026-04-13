@@ -2,6 +2,44 @@
 
 ## 📅 更新日志
 
+### 2026-04-13（上午）
+
+**修复：施法特效渲染链路（skill-effect-manager.js）**
+
+**P0-1 — getCurrentFrame 重复帧引用**
+- **问题**：`find` 查找时不排除已消耗特效，同一特效帧可能被连续多帧重复引用
+- **修复**：查询条件增加 `!e._consumedByChar`，找到特效后立即标记 `_consumedByChar = true`，保证原子性
+
+**P0-2 — consumeByCharacter 不过滤 isPlaying**
+- **问题**：快速连招时，旧 cast 特效播放完毕但尚未移除，`consumeByCharacter` 仍会将其标记为消耗，导致新 cast 特效也被跳过渲染 → 双动画并存
+- **修复**：增加 `effect.isPlaying` 前置条件，只消耗正在播放的特效
+
+**修复：物理普攻时序（battle-scene.js）**
+
+**P1-1 — 内层 setTimeout 缺 hp 守卫**
+- **问题**：英雄在内层 setTimeout 等待期间死亡，状态被错误改为 `in_range` 或 `returning`，破坏后续攻击逻辑
+- **修复**：内层 setTimeout 入口加 `hero.hp <= 0` 判断
+
+**P1-2 — 物理普攻时序硬编码 780ms**
+- **问题**：`SLASH_TOTAL = 13 * 60` 与 `castDelay` 参数脱节，不同武器/技能时长不生效
+- **修复**：改用 `skill.castDelay || 300` 统一由技能配置驱动
+
+**修复：特效资源加载（skill-effect-manager.js）**
+
+**P2-1 — _getEffectImages 的 frameCount 参数被忽略**
+- **问题**：`frameCount` 形参接收了值但从未使用，总是返回全量帧
+- **修复**：在返回前增加 `images.slice(0, frameCount)` 截断逻辑
+
+**P2-2 — _getEffectPrefix 未知类型静默 fallback**
+- **问题**：类型不在 `typeMap` 中时走 `type.toUpperCase()` fallback，无任何警告
+- **修复**：未知类型增加 `console.warn` 提示
+
+**涉及文件：**
+- `scripts/core/skill-effect-manager.js` — consumeByCharacter / getCurrentFrame / _getEffectImages / _getEffectPrefix
+- `scripts/scenes/battle-scene.js` — 物理普攻双重 setTimeout 守卫和时序
+
+---
+
 ### 2026-04-13（凌晨）
 
 **提交记录：**

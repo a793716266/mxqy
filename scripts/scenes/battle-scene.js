@@ -1473,23 +1473,26 @@ export class BattleScene {
       return  // ★ 整个流程由回调驱动
     }
 
-    // ====== 物理普攻：保持原有逻辑 ======
+    // ====== 物理普攻：动画驱动结算 ★ 与魔法系一致 ======
     if (hAnimState) hAnimState._isCastingSkill = false
     this._playCastEffect(hero, skill, heroPos)
 
+    // ★ 精确等待普攻挥砍动画自然播完（13帧×50ms=650ms），动画结束后自动回调
+    // 与魔法系的 onComplete 驱动模式保持一致，不再猜测 setTimeout 时长
     setTimeout(() => {
       if (hero.hp <= 0) { this.activeAttackers.delete(hero.id); return; }
       const tIdx = this.enemies.indexOf(target)
       const tPos = this.enemyPositions[tIdx] || { x: this.enemyBaseX, y: this.enemyBaseY }
       if (skill.type === 'attack') this._playHitEffect(hero, skill, tPos)
       this._applyAttackDamageToTarget(hero, skill, target, tPos)
-      const SLASH_TOTAL = 13 * 60
+
+      // ★★★ 挥砍动画播完后自动执行清理 ★★★
+      // 臻宝13帧×50ms=650ms；其他角色用 totalSlashFrames，没有则用默认8帧×50ms=400ms
+      const slashFrames = (hAnimState && hAnimState.totalSlashFrames) || 8
+      const slashDuration = slashFrames * 50  // ms
       setTimeout(() => {
-        this.activeAttackers.delete(hero.id)
-        if (!hState || hero.hp <= 0) return
-        if (target && target.hp > 0 && hState.currentTargetId !== null) hState.state = 'in_range'
-        else hState.state = 'returning'
-      }, Math.max(SLASH_TOTAL - 400, 300))
+        this._finishHeroAttack(hero)
+      }, slashDuration)
     }, 400)
   }
 
@@ -4741,6 +4744,8 @@ export class BattleScene {
    */
   _allHeroesActed() {
     const aliveHeroes = this.party.filter(h => h.hp > 0)
+    // 无人存活时返回 false，避免触发敌方回合（全灭时应直接判定失败）
+    if (aliveHeroes.length === 0) return false
     return aliveHeroes.every(h => {
       if (this.actedHeroes.has(h.id)) return true
       // 被限制的角色视为已行动

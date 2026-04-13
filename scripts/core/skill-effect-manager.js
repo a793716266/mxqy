@@ -73,6 +73,12 @@ export class SkillEffectManager {
     
     if (images.length === 0) {
       console.warn(`[SkillEffect] 找不到特效帧: ${prefix}_*`)
+      return images
+    }
+    
+    // ★ frameCount 参数：限制返回帧数，支持截断动画片段
+    if (frameCount !== undefined && frameCount > 0) {
+      return images.slice(0, frameCount)
     }
     
     return images
@@ -93,6 +99,9 @@ export class SkillEffectManager {
       // 物理攻击命中特效（复用闪电击中帧作为通用打击效果）
       'slash_hit': 'EFFECT_LIGHTNING_HIT',
       'staff_strike_hit': 'EFFECT_LIGHTNING_HIT'
+    }
+    if (typeMap[type] === undefined) {
+      console.warn(`[SkillEffect] _getEffectPrefix: 未知特效类型 '${type}'，将使用 type.toUpperCase() 作为前缀`)
     }
     return typeMap[type] || type.toUpperCase()
   }
@@ -253,10 +262,13 @@ export class SkillEffectManager {
   /**
    * ★ 获取指定类型特效的当前帧图片（用于绑定到角色渲染）
    * 返回 null 表示没有匹配的活跃特效
+   * ⚠️ 发现特效后立即标记消耗，确保每帧只返回一次，避免旧帧被重复引用
    */
   getCurrentFrame(type) {
-    const effect = this.effects.find(e => e.isPlaying && e.type === type)
+    const effect = this.effects.find(e => e.isPlaying && e.type === type && !e._consumedByChar)
     if (!effect || !effect.images || effect.images.length === 0) return null
+    // ★ 立即消耗，防止同一特效帧被多帧重复引用
+    effect._consumedByChar = true
     const idx = Math.min(effect.currentFrame, effect.images.length - 1)
     return {
       image: effect.images[idx],
@@ -270,10 +282,11 @@ export class SkillEffectManager {
   /**
    * ★ 标记指定类型的特效为"已被角色消耗"（render时跳过）
    * 用于施法动画绑定：特效帧已作为角色图像画过一次，不需要再叠一层
+   * ⚠️ 只消耗仍在播放的特效，避免误标记已结束但尚未移除的过期特效
    */
   consumeByCharacter(type) {
     for (const effect of this.effects) {
-      if (effect.type === type && !effect._consumedByChar) {
+      if (effect.isPlaying && effect.type === type && !effect._consumedByChar) {
         effect._consumedByChar = true
       }
     }
