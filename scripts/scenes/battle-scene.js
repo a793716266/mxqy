@@ -4724,21 +4724,6 @@ export class BattleScene {
     }
   }
 
-  _executeHeal(hero, skill, target) {
-    // 治疗逻辑（待实现）
-    setTimeout(() => {
-      // 治疗效果
-      if (this.phase !== 'victory' && this.phase !== 'defeat') {
-        if (this._allHeroesActed()) {
-          this.phase = 'enemy_turn'
-        } else {
-          this.phase = 'select_hero'
-          this._addLog(`继续选择角色行动`)
-        }
-      }
-    }, 400)
-  }
-
   /**
    * 检查是否所有存活的角色都已行动
    */
@@ -4753,40 +4738,6 @@ export class BattleScene {
       if (heroIndex !== -1 && this._isHeroRestricted(heroIndex)) return true
       return false
     })
-  }
-
-  _executeHeal(hero, skill, target) {
-    let heal = skill.power + Math.floor(Math.random() * 10)
-    heal = Math.min(heal, target.maxHp - target.hp)
-    target.hp = Math.min(target.maxHp, target.hp + heal)
-
-    // 治疗特效位置（目标角色的位置）
-    const targetIndex = this.party.indexOf(target)
-    const targetY = targetIndex >= 0 && this.heroBasePositions[targetIndex] 
-      ? this.heroBasePositions[targetIndex].y - 30 * this.dpr
-      : this.height * 0.4
-
-    this.damageTexts.push({
-      text: `+${heal}`,
-      x: targetIndex >= 0 && this.heroBasePositions[targetIndex] 
-        ? this.heroBasePositions[targetIndex].x 
-        : 80 * this.dpr,
-      y: targetY,
-      color: '#2ed573',
-      life: 1.5
-    })
-
-    this._addLog(`${target.name} 恢复了 ${heal} 点生命！`)
-  }
-
-  _executeBuff(hero, skill, target) {
-    const effectName = {
-      'atk_up': '攻击力提升',
-      'def_up': '防御力提升',
-      'atk_up_self': '攻击力提升'
-    }[skill.effect] || '状态变化'
-
-    this._addLog(`${hero.name} 获得了 ${effectName}！`)
   }
 
   // ======== 敌人回合 ========

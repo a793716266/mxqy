@@ -2,6 +2,22 @@
 
 ## 📅 更新日志
 
+### 2026-04-13（11:17）
+
+**R-1 setTimeout守卫补全 + dead code清理**
+- 删除了 battle-scene.js 中两个从未被调用的 stub 函数：`_executeHeal(hero,skill,target)`（第4758行）和 `_executeBuff(hero,skill,target)`（第4782行）
+- 删除了第一个 `_executeHeal` stub（只检查了victory/defeat，未检查purify），避免未来调用时踩坑
+- 全部7处 setTimeout 守卫已统一为 `this.phase !== 'victory' && !== 'defeat' && !== 'purify'` 三相检查
+
+**R-4 存档数据校验**
+- 在 `load()` 后增加 `_validate()` 方法，对所有关键字段做类型校验
+- gold/level/exp/currentChapter：number 类型 + 范围检查
+- party/characters/equipment/inventory/catsDiscovered：array 类型检查
+- progression.flags/meta/battle/areas：object 类型检查
+- meta.introShown/testUnlockAll：boolean 类型检查
+- party 数组内容：必须是 number 元素
+- 校验失败 → 回退到 `_defaultData()`，而不是静默使用非法数据
+
 ### 2026-04-13（上午）
 
 **修复：施法特效渲染链路（skill-effect-manager.js）**

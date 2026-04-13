@@ -243,6 +243,11 @@ export class DataManager {
       if (raw) {
         const parsed = JSON.parse(raw)
         this.data = this._migrate(parsed)
+        if (!this._validate()) {
+          console.warn('[存档] 校验失败，数据被重置')
+          this.data = this._defaultData()
+          return false
+        }
         console.log('[存档] 读档成功，版本:', this.data.version)
         return true
       }
@@ -350,5 +355,94 @@ export class DataManager {
       }
     }
     return result
+  }
+
+  /**
+   * ★ 存档数据校验
+   * 返回 false = 数据损坏，直接回退到默认值
+   * 核心类型错误都兜住，防止 NaN / 崩溃
+   */
+  _validate() {
+    const d = this.data
+    try {
+      // number 字段：必须是 number
+      if (typeof d.player?.gold !== 'number' || isNaN(d.player.gold) || d.player.gold < 0) {
+        console.warn('[存档校验] player.gold 无效:', d.player?.gold)
+        return false
+      }
+      if (typeof d.player?.level !== 'number' || d.player.level < 1) {
+        console.warn('[存档校验] player.level 无效:', d.player?.level)
+        return false
+      }
+      if (typeof d.player?.exp !== 'number' || isNaN(d.player.exp)) {
+        console.warn('[存档校验] player.exp 无效:', d.player?.exp)
+        return false
+      }
+      if (typeof d.progression?.currentChapter !== 'number' || d.progression.currentChapter < 1) {
+        console.warn('[存档校验] progression.currentChapter 无效')
+        return false
+      }
+
+      // array 字段：必须是数组
+      if (!Array.isArray(d.progression?.party)) {
+        console.warn('[存档校验] progression.party 不是数组')
+        return false
+      }
+      if (!Array.isArray(d.characters)) {
+        console.warn('[存档校验] characters 不是数组')
+        return false
+      }
+      if (!Array.isArray(d.equipment)) {
+        console.warn('[存档校验] equipment 不是数组')
+        return false
+      }
+      if (!Array.isArray(d.inventory)) {
+        console.warn('[存档校验] inventory 不是数组')
+        return false
+      }
+      if (!Array.isArray(d.catsDiscovered)) {
+        console.warn('[存档校验] catsDiscovered 不是数组')
+        return false
+      }
+
+      // object 字段：必须是对象
+      if (typeof d.progression?.flags !== 'object' || d.progression.flags === null) {
+        console.warn('[存档校验] progression.flags 不是对象')
+        return false
+      }
+      if (typeof d.meta !== 'object' || d.meta === null) {
+        console.warn('[存档校验] meta 不是对象')
+        return false
+      }
+      if (typeof d.battle !== 'object' || d.battle === null) {
+        console.warn('[存档校验] battle 不是对象')
+        return false
+      }
+      if (typeof d.areas !== 'object' || d.areas === null) {
+        console.warn('[存档校验] areas 不是对象')
+        return false
+      }
+
+      // boolean 字段
+      if (typeof d.meta?.introShown !== 'boolean') {
+        console.warn('[存档校验] meta.introShown 不是布尔值')
+        return false
+      }
+      if (typeof d.meta?.testUnlockAll !== 'boolean') {
+        console.warn('[存档校验] meta.testUnlockAll 不是布尔值')
+        return false
+      }
+
+      // party 数组内容：每个元素必须是 number（角色配置索引）
+      if (!d.progression.party.every(n => typeof n === 'number')) {
+        console.warn('[存档校验] progression.party 包含非数字元素')
+        return false
+      }
+
+      return true
+    } catch (e) {
+      console.error('[存档校验] 校验过程出错:', e)
+      return false
+    }
   }
 }
