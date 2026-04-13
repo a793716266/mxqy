@@ -473,17 +473,71 @@ export class TowerBattle {
    * 波次10：最终决战波
    */
   _initWaveDefinitions() {
+    // 每波怪物等级 = 波次×2 + 1（第1波=1级，第2波=3级...第10波=19级）
+    // 稀有度：normal(普通) / elite(精英) / lord(领主)
+    // 精英怪从第4波开始出现，领主仅在第10波（最后一波）出现
     this.waveDefs = [
-      { waveNum: 1, monsters: [{ type: 'slime', count: 3 }] },                          // 3只史莱姆
-      { waveNum: 2, monsters: [{ type: 'slime', count: 4 }] },                          // 4只史莱姆
-      { waveNum: 3, monsters: [{ type: 'slime', count: 5 }] },                          // 5只史莱姆
-      { waveNum: 4, monsters: [{ type: 'slime', count: 3 }, { type: 'shadow_mouse', count: 2 }] }, // 史莱姆+暗影鼠
-      { waveNum: 5, monsters: [{ type: 'slime', count: 3 }, { type: 'shadow_mouse', count: 3 }] },
-      { waveNum: 6, monsters: [{ type: 'slime', count: 2 }, { type: 'shadow_mouse', count: 4 }] },
-      { waveNum: 7, monsters: [{ type: 'slime', count: 2 }, { type: 'shadow_mouse', count: 3 }, { type: 'goblin', count: 2 }] },
-      { waveNum: 8, monsters: [{ type: 'slime', count: 2 }, { type: 'shadow_mouse', count: 3 }, { type: 'goblin', count: 3 }] },
-      { waveNum: 9, monsters: [{ type: 'slime', count: 3 }, { type: 'shadow_mouse', count: 4 }, { type: 'goblin', count: 3 }, { type: 'orc', count: 1 }] },
-      { waveNum: 10, monsters: [{ type: 'slime', count: 5 }, { type: 'shadow_mouse', count: 5 }, { type: 'goblin', count: 4 }, { type: 'orc', count: 3 }] },
+      // 第1-3波：纯普通怪，熟悉战斗节奏
+      { waveNum: 1, monsters: [
+        { type: 'slime',   count: 3 }
+      ]},
+      { waveNum: 2, monsters: [
+        { type: 'slime',   count: 4 }
+      ]},
+      { waveNum: 3, monsters: [
+        { type: 'slime',   count: 5 }
+      ]},
+      // 第4-6波：出现第二种怪 + 首只精英
+      { waveNum: 4, monsters: [
+        { type: 'slime',   count: 3 },
+        { type: 'goblin',  count: 2 }
+      ]},
+      { waveNum: 5, monsters: [
+        { type: 'slime',   count: 3 },
+        { type: 'goblin',  count: 2 },
+        { type: 'slime',   count: 1, rarity: 'elite' }       // 首只精英
+      ]},
+      { waveNum: 6, monsters: [
+        { type: 'slime',   count: 2 },
+        { type: 'goblin',  count: 4 },
+        { type: 'goblin',  count: 1, rarity: 'elite' }       // 精英暗影鼠
+      ]},
+      // 第7-8波：三种怪混合 + 精英增多
+      { waveNum: 7, monsters: [
+        { type: 'slime',   count: 2 },
+        { type: 'goblin',  count: 3 },
+        { type: 'orc',     count: 2 },
+        { type: 'orc',     count: 1, rarity: 'elite' }       // 精英兽人
+      ]},
+      { waveNum: 8, monsters: [
+        { type: 'slime',   count: 2 },
+        { type: 'goblin',  count: 3 },
+        { type: 'orc',     count: 2 },
+        { type: 'slime',   count: 1, rarity: 'elite' },
+        { type: 'goblin',  count: 1, rarity: 'elite' }
+      ]},
+      // 第9波：四种怪 + 多只精英，为最终BOSS做铺垫
+      { waveNum: 9, monsters: [
+        { type: 'slime',   count: 3 },
+        { type: 'goblin',  count: 3 },
+        { type: 'orc',     count: 2 },
+        { type: 'wolf',    count: 1 },
+        { type: 'orc',     count: 1, rarity: 'elite' },
+        { type: 'wolf',    count: 1, rarity: 'elite' }
+      ]},
+      // 第10波（最终波）：大量精英 + 1只领主幼龙
+      { waveNum: 10, monsters: [
+        { type: 'slime',   count: 3 },
+        { type: 'goblin',  count: 3 },
+        { type: 'orc',     count: 2 },
+        { type: 'wolf',    count: 2 },
+        { type: 'undead',  count: 1 },
+        { type: 'slime',   count: 1, rarity: 'elite' },
+        { type: 'goblin',  count: 1, rarity: 'elite' },
+        { type: 'orc',     count: 1, rarity: 'elite' },
+        { type: 'wolf',    count: 1, rarity: 'elite' },
+        { type: 'dragon',  count: 1, rarity: 'lord' }         // ★ 最终领主：幼龙 ★
+      ]},
     ]
     // 计算总怪物数用于UI显示
     this.totalMonstersAllWaves = 0
@@ -567,11 +621,12 @@ export class TowerBattle {
       return
     }
 
-    // 构建当前波次的怪物队列（打乱顺序，逐个生成）
+    // 构建当前波次的怪物队列（支持 {type, count, rarity} 格式）
     this.currentWaveMonsters = []
     for (const entry of waveDef.monsters) {
+      const rarity = entry.rarity || 'normal'
       for (let i = 0; i < entry.count; i++) {
-        this.currentWaveMonsters.push(entry.type)
+        this.currentWaveMonsters.push({ type: entry.type, rarity: rarity })
       }
     }
     // 打乱顺序让不同类型交错出现
@@ -602,8 +657,8 @@ export class TowerBattle {
       // ===== 当前波活跃中：继续逐个生成 =====
       this.spawnTimer -= dt
       if (this.spawnTimer <= 0 && this.waveSpawnedCount < this.waveTotalCount) {
-        const type = this.currentWaveMonsters[this.waveSpawnedCount]
-        this._spawnMonster(type)
+        const entry = this.currentWaveMonsters[this.waveSpawnedCount]
+        this._spawnMonster(entry.type, null, null, entry.rarity || 'normal')
         this.waveSpawnedCount++
         this.spawnTimer = this.spawnInterval // 每2.5s生成一只
       }
@@ -675,7 +730,7 @@ export class TowerBattle {
     this._spawnMonster(type)
   }
 
-  _spawnMonster(type, x, y) {
+  _spawnMonster(type, x, y, rarity) {
     const tmpl = this._getMonsterTemplate(type)
     // 默认从水晶位置生成（在水晶周围扇形区域随机散开）
     const cx = this.crystal.x
@@ -685,46 +740,59 @@ export class TowerBattle {
     const defaultX = cx + Math.cos(spawnAngle) * spawnDist
     const defaultY = cy + Math.sin(spawnAngle) * spawnDist
 
+    // ===== 稀有度与等级计算 =====
+    rarity = rarity || 'normal'
+    const rcfg = TowerBattle._RARITY_CONFIG[rarity] || TowerBattle._RARITY_CONFIG.normal
+    // 等级：第1波=1级，每波+2级（波次从0开始，所以 waveIndex*2+1）
+    const monsterLevel = this.waveIndex * 2 + 1
+    // 每级属性增长系数（hp+8%, atk+5%, def+4%）
+    const lvScaleHp   = 1 + (monsterLevel - 1) * 0.08
+    const lvScaleAtk  = 1 + (monsterLevel - 1) * 0.05
+    const lvScaleDef  = 1 + (monsterLevel - 1) * 0.04
+    // 综合倍率 = 等级倍率 × 稀有度倍率
+    const totalHpScale = lvScaleHp * rcfg.scale
+    const totalAtkScale = lvScaleAtk * rcfg.scale
+    const totalDefScale = lvScaleDef * rcfg.scale
+
+    const finalName = rcfg.namePrefix ? `${rcfg.namePrefix}${tmpl.name}` : tmpl.name
     const m = {
       id: `m_${Date.now()}_${Math.random().toString(36).slice(2)}`,
       type,
-      name: tmpl.name,
-      hp: tmpl.hp,
-      maxHp: tmpl.hp,
-      atk: tmpl.atk,
-      def: tmpl.def,
-      spd: tmpl.spd || 8,
-      atkInterval: tmpl.atkInterval || 1500,
+      name: finalName,
+      displayName: finalName,       // 显示名称
+      rarity: rarity,               //稀有度：normal / elite / lord
+      level: monsterLevel,          // 怪物等级
+      hp: Math.round(tmpl.hp * totalHpScale),
+      maxHp: Math.round(tmpl.hp * totalHpScale),
+      atk: Math.round(tmpl.atk * totalAtkScale),
+      def: Math.round(tmpl.def * totalDefScale),
+      spd: tmpl.spd,
+      atkInterval: tmpl.atkInterval,
       atkTimer: Math.random() * 1000,
       x: x || defaultX,
       y: y || defaultY,
       targetX: 0, targetY: 0,
-      moveSpeed: tmpl.moveSpeed || (50 + Math.random() * 30),
-      atkRange: tmpl.atkRange || (tmpl.isRanged ? 140 : 55),
+      moveSpeed: tmpl.moveSpeed + (rarity === 'lord' ? -8 : rarity === 'elite' ? -3 : 0), // 领主稍慢
+      atkRange: tmpl.atkRange + (rarity === 'lord' ? 15 : rarity === 'elite' ? 6 : 0),     // 领主攻距更长
       isRanged: tmpl.isRanged || false,
       skills: tmpl.skills || null,
-      scale: 1,
+      scale: rarity === 'lord' ? 1.35 : rarity === 'elite' ? 1.15 : 1.0,                  // 精英/领主体型更大
       hurtTimer: 0,
       hurtFlash: 0,
       isDead: false,
       deathTimer: 0,
       isAttacking: false,
       attackAnimTimer: 0,
-      // 状态效果（冻结等）
       statusEffects: [],
       frozenTimer: 0,
-      // 掉落
-      dropQuality: this._rollDropQuality(),
+      dropQuality: this._rollDropQuality(rarity),
       dropItem: null,
       hasDropped: false,
-      // 动画状态
       animState: 'idle',
       animFrame: 0,
       animTimer: 0,
-      // 朝向（精灵图默认朝左，true=需翻转显示朝右）
       facingRight: false,
-      // 经验值
-      expReward: tmpl.expReward || Math.floor(tmpl.hp / 3),
+      expReward: Math.round((tmpl.expReward || Math.floor(tmpl.hp / 3)) * lvScaleHp * rcfg.expMult),
     }
     m.targetX = m.x
     m.targetY = m.y
@@ -758,16 +826,25 @@ export class TowerBattle {
       // 恶魔 —— 慢但强力近战
       demon:   { name: '恶魔', hp: 280, atk: 22, def: 12, spd: 8, atkInterval: 2000, isRanged: false,
                    atkRange: 52, moveSpeed: 38 },
-      // 幼龙 —— BOSS级
+      // 幼龙 —— BOSS级（领主专用）
       dragon:  { name: '幼龙', hp: 450, atk: 28, def: 18, spd: 4, atkInterval: 2500, isRanged: false,
                    atkRange: 60, moveSpeed: 28 }
     }
     return templates[type] || templates.slime
   }
 
-  _rollDropQuality() {
+  // 稀有度配置：属性倍率、名称前缀、颜色、经验倍率
+  static _RARITY_CONFIG = {
+    normal:   { scale: 1.0, label: '', color: '#ffffff', expMult: 1.0, namePrefix: '' },
+    elite:    { scale: 2.0, label: '【精英】', color: '#ff8c00', expMult: 2.5, namePrefix: '精英' },
+    lord:     { scale: 5.0, label: '【领主】', color: '#ff2222', expMult: 10.0, namePrefix: '领主' }
+  }
+
+  _rollDropQuality(rarity) {
     const boost = this._dropRareBoost || 0
-    const r = Math.random()
+    // 精英/领主必定掉落更好品质
+    const rarityBonus = rarity === 'lord' ? 0.4 : rarity === 'elite' ? 0.2 : 0
+    const r = Math.random() * (1 - rarityBonus) + rarityBonus  // 右偏随机
     let cumulative = 0
     for (const [q, p] of Object.entries(QUALITY_DROP_CHANCE)) {
       cumulative += (q === 'legendary' || q === 'epic') ? p * (1 + boost * 0.5) : p
@@ -2862,21 +2939,56 @@ export class TowerBattle {
       ctx.save()
       ctx.translate(m.x + (m.shakeX || 0), m.y + (m.shakeY || 0))
 
-      // 血条
+      const rcfg = TowerBattle._RARITY_CONFIG[m.rarity] || TowerBattle._RARITY_CONFIG.normal
+
+      // 血条（精英/领主更宽）
       const hpRatio = Math.max(0, m.hp / m.maxHp)
-      const barW = 44
+      const barW = 44 + (m.rarity === 'lord' ? 24 : m.rarity === 'elite' ? 12 : 0)
       ctx.fillStyle = 'rgba(0,0,0,0.72)'
       ctx.fillRect(-barW / 2, -52 - drawH, barW, 6)
       ctx.fillStyle = hpRatio > 0.5 ? '#ff4444' : hpRatio > 0.2 ? '#ff8c00' : '#ff2222'
       ctx.fillRect(-barW / 2, -52 - drawH, barW * hpRatio, 6)
 
-      // 怪物名称（小字）
+      // 稀有度标签 + 名称 + 等级（大字号 + 暗色底框）
       if (!m.isDead) {
         ctx.shadowBlur = 0
-        ctx.fillStyle = 'rgba(255,255,255,0.6)'
-        ctx.font = '9px sans-serif'
+        let nameText = m.name
+        if (rcfg.label) {
+          nameText = `${rcfg.label} ${m.name}`
+        }
+        nameText += ` Lv${m.level}`
+
+        const fontSize = Math.max(16, Math.round(14 * this.dpr))
+        ctx.font = `bold ${fontSize}px sans-serif`
         ctx.textAlign = 'center'
-        ctx.fillText(m.name, 0, -42)
+        ctx.textBaseline = 'middle'
+
+        const nameLabelY = -66 - drawH  // 怪物头顶：精灵顶部上方
+        // 半透明黑色底框
+        ctx.fillStyle = 'rgba(0,0,0,0.65)'
+        const textW = ctx.measureText(nameText).width + 12
+        const boxX = -textW / 2
+        const boxY = nameLabelY - fontSize / 2 - 3
+        const r = 4
+        ctx.beginPath()
+        ctx.moveTo(boxX + r, boxY)
+        ctx.lineTo(boxX + textW - r, boxY)
+        ctx.quadraticCurveTo(boxX + textW, boxY, boxX + textW, boxY + r)
+        ctx.lineTo(boxX + textW, boxY + fontSize + 6 - r)
+        ctx.quadraticCurveTo(boxX + textW, boxY + fontSize + 6, boxX + textW - r, boxY + fontSize + 6)
+        ctx.lineTo(boxX + r, boxY + fontSize + 6)
+        ctx.quadraticCurveTo(boxX, boxY + fontSize + 6, boxX, boxY + fontSize + 6 - r)
+        ctx.lineTo(boxX, boxY + r)
+        ctx.quadraticCurveTo(boxX, boxY, boxX + r, boxY)
+        ctx.fill()
+
+        // 粗描边 + 稀有度颜色填充
+        ctx.strokeStyle = '#000000'
+        ctx.lineWidth = 4
+        ctx.lineJoin = 'round'
+        ctx.strokeText(nameText, 0, nameLabelY)
+        ctx.fillStyle = rcfg.color
+        ctx.fillText(nameText, 0, nameLabelY)
       }
 
       ctx.restore()
