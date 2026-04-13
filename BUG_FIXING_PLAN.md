@@ -2,6 +2,17 @@
 
 ## 📅 更新日志
 
+### 2026-04-13（19:53）
+
+**fix: 施法时角色图片消失（冰晶术/火球术/雷击术）**
+- **问题**：李小宝释放魔法技能时，角色图像在第1帧后消失
+- **根因**：`skill-effect-manager.js` 的 `getCurrentFrame()` 内部立即永久标记 `_consumedByChar=true`
+  - 第1帧：正常返回图片并绘制 ✓
+  - 第2帧起：查找时被 `_consumedByChar=true` 过滤 → 返回 null → 角色不绘制 ✗
+- **修复**：移除 `getCurrentFrame()` 的副作用（消耗标记），改为纯读取方法
+  - 消耗标记职责统一由 `consumeByCharacter()` 独立管理
+  - 职责分离：`getCurrentFrame()` = 只读，`consumeByCharacter()` = 标记消耗
+
 ### 2026-04-13（11:17）
 
 **R-1 setTimeout守卫补全 + dead code清理**
