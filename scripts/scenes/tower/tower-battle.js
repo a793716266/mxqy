@@ -495,13 +495,24 @@ export class TowerBattle {
   }
 
   _initPositions() {
-    const startX = this.width * 0.12
-    const centerY = this.height * 0.5
-    const spacing = this.height * 0.12
+    const W = this.width
+    const H = this.height
+    // 自适应UI高度：使用屏幕百分比+最小值，确保在任何DPR下都可见
+    const topBarH = Math.max(H * 0.065, 44)
+    const bottomBarH = Math.max(H * 0.17, 110)
+    const safeTop = topBarH + 30
+    const safeBottom = H - bottomBarH - 15
+
+    const startX = W * 0.12
+    const centerY = (safeTop + safeBottom) / 2
+    const spacing = Math.min(H * 0.12, (safeBottom - safeTop) / Math.max(1, this.party.length))
     for (let i = 0; i < this.party.length; i++) {
       const c = this.party[i]
       c.x = c.targetX = startX + (i % 2) * 45
       c.y = c.targetY = centerY + (i - this.party.length / 2) * spacing
+      // 确保在安全区域内（不被UI遮挡）
+      if (c.y < safeTop) c.y = c.targetY = safeTop
+      if (c.y > safeBottom) c.y = c.targetY = safeBottom
       c.attackTimer = Math.random() * 500
       c.skillCDs = {}
       c.attackAnimTimer = 0
@@ -509,7 +520,7 @@ export class TowerBattle {
       c.hurtFlash = 0
       c.moveSpeed = 120 + (c.spd || 10) * 5
       // 攻击范围：近战角色短距离，法系远程
-      c.atkRange = (c.role === 'mage') ? 120 : 55
+      c.atkRange = (c.role === 'mage') ? 180 : 55
       c.isDead = false
       c.respawnTimer = 0
 
@@ -521,6 +532,7 @@ export class TowerBattle {
 
       // 朝向（true=朝右，false=朝左）
       c.facingRight = true
+      c._facingLocked = false   // 手动朝向锁：点击角色设置朝向后锁定，移动时解锁
 
       // 自动技能计时
       c.autoSkillTimer = 0     // 自动施法间隔
@@ -709,6 +721,8 @@ export class TowerBattle {
       animState: 'idle',
       animFrame: 0,
       animTimer: 0,
+      // 朝向（精灵图默认朝左，true=需翻转显示朝右）
+      facingRight: false,
       // 经验值
       expReward: tmpl.expReward || Math.floor(tmpl.hp / 3),
     }
@@ -722,7 +736,7 @@ export class TowerBattle {
     const templates = {
       // 史莱姆猫 —— 远程攻击，有技能（黏液喷射/包裹，可冻结）
       slime:   { name: '史莱姆猫', hp: 90, atk: 10, def: 4, spd: 5, atkInterval: 2200, isRanged: true,
-                   atkRange: 140, moveSpeed: 35, skills: [
+                   atkRange: 220, moveSpeed: 40, skills: [
                      { name: '黏液喷射', power: 1.2, type: 'magic', effect: 'freeze', freezeChance: 0.25, freezeDuration: 2000, mpCost: 8 },
                      { name: '黏液包裹', power: 1.4, type: 'magic', effect: 'freeze', freezeChance: 0.40, freezeDuration: 3000, mpCost: 15 }
                  ]},
@@ -860,11 +874,13 @@ export class TowerBattle {
             const ratio = (eDist - c.atkRange + 15) / eDist
             c.targetX = c.x + eDx * ratio
             c.targetY = c.y + eDy * ratio
-            // 边界钳制
+            // 边界钳制（自适应安全区域）
+            const _safeTopAI = Math.max(this.height * 0.065, 44) + 30
+            const _safeBottomAI = this.height - Math.max(this.height * 0.17, 110) - 15
             c.targetX = Math.max(20, Math.min(c.targetX, this.width - 20))
-            c.targetY = Math.max(55, Math.min(c.targetY, this.height - 20))
-            // 更新朝向
-            if (Math.abs(eDx) > 3) {
+            c.targetY = Math.max(_safeTopAI, Math.min(c.targetY, _safeBottomAI))
+            // 更新朝向（手动锁定时不覆盖）
+            if (!c._facingLocked && Math.abs(eDx) > 3) {
               c.facingRight = eDx > 0
             }
           }
@@ -885,8 +901,8 @@ export class TowerBattle {
         if (dist > 1) {
           c.x += (dx / dist) * c.moveSpeed * (dt / 1000)
           c.y += (dy / dist) * c.moveSpeed * (dt / 1000)
-          // 移动中根据方向更新朝向
-          if (Math.abs(dx) > 3) {
+          // 移动中根据方向更新朝向（手动锁定时不覆盖）
+          if (!c._facingLocked && Math.abs(dx) > 3) {
             c.facingRight = dx > 0
           }
         }
@@ -896,9 +912,9 @@ export class TowerBattle {
       if (c.attackAnimTimer <= 0 && c.castSkillId === null && c.attackTimer <= 0) {
         const target = this._findNearestEnemy(c)
         if (target) {
-          // 根据敌人位置更新朝向
+          // 根据敌人位置更新朝向（手动锁定时不覆盖）
           const dx2 = target.obj.x - c.x
-          if (Math.abs(dx2) > 3) {
+          if (!c._facingLocked && Math.abs(dx2) > 3) {
             c.facingRight = dx2 > 0
           }
 
@@ -947,11 +963,13 @@ export class TowerBattle {
             b.x += nx * pushAmt
             b.y += ny * pushAmt
 
-            // 边界钳制
+            // 边界钳制（安全区域——自适应）
+            const _safeTopSep = Math.max(this.height * 0.065, 44) + 30
+            const _safeBottomSep = this.height - Math.max(this.height * 0.17, 110) - 15
             a.x = Math.max(20, Math.min(a.x, this.width - 20))
-            a.y = Math.max(55, Math.min(a.y, this.height - 20))
+            a.y = Math.max(_safeTopSep, Math.min(a.y, _safeBottomSep))
             b.x = Math.max(20, Math.min(b.x, this.width - 20))
-            b.y = Math.max(55, Math.min(b.y, this.height - 20))
+            b.y = Math.max(_safeTopSep, Math.min(b.y, _safeBottomSep))
 
             // 对已静止的角色同步修正 target，防止下一帧又被拉回去
             const aArrived = Math.abs(a.x - a.targetX) < 8 && Math.abs(a.y - a.targetY) < 8
@@ -1062,10 +1080,10 @@ export class TowerBattle {
     // 近战角色(warrior/fighter)：普攻=直接挥砍伤害（无投射物，必须贴身）
     const isRanged = char.role === 'mage'
     if (isRanged) {
-      // 远程：施法姿势（cast_attack帧）
+      // 远程：施法姿势（cast_attack帧）—— 前摇稍长，体现"读条施法"
       char.animState = 'cast'
       char.castSkillId = 'attack'
-      char.attackAnimTimer = 400
+      char.attackAnimTimer = 500
     } else {
       // 近战：攻击动作（attack帧或slash帧）
       char.animState = 'attack'
@@ -1088,8 +1106,10 @@ export class TowerBattle {
       this._applyDamage(target.obj, target.type, finalDmg)
       const projColor = isCrit ? '#ffff00' : '#ff6b6b'
       this._spawnHitEffect(target.obj.x, target.obj.y, finalDmg, projColor, isCrit)
-      // 攻击间隔
-      char.attackTimer = 1000 / (1 + (char.spd || 10) / 20)
+      // 攻击间隔（根据职业：法师施法需读条→慢；近战挥砍→快）
+      // 基础间隔：近战800ms / 远程1400ms，SPD每点减少~18ms
+      const baseAtkInterval = isRanged ? 1400 : 800
+      char.attackTimer = Math.max(baseAtkInterval - (char.spd || 10) * 18, isRanged ? 700 : 400)
       return
     }
 
@@ -1117,7 +1137,9 @@ export class TowerBattle {
         this._spawnCharHitEffect(target.obj, char, 'attack')
       }
     })
-    char.attackTimer = 1000 / (1 + (char.spd || 10) / 20)
+    // 远程攻击间隔：基础1400ms，SPD影响
+    const baseRangedInterval = 1400
+    char.attackTimer = Math.max(baseRangedInterval - (char.spd || 10) * 18, 700)
   }
 
   /** 角色命中特效（hit帧）—— 仅元素技能触发 */
@@ -1450,8 +1472,11 @@ export class TowerBattle {
     char.currentHp = Math.floor(char.maxHp * 0.5) // 以半血复活
     char.currentMp = Math.floor(char.maxMp * 0.5)
     char.respawnTimer = 0
+    // 在安全区域内随机重生
+    const safeTop = Math.max(this.height * 0.065, 44) + 40
+    const safeBottom = this.height - Math.max(this.height * 0.17, 110) - 30
     char.x = this.width * 0.1 + Math.random() * 30
-    char.y = this.height * 0.4 + Math.random() * (this.height * 0.2)
+    char.y = safeTop + Math.random() * (safeBottom - safeTop)
     char.targetX = char.x
     char.targetY = char.y
     char.hurtFlash = 0
@@ -1499,11 +1524,12 @@ export class TowerBattle {
       m.hurtFlash = Math.max(0, m.hurtFlash - dt)
       m.hurtTimer = Math.max(0, m.hurtTimer - dt)
       if (m.attackAnimTimer > 0) {
-        m.attackAnimTimer -= dt
-        if (m.attackAnimTimer <= 0) {
-          m.animState = 'idle'
-          m.animFrame = 0
-        }
+      m.attackAnimTimer -= dt
+      if (m.attackAnimTimer <= 0) {
+        m.animState = 'idle'
+        m.animFrame = 0
+        m.isAttacking = false   // 攻击动画结束，重置攻击状态（否则远程怪物只能打一发）
+      }
       }
 
       // ===== 冻结状态效果 =====
@@ -1522,6 +1548,11 @@ export class TowerBattle {
         const dx = target.x - m.x
         const dy = target.y - m.y
         const dist = Math.sqrt(dx * dx + dy * dy)
+
+        // 根据目标方向更新朝向（面向角色）
+        if (Math.abs(dx) > 3) {
+          m.facingRight = dx > 0
+        }
 
         // 远程怪物（史莱姆猫）：保持距离攻击
         if (m.isRanged) {
@@ -1628,20 +1659,38 @@ export class TowerBattle {
     monster.attackAnimTimer = 350
 
     // 决定是否释放技能（有概率使用技能而非普攻）
-    const useSkill = monster.skills && monster.skills.length > 0 && Math.random() < 0.35
+    const useSkill = monster.skills && monster.skills.length > 0 && Math.random() < 0.45
     let skill = null
     if (useSkill) {
       // 随机选一个技能（MP足够的话）
-      const availableSkills = monster.skills.filter(s => !s.mpCost || Math.random() > 0.3)
+      const availableSkills = monster.skills.filter(s => !s.mpCost || Math.random() > 0.25)
       skill = availableSkills[Math.floor(Math.random() * availableSkills.length)]
     }
 
     // 基础伤害
     let baseDmg = Math.max(1, monster.atk - (target.def || 0) * 0.3)  // 远程防御减成更低
-    if (skill) baseDmg = Math.floor(baseDmg * skill.power)
+    if (skill) baseDmg = Math.floor(baseDmg * (skill.power || 1.2))
     const finalDmg = Math.floor(baseDmg * (0.85 + Math.random() * 0.3))
 
-    const projColor = skill ? '#66ccff' : '#44aaff'  // 技能投射物偏蓝色
+    // ===== 技能施法特效（在怪物位置显示）=====
+    if (skill) {
+      const effectColor = skill.effect === 'freeze' ? '#66ccff' : '#ff66aa'
+      this._addFloatingText(monster.x, monster.y - 35, `✨ ${skill.name}!`, effectColor, 1.8)
+      // 施法光圈特效
+      this.effects.push({
+        type: 'cast_ring',
+        x: monster.x,
+        y: monster.y - 15,
+        radius: 5,
+        maxRadius: 30 + (skill.power || 1) * 12,
+        color: effectColor,
+        life: 0.6,
+        maxLife: 0.6,
+      })
+    }
+
+    const projColor = skill ? (skill.effect === 'freeze' ? '#55ddff' : '#ff55aa') : '#44aaff'
+    const projSize = skill ? 8 : 5
 
     // 生成投射物飞向角色
     this.projectiles.push({
@@ -1652,10 +1701,12 @@ export class TowerBattle {
       target,
       targetType: 'char',
       dmg: finalDmg,
-      speed: 220 + Math.random() * 80,
+      speed: 200 + Math.random() * 80,
       color: projColor,
-      size: skill ? 7 : 5,
+      size: projSize,
+      isSkill: !!skill,
       trail: [],
+      skillName: skill?.name || null,
       skillEffect: skill?.effect || null,
       freezeChance: skill?.freezeChance || 0,
       freezeDuration: skill?.freezeDuration || 0,
@@ -1663,12 +1714,27 @@ export class TowerBattle {
         this._charTakeDamage(target, proj.dmg)
         this._spawnHitEffect(target.x, target.y, proj.dmg, proj.color)
 
+        // 命中时如果为技能，显示额外文字提示
+        if (proj.skillName) {
+          this._addFloatingText(target.x, target.y - 45, `-${proj.dmg} [${proj.skillName}]`, proj.color, 1.6)
+        }
+
         // ===== 冻结效果判定 =====
         if (proj.skillEffect === 'freeze' && proj.freezeChance > 0) {
           if (Math.random() < proj.freezeChance) {
-            // 对角色施加冻结效果（这里简化为减速/冻结提示）
             this._addFloatingText(target.x, target.y - 30, '❄ 冰冻!', '#66ccff', 1.5)
-            // 可以扩展：给目标添加frozenTimer状态
+            // 给目标添加frozenTimer状态
+            if (!target.statusEffects) target.statusEffects = []
+            target.statusEffects.push({ type: 'freeze', duration: proj.freezeDuration })
+            target.frozenTimer = proj.freezeDuration
+            // 冰冻光环特效
+            this.effects.push({
+              type: 'freeze_aura',
+              x: target.x,
+              y: target.y,
+              life: proj.freezeDuration / 1000,
+              maxLife: proj.freezeDuration / 1000,
+            })
           }
         }
       }
@@ -1940,6 +2006,9 @@ export class TowerBattle {
           e.frame = Math.min(Math.floor(e.timer / hitData.frameRate), totalFrames - 1)
           e.life = Math.max(0, e.duration - e.timer)
         }
+      } else if (e.type === 'cast_ring' || e.type === 'freeze_aura') {
+        // 时间衰减特效
+        e.life -= dt / 1000
       }
     }
     this.effects = this.effects.filter(e => e.life > 0)
@@ -2043,7 +2112,7 @@ export class TowerBattle {
       }
     }
 
-    // 3. 检查是否点击了角色（打开/切换技能弧形菜单）
+    // 3. 检查是否点击了角色（选中/取消切换 + 朝向控制）
     for (let i = 0; i < this.party.length; i++) {
       const c = this.party[i]
       if (c.isDead) continue
@@ -2051,15 +2120,28 @@ export class TowerBattle {
       const hitW = 100
       const hitH = 240
       if (x >= c.x - hitW / 2 && x <= c.x + hitW / 2 && y >= c.y - hitH && y <= c.y + 25) {
-        this.selectedCharIndex = i
-        // 打开/切换技能弧形菜单
-        this.skillMenu = {
-          visible: true,
-          charIndex: i,
-          openTimer: Date.now(),
-          maxDuration: 4000,
-          tapX: x,
-          tapY: y
+        // ===== 朝向：点击左侧朝左，点击右侧朝右（加锁） =====
+        if (Math.abs(x - c.x) > 5) {
+          c.facingRight = x > c.x
+        }
+        c._facingLocked = true   // 锁定朝向，AI不再覆盖
+
+        // ===== 选中/取消选中切换 =====
+        if (this.selectedCharIndex === i) {
+          // 再次点击同一角色 → 取消选中
+          this.selectedCharIndex = -1
+          this.skillMenu.visible = false
+        } else {
+          // 点击不同角色（或之前未选中）→ 选中并打开技能菜单
+          this.selectedCharIndex = i
+          this.skillMenu = {
+            visible: true,
+            charIndex: i,
+            openTimer: Date.now(),
+            maxDuration: 4000,
+            tapX: x,
+            tapY: y
+          }
         }
         return
       }
@@ -2083,9 +2165,13 @@ export class TowerBattle {
         }
       }
 
+      const safeTop = Math.max(this.height * 0.065, 44) + 30
+      const safeBottom = this.height - Math.max(this.height * 0.17, 110) - 15
       selected.targetX = Math.max(20, Math.min(x, this.width - 20))
-      selected.targetY = Math.max(55, Math.min(y, this.height - 20))
+      selected.targetY = Math.max(safeTop, Math.min(y, safeBottom))
 
+      // 移动时解锁朝向锁（让移动/攻击逻辑接管朝向）
+      selected._facingLocked = false
       // 根据移动方向更新朝向
       if (Math.abs(selected.targetX - selected.x) > 3) {
         selected.facingRight = selected.targetX > selected.x
@@ -2260,8 +2346,10 @@ export class TowerBattle {
     ctx.fillStyle = '#12161e'
     ctx.fillRect(0, 0, W, H)
 
-    // 地面区域（更明显）
-    const groundY = H * 0.78
+    // 地面区域——留出底部技能栏空间（自适应高度）
+    const topBarH = Math.max(H * 0.065, 44)
+    const bottomBarH = Math.max(H * 0.17, 110)
+    const groundY = H - bottomBarH - 15  // 地面线在底部栏上方
     ctx.fillStyle = '#1a2030'
     ctx.fillRect(0, groundY, W, H - groundY)
 
@@ -2684,6 +2772,11 @@ export class TowerBattle {
       ctx.save()
       ctx.translate(m.x + (m.shakeX || 0), m.y + (m.shakeY || 0))
 
+      // 朝向翻转（精灵图默认朝左，朝右时需水平翻转）
+      if (m.facingRight) {
+        ctx.scale(-1, 1)
+      }
+
       if (m.isDead) {
         ctx.globalAlpha = m.deathTimer / 450
         ctx.scale(1 - (1 - m.deathTimer / 450) * 0.5, 1 - (1 - m.deathTimer / 450) * 0.5)
@@ -2699,12 +2792,11 @@ export class TowerBattle {
       const img = this._getMonsterFrameImage(m)
       const spr = MONSTER_SPRITES[m.type] || MONSTER_SPRITES.slime
       const baseScale = spr.scale || 1
-      let drawH = 72 // 默认高度（回退时使用）
-
+      // 怪物尺寸：根据类型缩放，手机上至少80px高，移除0.9缩小系数
+      let drawH = 80
       if (img) {
-        // 怪物尺寸：根据类型缩放，确保在手机上可见（至少60px高）
         const rawH = img.height
-        drawH = Math.max(60, rawH * baseScale * 0.9)
+        drawH = Math.max(80, rawH * baseScale)
         const drawW = img.width * (drawH / rawH)
 
         // 颜色染色（用于区分不同怪物类型但共用同一套精灵）
@@ -2763,6 +2855,13 @@ export class TowerBattle {
         ctx.fill()
       }
 
+      // ===== 恢复状态：消除scale翻转，再绘制UI文字（不受朝向影响）=====
+      ctx.restore()
+
+      // ===== 怪物UI层：血条、名称（不受翻转影响） =====
+      ctx.save()
+      ctx.translate(m.x + (m.shakeX || 0), m.y + (m.shakeY || 0))
+
       // 血条
       const hpRatio = Math.max(0, m.hp / m.maxHp)
       const barW = 44
@@ -2794,8 +2893,8 @@ export class TowerBattle {
       ctx.save()
       ctx.translate(c.x, c.y)
 
-      // 朝向：朝左时水平翻转
-      if (!c.facingRight) {
+      // 朝向：精灵图默认朝左，朝右时需水平翻转
+      if (c.facingRight) {
         ctx.scale(-1, 1)
       }
 
@@ -2845,7 +2944,7 @@ export class TowerBattle {
         ctx.shadowColor = '#ffd700'
       }
 
-      // 绘制角色精灵
+      // 绘制角色精灵（受朝向翻转影响）
       const img = this._getCharFrameImage(c)
       if (img) {
         const drawH = 200 // 角色高度
@@ -2882,36 +2981,95 @@ export class TowerBattle {
         ctx.fillText(c.name.charAt(0), 0, -85)
       }
 
+      // ===== 恢复状态：消除scale翻转，再绘制UI文字（不受朝向影响）=====
+      ctx.restore()
+
+      // ===== UI层（名字、等级、血条、选中框）—— 不受朝向翻转影响 =====
+      ctx.save()
+      ctx.translate(c.x, c.y)
+
       ctx.shadowBlur = 0
 
-      // 名字+等级（带升级高亮）
-      const nameColor = c.levelUpFlash > 0 ? '#ffd700' : '#f0e6d3'
-      ctx.fillStyle = nameColor
-      ctx.font = 'bold 13px sans-serif'
+      // 名字+等级（大字号 + 粗描边 + 暗色底框）
+      const nameColor = c.levelUpFlash > 0 ? '#ffd700' : '#ffffff'
+      const fontSize = Math.max(18, Math.round(16 * this.dpr))
+      ctx.font = `bold ${fontSize}px sans-serif`
       ctx.textAlign = 'center'
-      ctx.fillText(`${c.name} Lv${c.level}`, 0, -218)
+      ctx.textBaseline = 'middle'
 
-      // 血条
+      const labelY = -232  // 最上方：名字标签
+      const labelText = `${c.name} Lv${c.level}`
+
+      // 半透明黑色底框
+      ctx.fillStyle = 'rgba(0,0,0,0.65)'
+      const textW = ctx.measureText(labelText).width + 16
+      const boxX = -textW / 2
+      const boxY = labelY - fontSize / 2 - 4
+      const boxW = textW
+      const boxH = fontSize + 8
+      const r = 4
+      ctx.beginPath()
+      ctx.moveTo(boxX + r, boxY)
+      ctx.lineTo(boxX + boxW - r, boxY)
+      ctx.quadraticCurveTo(boxX + boxW, boxY, boxX + boxW, boxY + r)
+      ctx.lineTo(boxX + boxW, boxY + boxH - r)
+      ctx.quadraticCurveTo(boxX + boxW, boxY + boxH, boxX + boxW - r, boxY + boxH)
+      ctx.lineTo(boxX + r, boxY + boxH)
+      ctx.quadraticCurveTo(boxX, boxY + boxH, boxX, boxY + boxH - r)
+      ctx.lineTo(boxX, boxY + r)
+      ctx.quadraticCurveTo(boxX, boxY, boxX + r, boxY)
+      ctx.fill()
+
+      // 粗描边 + 纯白填充
+      ctx.strokeStyle = '#000000'
+      ctx.lineWidth = 5
+      ctx.lineJoin = 'round'
+      ctx.strokeText(labelText, 0, labelY)
+      ctx.shadowColor = 'rgba(0,0,0,0.9)'
+      ctx.shadowBlur = 6
+      ctx.fillStyle = nameColor
+      ctx.fillText(labelText, 0, labelY)
+      ctx.shadowBlur = 0
+
+      // ===== 血条（角色脚下：Y=8起，宽76px 高14px）=====
       const hpRatio = Math.max(0, c.currentHp / c.maxHp)
-      const barW = 54
-      ctx.fillStyle = 'rgba(0,0,0,0.7)'
-      ctx.fillRect(-barW / 2, -204, barW, 6)
-      ctx.fillStyle = hpRatio > 0.5 ? '#2ecc71' : hpRatio > 0.2 ? '#f39c12' : '#e74c3c'
-      ctx.fillRect(-barW / 2, -204, barW * hpRatio, 6)
+      const barW = 76
+      const hpBarY = 8   // 角色脚底下
+      // 背景底（黑色+边框）
+      ctx.fillStyle = '#111111'
+      ctx.fillRect(-barW / 2, hpBarY, barW, 14)
+      ctx.strokeStyle = 'rgba(255,255,255,0.25)'
+      ctx.lineWidth = 1
+      ctx.strokeRect(-barW / 2, hpBarY, barW, 14)
+      // HP色条（高亮色，高度12px）
+      if (hpRatio > 0) {
+        ctx.fillStyle = hpRatio > 0.5 ? '#2ecc71' : hpRatio > 0.2 ? '#f39c12' : '#e74c3c'
+        ctx.fillRect(-barW / 2 + 2, hpBarY + 1, (barW - 4) * hpRatio, 12)
+        ctx.fillStyle = 'rgba(255,255,255,0.2)'
+        ctx.fillRect(-barW / 2 + 2, hpBarY + 1, (barW - 4) * hpRatio, 3)
+      }
 
-      // MP条
+      // ===== MP蓝条（血条下方：宽76px 高10px）=====
       const mpRatio = Math.max(0, (c.currentMp || 0) / c.maxMp)
-      ctx.fillStyle = 'rgba(0,0,0,0.45)'
-      ctx.fillRect(-barW / 2, -194, barW, 4)
-      ctx.fillStyle = '#3498db'
-      ctx.fillRect(-barW / 2, -194, barW * mpRatio, 4)
+      const mpBarY = hpBarY + 36
+      ctx.fillStyle = '#111111'
+      ctx.fillRect(-barW / 2, mpBarY, barW, 10)
+      ctx.strokeStyle = 'rgba(255,255,255,0.2)'
+      ctx.lineWidth = 1
+      ctx.strokeRect(-barW / 2, mpBarY, barW, 10)
+      if (mpRatio > 0) {
+        ctx.fillStyle = '#3498db'
+        ctx.fillRect(-barW / 2 + 2, mpBarY + 1, (barW - 4) * mpRatio, 8)
+        ctx.fillStyle = 'rgba(255,255,255,0.2)'
+        ctx.fillRect(-barW / 2 + 2, mpBarY + 1, (barW - 4) * mpRatio, 3)
+      }
 
-      // 选中指示器
+      // 选中指示器（包围角色整体）
       if (i === this.selectedCharIndex) {
         ctx.strokeStyle = '#ffd700'
         ctx.lineWidth = 1.5
         ctx.setLineDash([4, 4])
-        this._roundRect(ctx, -34, -230, 68, 240, 8)
+        this._roundRect(ctx, -42, -240, 84, 268, 10)
         ctx.stroke()
         ctx.setLineDash([])
       }
@@ -2956,8 +3114,9 @@ export class TowerBattle {
         ctx.save()
         ctx.globalAlpha = Math.min(1, e.life)
         ctx.fillStyle = e.color
-        const fontSize = e.isText ? 12 : (14 + Math.floor(e.life * 7))
-        ctx.font = `${e.isText ? '' : 'bold '}${fontSize * (e.scale || 1)}px sans-serif`
+        const baseSize = e.isText ? 16 : (18 + Math.floor(e.life * 8))
+        const fontSize = baseSize * this.dpr * (e.scale || 1)
+        ctx.font = `${e.isText ? '' : 'bold '}${fontSize}px sans-serif`
         ctx.textAlign = 'center'
         if (e.isText) {
           ctx.fillText(String(e.value), e.x, e.y)
@@ -2974,12 +3133,61 @@ export class TowerBattle {
           const key = hitData.frames[e.frame]
           const img = this.assets.get(key)
           if (img) {
-            const size = 80 + Math.min(e.timer / 10, 20) // 命中时略微放大
+            const size = 80 + Math.min(e.timer / 10, 20)
             ctx.globalAlpha = Math.max(0, 1 - (e.timer / e.duration) * 0.5)
             ctx.drawImage(img, e.x - size / 2, e.y - size / 2, size, size)
             ctx.globalAlpha = 1
           }
         }
+      } else if (e.type === 'cast_ring') {
+        // 施法光圈：从怪物扩散的圆环
+        const t = 1 - (e.life / e.maxLife)
+        const r = e.radius + (e.maxRadius - e.radius) * t
+        const alpha = Math.max(0, 1 - t * 1.5)
+        ctx.save()
+        ctx.globalAlpha = alpha * 0.7
+        ctx.strokeStyle = e.color
+        ctx.lineWidth = 3 * (1 - t * 0.6)
+        ctx.shadowBlur = 12
+        ctx.shadowColor = e.color
+        ctx.beginPath()
+        ctx.arc(e.x, e.y, r, 0, Math.PI * 2)
+        ctx.stroke()
+        // 内部填充光晕
+        ctx.globalAlpha = alpha * 0.15
+        ctx.fillStyle = e.color
+        ctx.fill()
+        ctx.restore()
+      } else if (e.type === 'freeze_aura') {
+        // 冰冻光环：围绕目标的蓝色霜冻效果
+        const t = e.life / e.maxLife
+        const pulseScale = 1 + Math.sin(Date.now() / 150) * 0.08
+        ctx.save()
+        ctx.globalAlpha = 0.35 * t
+        ctx.strokeStyle = '#66ccff'
+        ctx.lineWidth = 2
+        ctx.shadowBlur = 15
+        ctx.shadowColor = '#44aaff'
+        ctx.beginPath()
+        ctx.arc(e.x, e.y, 28 * pulseScale, 0, Math.PI * 2)
+        ctx.stroke()
+        ctx.globalAlpha = 0.12 * t
+        ctx.fillStyle = '#88ddff'
+        ctx.fill()
+
+        // 飘落的冰晶粒子
+        for (let i = 0; i < 4; i++) {
+          const angle = (Date.now() / 400 + i * Math.PI / 2) % (Math.PI * 2)
+          const dist = 20 + Math.sin(Date.now() / 200 + i) * 8
+          const px = e.x + Math.cos(angle) * dist
+          const py = e.y + Math.sin(angle) * dist * 0.7
+          ctx.globalAlpha = 0.6 * t
+          ctx.fillStyle = '#aaeeff'
+          ctx.beginPath()
+          ctx.arc(px, py, 2.5, 0, Math.PI * 2)
+          ctx.fill()
+        }
+        ctx.restore()
       }
     }
   }
@@ -3027,14 +3235,16 @@ export class TowerBattle {
   // ===== 浮动文字 =====
 
   _renderFloatingTexts(ctx) {
+    const dpr = this.dpr
     for (const ft of this.floatingTexts) {
       ctx.save()
       ctx.globalAlpha = Math.min(1, ft.life)
       ctx.fillStyle = ft.color
-      ctx.font = 'bold 13px sans-serif'
+      // 浮动文字放大（手机端必须足够大）
+      ctx.font = `bold ${16 * dpr}px sans-serif`
       ctx.textAlign = 'center'
-      ctx.strokeStyle = 'rgba(0,0,0,0.6)'
-      ctx.lineWidth = 3
+      ctx.strokeStyle = 'rgba(0,0,0,0.7)'
+      ctx.lineWidth = 3 * dpr
       ctx.strokeText(ft.text, ft.x, ft.y)
       ctx.fillText(ft.text, ft.x, ft.y)
       ctx.restore()
@@ -3233,71 +3443,73 @@ export class TowerBattle {
     const H = this.height
     const dpr = this.dpr
 
-    // 顶部状态栏
+    // 安全区域：顶部状态栏（自适应高度）
+    const topBarH = Math.max(H * 0.065, 44)
     ctx.fillStyle = 'rgba(0,0,0,0.78)'
-    ctx.fillRect(0, 0, W, 52)
+    ctx.fillRect(0, 0, W, topBarH)
 
-    // 水晶血量
+    // 水晶血量（左侧）
     const cHpRatio = Math.max(0, this.crystal.hp / this.crystal.maxHp)
     ctx.fillStyle = '#8b949e'
-    ctx.font = `${12 * dpr}px sans-serif`
+    ctx.font = `${Math.max(11, 12 * dpr)}px sans-serif`
     ctx.textAlign = 'left'
-    ctx.fillText('敌方水晶', 10, 19)
+    ctx.fillText('敌方水晶', Math.max(8, 10), Math.max(16, 19))
     ctx.fillStyle = 'rgba(255,255,255,0.18)'
-    ctx.fillRect(10, 24, 108, 9)
+    const hpBarW = Math.min(108 * dpr, W * 0.25)
+    ctx.fillRect(Math.max(8, 10), Math.max(20, 24), hpBarW, Math.max(7, 9))
     ctx.fillStyle = cHpRatio > 0.5 ? '#ffd700' : cHpRatio > 0.2 ? '#ff8c00' : '#ff4444'
-    ctx.fillRect(10, 24, 108 * cHpRatio, 9)
+    ctx.fillRect(Math.max(8, 10), Math.max(20, 24), hpBarW * cHpRatio, Math.max(7, 9))
     ctx.fillStyle = '#fff'
-    ctx.font = `${10 * dpr}px sans-serif`
-    ctx.fillText(`${Math.max(0, this.crystal.hp)} / ${this.crystal.maxHp}`, 12, 41)
+    ctx.font = `${Math.max(9, 10 * dpr)}px sans-serif`
+    ctx.fillText(`${Math.max(0, this.crystal.hp)} / ${this.crystal.maxHp}`, Math.max(9, 12), Math.max(34, 41))
 
     // ===== 波次进度显示（核心信息！） =====
-    // waveIndex 是内部已递增的计数(1-based)，直接显示
     const displayWave = Math.min(this.waveIndex, this.totalWaves)
     const waveLabel = this.allWavesDone ? '✅ 全部完成' : `第 ${displayWave} / ${this.totalWaves} 波`
     const waveColor = this.allWavesDone ? '#3fb950' : (this.waveActive ? '#ff8800' : '#8b949e')
     ctx.fillStyle = waveColor
-    ctx.font = `bold ${14 * dpr}px sans-serif`
+    ctx.font = `bold ${Math.max(13, 14 * dpr)}px sans-serif`
     ctx.textAlign = 'center'
-    ctx.fillText(waveLabel, W / 2, 19)
+    ctx.fillText(waveLabel, W / 2, Math.max(15, 19))
 
     // 波次小进度条（当前波怪物剩余）
     if (!this.allWavesDone && this.waveTotalCount > 0) {
       const waveProgress = this.waveSpawnedCount / this.waveTotalCount
-      const barW = 100 * dpr
+      const barW = Math.min(100 * dpr, W * 0.3)
       const barX = (W - barW) / 2
       ctx.fillStyle = 'rgba(255,255,255,0.15)'
-      ctx.fillRect(barX, 25, barW, 6)
+      ctx.fillRect(barX, Math.max(21, 25), barW, Math.max(5, 6))
       ctx.fillStyle = '#ff8800'
-      ctx.fillRect(barX, 25, barW * waveProgress, 6)
+      ctx.fillRect(barX, Math.max(21, 25), barW * waveProgress, Math.max(5, 6))
       ctx.fillStyle = '#aaa'
-      ctx.font = `${9 * dpr}px sans-serif`
-      ctx.fillText(`(${this.monsters.filter(m => !m.isDead).length} 只存活)`, W / 2, 42)
+      ctx.font = `${Math.max(8, 9 * dpr)}px sans-serif`
+      ctx.fillText(`(${this.monsters.filter(m => !m.isDead).length} 只存活)`, W / 2, Math.max(35, 42))
     } else if (this.crystal.isAttackable) {
       ctx.fillStyle = '#ff4444'
-      ctx.font = `bold ${11 * dpr}px sans-serif`
-      ctx.fillText('⚠ 攻击水晶！', W / 2, 38)
+      ctx.font = `bold ${Math.max(10, 11 * dpr)}px sans-serif`
+      ctx.fillText('⚠ 攻击水晶！', W / 2, Math.max(32, 38))
     }
 
-    // 击杀/掉落统计
+    // 击杀/掉落统计（右侧）
     ctx.fillStyle = '#8b949e'
-    ctx.font = `${11 * dpr}px sans-serif`
+    ctx.font = `${Math.max(10, 11 * dpr)}px sans-serif`
     ctx.textAlign = 'right'
-    ctx.fillText(`击杀: ${this.stats.kills}`, W - 10, 19)
-    ctx.fillText(`掉落: ${this.stats.dropsCollected}`, W - 10, 36)
-    ctx.fillText(`金币: +${this.stats.goldEarned}`, W - 10, 51)
+    ctx.fillText(`击杀: ${this.stats.kills}`, W - Math.max(8, 10), Math.max(15, 19))
+    ctx.fillText(`掉落: ${this.stats.dropsCollected}`, W - Math.max(8, 10), Math.max(30, 36))
 
-    // 关卡信息（底部小字）—— 显示波次提示或操作指引
+    // 底部提示（确保在安全区域内）
     ctx.fillStyle = '#484f58'
-    ctx.font = `${10 * dpr}px sans-serif`
+    ctx.font = `${Math.max(9, 10 * dpr)}px sans-serif`
     ctx.textAlign = 'left'
-    let bottomHint = `第 ${this.stage.id} 关: ${this.stage.name}  |  `
+    let bottomHint = `第 ${this.stage.id} 关: ${this.stage.name}`
     if (!this.crystal.isAttackable) {
-      bottomHint += `🛡 消灭全部${this.totalMonstersAllWaves}只怪物后水晶可攻击`
+      bottomHint += ` | 🛡 消灭全部${this.totalMonstersAllWaves}只怪物后可攻击水晶`
     } else {
-      bottomHint += `⚠️ 水晶已暴露！集中火力攻击！`
+      bottomHint += ` | ⚠️ 水晶已暴露！集中火力！`
     }
-    ctx.fillText(bottomHint, 10, H - 8)
+    // 底部提示放在安全区域（距底部自适应间距）
+    const _bottomBarH = Math.max(H * 0.17, 110)
+    ctx.fillText(bottomHint, Math.max(8, 10), H - Math.max(_bottomBarH * 0.15, 14))
   }
 
   // 工具方法
