@@ -44,75 +44,63 @@ export class TowerScene {
     // UI 状态
     this.stageButtons = []
     this.scrollY = 0
-    this.touchStartY = 0
-    this.isTouchScrolling = false
+    this._scrollStartY = 0      // 滚动开始时的touch Y
+    this._scrollStartScroll = 0 // 滚动开始时的scrollY
+    this._isDragging = false
     this.animTime = 0
   }
 
   init() {
-    this._initInput()
+    // 输入由全局 InputManager(wx.onTouchStart) 统一处理
+    // 不再使用 canvas.addEventListener（真机无效）
   }
 
-  _initInput() {
-    const canvas = this.game.canvas
-    canvas.addEventListener('touchstart', e => {
-      e.preventDefault()
-      const t = e.touches[0]
-      const rect = canvas.getBoundingClientRect()
-      this._onTouchStart((t.clientX - rect.left) * this.dpr, (t.clientY - rect.top) * this.dpr)
-    })
-    canvas.addEventListener('touchmove', e => {
-      e.preventDefault()
-      const t = e.touches[0]
-      const rect = canvas.getBoundingClientRect()
-      this._onTouchMove((t.clientX - rect.left) * this.dpr, (t.clientY - rect.top) * this.dpr)
-    })
-    canvas.addEventListener('touchend', e => {
-      e.preventDefault()
-      const t = e.changedTouches[0]
-      const rect = canvas.getBoundingClientRect()
-      this._onTouchEnd((t.clientX - rect.left) * this.dpr, (t.clientY - rect.top) * this.dpr)
-    })
-    canvas.addEventListener('mousedown', e => {
-      const rect = canvas.getBoundingClientRect()
-      this._onTouchStart((e.clientX - rect.left) * this.dpr, (e.clientY - rect.top) * this.dpr)
-    })
-    canvas.addEventListener('mousemove', e => {
-      if (this.isTouchScrolling) return
-      const rect = canvas.getBoundingClientRect()
-      this._onTouchMove((e.clientX - rect.left) * this.dpr, (e.clientY - rect.top) * this.dpr)
-    })
-    canvas.addEventListener('mouseup', e => {
-      const rect = canvas.getBoundingClientRect()
-      this._onTouchEnd((e.clientX - rect.left) * this.dpr, (e.clientY - rect.top) * this.dpr)
-    })
-  }
 
-  _onTouchStart(x, y) {
-    this.touchStartY = y
-    this.isTouchScrolling = false
-    if (this.phase === 'stage_select') this._onTap(x, y)
-    else if (this.phase === 'battle') this.battle.onTap(x, y)
-    else if (this.phase === 'result') this._onResultTap(x, y)
-  }
+  // ========== 更新（通过 InputManager 处理输入） ==========
 
-  _onTouchMove(x, y) {
-    const delta = y - this.touchStartY
-    if (Math.abs(delta) > 10) this.isTouchScrolling = true
-    if (this.phase === 'stage_select' && this.isTouchScrolling) {
-      this.scrollY = Math.max(0, Math.min(this.scrollY - delta, this._maxScroll()))
-      this.touchStartY = y
-    } else if (this.phase === 'battle') {
-      this.battle.onTapMove(x, y)
+  update(dt) {
+    this.animTime += dt / 1000
+    if (this.phase === 'battle' && this.battle) {
+      this.battle.update(dt)
+      if (this.battle.phase === 'victory' || this.battle.phase === 'defeat') {
+        this.phase = 'result'
+        this.battleResult = this.battle.phase
+      }
+    }
+
+    // 统一输入处理（与 town-scene 一致，使用 wx.onTouchStart）
+    const input = this.game.input
+
+    // 滚动处理（基于 touchmove 的 dragDelta）
+    if (input.dragging) {
+      if (this.phase === 'stage_select') {
+        this.scrollY = Math.max(0, Math.min(this.scrollY - input.dragDelta.y, this._maxScroll()))
+      } else if (this.phase === 'battle') {
+        if (input.touches[0] && this.battle?.onTapMove) {
+          const t = input.touches[0]
+          this.battle.onTapMove(t.x, t.y)
+        }
+      }
+    }
+
+    // 点击处理（touchend 时 taps 数组有数据）
+    if (input.taps.length > 0) {
+      const tap = input.consumeTap()
+      if (!tap) return
+
+      if (this.phase === 'stage_select') {
+        this._handleStageTap(tap.x, tap.y)
+      } else if (this.phase === 'battle' && this.battle?.onTap) {
+        this.battle.onTap(tap.x, tap.y)
+      } else if (this.phase === 'result') {
+        this._handleResultTap(tap.x, tap.y)
+      }
     }
   }
 
-  _onTouchEnd() {
-    this.isTouchScrolling = false
-  }
+  // ===== 选关界面点击检测 =====
 
-  _onTap(x, y) {
-    if (this.phase !== 'stage_select') return
+  _handleStageTap(x, y) {
     for (const btn of this.stageButtons) {
       if (x >= btn.x && x <= btn.x + btn.w && y >= btn.y && y <= btn.y + btn.h) {
         if (btn.unlocked) this._startStage(btn.stage)
@@ -122,7 +110,9 @@ export class TowerScene {
     if (this._inBackButton(x, y)) this.game.popScene()
   }
 
-  _onResultTap(x, y) {
+  // ===== 结算界面点击检测 =====
+
+  _handleResultTap(x, y) {
     const cx = this.width / 2
     const cy = this.height / 2 + 90
     if (x >= cx - 90 && x <= cx + 90 && y >= cy - 28 && y <= cy + 28) {
@@ -132,14 +122,22 @@ export class TowerScene {
   }
 
   _inBackButton(x, y) {
-    return x >= 8 && x <= 72 && y >= 10 && y <= 46
+    return x >= 6 && x <= 82 && y >= 8 && y <= 48
   }
 
   _maxScroll() {
-    const rowH = 132
-    const rows = Math.ceil(TOWER_STAGES.length / 2)
-    const contentH = rows * rowH + 80 // chapter headers add space
-    return Math.max(0, contentH - (this.height - 60))
+    const cardW = this.width - 24
+    const cardH = 100
+    const cardGap = 10
+    const listTop = 104  // header(56) + tab(42) + 6
+    let totalH = 0
+    for (const ch of CHAPTERS) {
+      totalH += 40 + 8  // 章节标题 + 间距
+      const stageCount = Math.min(ch.endIdx - ch.startIdx + 1,
+        TOWER_STAGES.length - ch.startIdx)
+      totalH += stageCount * (cardH + cardGap)
+    }
+    return Math.max(0, totalH - (this.height - listTop))
   }
 
   _startStage(stage) {
@@ -281,19 +279,6 @@ export class TowerScene {
     hero.currentHp = Math.min(hero.currentHp || hero.maxHp, hero.maxHp)
   }
 
-  // ========== 更新 ==========
-
-  update(dt) {
-    this.animTime += dt / 1000
-    if (this.phase === 'battle' && this.battle) {
-      this.battle.update(dt)
-      if (this.battle.phase === 'victory' || this.battle.phase === 'defeat') {
-        this.phase = 'result'
-        this.battleResult = this.battle.phase
-      }
-    }
-  }
-
   // ========== 渲染 ==========
 
   render() {
@@ -305,12 +290,12 @@ export class TowerScene {
     else if (this.phase === 'result') this._renderResult(ctx)
   }
 
-  // ===== 选关界面 =====
+  // ===== 选关界面（重设计：大卡片 + 单列 + 清晰层级） =====
 
   _renderStageSelect(ctx) {
     const W = this.width, H = this.height, dpr = this.dpr
 
-    // 背景
+    // ===== 背景 =====
     const bgGrad = ctx.createLinearGradient(0, 0, W, H)
     bgGrad.addColorStop(0, '#0a0e14')
     bgGrad.addColorStop(0.5, '#0d1117')
@@ -329,181 +314,249 @@ export class TowerScene {
       ctx.beginPath(); ctx.moveTo(0, gy); ctx.lineTo(W, gy); ctx.stroke()
     }
 
-    // 标题栏
+    // ===== 标题栏 =====
     ctx.fillStyle = 'rgba(13,17,23,0.92)'
     ctx.fillRect(0, 0, W, 56)
     ctx.fillStyle = '#c9a227'
     ctx.font = `bold ${22 * dpr}px sans-serif`
     ctx.textAlign = 'center'
-    ctx.fillText('\u{1F3F0} 闯关挑战', W / 2, 36)
+    ctx.textBaseline = 'middle'
+    ctx.fillText('\u{1F3F0} 闯关挑战', W / 2, 30)
 
-    // 返回按钮
+    // 返回按钮（大触控区）
+    ctx.fillStyle = 'rgba(201,162,39,0.15)'
+    this._roundRect(ctx, 6, 8, 76, 40, 10)
+    ctx.fill()
     ctx.fillStyle = '#c9a227'
-    ctx.font = `${15 * dpr}px sans-serif`
+    ctx.font = `${14 * dpr}px sans-serif`
     ctx.textAlign = 'left'
-    ctx.fillText('\u2190 返回', 16, 36)
+    ctx.textBaseline = 'middle'
+    ctx.fillText('\u2190 返回', 44, 28)
 
-    // 关卡列表区域
+    // ===== 章节导航标签栏 =====
+    const tabY = 58
+    const tabH = 42
+    ctx.fillStyle = 'rgba(13,17,23,0.85)'
+    ctx.fillRect(0, tabY, W, tabH)
+
+    const tabW = Math.min(100 * dpr, (W - 20) / CHAPTERS.length)
+    const totalTabW = tabW * CHAPTERS.length
+    const tabStartX = (W - totalTabW) / 2
+
+    CHAPTERS.forEach((ch, ci) => {
+      const tx = tabStartX + ci * tabW + 4
+      const tw = tabW - 8
+      ctx.fillStyle = ch.color + '18'
+      this._roundRect(ctx, tx, tabY + 6, tw, tabH - 12, 8)
+      ctx.fill()
+      ctx.strokeStyle = ch.color + '44'
+      ctx.lineWidth = 1
+      this._roundRect(ctx, tx, tabY + 6, tw, tabH - 12, 8)
+      ctx.stroke()
+
+      ctx.fillStyle = ch.color
+      ctx.font = `bold ${12 * dpr}px sans-serif`
+      ctx.textAlign = 'center'
+      ctx.textBaseline = 'middle'
+      ctx.fillText(`${ch.icon} 第${ci+1}章`, tx + tw / 2, tabY + tabH / 2)
+    })
+    ctx.textBaseline = 'bottom'
+
+    // ===== 关卡列表区域 =====
+    const listTop = tabY + tabH + 6
     ctx.save()
     ctx.beginPath()
-    ctx.rect(0, 56, W, H - 56)
+    ctx.rect(0, listTop, W, H - listTop)
     ctx.clip()
 
     this.stageButtons = []
-    const cols = 2
-    const cardW = (W - 28) / cols
-    const cardH = 118
-    const padX = 8
-    const padY = 10
-    let curY = 66 - this.scrollY
+    // 屏幕坐标（含scroll偏移），与触摸事件y一致
+    let curY = listTop + 4
 
-    // 按章节渲染
+    const cardW = W - 24
+    const cardX = 12
+    const cardGap = 10
+
     for (const ch of CHAPTERS) {
-      // 章节标题
-      if (curY > -30 && curY < H + 10) {
+      // 章节分隔标题（渲染坐标 = 屏幕坐标 - scrollY）
+      const chRenderY = curY - this.scrollY
+      if (chRenderY > listTop - 30 && chRenderY < H + 20) {
         ctx.fillStyle = ch.color + '22'
-        ctx.fillRect(8, curY, W - 16, 32)
+        ctx.fillRect(cardX, chRenderY, cardW, 34)
         ctx.fillStyle = ch.color
-        ctx.font = `bold ${15 * dpr}px sans-serif`
+        ctx.fillRect(cardX, chRenderY, 3, 34)
+        ctx.fillStyle = ch.color
+        ctx.font = `bold ${14 * dpr}px sans-serif`
         ctx.textAlign = 'left'
-        ctx.fillText(`${ch.icon} ${ch.name}`, 16, curY + 21)
+        ctx.textBaseline = 'bottom'
+        ctx.fillText(`${ch.icon} ${ch.name}`, cardX + 10, chRenderY + 23)
       }
-      curY += 38
+      curY += 40
 
       // 章节内的关卡
       for (let si = ch.startIdx; si <= ch.endIdx && si < TOWER_STAGES.length; si++) {
         const stage = TOWER_STAGES[si]
-        const col = (si - ch.startIdx) % cols
-        const row = Math.floor((si - ch.startIdx) / cols)
-        const x = padX + col * (cardW + padX)
-        const y = curY + row * (cardH + padY)
-
-        if (y > H + 10 || y + cardH < 56) continue
-
+        const x = cardX
+        // 屏幕坐标（用于点击检测）
+        const screenY = curY
+        // 渲染坐标（用于绘制）
+        const ry = curY - this.scrollY
+        const h = 100
         const unlocked = si === 0 || this._isStageUnlocked(si)
         const isBoss = !!stage.boss
         const passed = this._isStageUnlocked(si)
 
-        this.stageButtons.push({ x, y, w: cardW, h: cardH, stage, unlocked })
+        if (ry > H + 20 || ry + h < listTop) { curY += h + cardGap; continue }
 
-        // 卡片背景
-        const cardGrad = ctx.createLinearGradient(x, y, x, y + cardH)
+        // 存屏幕坐标，点击时直接匹配触摸y
+        this.stageButtons.push({ x, y: screenY, w: cardW, h, stage, unlocked })
+
+        // ========== 卡片背景（用渲染坐标） ==========
+        if (unlocked && !passed) {
+          ctx.shadowBlur = isBoss ? 16 : 8
+          ctx.shadowColor = isBoss ? '#e67e2255' : ch.color + '33'
+          this._roundRect(ctx, x, ry, cardW, h, 12)
+          ctx.shadowBlur = 0
+        }
+
+        const cardGrad = ctx.createLinearGradient(x, ry, x, ry + h)
         if (!unlocked) {
-          cardGrad.addColorStop(0, '#151920')
-          cardGrad.addColorStop(1, '#181d24')
+          cardGrad.addColorStop(0, '#12161d')
+          cardGrad.addColorStop(1, '#161b23')
+          ctx.strokeStyle = '#21262d'
         } else if (isBoss) {
           cardGrad.addColorStop(0, '#2d1810')
           cardGrad.addColorStop(1, '#351f14')
+          ctx.strokeStyle = '#e67e22'
         } else if (passed) {
-          cardGrad.addColorStop(0, '#14261c')
-          cardGrad.addColorStop(1, '#182e23')
+          cardGrad.addColorStop(0, '#0f1f16')
+          cardGrad.addColorStop(1, '#142820')
+          ctx.strokeStyle = '#2ecc71'
         } else {
-          cardGrad.addColorStop(0, '#1c2128')
-          cardGrad.addColorStop(1, '#21262d')
+          cardGrad.addColorStop(0, '#161b22')
+          cardGrad.addColorStop(1, '#1c222b')
+          ctx.strokeStyle = ch.color
         }
-
+        ctx.lineWidth = (passed || isBoss) ? 2 : 1.2
         ctx.fillStyle = cardGrad
-        ctx.strokeStyle = !unlocked ? '#21262d' :
-          (isBoss ? '#e67e22' : (passed ? '#2ecc71' : (si === 0 ? '#c9a227' : '#30363d')))
-        ctx.lineWidth = isBoss || si === 0 ? 2 : 1.2
-        this._roundRect(ctx, x, y, cardW, cardH, 10)
+        this._roundRect(ctx, x, ry, cardW, h, 12)
         ctx.fill()
         ctx.stroke()
 
-        // 关卡编号徽章
-        ctx.fillStyle = isBoss ? '#e67e22' : unlocked ? ch.color : '#30363d'
+        // ===== 左侧：关卡编号徽章（大圆） =====
+        const badgeR = 24
+        const badgeCx = x + 32
+        const badgeCy = ry + h / 2
         ctx.beginPath()
-        ctx.arc(x + 18, y + 18, 12, 0, Math.PI * 2)
+        ctx.arc(badgeCx, badgeCy, badgeR, 0, Math.PI * 2)
+        if (!unlocked) {
+          ctx.fillStyle = '#21262d'
+        } else if (isBoss) {
+          ctx.fillStyle = '#e67e22'
+        } else if (passed) {
+          ctx.fillStyle = '#2ecc71'
+        } else {
+          ctx.fillStyle = ch.color
+        }
         ctx.fill()
-        ctx.fillStyle = '#fff'
-        ctx.font = `bold ${11 * dpr}px sans-serif`
+
+        // 徽章内编号/勾号
         ctx.textAlign = 'center'
         ctx.textBaseline = 'middle'
-        ctx.fillText(String(stage.id), x + 18, y + 18)
-        ctx.textBaseline = 'bottom'
-
-        // 关卡名称
-        ctx.fillStyle = unlocked ? '#f0e6d3' : '#484f58'
-        ctx.font = `bold ${14 * dpr}px sans-serif`
-        ctx.textAlign = 'left'
-        ctx.textBaseline = 'bottom'
-        ctx.fillText(stage.name, x + 36, y + 22)
-
-        // BOSS标记
-        if (isBoss && unlocked) {
-          ctx.fillStyle = '#e67e22'
-          ctx.font = `${9 * dpr}px sans-serif`
-          ctx.fillText(' \uD83C\uDDEF\uD83C\uDDF5 BOSS', x + 36 + ctx.measureText(stage.name).width + 4, y + 22)
-        }
-
-        // 已通关勾选
         if (passed && !isBoss) {
-          ctx.fillStyle = '#2ecc71'
-          ctx.font = `${12 * dpr}px sans-serif`
-          ctx.textAlign = 'right'
-          ctx.fillText('\u2713 已通过', x + cardW - 8, y + 22)
+          ctx.fillStyle = '#fff'
+          ctx.font = `bold ${20 * dpr}px sans-serif`
+          ctx.fillText('✓', badgeCx, badgeCy)
+        } else {
+          ctx.fillStyle = unlocked ? '#fff' : '#555'
+          ctx.font = `bold ${16 * dpr}px sans-serif`
+          ctx.fillText(String(stage.id), badgeCx, badgeCy)
+        }
+        ctx.textBaseline = 'bottom'
+
+        // ===== 右侧内容区（从徽章右边开始，留足间距） =====
+        const contentX = x + 66
+
+        // 第一行：关卡名称 + 状态标签
+        ctx.textAlign = 'left'
+        ctx.fillStyle = unlocked ? '#f0e6d3' : '#484f58'
+        ctx.font = `bold ${15 * dpr}px sans-serif`
+        let nameText = stage.name
+        if (!unlocked) nameText = '???'
+        ctx.fillText(nameText, contentX, ry + 28)
+
+        // 名称右侧标签
+        const nameRight = contentX + ctx.measureText(nameText).width + 8
+        if (nameRight < x + cardW - 50) {
+          if (isBoss && unlocked) {
+            ctx.fillStyle = '#e67e22'
+            ctx.font = `bold ${10 * dpr}px sans-serif`
+            ctx.fillText('👑 BOSS', nameRight, ry + 28)
+          } else if (passed && !isBoss) {
+            ctx.fillStyle = '#2ecc71'
+            ctx.font = `${10 * dpr}px sans-serif`
+            ctx.fillText('✓ 已通过', nameRight, ry + 28)
+          }
         }
 
-        // 描述
-        ctx.fillStyle = unlocked ? '#8b949e' : '#484f58'
+        // 第二行：描述文字
+        ctx.fillStyle = unlocked ? '#8b949e' : '#333'
         ctx.font = `${11 * dpr}px sans-serif`
-        ctx.textAlign = 'left'
-        ctx.textBaseline = 'bottom'
-        ctx.fillText(stage.desc, x + 12, y + 46)
+        ctx.fillText(unlocked ? stage.desc : '击败前一关解锁', contentX, ry + 50)
 
-        // 信息行（水晶HP + 怪物类型）
-        ctx.fillStyle = unlocked ? '#c9a22755' : '#333'
-        ctx.font = `${10 * dpr}px sans-serif`
-        ctx.fillText(`\u{1F48E} 水晶 ${stage.crystalHp}`, x + 12, y + 64)
+        // 第三行：属性信息（HP、难度、怪物）
+        const attrY = ry + 74
+        ctx.font = `bold ${10 * dpr}px sans-serif`
 
-        const monsterIcon = this._getMonsterIcon(stage.monsterType)
-        ctx.fillStyle = unlocked ? '#58a6ff88' : '#333'
-        ctx.fillText(`${monsterIcon} ${MONSTER_NAMES[stage.monsterType] || stage.monsterType}`, x + 12, y + 80)
+        // HP
+        ctx.fillStyle = unlocked ? '#ffd70099' : '#333'
+        ctx.fillText(`💎${stage.crystalHp}HP`, contentX, attrY)
 
-        // 难度星级（根据水晶血量估算）
+        // 星级
         const stars = stage.crystalHp <= 1000 ? 1 : stage.crystalHp <= 3000 ? 2 : stage.crystalHp <= 6000 ? 3 : 4
         const starStr = '\u2605'.repeat(stars) + '\u2606'.repeat(4 - stars)
-        ctx.fillStyle = unlocked ? '#f39c1288' : '#333'
-        ctx.font = `${10 * dpr}px sans-serif`
-        ctx.fillText(starStr, x + 12, y + 96)
+        ctx.fillStyle = unlocked ? '#f39c1277' : '#333'
+        ctx.fillText(starStr, contentX + 80 * dpr, attrY)
 
-        // 最大怪物数提示
-        ctx.fillStyle = '#484f5866'
-        ctx.font = `${9 * dpr}px sans-serif`
-        ctx.textAlign = 'right'
-        ctx.fillText(`最多${stage.maxMonsters}怪`, x + cardW - 8, y + 96)
+        // 怪物类型
+        if (unlocked) {
+          const mIcon = this._getMonsterIcon(stage.monsterType)
+          const mName = MONSTER_NAMES[stage.monsterType] || stage.monsterType
+          ctx.fillStyle = '#58a6ff88'
+          ctx.fillText(`${mIcon} ${mName}`, contentX + 160 * dpr, attrY)
+        }
 
-        // 锁定遮罩
+        // ===== 锁定遮罩 =====
         if (!unlocked) {
-          ctx.fillStyle = 'rgba(0,0,0,0.55)'
-          this._roundRect(ctx, x, y, cardW, cardH, 10)
+          ctx.fillStyle = 'rgba(0,0,0,0.45)'
+          this._roundRect(ctx, x, ry, cardW, h, 12)
           ctx.fill()
-          ctx.fillStyle = '#58a6ff'
-          ctx.font = `${26 * dpr}px sans-serif`
+          ctx.fillStyle = '#58a6ffaa'
+          ctx.font = `${24 * dpr}px sans-serif`
           ctx.textAlign = 'center'
           ctx.textBaseline = 'middle'
-          ctx.fillText('\uD83D\uDD12', x + cardW / 2, y + cardH / 2)
+          ctx.fillText('🔒', x + cardW / 2, ry + h / 2)
+          ctx.textBaseline = 'bottom'
         }
+
+        curY += h + cardGap
       }
-      // 移到下一章的起始位置
-      const chapterStageCount = ch.endIdx - ch.startIdx + 1
-      const chapterRows = Math.ceil(chapterStageCount / cols)
-      curY += chapterRows * (cardH + padY) + 16
+      curY += 8
     }
 
     ctx.restore()
 
-    // 滚动条
+    // ===== 滚动条 =====
     const maxScroll = this._maxScroll()
     if (maxScroll > 0) {
-      const ratio = (H - 56) / (curY + this.scrollY + 50)
-      const barH = Math.max(24, (H - 56) * Math.min(ratio, 1))
-      const barY = 56 + (H - 56 - barH) * (this.scrollY / maxScroll)
-      // 滚动条轨道
-      ctx.fillStyle = '#21262d'
-      ctx.fillRect(W - 5, 56, 4, H - 56)
-      ctx.fillStyle = '#c9a22755'
-      ctx.fillRect(W - 5, barY, 4, barH)
+      const barH = Math.max(30, (H - listTop) * ((H - listTop) / (curY + this.scrollY + 50)))
+      const barY = listTop + (H - listTop - barH) * (this.scrollY / maxScroll)
+      ctx.fillStyle = '#21262d44'
+      this._roundRect(ctx, W - 6, listTop, 4, H - listTop, 2)
+      ctx.fill()
+      ctx.fillStyle = '#c9a22766'
+      this._roundRect(ctx, W - 6, barY, 4, barH, 2)
+      ctx.fill()
     }
   }
 
