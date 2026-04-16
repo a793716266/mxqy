@@ -226,6 +226,12 @@ export class Game {
     const ctx = this.ctx
     ctx.clearRect(0, 0, this.width, this.height)
 
+    // 裁剪到canvas边界，防止内容溢出（某些设备安全区域导致右侧裁切）
+    ctx.save()
+    ctx.beginPath()
+    ctx.rect(0, 0, this.width, this.height)
+    ctx.clip()
+
     // 渲染场景
     if (this.currentScene) {
       this.currentScene.render(ctx)
@@ -239,5 +245,7 @@ export class Game {
       ctx.fillStyle = `rgba(0, 0, 0, ${this._fadeAlpha})`
       ctx.fillRect(0, 0, this.width, this.height)
     }
+
+    ctx.restore()
   }
 }

@@ -97,26 +97,26 @@ export const EQUIPMENT_CH1 = {
   // 稀有武器
   sharp_blade: {
     id: 'sharp_blade',
-    name: '锋利的长剑',
+    name: '艾米的牙齿',
     type: 'weapon',
     rarity: 'rare',
-    desc: '经过精心打磨的长剑，锋利无比',
+    desc: '被咬一下也没事反正这货没啥攻击力',
     stats: {
-      atk: 12,
-      crit: 0.05
+      atk: 32,
+      crit: 0.1
     },
     price: 200,
     sellPrice: 80
   },
   magic_wand: {
     id: 'magic_wand',
-    name: '魔法之杖',
+    name: '小贝的原始袋',
     type: 'weapon',
     rarity: 'rare',
     desc: '蕴含魔力的法杖',
     stats: {
-      atk: 10,
-      maxMp: 25
+      atk: 30,
+      maxMp: 300
     },
     price: 220,
     sellPrice: 90
@@ -125,14 +125,14 @@ export const EQUIPMENT_CH1 = {
   // 史诗武器
   flame_sword: {
     id: 'flame_sword',
-    name: '炎之剑',
+    name: '安妮的指甲',
     type: 'weapon',
     rarity: 'epic',
-    desc: '缠绕着火焰的魔法剑',
+    desc: '这要是被抓一下不得了',
     stats: {
-      atk: 20,
-      crit: 0.08,
-      maxHp: 20
+      atk: 220,
+      crit: 0.3,
+      maxHp: 120
     },
     price: 600,
     sellPrice: 240
@@ -141,15 +141,15 @@ export const EQUIPMENT_CH1 = {
   // 传说武器
   sunlight_blade: {
     id: 'sunlight_blade',
-    name: '阳光之刃',
+    name: '钱多多的臭脚丫',
     type: 'weapon',
     rarity: 'legendary',
     desc: '阳光草原的守护神兵，散发着温暖的光芒',
     stats: {
-      atk: 1,
-      def: 8,
+      atk: 50,
+      def: 32,
       crit: 0.12,
-      maxHp: 50
+      maxHp: 500
     },
     price: 1500,
     sellPrice: 600
@@ -277,12 +277,12 @@ export const EQUIPMENT_CH1 = {
   // 稀有饰品
   swift_boots: {
     id: 'swift_boots',
-    name: '疾风之靴',
+    name: '安妮的羽毛',
     type: 'accessory',
     rarity: 'rare',
     desc: '穿上后身轻如燕',
     stats: {
-      spd: 6,
+      spd: 10,
       crit: 0.05
     },
     price: 230,
@@ -290,12 +290,12 @@ export const EQUIPMENT_CH1 = {
   },
   mana_crystal: {
     id: 'mana_crystal',
-    name: '魔力水晶',
+    name: '安妮的魔力水晶',
     type: 'accessory',
     rarity: 'rare',
     desc: '蕴含魔力的水晶',
     stats: {
-      maxMp: 40,
+      maxMp: 140,
       atk: 5
     },
     price: 250,
@@ -305,14 +305,14 @@ export const EQUIPMENT_CH1 = {
   // 史诗饰品
   hero_medal: {
     id: 'hero_medal',
-    name: '英雄勋章',
+    name: '被坐断的小贝的猫抓板',
     type: 'accessory',
     rarity: 'epic',
-    desc: '授予英雄的荣誉勋章',
+    desc: '这猫抓板好用，可惜被人坐断了不然威力更猛',
     stats: {
-      atk: 8,
-      def: 8,
-      spd: 4,
+      atk: 58,
+      def: 38,
+      spd: 20,
       crit: 0.08
     },
     price: 800,
@@ -322,14 +322,14 @@ export const EQUIPMENT_CH1 = {
   // 传说饰品
   sunlight_pendant: {
     id: 'sunlight_pendant',
-    name: '阳光吊坠',
+    name: '小贝的铃铛',
     type: 'accessory',
     rarity: 'legendary',
     desc: '阳光草原的祝福，温暖人心',
     stats: {
-      maxHp: 80,
-      maxMp: 60,
-      spd: 8,
+      maxHp: 380,
+      maxMp: 160,
+      spd: 18,
       crit: 0.10
     },
     price: 1800,
@@ -374,6 +374,19 @@ export const ENEMY_DROP_TABLE = {
     { id: 'simple_ring', rate: 0.10 },
     { id: 'lucky_charm', rate: 0.10 }
   ],
+  // 优良：普通装备为主 + 小概率稀有（概率总和=1.0）
+  uncommon: [
+    { id: 'rusty_sword', rate: 0.14 },
+    { id: 'wooden_staff', rate: 0.14 },
+    { id: 'leather_armor', rate: 0.14 },
+    { id: 'cloth_robe', rate: 0.14 },
+    { id: 'simple_ring', rate: 0.14 },
+    { id: 'lucky_charm', rate: 0.14 },
+    // 小概率出稀有
+    { id: 'sharp_blade', rate: 0.05 },
+    { id: 'chain_mail', rate: 0.05 },
+    { id: 'swift_boots', rate: 0.06 }
+  ],
   rare: [
     { id: 'sharp_blade', rate: 0.05 },
     { id: 'magic_wand', rate: 0.05 },
@@ -386,6 +399,15 @@ export const ENEMY_DROP_TABLE = {
     { id: 'flame_sword', rate: 0.02 },
     { id: 'guardian_armor', rate: 0.02 },
     { id: 'hero_medal', rate: 0.02 }
+  ],
+  // 传说：史诗+传说装备混合掉落池
+  legendary: [
+    { id: 'flame_sword', rate: 0.03 },
+    { id: 'guardian_armor', rate: 0.03 },
+    { id: 'hero_medal', rate: 0.03 },
+    { id: 'sunlight_blade', rate: 0.02 },
+    { id: 'dragon_scale_armor', rate: 0.02 },
+    { id: 'star_ring', rate: 0.02 }
   ]
 }
 
