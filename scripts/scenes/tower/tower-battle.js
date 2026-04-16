@@ -24,6 +24,7 @@ const QUALITY_COLORS = {
   legendary: '#ff8c00',
   epic: '#a335ee',
   rare: '#0070dd',
+  uncommon: '#1eff00',
   common: '#9d9d9d'
 }
 
@@ -31,14 +32,16 @@ const QUALITY_NAMES = {
   legendary: '传说',
   epic: '史诗',
   rare: '稀有',
+  uncommon: '优良',
   common: '普通'
 }
 
 const QUALITY_DROP_CHANCE = {
-  legendary: 0.02,
-  epic: 0.08,
-  rare: 0.25,
-  common: 0.65
+  legendary: 0.1,
+  epic: 0.1,
+  rare: 0.2,
+  uncommon: 0.15,
+  common: 0.45
 }
 
 const DROP_LIFETIME = 8000 // 8秒拾取时限
@@ -49,7 +52,8 @@ for (let lv = 1; lv <= 100; lv++) RESPAWN_TABLE[lv] = lv * 2
 
 // 经验值表（每级所需经验）
 const EXP_TABLE = []
-for (let lv = 1; lv <= 50; lv++) EXP_TABLE[lv] = Math.floor(30 * Math.pow(1.15, lv))
+// 升级经验公式：基数120，每级递增18%（前期需要多只怪才能升一级）
+for (let lv = 1; lv <= 50; lv++) EXP_TABLE[lv] = Math.floor(120 * Math.pow(1.18, lv))
 
 // 分包路径前缀
 const PKG = 'subpackages/battle/'
@@ -286,9 +290,12 @@ export class TowerBattle {
     this.scene = scene
     this.game = scene.game
     this.ctx = scene.ctx
-    this.width = scene.width
-    this.height = scene.height
-    this.dpr = scene.dpr || 1
+    // 动态读取尺寸（窗口resize时自动同步，避免右侧错位）
+    Object.defineProperties(this, {
+      width: { get() { return scene.width } },
+      height: { get() { return scene.height } },
+      dpr:   { get() { return scene.dpr || 1 } },
+    })
     this.stage = stage
     this.party = party
 
@@ -309,6 +316,10 @@ export class TowerBattle {
     this.crystal = null
     this._initCrystal()
 
+    // 己方水晶（左下角，怪物全灭角色时被攻击）
+    this.homeCrystal = null
+    this._initHomeCrystal()
+
     // 刷怪波次系统（10波固定，从水晶生成）
     this.spawnQueue = []
     this.spawnTimer = 0
@@ -323,6 +334,14 @@ export class TowerBattle {
     this.waveCooldown = 3000    // 波次间冷却3秒
     this.allWavesDone = false   // 所有波次是否已完成
     this._waveClearCooldownActive = false  // 当前波怪物死完后的冷却阶段
+
+    // 装备分配面板状态
+    this.equipPanel = {
+      visible: false,
+      item: null,          // 待分配的掉落物引用
+      selectedCharIndex: -1,
+      animTimer: 0,
+    }
 
     // 波次定义：每波怪物类型和数量（渐进难度）
     this._initWaveDefinitions()
@@ -348,6 +367,32 @@ export class TowerBattle {
       charIndex: -1,     // 哪个角色被选中
       openTimer: 0,
       maxDuration: 3000  // 3秒后自动关闭
+    }
+
+    // ===== 底部面板系统 =====
+    // 临时装备背包（本场战斗有效，战斗结束清空）
+    this.inventory = []           // 装备物品数组（最多8格）
+    this.maxInventorySize = 8
+    this.gold = 0                 // 战斗临时金币
+
+    // 悬浮提示状态（鼠标悬停在装备上时显示属性）
+    this._hoveredItem = null       // { item, x, y, source: 'inventory'|'equipped' }
+
+    // 双击检测：背包槽位
+    this._lastTapSlot = null       // { idx, time } 上一次点击的背包格
+    this._DOUBLE_TAP_MS = 350      // 双击判定时间窗口（毫秒）
+    this._sellTargetIndex = -1     // 用户选中要卖的装备索引（-1=无）
+
+    // 角色装备槽（每个角色3个槽位：武器/防具/饰品）
+    for (const c of this.party) {
+      c.equippedItems = { weapon: null, armor: null, accessory: null }
+    }
+
+    // 战斗策略设置
+    this.battleTactics = {
+      targetPriority: 'nearest',   // nearest(最近) | lowestHp(最低血) | highestAtk(最高攻击) | ranged(优先远程)
+      holdPosition: false,         // 是否坚守位置不移动
+      focusCrystal: false,         // 是否优先攻击水晶
     }
 
     // 角色位置初始化（战斗阶段才调用）
@@ -442,8 +487,8 @@ export class TowerBattle {
 
   _initCrystal() {
     this.crystal = {
-      x: this.width * 0.78,
-      y: this.height * 0.5,
+      x: this.width * 0.82,
+      y: this.height * 0.18,
       hp: this.stage.crystalHp,
       maxHp: this.stage.crystalHp,
       atk: 0,
@@ -461,6 +506,36 @@ export class TowerBattle {
       isAttackable: false,    // 初始不可攻击（10波怪物全部消灭后变为true）
       attackableFlash: 0,    // 变为可攻击时的闪烁提示
       arrowAnimTimer: 0,     // 箭头指引动画计时器
+    }
+  }
+
+  /**
+   * 初始化己方防御水晶（左下角）
+   * - 全角色死亡时，怪物会攻击此水晶
+   * - 有角色复活后，怪物不再攻击水晶
+   * - 水晶被摧毁 → 游戏失败（defeat）
+   */
+  _initHomeCrystal() {
+    const bottomMargin = Math.max(8, 12 * this.dpr)
+    const tacticsBarH = Math.max(this.height * 0.068, 44)
+    const equipBarH = Math.max(this.height * 0.17, 130)
+    const panelH = tacticsBarH + equipBarH + 6 + bottomMargin
+
+    this.homeCrystal = {
+      x: this.width * 0.1,
+      y: this.height - panelH - 50,
+      hp: 500,
+      maxHp: 500,
+      isDead: false,
+      deathAnim: 0,
+      scale: 1,
+      hurtTimer: 0,
+      hurtFlash: 0,
+      shakeX: 0,
+      shakeY: 0,
+      // 是否处于可被攻击状态
+      vulnerable: false,       // 全角色死亡时为true
+      vulnerableFlash: 0,     // 变为脆弱状态时的闪烁警告
     }
   }
 
@@ -548,14 +623,51 @@ export class TowerBattle {
     }
   }
 
+  /**
+   * 获取统一的活动区域（红框内的战场范围）
+   * 角色和怪物都必须被限制在此矩形内
+   */
+  _getBattleArea() {
+    const W = this.width
+    const H = this.height
+    const topBarH = Math.max(H * 0.095, 56)
+    const wallThickness = 8
+    // 底部面板高度
+    const skillBarH   = Math.max(H * 0.055, 40)
+    const tacticsBarH = Math.max(H * 0.06, 42)
+    const equipBarH   = Math.max(H * 0.16, 130)
+    const bottomBarH = skillBarH + tacticsBarH + equipBarH + 8
+
+    return {
+      left:   wallThickness + 4,
+      right:  W - wallThickness - 4,
+      top:    topBarH + 28,
+      bottom: H - bottomBarH - 10,
+    }
+  }
+
+  /** 将实体坐标钳制到活动区域内 */
+  _clampToBattleArea(entity) {
+    const area = this._getBattleArea()
+    entity.x = Math.max(area.left, Math.min(entity.x, area.right))
+    entity.y = Math.max(area.top, Math.min(entity.y, area.bottom))
+  }
+
+  /** 将目标坐标钳制到活动区域内（用于targetX/targetY） */
+  _clampTargetToArea(tx, ty) {
+    const area = this._getBattleArea()
+    return [
+      Math.max(area.left, Math.min(tx, area.right)),
+      Math.max(area.top, Math.min(ty, area.bottom)),
+    ]
+  }
+
   _initPositions() {
     const W = this.width
     const H = this.height
-    // 自适应UI高度：使用屏幕百分比+最小值，确保在任何DPR下都可见
-    const topBarH = Math.max(H * 0.065, 44)
-    const bottomBarH = Math.max(H * 0.17, 110)
-    const safeTop = topBarH + 30
-    const safeBottom = H - bottomBarH - 15
+    const area = this._getBattleArea()
+    const safeTop = area.top
+    const safeBottom = area.bottom
 
     const startX = W * 0.12
     const centerY = (safeTop + safeBottom) / 2
@@ -572,9 +684,13 @@ export class TowerBattle {
       c.attackAnimTimer = 0
       c.hurtTimer = 0
       c.hurtFlash = 0
+      // 保存基础属性（buff系统需要用于恢复）
+      if (c._baseSpd == null) c._baseSpd = c.spd
+      // 初始化buff数组
+      if (!c.buffs) c.buffs = []
       c.moveSpeed = 120 + (c.spd || 10) * 5
-      // 攻击范围：近战角色短距离，法系远程
-      c.atkRange = (c.role === 'mage') ? 180 : 55
+      // 攻击范围：近战角色短距离，法系远程（大范围，覆盖大部分战场）
+      c.atkRange = (c.role === 'mage') ? 480 : 55
       c.isDead = false
       c.respawnTimer = 0
 
@@ -636,10 +752,19 @@ export class TowerBattle {
     }
     this.waveSpawnedCount = 0
     this.waveTotalCount = this.currentWaveMonsters.length
-    this.waveActive = true
     const displayWaveNum = this.waveIndex + 1
+
+    // ===== 一波全部同时生成（不再逐个间隔出现） =====
+    for (let i = 0; i < this.currentWaveMonsters.length; i++) {
+      const entry = this.currentWaveMonsters[i]
+      this._spawnMonster(entry.type, null, null, entry.rarity || 'normal')
+      this.waveSpawnedCount++
+    }
+    console.log(`[Tower] \u23F0 第${displayWaveNum}波开始: ${this.waveTotalCount}只怪物(全部同时出场)`)
+
     this.waveIndex++
-    console.log(`[Tower] 第${displayWaveNum}波开始: ${this.waveTotalCount}只怪物`)
+    // 波次标记为非活跃（所有怪物已生成完毕，进入清场阶段）
+    this.waveActive = false
   }
 
   /**
@@ -650,29 +775,7 @@ export class TowerBattle {
     // 所有波次已完成，不再刷怪
     if (this.allWavesDone) return
 
-    // 统计场上的存活怪物数
     const aliveMonsters = this.monsters.filter(m => !m.isDead).length
-
-    if (this.waveActive) {
-      // ===== 当前波活跃中：继续逐个生成 =====
-      this.spawnTimer -= dt
-      if (this.spawnTimer <= 0 && this.waveSpawnedCount < this.waveTotalCount) {
-        const entry = this.currentWaveMonsters[this.waveSpawnedCount]
-        this._spawnMonster(entry.type, null, null, entry.rarity || 'normal')
-        this.waveSpawnedCount++
-        this.spawnTimer = this.spawnInterval // 每2.5s生成一只
-      }
-
-      // 当前波所有怪物已生成完毕 → 标记为等待清场
-      if (this.waveSpawnedCount >= this.waveTotalCount && this.waveActive) {
-        this.waveActive = false
-        console.log(`[Tower] 第${this.waveIndex}波全部生成(${this.waveTotalCount}只)，等待消灭...`)
-        // 注意：不设cooldown！等怪物死完后再进入冷却
-      }
-      return
-    }
-
-    // ===== 当前波已生成完毕但还没开始下一波 =====
 
     // 还有存活怪物 → 等它们死完（不开始新波）
     if (aliveMonsters > 0) return
@@ -796,6 +899,10 @@ export class TowerBattle {
     }
     m.targetX = m.x
     m.targetY = m.y
+    // 确保生成位置在活动区域内
+    this._clampToBattleArea(m)
+    m.targetX = m.x
+    m.targetY = m.y
     this.monsters.push(m)
     return m
   }
@@ -803,31 +910,31 @@ export class TowerBattle {
   _getMonsterTemplate(type) {
     const templates = {
       // 史莱姆猫 —— 远程攻击，有技能（黏液喷射/包裹，可冻结）
-      slime:   { name: '史莱姆猫', hp: 90, atk: 10, def: 4, spd: 5, atkInterval: 2200, isRanged: true,
+      slime:   { name: '史莱姆猫', hp: 180, atk: 12, def: 10, spd: 15, atkInterval: 3200, isRanged: true,
                    atkRange: 220, moveSpeed: 40, skills: [
                      { name: '黏液喷射', power: 1.2, type: 'magic', effect: 'freeze', freezeChance: 0.25, freezeDuration: 2000, mpCost: 8 },
                      { name: '黏液包裹', power: 1.4, type: 'magic', effect: 'freeze', freezeChance: 0.40, freezeDuration: 3000, mpCost: 15 }
                  ]},
       // 暗影鼠 —— 快速近战
-      goblin:  { name: '暗影鼠', hp: 80, atk: 16, def: 6, spd: 17, atkInterval: 1200, isRanged: false,
+      goblin:  { name: '暗影鼠', hp: 160, atk: 20, def: 14, spd: 27, atkInterval: 1200, isRanged: false,
                    atkRange: 50, moveSpeed: 85, skills: [
                      { name: '暗影咬', power: 1.4, type: 'attack', mpCost: 6 },
                      { name: '暗影突袭', power: 2.0, type: 'attack', mpCost: 18 }
                  ]},
       // 兽人 —— 肉盾近战
-      orc:     { name: '兽人', hp: 180, atk: 18, def: 8, spd: 7, atkInterval: 1800, isRanged: false,
+      orc:     { name: '兽人', hp: 360, atk: 22, def: 20, spd: 7, atkInterval: 1800, isRanged: false,
                    atkRange: 48, moveSpeed: 45 },
       // 恶狼 —— 快速近战群攻
-      wolf:    { name: '恶狼', hp: 90, atk: 15, def: 3, spd: 14, atkInterval: 1000, isRanged: false,
+      wolf:    { name: '恶狼', hp: 200, atk: 19, def: 8, spd: 14, atkInterval: 1000, isRanged: false,
                    atkRange: 55, moveSpeed: 95 },
       // 亡灵 —— 中速近战
-      undead:  { name: '亡灵', hp: 140, atk: 14, def: 6, spd: 9, atkInterval: 1600, isRanged: false,
+      undead:  { name: '亡灵', hp: 300, atk: 18, def: 14, spd: 9, atkInterval: 1600, isRanged: false,
                    atkRange: 50, moveSpeed: 50 },
       // 恶魔 —— 慢但强力近战
-      demon:   { name: '恶魔', hp: 280, atk: 22, def: 12, spd: 8, atkInterval: 2000, isRanged: false,
+      demon:   { name: '恶魔', hp: 560, atk: 28, def: 26, spd: 8, atkInterval: 2000, isRanged: false,
                    atkRange: 52, moveSpeed: 38 },
       // 幼龙 —— BOSS级（领主专用）
-      dragon:  { name: '幼龙', hp: 450, atk: 28, def: 18, spd: 4, atkInterval: 2500, isRanged: false,
+      dragon:  { name: '幼龙', hp: 900, atk: 35, def: 36, spd: 4, atkInterval: 2500, isRanged: false,
                    atkRange: 60, moveSpeed: 28 }
     }
     return templates[type] || templates.slime
@@ -870,8 +977,14 @@ export class TowerBattle {
     this._updateCharacters(dtMs)
     this._updateMonsters(dtMs)
     this._updateCrystal(dtMs)
+    this._updateHomeCrystal(dtMs)
     this._updateSpawner(dtMs)  // 波次刷怪系统
+    this._updateBuffs(dtMs)    // BUFF衰减和到期清除
+    const invBefore = this.inventory.length
     this._updateDroppedItems(dtMs)
+    if (this.inventory.length !== invBefore) {
+      console.log(`[⚠️] _updateDroppedItems 导致 inventory 从 ${invBefore} 变为 ${this.inventory.length}`)
+    }
     this._updateProjectiles(dtMs)
     this._updateEffects(dtMs)
     this._updateParticles(dtMs)
@@ -939,26 +1052,76 @@ export class TowerBattle {
       const isMoving = Math.abs(c.x - c.targetX) > 5 || Math.abs(c.y - c.targetY) > 5
 
       // ===== AI自动寻敌：开启时自动向最近的敌人移动 =====
-      if (c.autoAttackEnabled && !isMoving && !c.isCasting) {
+      // 注意：法师(远程)需要持续追踪敌人位置实现风筝，不受isMoving限制
+      // 近战角色只在静止时寻路（避免和手动移动冲突）
+      // 坚守位置模式：不移动，只在原地攻击
+      const canRunAI = c.autoAttackEnabled && !c.isCasting &&
+        (c.role === 'mage' ? true : !isMoving) &&
+        !this.battleTactics.holdPosition
+
+      if (canRunAI) {
         const nearestEnemy = this._findNearestEnemy(c)
         if (nearestEnemy) {
           const eDx = nearestEnemy.obj.x - c.x
           const eDy = nearestEnemy.obj.y - c.y
           const eDist = Math.sqrt(eDx * eDx + eDy * eDy)
-          // 超出攻击范围 → 自动走到敌人身边（留一点距离避免重叠）
-          if (eDist > c.atkRange + 10) {
-            // 目标点：朝敌人方向移动，停在攻击范围内
-            const ratio = (eDist - c.atkRange + 15) / eDist
-            c.targetX = c.x + eDx * ratio
-            c.targetY = c.y + eDy * ratio
-            // 边界钳制（自适应安全区域）
-            const _safeTopAI = Math.max(this.height * 0.065, 44) + 30
-            const _safeBottomAI = this.height - Math.max(this.height * 0.17, 110) - 15
-            c.targetX = Math.max(20, Math.min(c.targetX, this.width - 20))
-            c.targetY = Math.max(_safeTopAI, Math.min(c.targetY, _safeBottomAI))
-            // 更新朝向（手动锁定时不覆盖）
+          const isMage = c.role === 'mage'
+
+          if (isMage) {
+            // ===== 法师风筝逻辑：力场推开，保持安全距离 =====
+            // 核心原则：绝不贴身，始终与敌人保持在理想距离附近
+            const safeDist    = c.atkRange * 0.82   // 安全距离下限（低于此值必须远离）
+            const idealDist   = c.atkRange * 0.92   // 理想输出距离
+            const approachDist = c.atkRange * 1.05   // 开始靠近的阈值
+
+            const eDirX = eDx / Math.max(eDist, 1)
+            const eDirY = eDy / Math.max(eDist, 1)
+
+            if (eDist < safeDist) {
+              // ===== 力场直接推开：每帧根据距离差施加排斥力 =====
+              // 距离越近推力越大（类似弹簧），确保不会被贴住
+              const repelStrength = (safeDist - eDist) * 2.5 + 80
+              c.x -= eDirX * repelStrength * (dt / 1000)
+              c.y -= eDirY * repelStrength * (dt / 1000)
+              // 同步更新target避免移动系统拉回
+              c.targetX = c.x - eDirX * 20
+              c.targetY = c.y - eDirY * 20
+            } else if (eDist > approachDist) {
+              // 超出范围：向敌人方向靠近到理想距离
+              const ratio = (eDist - idealDist) / Math.max(eDist, 1)
+              c.targetX = c.x + eDx * ratio
+              c.targetY = c.y + eDy * ratio
+            } else {
+              // 在[safeDist, approachDist]范围内：安心输出，不移动
+              // 如果正在向错误方向移动（朝敌人走去），立刻停止
+              const toTargetDx = c.targetX - c.x
+              const toTargetDy = c.targetY - c.y
+              const dotProduct = toTargetDx * eDirX + toTargetDy * eDirY
+              if (dotProduct > 10) { // target在敌人方向 → 停止
+                c.targetX = c.x
+                c.targetY = c.y
+              }
+            }
+
+            // 边界钳制（统一活动区域）
+            ;[c.targetX, c.targetY] = this._clampTargetToArea(c.targetX, c.targetY)
+            // 更新朝向（手动锁定时不覆盖）—— 始终面向敌人
             if (!c._facingLocked && Math.abs(eDx) > 3) {
               c.facingRight = eDx > 0
+            }
+          } else {
+            // ===== 近战角色：走到敌人身边贴身 =====
+            if (eDist > c.atkRange + 10) {
+              // 目标点：朝敌人方向移动，停在攻击范围内
+              const ratio = (eDist - c.atkRange + 15) / eDist
+              c.targetX = c.x + eDx * ratio
+              c.targetY = c.y + eDy * ratio
+              // 边界钳制（统一活动区域）
+              ;[c.targetX, c.targetY] = this._clampTargetToArea(c.targetX, c.targetY)
+              // 更新朝向（手动锁定时不覆盖）
+              if (!c._facingLocked && Math.abs(eDx) > 3) {
+                c.facingRight = eDx > 0
+              }
             }
           }
         }
@@ -978,6 +1141,8 @@ export class TowerBattle {
         if (dist > 1) {
           c.x += (dx / dist) * c.moveSpeed * (dt / 1000)
           c.y += (dy / dist) * c.moveSpeed * (dt / 1000)
+          // 实际坐标钳制（防止溢出活动区域）
+          this._clampToBattleArea(c)
           // 移动中根据方向更新朝向（手动锁定时不覆盖）
           if (!c._facingLocked && Math.abs(dx) > 3) {
             c.facingRight = dx > 0
@@ -986,10 +1151,11 @@ export class TowerBattle {
       }
 
       // 自动攻击最近敌人（到达攻击范围后自动普攻，不需要AI模式）
-      if (c.attackAnimTimer <= 0 && c.castSkillId === null && c.attackTimer <= 0) {
+      // 注意：移动中不覆盖朝向，避免"倒着走"（移动朝向优先于攻击朝向）
+      if (!isMoving && c.attackAnimTimer <= 0 && c.castSkillId === null && c.attackTimer <= 0) {
         const target = this._findNearestEnemy(c)
         if (target) {
-          // 根据敌人位置更新朝向（手动锁定时不覆盖）
+          // 根据敌人位置更新朝向（手动锁定时不覆盖，移动时不覆盖）
           const dx2 = target.obj.x - c.x
           if (!c._facingLocked && Math.abs(dx2) > 3) {
             c.facingRight = dx2 > 0
@@ -1040,13 +1206,9 @@ export class TowerBattle {
             b.x += nx * pushAmt
             b.y += ny * pushAmt
 
-            // 边界钳制（安全区域——自适应）
-            const _safeTopSep = Math.max(this.height * 0.065, 44) + 30
-            const _safeBottomSep = this.height - Math.max(this.height * 0.17, 110) - 15
-            a.x = Math.max(20, Math.min(a.x, this.width - 20))
-            a.y = Math.max(_safeTopSep, Math.min(a.y, _safeBottomSep))
-            b.x = Math.max(20, Math.min(b.x, this.width - 20))
-            b.y = Math.max(_safeTopSep, Math.min(b.y, _safeBottomSep))
+            // 边界钳制（统一活动区域）
+            this._clampToBattleArea(a)
+            this._clampToBattleArea(b)
 
             // 对已静止的角色同步修正 target，防止下一帧又被拉回去
             const aArrived = Math.abs(a.x - a.targetX) < 8 && Math.abs(a.y - a.targetY) < 8
@@ -1125,31 +1287,91 @@ export class TowerBattle {
   }
 
   _findNearestEnemy(char) {
-    let nearest = null
-    let nearestDist = Infinity
-    const cx = char.x
-    const cy = char.y
+    const t = this.battleTactics
+    const cx = char.x, cy = char.y
 
-    // ===== 只在水晶可攻击时才将其作为目标 =====
+    // ===== 策略：优先攻击水晶 =====
+    if (t.focusCrystal && !this.crystal.isDead && this.crystal.isAttackable) {
+      const dx = this.crystal.x - cx
+      const dy = this.crystal.y - cy
+      return { type: 'crystal', obj: this.crystal, dist: Math.sqrt(dx * dx + dy * dy) }
+    }
+
+    // 水晶作为备选目标（当可攻击时）
+    let crystalTarget = null
     if (!this.crystal.isDead && this.crystal.isAttackable) {
       const dx = this.crystal.x - cx
       const dy = this.crystal.y - cy
-      const dist = Math.sqrt(dx * dx + dy * dy)
-      nearestDist = dist
-      nearest = { type: 'crystal', obj: this.crystal, dist }
+      crystalTarget = { type: 'crystal', obj: this.crystal, dist: Math.sqrt(dx * dx + dy * dy) }
     }
 
-    for (const m of this.monsters) {
-      if (m.isDead) continue
-      const dx = m.x - char.x
-      const dy = m.y - char.y
-      const dist = Math.sqrt(dx * dx + dy * dy)
-      if (dist < nearestDist) {
-        nearestDist = dist
-        nearest = { type: 'monster', obj: m, dist }
+    // 根据策略筛选怪物
+    const aliveMonsters = this.monsters.filter(m => !m.isDead)
+
+    if (aliveMonsters.length === 0) {
+      return crystalTarget
+    }
+
+    let target = null
+
+    switch (t.targetPriority) {
+      case 'lowestHp': {
+        // 优先HP比例最低的（在攻击范围内优先，否则选全局最低血）
+        let best = null, bestRatio = Infinity
+        for (const m of aliveMonsters) {
+          const ratio = m.currentHp / m.maxHp
+          if (ratio < bestRatio) { bestRatio = ratio; best = m }
+        }
+        if (best) {
+          const dx = best.x - cx, dy = best.y - cy
+          target = { type: 'monster', obj: best, dist: Math.sqrt(dx * dx + dy * dy) }
+        }
+        break
+      }
+      case 'ranged': {
+        // 优先攻击远程怪物(isRanged)，没有则退回到最近
+        let rangedBest = null, rangedDist = Infinity
+        for (const m of aliveMonsters) {
+          const dx = m.x - cx, dy = m.y - cy, d = Math.sqrt(dx * dx + dy * dy)
+          if (m.isRanged && d < rangedDist) { rangedDist = d; rangedBest = m }
+        }
+        if (rangedBest) {
+          target = { type: 'monster', obj: rangedBest, dist: rangedDist }
+        } else {
+          // 没有远程怪 → 退回最近目标
+          break // fall through to default
+        }
+        break
+      }
+      case 'nearest':
+      default: {
+        // 最近的目标（默认行为）
+        let nearDist = Infinity, nearM = null
+        for (const m of aliveMonsters) {
+          const dx = m.x - cx, dy = m.y - cy, d = Math.sqrt(dx * dx + dy * dy)
+          if (d < nearDist) { nearDist = d; nearM = m }
+        }
+        if (nearM) target = { type: 'monster', obj: nearM, dist: nearDist }
+        break
       }
     }
-    return nearest
+
+    // 如果策略没找到目标或水晶更近 → 返回最近的
+    if (!target) {
+      let nearDist = Infinity, nearM = null
+      for (const m of aliveMonsters) {
+        const dx = m.x - cx, dy = m.y - cy, d = Math.sqrt(dx * dx + dy * dy)
+        if (d < nearDist) { nearDist = d; nearM = m }
+      }
+      if (nearM) target = { type: 'monster', obj: nearM, dist: nearDist }
+    }
+
+    // 如果有水晶且比当前目标更近 → 选水晶
+    if (crystalTarget && (!target || crystalTarget.dist < target.dist)) {
+      return crystalTarget
+    }
+
+    return target
   }
 
   _charAttack(char, target) {
@@ -1176,22 +1398,24 @@ export class TowerBattle {
     if (!isRanged) {
       // ===== 纯近战：直接造成伤害（无需投射物） =====
       // 只有在攻击范围内才造成伤害（已在调用方检查过 dist <= atkRange）
-      const dmg = this._calcDamage(char.atk, isCrystal ? 0 : target.obj.def)
+      const dmg = this._calcDamage(this._getEffectiveAtk(char), isCrystal ? 0 : target.obj.def)
       const critChance = char.critChance || 0
       const isCrit = Math.random() < critChance
       const finalDmg = Math.max(1, Math.floor(dmg * (isCrit ? 1.8 : (0.85 + Math.random() * 0.3))))
       this._applyDamage(target.obj, target.type, finalDmg)
       const projColor = isCrit ? '#ffff00' : '#ff6b6b'
       this._spawnHitEffect(target.obj.x, target.obj.y, finalDmg, projColor, isCrit)
-      // 攻击间隔（根据职业：法师施法需读条→慢；近战挥砍→快）
-      // 基础间隔：近战800ms / 远程1400ms，SPD每点减少~18ms
+      // 攻击间隔（根据职业：法师施法读条→攻速加成低；近战挥砍→攻速加成高）
+      // 近战：基础800ms，SPD每点减18ms（快速连击感）
+      // 法师：基础1400ms，SPD每点仅减8ms（施法需要吟唱/瞄准时间）
       const baseAtkInterval = isRanged ? 1400 : 800
-      char.attackTimer = Math.max(baseAtkInterval - (char.spd || 10) * 18, isRanged ? 700 : 400)
+      const spdCoeff = isRanged ? 8 : 18   // ★ 法师spd收益远低于近战 ★
+      char.attackTimer = Math.max(baseAtkInterval - (char.spd || 10) * spdCoeff, isRanged ? 900 : 400)
       return
     }
 
     // ===== 远程：生成投射物 =====
-    const dmg = this._calcDamage(char.atk, isCrystal ? 0 : target.obj.def)
+    const dmg = this._calcDamage(this._getEffectiveAtk(char), isCrystal ? 0 : target.obj.def)
     const critChance = char.critChance || 0
     const isCrit = Math.random() < critChance
     const finalDmg = Math.max(1, Math.floor(dmg * (isCrit ? 1.8 : (0.85 + Math.random() * 0.3))))
@@ -1214,9 +1438,9 @@ export class TowerBattle {
         this._spawnCharHitEffect(target.obj, char, 'attack')
       }
     })
-    // 远程攻击间隔：基础1400ms，SPD影响
+    // 远程攻击间隔：基础1400ms，SPD影响低（法师吟唱时间）
     const baseRangedInterval = 1400
-    char.attackTimer = Math.max(baseRangedInterval - (char.spd || 10) * 18, 700)
+    char.attackTimer = Math.max(baseRangedInterval - (char.spd || 10) * 8, 900)
   }
 
   /** 角色命中特效（hit帧）—— 仅元素技能触发 */
@@ -1332,8 +1556,19 @@ export class TowerBattle {
     // 设置CD
     char.skillCDs[skill.id] = (skill.cd || 5000)
 
-    // ===== 近战角色（warrior/fighter）：技能也是近战，直接伤害无投射物 =====
+    // ===== 近战角色（warrior/fighter） =====
     if (char.role !== 'mage') {
+      // ===== BUFF类型技能：战吼/狂暴等 =====
+      if (skill.type === 'buff') {
+        const castDelay = Math.floor(char.attackAnimTimer * 0.7)
+        setTimeout(() => {
+          if (this.phase !== 'battle' || char.isDead) return
+          this._applyBuffSkill(char, skill)
+        }, castDelay)
+        return
+      }
+
+      // ===== 伤害类型技能：普通攻击/斩击等 =====
       const baseTarget = this._findNearestEnemy(char)
       if (!baseTarget || baseTarget.type === 'crystal') return
 
@@ -1348,7 +1583,7 @@ export class TowerBattle {
         const dist = Math.sqrt(dx * dx + dy * dy)
         if (dist > (char.atkRange + 20)) return // 超出近战范围则无效
 
-        let baseDmg = char.atk * (skill.power || 1.0)
+        let baseDmg = this._getEffectiveAtk(char) * (skill.power || 1.0)
         const finalDmg = Math.max(1, Math.floor(baseDmg * (0.9 + Math.random() * 0.2)))
         this._applyDamage(tgt, 'monster', finalDmg)
         this._spawnSkillHitEffect(tgt.x, tgt.y, finalDmg, '#ff6b6b', skill.id)
@@ -1356,20 +1591,136 @@ export class TowerBattle {
       return
     }
 
-    // ===== 远程角色（mage）：穿透投射物逻辑 =====
-    // 寻找最近的目标方向（用于穿透排序的基准方向）
+    // ===== 远程角色（mage）：法术技能 =====
+    // 火球/冰晶：射线贯穿沿途敌人 | 雷击：攻击范围AOE
     const baseTarget = this._findNearestEnemy(char)
     if (!baseTarget) return
 
-    let baseDmg = char.atk * (skill.power || 1.0)
+    let baseDmg = this._getEffectiveAtk(char) * (skill.power || 1.0)
     const finalDmg = Math.max(1, Math.floor(baseDmg * (0.9 + Math.random() * 0.2)))
 
-    // 延迟生成投射物（施法动画最后一段才发射，视觉同步：手势做完才出弹）
-    const castDelay = Math.floor(char.attackAnimTimer * 0.88)
+    // 延迟生效（施法动画最后一段才释放）
+    const castDelay = Math.floor(char.attackAnimTimer * 0.85)
     setTimeout(() => {
-      if (this.phase !== 'battle') return
+      if (this.phase !== 'battle' || char.isDead) return
 
-      // 技能颜色映射
+      const aliveMonsters = this.monsters.filter(m => !m.isDead)
+
+      // ---- 雷击术：攻击范围内AoE无差别打击 ----
+      if (skill.id === 'lightning') {
+        const atkRange = char.atkRange || 480
+        const hitTargets = aliveMonsters.filter(m => {
+          const dx = m.x - char.x, dy = m.y - char.y
+          return Math.sqrt(dx*dx + dy*dy) <= atkRange
+        })
+
+        for (const t of hitTargets) {
+          this._applyDamage(t, 'monster', finalDmg)
+          this._spawnSkillHitEffect(t.x, t.y, finalDmg, '#ffdd00', skill.id)
+        }
+
+        // AoE电圈特效（覆盖整个攻击范围）
+        this.effects.push({
+          type: 'aoe_lightning',
+          x: char.x, y: char.y,
+          radius: atkRange,
+          timer: 0, duration: 400,
+          targets: hitTargets.map(t => ({x: t.x, y: t.y})),
+        })
+        console.log(`[Tower] ⚡ 雷击AoE: 范围${atkRange}px, 命中${hitTargets.length}个`)
+        return
+      }
+
+      // ---- 火球术 / 冰晶术：射线贯穿沿途敌人 ----
+      if (skill.id === 'fireball' || skill.id === 'ice_shard') {
+        const pierceCount = skill.pierceCount || 99  // 射线理论上可贯穿所有
+        // 方向：朝向最近目标
+        const dirX = baseTarget.obj.x - char.x
+        const dirY = baseTarget.obj.y - char.y
+        const dirLen = Math.sqrt(dirX*dirX + dirY*dirY) || 1
+        const nx = dirX / dirLen
+        const ny = dirY / dirLen
+
+        // 计算射线终点（延伸到屏幕边缘或足够远）
+        const rayLen = Math.max(this.width, this.height) * 1.5
+        const endX = char.x + nx * rayLen
+        const endY = char.y + ny * rayLen
+
+        // 找出射线路径上的所有怪物（按距离排序）
+        const rayHits = []
+        for (const m of aliveMonsters) {
+          // 点到线段的最近距离（投影到射线上）
+          const mx = m.x - char.x, my = m.y - char.y
+          const projLen = mx * nx + my * ny  // 投影长度
+          if (projLen < 0) continue  // 在角色背后
+          const perpDist = Math.abs(mx * (-ny) + my * nx)  // 垂直距离
+          const hitRadius = (m.scale || 1) * 28 + 15  // 判定半径
+          if (perpDist <= hitRadius && projLen <= rayLen) {
+            rayHits.push({ monster: m, dist: projLen, perpDist })
+          }
+        }
+        // 按距离升序排列（从近到远）
+        rayHits.sort((a, b) => a.dist - b.dist)
+        const hitList = rayHits.slice(0, pierceCount)
+
+        // 造成伤害
+        for (const h of hitList) {
+          this._applyDamage(h.monster, 'monster', finalDmg)
+          this._spawnSkillHitEffect(h.monster.x, h.monster.y, finalDmg,
+            skill.id === 'fireball' ? '#ff4400' : '#00aaff', skill.id)
+
+          // 命中帧特效
+          let hitType = skill.id === 'fireball' ? 'fireball' : 'ice'
+          if (HIT_EFFECTS[hitType]) {
+            this.effects.push({
+              type: 'char_hit',
+              x: h.monster.x, y: h.monster.y,
+              hitType, timer: 0,
+              duration: HIT_EFFECTS[hitType].frames.length * HIT_EFFECTS[hitType].frameRate,
+            })
+          }
+        }
+
+        // 射线视觉特效
+        const colors = {
+          fireball: { main: '#ff6600', glow: '#ff4400', trail: '#ffaa33' },
+          ice_shard: { main: '#00ccff', glow: '#0088ff', trail: '#88eeff' },
+        }
+        const c = colors[skill.id] || colors.fireball
+
+        // 主射线（粗光束，快速消失）
+        this.effects.push({
+          type: 'skill_ray',
+          startX: char.x, startY: char.y,
+          endX, endY,
+          color: c.main, glowColor: c.glow,
+          timer: 0, duration: 300,
+          width: skill.id === 'fireball' ? 14 : 10,
+        })
+
+        // 沿途粒子轨迹
+        const particleCount = Math.min(12, hitList.length * 3 + 5)
+        for (let i = 0; i < particleCount; i++) {
+          const t = i / (particleCount - 1 || 1)
+          const px = char.x + (endX - char.x) * t + (Math.random() - 0.5) * 20
+          const py = char.y + (endY - char.y) * t + (Math.random() - 0.5) * 20
+          this.particles.push({
+            x: px, y: py,
+            vx: (Math.random() - 0.5) * 30,
+            vy: (Math.random() - 0.5) * 30 - 20,
+            life: 200 + Math.random() * 200,
+            maxLife: 400,
+            size: 3 + Math.random() * 4,
+            color: c.trail,
+            alpha: 1,
+          })
+        }
+
+        console.log(`[Tower] ${skill.name} 射线: 贯穿 ${hitList.length} 个敌人`)
+        return
+      }
+
+      // ---- 其他法师技能：默认投射物 ----
       const skillColors = {
         fireball: { proj: '#ff6600', hit: '#ff4400' },
         ice_shard: { proj: '#00ccff', hit: '#00aaff' },
@@ -1377,55 +1728,165 @@ export class TowerBattle {
         default: { proj: '#aa66ff', hit: '#8844ff' }
       }
       const colors = skillColors[skill.id] || skillColors.default
-
-      // ===== 穿透逻辑：按距离排序，取最近的 pierceCount 个敌人 =====
       const pierceCount = skill.pierceCount || 1
-      const aliveMonsters = this.monsters.filter(m => !m.isDead)
-      // 按到施法者距离升序排列
       aliveMonsters.sort((a, b) => {
-        const distA = Math.sqrt((a.x - char.x) ** 2 + (a.y - char.y) ** 2)
-        const distB = Math.sqrt((b.x - char.x) ** 2 + (b.y - char.y) ** 2)
-        return distA - distB
+        const da = (a.x-char.x)**2+(a.y-char.y)**2
+        const db = (b.x-char.x)**2+(b.y-char.y)**2
+        return da - db
       })
-      // 取前 pierceCount 个目标
-      const pierceTargets = aliveMonsters.slice(0, pierceCount)
-      if (pierceTargets.length === 0) return
-
-      for (const t of pierceTargets) {
+      const targets = aliveMonsters.slice(0, pierceCount)
+      for (const t of targets) {
         this.projectiles.push({
           x: char.x, y: char.y,
-          targetX: t.x, targetY: t.y,
-          target: t,
-          targetType: 'monster',
-          dmg: finalDmg,
-          speed: 500 + Math.random() * 100, // 轻微速度差异让投射物不重叠
-          color: colors.proj,
-          size: 10,
-          trail: [],
-          isSkill: true,
-          skillType: skill.id,
+          targetX: t.x, targetY: t.y, target: t,
+          targetType: 'monster', dmg: finalDmg,
+          speed: 500+Math.random()*100, color: colors.proj,
+          size: 10, trail: [], isSkill: true, skillType: skill.id,
           onHit: () => {
             this._applyDamage(t, 'monster', finalDmg)
             this._spawnSkillHitEffect(t.x, t.y, finalDmg, colors.hit, skill.id)
-            // 命中特效（hit帧）—— 根据技能类型选择对应特效
-            let hitType = null
-            if (skill.id === 'fireball') hitType = 'fireball'
-            else if (skill.id === 'ice_shard') hitType = 'ice'
-            else if (skill.id === 'lightning') hitType = 'lightning'
-            if (hitType && HIT_EFFECTS[hitType]) {
-              this.effects.push({
-                type: 'char_hit',
-                x: t.x,
-                y: t.y,
-                hitType,
-                timer: 0,
-                duration: HIT_EFFECTS[hitType].frames.length * HIT_EFFECTS[hitType].frameRate,
-              })
-            }
           }
         })
       }
     }, castDelay)
+  }
+
+  // ========== BUFF技能系统 ==========
+
+  /** 技能配置表：buff持续时间(ms)、倍率、颜色、图标 */
+  static _BUFF_CONFIG = {
+    war_cry:   { name: '战吼',  desc: '全体攻击+30%', duration: 8000, atkMult: 0.30, color: '#ff9500', icon: '📣', auraColor: '#ffa040' },
+    berserk:   { name: '狂暴', desc: '自身攻击+50%', duration: 10000, atkMult: 0.50, color: '#ff3333', icon: '🔥', auraColor: '#ff4422' },
+    gear_second: { name: '二档', desc: '速度攻击提升', duration: 8000, atkMult: 0.25, spdMult: 0.20, color: '#e74c3c', icon: '💨', auraColor: '#ff6b35' },
+  }
+
+  /**
+   * 施放BUFF技能 —— 核心逻辑
+   * 战吼(war_cry): 全体友军 +30% 攻击，持续8秒
+   * 狂暴(berserk): 自身 +50% 攻击，持续10秒
+   */
+  _applyBuffSkill(char, skill) {
+    const cfg = TowerBattle._BUFF_CONFIG[skill.id]
+    if (!cfg) {
+      console.warn(`[Tower] ⚠️ 未知buff技能: ${skill.id}`)
+      return
+    }
+
+    // 确定目标：战吼→全体 / 狂暴→自身
+    const targets = skill.id === 'war_cry'
+      ? this.party.filter(c => !c.isDead)
+      : [char]
+
+    const buffData = {
+      id: skill.id,
+      name: cfg.name,
+      icon: cfg.icon,
+      color: cfg.color,
+      auraColor: cfg.auraColor,
+      startTime: Date.now(),
+      duration: cfg.duration,
+      atkMult: cfg.atkMult || 0,
+      spdMult: cfg.spdMult || 0,
+    }
+
+    for (const t of targets) {
+      // 初始化buff数组
+      if (!t.buffs) t.buffs = []
+
+      // 移除同类型旧buff（不可叠加，刷新）
+      t.buffs = t.buffs.filter(b => b.id !== skill.id)
+      t.buffs.push({ ...buffData })
+
+      // 应用速度加成（即时生效）
+      if (buffData.spdMult > 0) {
+        t.spd = Math.floor(t._baseSpd * (1 + buffData.spdMult))
+      }
+    }
+
+    // ===== 视觉特效 =====
+    // 1. 浮动文字提示
+    const targetText = skill.id === 'war_cry' ? `📣 ${cfg.name}! 全体+${Math.round(cfg.atkMult * 100)}%攻` : `🔥 ${cfg.name}! +${Math.round(cfg.atkMult * 100)}%攻`
+    this._addFloatingText(char.x, char.y - 50, targetText, cfg.color, 2.0)
+
+    // 2. 冲击波扩散效果（战吼更大）
+    this.effects.push({
+      type: 'buff_shockwave',
+      x: char.x, y: char.y,
+      color: cfg.auraColor,
+      radius: skill.id === 'war_cry' ? 180 : 90,
+      timer: 0, duration: 500,
+      isAoe: skill.id === 'war_cry',
+    })
+
+    // 3. 为每个目标添加光环特效
+    for (const t of targets) {
+      this.effects.push({
+        type: 'buff_aura',
+        charId: t.id || t.name,
+        x: t.x, y: t.y,
+        color: cfg.auraColor,
+        buffId: skill.id,
+        timer: 0, duration: cfg.duration,
+        life: cfg.duration / 1000, maxLife: cfg.duration / 1000,
+      })
+    }
+
+    // 4. 屏幕震动（狂暴更强）
+    this.camera.shakeX = skill.id === 'berserk' ? 5 : 3
+    this.camera.shakeY = skill.id === 'berserk' ? 4 : 2
+
+    console.log(`[Tower] 💪 ${char.name} 释放 ${cfg.name}! 目标数=${targets.length}, 持续=${cfg.duration / 1000}s`)
+  }
+
+  /** 获取角色有效攻击力（基础 + buff加成） */
+  _getEffectiveAtk(char) {
+    let baseAtk = char.atk
+    if (char.buffs && char.buffs.length > 0) {
+      for (const b of char.buffs) {
+        baseAtk = Math.floor(baseAtk * (1 + b.atkMult))
+      }
+    }
+    return baseAtk
+  }
+
+  /** 每帧更新所有角色的buff状态（衰减、到期清除） */
+  _updateBuffs(dtMs) {
+    for (const c of this.party) {
+      if (!c.buffs || c.buffs.length === 0) continue
+
+      const now = Date.now()
+      const expiredIds = []
+      let needRestoreSpd = false
+
+      for (const b of c.buffs) {
+        const elapsed = now - b.startTime
+        if (elapsed >= b.duration) {
+          expiredIds.push(b.id)
+          if (b.spdMult > 0) needRestoreSpd = true
+        }
+      }
+
+      // 清除过期buff
+      if (expiredIds.length > 0) {
+        c.buffs = c.buffs.filter(b => !expiredIds.includes(b.id))
+        // 恢复基础速度（移除所有速度buff后重新计算）
+        if (needRestoreSpd && c._baseSpd) {
+          let totalSpdMult = 0
+          for (const b of c.buffs) totalSpdMult += b.spdMult
+          c.spd = Math.floor(c._baseSpd * (1 + totalSpdMult))
+        }
+        if (expiredIds.length > 0) {
+          const names = expiredIds.map(id => (TowerBattle._BUFF_CONFIG[id] || {}).name || id).join(', ')
+          this._addFloatingText(c.x, c.y - 40, `⏱ ${names} 消散`, '#888888', 1.2)
+          console.log(`[Tower] ⏱ ${c.name} 的 [${names}] 已消失`)
+        }
+      }
+
+      // 同步buff光环位置到角色当前位置
+      for (const b of c.buffs) {
+        b.x = c.x; b.y = c.y
+      }
+    }
   }
 
   _calcDamage(atk, def) {
@@ -1469,6 +1930,7 @@ export class TowerBattle {
     if (!monster.hasDropped) {
       monster.hasDropped = true
       const item = this._generateDrop(monster)
+      console.log('[Tower] 掉落生成:', item ? `${item.name}(${item.quality}) @ (${Math.round(item.x)},${Math.round(item.y)})` : 'NULL')
       if (item) this.droppedItems.push(item)
     }
 
@@ -1488,12 +1950,20 @@ export class TowerBattle {
       if (!nextExp) break
       if (char.totalExp >= nextExp) {
         char.level++
-        // 属性成长
-        const hpUp = Math.floor(10 + char.level * 2)
-        const mpUp = Math.floor(4 + char.level)
-        const atkUp = Math.floor(2 + char.level * 0.5)
-        const defUp = Math.floor(1 + char.level * 0.3)
-        const spdUp = 0.5
+        // ===== 按职业差异化属性成长 =====
+        // 法师：攻击高成长、防御低成长、速度极低成长（远程风筝型）
+        // 战士：均衡成长（肉盾近战型）
+        // 斗士：攻速双高（敏捷DPS型）
+        // 治疗：辅助成长偏生存
+        const role = char.role || 'fighter'
+        const isMage = role === 'mage'
+        const isWarrior = role === 'warrior'
+
+        const hpUp = Math.floor(isMage ? (8 + char.level * 1.5) : (10 + char.level * 2))
+        const mpUp = Math.floor((isMage ? 6 : 3) + char.level * (isMage ? 1.2 : 0.6))
+        const atkUp = Math.floor(isMage ? (2.5 + char.level * 0.28) : (2 + char.level * 0.18))
+        const defUp = Math.floor(isMage ? (0.5 + char.level * 0.08) : (1.2 + char.level * 0.22))
+        const spdUp = isMage ? 0.05 : (role === 'fighter' ? 0.15 : 0.12)
 
         char.maxHp += hpUp
         char.currentHp = Math.min(char.currentHp + hpUp, char.maxHp)
@@ -1549,11 +2019,12 @@ export class TowerBattle {
     char.currentHp = Math.floor(char.maxHp * 0.5) // 以半血复活
     char.currentMp = Math.floor(char.maxMp * 0.5)
     char.respawnTimer = 0
-    // 在安全区域内随机重生
-    const safeTop = Math.max(this.height * 0.065, 44) + 40
-    const safeBottom = this.height - Math.max(this.height * 0.17, 110) - 30
-    char.x = this.width * 0.1 + Math.random() * 30
-    char.y = safeTop + Math.random() * (safeBottom - safeTop)
+    // 在活动区域内左侧随机重生
+    const area = this._getBattleArea()
+    char.x = area.left + 20 + Math.random() * (this.width * 0.15)
+    char.y = area.top + Math.random() * (area.bottom - area.top) * 0.5
+    // 确保在区域内
+    this._clampToBattleArea(char)
     char.targetX = char.x
     char.targetY = char.y
     char.hurtFlash = 0
@@ -1619,59 +2090,84 @@ export class TowerBattle {
       // 更新怪物动画帧
       this._updateMonsterAnim(m, dt)
 
-      // 追踪最近的角色
-      const target = this._findNearestChar(m)
-      if (target) {
-        const dx = target.x - m.x
-        const dy = target.y - m.y
-        const dist = Math.sqrt(dx * dx + dy * dy)
-
-        // 根据目标方向更新朝向（面向角色）
-        if (Math.abs(dx) > 3) {
-          m.facingRight = dx > 0
+      // ===== 检查己方水晶脆弱状态：全角色死亡=水晶可被攻击 =====
+      const allPartyDead = this.party.every(c => c.isDead)
+      const hc = this.homeCrystal
+      if (!hc.isDead) {
+        hc.vulnerable = allPartyDead
+        if (allPartyDead && hc.vulnerableFlash <= 0) {
+          hc.vulnerableFlash = 2.0  // 警告闪烁2秒
+          this._addFloatingText(hc.x, hc.y - 60, '⚠️ 水晶受威胁!', '#ff4444', 2.5)
+          console.log('[Tower] ⚠️ 全员阵亡！己方水晶进入脆弱状态，怪物将攻击水晶')
         }
-
-        // 远程怪物（史莱姆猫）：保持距离攻击
-        if (m.isRanged) {
-          const minRange = m.atkRange * 0.6   // 最小安全距离
-          const maxRange = m.atkRange * 1.1    // 最大有效距离
-
-          if (dist < minRange) {
-            // 太近了，后退
-            m.x -= (dx / dist) * m.moveSpeed * (dt / 1000) * 0.6
-            m.y -= (dy / dist) * m.moveSpeed * (dt / 1000) * 0.6
-            if (m.animState !== 'walk') { m.animState = 'walk'; m.animFrame = 0 }
-          } else if (dist > maxRange) {
-            // 太远了，靠近
-            m.x += (dx / dist) * m.moveSpeed * (dt / 1000)
-            m.y += (dy / dist) * m.moveSpeed * (dt / 1000)
-            if (m.animState !== 'walk') { m.animState = 'walk'; m.animFrame = 0 }
-          } else {
-            // 在攻击范围内：施法攻击
-            if (m.animState !== 'attack') { m.animState = 'attack'; m.animFrame = 0 }
-            m.atkTimer -= dt
-            if (m.atkTimer <= 0 && !m.isAttacking) {
-              this._monsterRangedAttack(m, target)
-            }
-          }
-        } else {
-          // 近战怪物：贴身攻击
-          if (dist > m.atkRange) {
-            m.x += (dx / dist) * m.moveSpeed * (dt / 1000)
-            m.y += (dy / dist) * m.moveSpeed * (dt / 1000)
-            if (m.animState !== 'walk') { m.animState = 'walk'; m.animFrame = 0 }
-          } else {
-            if (m.animState !== 'attack') { m.animState = 'attack'; m.animFrame = 0 }
-            m.atkTimer -= dt
-            if (m.atkTimer <= 0 && !m.isAttacking) {
-              this._monsterMeleeAttack(m, target)
-            }
-          }
+        // 有角色复活了 → 取消脆弱状态
+        if (!allPartyDead && hc.vulnerable) {
+          hc.vulnerable = false
+          hc.vulnerableFlash = 0
         }
-      } else if (m.animState === 'walk') {
-        m.animState = 'idle'
-        m.animFrame = 0
       }
+
+      // ===== 选择目标：全员死亡→攻击己方水晶 / 有人存活→攻击角色 =====
+      let target = null
+      let isTargetingCrystal = false
+
+      if (allPartyDead && !hc.isDead) {
+        // 全员死亡：攻击己方水晶
+        target = hc
+        isTargetingCrystal = true
+      } else {
+        // 有人存活：正常追踪最近的角色
+        target = this._findNearestChar(m)
+      }
+
+      if (!target) continue  // 无目标（理论上不应该发生）
+
+      const dx = target.x - m.x
+      const dy = target.y - m.y
+      const dist = Math.sqrt(dx * dx + dy * dy)
+
+      // 根据目标方向更新朝向
+      if (Math.abs(dx) > 3) {
+        m.facingRight = dx > 0
+      }
+
+      if (m.isRanged) {
+        // ===== 远程怪物：保持距离 =====
+        const minRange = m.atkRange * 0.6
+        const maxRange = m.atkRange * 1.1
+
+        if (dist < minRange) {
+          m.x -= (dx / dist) * m.moveSpeed * (dt / 1000) * 0.6
+          m.y -= (dy / dist) * m.moveSpeed * (dt / 1000) * 0.6
+          if (m.animState !== 'walk') { m.animState = 'walk'; m.animFrame = 0 }
+        } else if (dist > maxRange) {
+          m.x += (dx / dist) * m.moveSpeed * (dt / 1000)
+          m.y += (dy / dist) * m.moveSpeed * (dt / 1000)
+          if (m.animState !== 'walk') { m.animState = 'walk'; m.animFrame = 0 }
+        } else {
+          if (m.animState !== 'attack') { m.animState = 'attack'; m.animFrame = 0 }
+          m.atkTimer -= dt
+          if (m.atkTimer <= 0 && !m.isAttacking) {
+            this._monsterRangedAttack(m, target, isTargetingCrystal)
+          }
+        }
+      } else {
+        // ===== 近战怪物：贴身攻击 =====
+        if (dist > m.atkRange) {
+          m.x += (dx / dist) * m.moveSpeed * (dt / 1000)
+          m.y += (dy / dist) * m.moveSpeed * (dt / 1000)
+          if (m.animState !== 'walk') { m.animState = 'walk'; m.animFrame = 0 }
+        } else {
+          if (m.animState !== 'attack') { m.animState = 'attack'; m.animFrame = 0 }
+          m.atkTimer -= dt
+          if (m.atkTimer <= 0 && !m.isAttacking) {
+            this._monsterMeleeAttack(m, target, isTargetingCrystal)
+          }
+        }
+      }
+      // end of movement/attack logic
+      // 怪物边界钳制（防止移出活动区域）
+      this._clampToBattleArea(m)
     }
 
     // 检查所有波次怪物是否都死完了 → 触发水晶可攻击
@@ -1715,23 +2211,28 @@ export class TowerBattle {
     return nearest
   }
 
-  _monsterMeleeAttack(monster, target) {
+  _monsterMeleeAttack(monster, target, isCrystal = false) {
     monster.isAttacking = true
     monster.attackAnimTimer = 280
-    const dmg = Math.max(1, monster.atk - (target.def || 0) * 0.5)
-    const finalDmg = Math.floor(dmg * (0.85 + Math.random() * 0.3))
+    const finalDmg = Math.max(1, Math.floor(monster.atk * (0.85 + Math.random() * 0.3)))
 
-    // 近战：即时伤害（挥砍特效+伤害）
-    this._charTakeDamage(target, finalDmg)
+    if (isCrystal) {
+      // 攻击己方水晶
+      this._homeCrystalTakeDamage(target, finalDmg)
+    } else {
+      // 攻击角色（有防御减免）
+      const dmg = Math.max(1, monster.atk - (target.def || 0) * 0.5)
+      const finalDmgChar = Math.floor(dmg * (0.85 + Math.random() * 0.3))
+      this._charTakeDamage(target, finalDmgChar)
+    }
     this._spawnHitEffect(target.x, target.y, finalDmg, '#ff4444')
-
     monster.atkTimer = monster.atkInterval
   }
 
   /**
    * 远程怪物攻击（史莱姆猫）：投射物 + 技能（可能触发冻结）
    */
-  _monsterRangedAttack(monster, target) {
+  _monsterRangedAttack(monster, target, isCrystal = false) {
     monster.isAttacking = true
     monster.attackAnimTimer = 350
 
@@ -1745,7 +2246,10 @@ export class TowerBattle {
     }
 
     // 基础伤害
-    let baseDmg = Math.max(1, monster.atk - (target.def || 0) * 0.3)  // 远程防御减成更低
+    let baseDmg = Math.max(1, monster.atk)
+    if (!isCrystal) {
+      baseDmg = Math.max(1, monster.atk - (target.def || 0) * 0.3)  // 远程防御减成更低
+    }
     if (skill) baseDmg = Math.floor(baseDmg * (skill.power || 1.2))
     const finalDmg = Math.floor(baseDmg * (0.85 + Math.random() * 0.3))
 
@@ -1769,14 +2273,14 @@ export class TowerBattle {
     const projColor = skill ? (skill.effect === 'freeze' ? '#55ddff' : '#ff55aa') : '#44aaff'
     const projSize = skill ? 8 : 5
 
-    // 生成投射物飞向角色
+    // 生成投射物飞向目标（角色或己方水晶）
     this.projectiles.push({
       x: monster.x,
       y: monster.y - 10,
       targetX: target.x,
       targetY: target.y,
       target,
-      targetType: 'char',
+      targetType: isCrystal ? 'homeCrystal' : 'char',
       dmg: finalDmg,
       speed: 200 + Math.random() * 80,
       color: projColor,
@@ -1788,7 +2292,11 @@ export class TowerBattle {
       freezeChance: skill?.freezeChance || 0,
       freezeDuration: skill?.freezeDuration || 0,
       onHit: (proj) => {
-        this._charTakeDamage(target, proj.dmg)
+        if (isCrystal || proj.targetType === 'homeCrystal') {
+          this._homeCrystalTakeDamage(target, proj.dmg)
+        } else {
+          this._charTakeDamage(target, proj.dmg)
+        }
         this._spawnHitEffect(target.x, target.y, proj.dmg, proj.color)
 
         // 命中时如果为技能，显示额外文字提示
@@ -1840,12 +2348,63 @@ export class TowerBattle {
     this.camera.shakeX = 5
     this.camera.shakeY = 4
 
-    const allDead = this.party.every(c => c.isDead)
-    if (allDead) {
-      setTimeout(() => {
-        if (this.phase === 'battle') this.phase = 'defeat'
-      }, 1200)
+    // 注意：不再因全员死亡自动失败，改为由己方水晶被摧毁触发失败
+  }
+
+  // ========== 己方水晶系统 ==========
+
+  /**
+   * 己方水晶受伤处理
+   */
+  _homeCrystalTakeDamage(crystal, dmg) {
+    if (crystal.isDead) return
+    crystal.hp -= dmg
+    crystal.hurtTimer = 300
+    crystal.hurtFlash = 200
+    crystal.shakeX = (Math.random() - 0.5) * 10
+    crystal.shakeY = (Math.random() - 0.5) * 10
+    console.log(`[Tower] 💔 己方水晶受击: ${dmg}伤害, 剩余HP: ${crystal.hp}/${crystal.maxHp}`)
+
+    // 浮动伤害数字（红色警告）
+    this._addFloatingText(crystal.x, crystal.y - 40, `-${dmg}`, '#ff4444', 1.2)
+
+    if (crystal.hp <= 0) {
+      crystal.hp = 0
+      this._killHomeCrystal(crystal)
     }
+  }
+
+  /**
+   * 己方水晶被摧毁 → 游戏失败
+   */
+  _killHomeCrystal(crystal) {
+    crystal.isDead = true
+    crystal.deathAnim = 0
+    this.camera.shakeX = 18
+    this.camera.shakeY = 18
+
+    console.log('[Tower] ☠️ 己方水晶已被摧毁！游戏失败！')
+
+    // 大爆炸粒子效果
+    for (let i = 0; i < 40; i++) {
+      const angle = (i / 40) * Math.PI * 2 + Math.random() * 0.3
+      const speed = 80 + Math.random() * 120
+      this.particles.push({
+        x: crystal.x,
+        y: crystal.y,
+        vx: Math.cos(angle) * speed,
+        vy: Math.sin(angle) * speed,
+        size: 3 + Math.random() * 8,
+        color: ['#ff4444', '#ff8c00', '#ffd700', '#ffffff'][Math.floor(Math.random() * 4)],
+        life: 1 + Math.random(),
+        maxLife: 1.5,
+      })
+    }
+
+    // 延迟进入失败界面
+    setTimeout(() => {
+      if (this.phase === 'battle') this.phase = 'defeat'
+    }, 1500)
   }
 
   // ========== 水晶系统 ==========
@@ -1891,6 +2450,33 @@ export class TowerBattle {
 
     this.scene.saveProgress(this.stage.id - 1)
     this.phase = 'victory'
+  }
+
+  // ========== 己方水晶更新 ==========
+
+  _updateHomeCrystal(dt) {
+    const c = this.homeCrystal
+    if (c.isDead) {
+      c.deathAnim += dt / 1800
+      if (c.deathAnim < 1) c.scale = 1 + c.deathAnim * 0.6
+      else c.scale = 0
+      return
+    }
+
+    // 受伤闪烁衰减
+    c.hurtTimer = Math.max(0, c.hurtTimer - dt)
+    c.hurtFlash = Math.max(0, c.hurtFlash - dt)
+    c.shakeX *= 0.85
+    c.shakeY *= 0.85
+
+    // 脆弱状态闪烁警告衰减
+    if (c.vulnerableFlash > 0) {
+      c.vulnerableFlash -= dt / 1000
+      if (c.vulnerableFlash < 0) c.vulnerableFlash = 0
+    }
+
+    // 恢复缩放（死亡动画后）
+    c.scale = 1
   }
 
   // ========== 刷怪调度 ==========
@@ -2086,6 +2672,22 @@ export class TowerBattle {
       } else if (e.type === 'cast_ring' || e.type === 'freeze_aura') {
         // 时间衰减特效
         e.life -= dt / 1000
+      } else if (e.type === 'skill_ray') {
+        e.timer += dt
+        e.life = Math.max(0, e.duration - e.timer)
+      } else if (e.type === 'aoe_lightning') {
+        e.timer += dt
+        e.life = Math.max(0, e.duration - e.timer)
+      } else if (e.type === 'buff_shockwave') {
+        // 冲击波扩散
+        e.timer += dt
+        e.life = Math.max(0, e.duration - e.timer)
+      } else if (e.type === 'buff_aura') {
+        // Buff光环：跟随时间衰减
+        const elapsed = Date.now() - (e._startTime || 0)
+        if (!e._startTime) { e._startTime = Date.now() }
+        e.life = Math.max(0, e.maxLife - elapsed / 1000)
+        e.timer += dt
       }
     }
     this.effects = this.effects.filter(e => e.life > 0)
@@ -2136,23 +2738,65 @@ export class TowerBattle {
       this._handleCardTap(x, y)
       return
     }
+    // 胜利/失败阶段 → 检测返回按钮
+    if (this.phase === 'victory' || this.phase === 'defeat') {
+      if (this._backBtnBounds && x >= this._backBtnBounds.x && x <= this._backBtnBounds.x + this._backBtnBounds.w
+          && y >= this._backBtnBounds.y && y <= this._backBtnBounds.y + this._backBtnBounds.h) {
+        // 设标记，由 TowerScene.update() 统一切换到结算页
+        this._backToResult = true
+      }
+      return
+    }
     if (this.phase !== 'battle') return
     this.tapPos = { x, y }
     this.lastTapTime = Date.now()
+    console.log(`[Tower] onTap(${Math.round(x)}, ${Math.round(y)}), droppedItems=${this.droppedItems.length}, inventory=${this.inventory.length}/${this.maxInventorySize}, equipPanel=${this.equipPanel.visible}`)
 
-    // 1. 优先检查掉落物拾取
-    for (const item of this.droppedItems) {
-      if (item.collected) continue
-      const dx = x - item.x
-      const dy = y - item.y
-      if (Math.sqrt(dx * dx + dy * dy) < 42) {
-        this._collectItem(item)
-        this.skillMenu.visible = false
-        return
+    // 1. 优先检查掉落物 → 收集到背包
+    console.log(`[Tower] 进入掉落物检测: equipPanel=${this.equipPanel.visible}, items=${this.droppedItems.length}`)
+    if (!this.equipPanel.visible) {
+      console.log(`[Tower] equipPanel未显示，开始遍历 ${this.droppedItems.length} 个掉落物`)
+      for (let idx = 0; idx < this.droppedItems.length; idx++) {
+        const item = this.droppedItems[idx]
+        console.log(`[Tower] [${idx}] ${item ? item.name : 'NULL'} collected=${item?.collected}`)
+        if (!item || item.collected) continue
+        const dx = x - item.x
+        const dy = y - item.y
+        const dist = Math.sqrt(dx * dx + dy * dy)
+        console.log(`[Tower] 掉落物: ${item.name} @ (${Math.round(item.x)},${Math.round(item.y)}) 距离=${Math.round(dist)}`)
+        if (dist < 80) {
+          // 收集到背包（满8格时提示）
+          if (this.inventory.length < this.maxInventorySize) {
+            // 复制装备数据到背包（不含collected标记）
+            const invItem = {
+              name: item.name, quality: item.quality, slot: item.slot,
+              level: item.level || 1,
+              bonusHp: item.bonusHp, bonusAtk: item.bonusAtk,
+              bonusDef: item.bonusDef, bonusSpd: item.bonusSpd,
+            }
+            this.inventory.push(invItem)
+            console.log(`[Tower] ✅ 收集成功: ${item.name} → 背包(${this.inventory.length}/${this.maxInventorySize}), inventory=[${this.inventory.map(i=>i?.name).join(',')}]`)
+            // 标记地面物品已收集
+            item.collected = true
+            item.collectAnim = 0
+            this.stats.dropsCollected++
+            this._addFloatingText(item.x, item.y - 30, `📦 ${item.name} → 背包`, '#4ade80')
+          } else {
+            this._addFloatingText(item.x, item.y - 30, '❌ 背包已满!', '#f87171')
+          }
+          this.skillMenu.visible = false
+          return
+        }
       }
+      console.log(`[Tower] 掉落物遍历完成，未命中任何物品`)
+    } else {
+      // 装备面板打开时，点击面板外区域关闭面板
+      console.log(`[Tower] equipPanel已打开，关闭面板`)
+      this.equipPanel.visible = false
+      return
     }
 
-    // 2. 检查是否点击了技能菜单中的按钮（优先级最高）
+    // 2. 检查装备面板内的角色选择按钮
     if (this.skillMenu.visible && this.skillMenu.buttons) {
       for (const btn of this.skillMenu.buttons) {
         if (!btn) continue
@@ -2189,7 +2833,30 @@ export class TowerBattle {
       }
     }
 
-    // 3. 检查是否点击了角色（选中/取消切换 + 朝向控制）
+    // 2.6 装备面板内的角色选择
+    if (this.equipPanel.visible) {
+      for (let i = 0; i < this.party.length; i++) {
+        const btn = this.equipPanel.charButtons?.[i]
+        if (!btn) continue
+        if (x >= btn.x && x <= btn.x + btn.w && y >= btn.y && y <= btn.y + btn.h) {
+          this._equipToCharacter(this.equipPanel.item, i, true)
+          return
+        }
+      }
+      // 点击面板外区域关闭装备分配面板
+      this.equipPanel.visible = false
+      return
+    }
+
+    // 3. 优先检查底部UI（战斗策略按钮 / 装备栏 / 角色切换）
+    const bp = this._bottomPanelBounds
+    if (bp && y >= bp.y) {
+      console.log(`[Tower] 点击被底部面板拦截: y=${Math.round(y)} >= panelY=${Math.round(bp.y)}`)
+      this._handleUITap(x, y)
+      return  // 底部面板区域拦截点击，不传递给场景角色
+    }
+
+    // 4. 检查是否点击了角色（选中/取消切换 + 朝向控制）
     for (let i = 0; i < this.party.length; i++) {
       const c = this.party[i]
       if (c.isDead) continue
@@ -2203,22 +2870,11 @@ export class TowerBattle {
         }
         c._facingLocked = true   // 锁定朝向，AI不再覆盖
 
-        // ===== 选中/取消选中切换 =====
+        // ===== 选中/取消选中切换（不再弹出技能菜单） =====
         if (this.selectedCharIndex === i) {
-          // 再次点击同一角色 → 取消选中
-          this.selectedCharIndex = -1
-          this.skillMenu.visible = false
+          this.selectedCharIndex = -1  // 取消选中
         } else {
-          // 点击不同角色（或之前未选中）→ 选中并打开技能菜单
-          this.selectedCharIndex = i
-          this.skillMenu = {
-            visible: true,
-            charIndex: i,
-            openTimer: Date.now(),
-            maxDuration: 4000,
-            tapX: x,
-            tapY: y
-          }
+          this.selectedCharIndex = i    // 选中角色（用于地面点击移动）
         }
         return
       }
@@ -2242,10 +2898,7 @@ export class TowerBattle {
         }
       }
 
-      const safeTop = Math.max(this.height * 0.065, 44) + 30
-      const safeBottom = this.height - Math.max(this.height * 0.17, 110) - 15
-      selected.targetX = Math.max(20, Math.min(x, this.width - 20))
-      selected.targetY = Math.max(safeTop, Math.min(y, safeBottom))
+      ;[selected.targetX, selected.targetY] = this._clampTargetToArea(x, y)
 
       // 移动时解锁朝向锁（让移动/攻击逻辑接管朝向）
       selected._facingLocked = false
@@ -2261,15 +2914,45 @@ export class TowerBattle {
 
   onTapMove(x, y) {
     if (this.phase !== 'battle') return
+
+    // 掉落物只做悬浮高亮，不做收集（收集统一由 onTap 处理）
+    // 注意：不要在这里调用 _collectItem，否则会提前标记 collected 导致无法正常进背包
+    this._hoveredDropItem = null
     for (const item of this.droppedItems) {
       if (item.collected) continue
       const dx = x - item.x
       const dy = y - item.y
-      if (Math.sqrt(dx * dx + dy * dy) < 42) {
-        this._collectItem(item)
-        return
+      if (Math.sqrt(dx * dx + dy * dy) < 60) {
+        this._hoveredDropItem = item
+        break
       }
     }
+
+    // 悬浮检测：背包槽位
+    if (this._inventorySlots) {
+      for (const slot of this._inventorySlots) {
+        if (slot.item && x >= slot.x && x <= slot.x + slot.size && y >= slot.y && y <= slot.y + slot.size) {
+          this._hoveredItem = { item: slot.item, x: slot.x + slot.size / 2, y: slot.y, source: 'inventory' }
+          return
+        }
+      }
+    }
+    // 悬浮检测：角色装备槽位
+    if (this._charEquipSlots) {
+      for (const slot of this._charEquipSlots) {
+        if (slot.item && x >= slot.x && x <= slot.x + slot.w && y >= slot.y && y <= slot.y + slot.h) {
+          // 获取该槽位实际装备
+          const c = this.party[slot.charIdx]
+          const eqItem = c ? c.equippedItems[slot.slot] : null
+          if (eqItem) {
+            this._hoveredItem = { item: eqItem, x: slot.x + slot.w / 2, y: slot.y, source: 'equipped' }
+            return
+          }
+        }
+      }
+    }
+    // 未悬停任何装备
+    this._hoveredItem = null
   }
 
   onTapEnd() {
@@ -2310,98 +2993,336 @@ export class TowerBattle {
     }
   }
 
-  /** 处理底部UI点击（技能/角色切换） */
+  /** 处理底部UI点击（战斗策略按钮 / 装备栏 / 角色卡片） */
   _handleUITap(x, y) {
-    const H = this.height
-    const dpr = this.dpr
+    const bp = this._bottomPanelBounds
+    if (!bp) return
 
-    // 角色快捷槽区域
-    const slotY = H - 58
-    const slotW = 54
-    const slotSpacing = 62
-    const startX_slot = this.width / 2 - (this.party.length * slotSpacing) / 2
+    // ---- 最上栏：技能按钮 ----
+    if (this._skillBarButtons) {
+      for (const btn of this._skillBarButtons) {
+        if (!btn.disabled && x >= btn.x && x <= btn.x + btn.w && y >= btn.y && y <= btn.y + btn.h) {
+          this._onSkillBarTap(btn)
+          return
+        }
+      }
+    }
 
-    for (let i = 0; i < this.party.length; i++) {
-      const sx = startX_slot + i * slotSpacing
-      if (x >= sx && x <= sx + slotW && y >= slotY && y <= slotY + slotW) {
-        if (!this.party[i].isDead) this.selectedCharIndex = i
+    // ---- 策略按钮 ----
+    if (this._tacticButtons) {
+      for (const btn of this._tacticButtons) {
+        if (!btn.disabled && x >= btn.x && x <= btn.x + btn.w && y >= btn.y && y <= btn.y + btn.h) {
+          this._onTacticButtonTap(btn.id)
+          return
+        }
+      }
+    }
+
+    // ---- 下栏：装备背包槽位 ----
+    if (this._inventorySlots) {
+      for (const slot of this._inventorySlots) {
+        if (x >= slot.x && x <= slot.x + slot.size && y >= slot.y && y <= slot.y + slot.size) {
+          this._onInventorySlotTap(slot)
+          return
+        }
+      }
+    }
+
+    // ---- 下栏：合成按钮 ----
+    if (this._synthButton) {
+      const sb = this._synthButton
+      if (x >= sb.x && x <= sb.x + sb.w && y >= sb.y && y <= sb.y + sb.h) {
+        this._synthesizeEquipment()
         return
       }
     }
 
-    // 技能栏区域
-    const selectedChar = this.party[this.selectedCharIndex]
-    if (selectedChar && !selectedChar.isDead && selectedChar.skills) {
-      const skillAreaY = H - 125
-      const skillBtnSize = 46
-      const skillGap = 6
-      const totalSkillW = selectedChar.skills.length * skillBtnSize + (selectedChar.skills.length - 1) * skillGap
-      const skillStartX = this.width / 2 - totalSkillW / 2
+    // ---- 下栏：出售按钮 ----
+    if (this._sellButton) {
+      const slb = this._sellButton
+      if (x >= slb.x && x <= slb.x + slb.w && y >= slb.y && y <= slb.y + slb.h) {
+        this._sellSelectedInventoryItem()
+        return
+      }
+    }
 
-      for (let i = 0; i < selectedChar.skills.length; i++) {
-        const sx = skillStartX + i * (skillBtnSize + skillGap)
-        if (x >= sx && x <= sx + skillBtnSize && y >= skillAreaY && y <= skillAreaY + skillBtnSize) {
-          this._castSkill(selectedChar, i)
+    // ---- 下栏：角色装备槽位（点击卸下）----
+    if (this._charEquipSlots) {
+      for (const slot of this._charEquipSlots) {
+        if (x >= slot.x && x <= slot.x + slot.w && y >= slot.y && y <= slot.y + slot.h) {
+          this._onCharEquipSlotTap(slot)
+          return
+        }
+      }
+    }
+
+    // ---- 下栏：角色切换按钮 ----
+    if (this._charSwitchBtns) {
+      for (const btn of this._charSwitchBtns) {
+        if (x >= btn.x && x <= btn.x + btn.w && y >= btn.y && y <= btn.y + btn.h) {
+          const next = this.selectedCharIndex + btn.dir
+          if (next >= 0 && next < this.party.length) {
+            this.selectedCharIndex = next
+          }
           return
         }
       }
     }
   }
 
-  _collectItem(item) {
-    if (item.collected) return
-    item.collected = true
-    item.collectAnim = 0
-    this.stats.dropsCollected++
+  // ========== 装备分配面板 ==========
 
-    // 收集飞行动画
-    const flyTarget = { x: this.width - 44, y: this.height - 36 }
-    const startX = item.x
-    const startY = item.y
-    const dur = 340
-    const start = Date.now()
-
-    const animate = () => {
-      const t = Math.min(1, (Date.now() - start) / dur)
-      const ease = 1 - Math.pow(1 - t, 3)
-      item.x = startX + (flyTarget.x - startX) * ease
-      item.y = startY + (flyTarget.y - startY) * ease
-      if (t < 1) requestAnimationFrame(animate)
+  _openEquipPanel(item) {
+    const W = this.width, H = this.height
+    this.equipPanel = {
+      visible: true,
+      item: item,
+      selectedCharIndex: -1,
+      animTimer: 0,
+      // 角色按钮位置（底部横向排列）
+      charButtons: [],
     }
-    animate()
+    const btnW = 80, btnH = 90, gap = 12
+    const totalW = this.party.length * btnW + (this.party.length - 1) * gap
+    let startX = (W - totalW) / 2
+    for (let i = 0; i < this.party.length; i++) {
+      this.equipPanel.charButtons.push({
+        x: startX + i * (btnW + gap),
+        y: H * 0.62,
+        w: btnW,
+        h: btnH,
+        charIndex: i,
+      })
+    }
+  }
 
-    // 品质收集特效
+  _equipToCharacter(item, charIndex, fromInventory = false) {
+    if (!item) return
+    const c = this.party[charIndex]
+    if (!c || c.isDead) return
+
+    // 从背包移除（如果是背包中的物品）
+    if (fromInventory && this.equipPanel.invIndex !== undefined && this.equipPanel.invIndex >= 0) {
+      this.inventory[this.equipPanel.invIndex] = null
+      // 压缩空位
+      this.inventory = this.inventory.filter(Boolean)
+    } else if (!fromInventory) {
+      // 地面掉落物
+      item.collected = true
+      item.collectAnim = 0
+      this.stats.dropsCollected++
+    }
+
+    // 装备到对应槽位（替换旧装备，退还属性）
+    const slot = item.slot || 'accessory'
+    const oldItem = c.equippedItems[slot]
+    if (oldItem) {
+      // 退还旧装备属性
+      if (oldItem.bonusHp) { c.maxHp -= oldItem.bonusHp; c.currentHp = Math.max(1, c.currentHp - oldItem.bonusHp) }
+      if (oldItem.bonusAtk) c.atk -= oldItem.bonusAtk
+      if (oldItem.bonusDef) c.def = Math.max(0, (c.def || 5) - oldItem.bonusDef)
+      if (oldItem.bonusSpd) c.spd = Math.max(0, c.spd - oldItem.bonusSpd)
+      // 退回的旧装备放入背包
+      if (this.inventory.length < this.maxInventorySize) {
+        this.inventory.push({ ...oldItem })
+      }
+    }
+
+    // 装上新装备
+    c.equippedItems[slot] = item
+
+    // 应用新属性加成
+    if (item.bonusHp) { c.maxHp += item.bonusHp; c.currentHp += item.bonusHp }
+    if (item.bonusAtk) c.atk += item.bonusAtk
+    if (item.bonusDef) c.def = (c.def || 5) + item.bonusDef
+    if (item.bonusSpd) c.spd += item.bonusSpd
+
+    // 浮动提示
+    const bonusTexts = []
+    if (item.bonusHp) bonusTexts.push(`+${item.bonusHp}HP`)
+    if (item.bonusAtk) bonusTexts.push(`+${item.bonusAtk}ATK`)
+    if (item.bonusDef) bonusTexts.push(`+${item.bonusDef}DEF`)
+    if (item.bonusSpd) bonusTexts.push(`+${item.bonusSpd}SPD`)
+    this._addFloatingText(c.x, c.y - 200, `${c.name} 穿上 ${item.name}\n${bonusTexts.join(' ')}`, '#ffd700', 2.0)
+
+    // 收集粒子特效
     const color = QUALITY_COLORS[item.quality]
-    const particleCount = item.quality === 'legendary' ? 24 : item.quality === 'epic' ? 18 : item.quality === 'rare' ? 12 : 8
-    for (let i = 0; i < particleCount; i++) {
-      const angle = (i / particleCount) * Math.PI * 2
+    for (let i = 0; i < 10; i++) {
+      const angle = (i / 10) * Math.PI * 2
       this.particles.push({
-        x: item.x, y: item.y,
-        vx: Math.cos(angle) * 70,
-        vy: Math.sin(angle) * 70,
-        size: 3 + Math.random() * (item.quality === 'legendary' ? 5 : 3),
-        color,
-        life: 1,
-        decay: 1.8 + Math.random()
+        x: c.x, y: c.y - 100,
+        vx: Math.cos(angle) * 50, vy: Math.sin(angle) * 50 - 30,
+        size: 3 + Math.random() * 3, color, life: 1, decay: 2.0
       })
     }
 
-    // 浮动文字提示品质
-    this._addFlyingDropText(item.name, QUALITY_NAMES[item.quality], color)
+    this.equipPanel.visible = false
   }
 
-  _addFlyingDropText(name, rarityName, color) {
-    this.effects.push({
-      type: 'dmg_number',
-      x: this.width - 44,
-      y: this.height - 56,
-      value: `${rarityName} ${name}`,
-      color,
-      scale: 0.85,
-      life: 2.0,
-      vy: -30,
-      isText: true
-    })
+  _renderEquipPanel(ctx) {
+    const ep = this.equipPanel
+    if (!ep.visible || !ep.item) return
+    const W = this.width, H = this.height, dpr = this.dpr
+    const item = ep.item
+
+    // 半透明暗色遮罩
+    ctx.fillStyle = 'rgba(0,0,0,0.6)'
+    ctx.fillRect(0, 0, W, H)
+
+    // 面板背景
+    const panelW = Math.min(340 * dpr, W * 0.88)
+    const panelH = H * 0.52
+    const panelX = (W - panelW) / 2
+    const panelY = H * 0.15
+
+    ctx.fillStyle = 'rgba(18,22,28,0.96)'
+    const r = 14
+    ctx.beginPath()
+    ctx.moveTo(panelX + r, panelY)
+    ctx.lineTo(panelX + panelW - r, panelY)
+    ctx.quadraticCurveTo(panelX + panelW, panelY, panelX + panelW, panelY + r)
+    ctx.lineTo(panelX + panelW, panelY + panelH - r)
+    ctx.quadraticCurveTo(panelX + panelW, panelY + panelH, panelX + panelW - r, panelY + panelH)
+    ctx.lineTo(panelX + r, panelY + panelH)
+    ctx.quadraticCurveTo(panelX, panelY + panelH, panelX, panelY + panelH - r)
+    ctx.lineTo(panelX, panelY + r)
+    ctx.quadraticCurveTo(panelX, panelY, panelX + r, panelY)
+    ctx.fill()
+
+    // 边框（品质色）
+    ctx.strokeStyle = QUALITY_COLORS[item.quality]
+    ctx.lineWidth = 2
+    ctx.stroke()
+
+    // 标题：选择角色装备
+    ctx.font = `bold ${Math.max(16, 17 * dpr)}px sans-serif`
+    ctx.textAlign = 'center'
+    ctx.textBaseline = 'middle'
+    ctx.fillStyle = '#ffffff'
+    ctx.fillText('🎒 选择角色装备', W / 2, panelY + 28)
+
+    // ===== 装备信息展示区（左侧大图标）=====
+    const iconCx = W / 2
+    const iconCy = panelY + 95
+    const iconR = 36 * dpr
+
+    // 品质光环
+    const pulse = Math.sin(Date.now() / 400) * 0.25 + 1
+    ctx.shadowBlur = 20
+    ctx.shadowColor = QUALITY_COLORS[item.quality]
+
+    ctx.fillStyle = '#1a1f26'
+    ctx.beginPath()
+    ctx.arc(iconCx, iconCy, iconR, 0, Math.PI * 2)
+    ctx.fill()
+    ctx.strokeStyle = QUALITY_COLORS[item.quality]
+    ctx.lineWidth = 3
+    ctx.stroke()
+    ctx.shadowBlur = 0
+
+    // 装备类型图标
+    const slotIcon = { weapon: '\u2694', armor: '\u{1F6E1}', accessory: '\u{1F48E}' }
+    ctx.fillStyle = QUALITY_COLORS[item.quality]
+    ctx.font = `bold ${Math.max(32, 34 * dpr)}px sans-serif`
+    ctx.textAlign = 'center'
+    ctx.textBaseline = 'middle'
+    ctx.fillText(slotIcon[item.slot] || '?', iconCx, iconCy)
+
+    // 装备名称 + 品质标签
+    ctx.font = `bold ${Math.max(17, 18 * dpr)}px sans-serif`
+    ctx.fillStyle = QUALITY_COLORS[item.quality]
+    ctx.fillText(`${QUALITY_NAMES[item.quality]} ${item.name}`, iconCx, iconCy + iconR + 24)
+
+    // 属性加成列表
+    const statLines = []
+    if (item.bonusHp) statLines.push(`\u2764 HP +${item.bonusHp}`)
+    if (item.bonusAtk) statLines.push(`\u2694 ATK +${item.bonusAtk}`)
+    if (item.bonusDef) statLines.push(`\u{1F6E1} DEF +${item.bonusDef}`)
+    if (item.bonusSpd) statLines.push(`\uD83C\uDFC8 SPD +${item.bonusSpd}`)
+    ctx.font = `${Math.max(13, 14 * dpr)}px sans-serif`
+    ctx.fillStyle = '#c9d1d9'
+    for (let i = 0; i < statLines.length; i++) {
+      ctx.fillText(statLines[i], iconCx, iconCy + iconR + 50 + i * 24)
+    }
+
+    // ===== 分割线 =====
+    ctx.strokeStyle = 'rgba(255,255,255,0.08)'
+    ctx.lineWidth = 1
+    ctx.beginPath()
+    ctx.moveTo(panelX + 20, panelY + panelH * 0.55)
+    ctx.lineTo(panelX + panelW - 20, panelY + panelH * 0.55)
+    ctx.stroke()
+
+    // ===== 角色选择区域标题 =====
+    ctx.font = `${Math.max(13, 14 * dpr)}px sans-serif`
+    ctx.fillStyle = '#8b949e'
+    ctx.fillText('点击角色头像装备', W / 2, panelY + panelH * 0.58)
+
+    // ===== 角色头像按钮 =====
+    for (const btn of ep.charButtons) {
+      const ci = btn.charIndex
+      const ch = this.party[ci]
+      const bx = btn.x, by = btn.y, bw = btn.w, bh = btn.h
+
+      // 按钮背景（死亡角色灰化）
+      const isDead = ch.isDead
+      ctx.fillStyle = isDead ? 'rgba(40,44,52,0.8)' : 'rgba(33,38,46,0.92)'
+      ctx.beginPath()
+      ctx.moveTo(bx + 8, by)
+      ctx.lineTo(bx + bw - 8, by)
+      ctx.quadraticCurveTo(bx + bw, by, bx + bw, by + 8)
+      ctx.lineTo(bx + bw, by + bh - 8)
+      ctx.quadraticCurveTo(bx + bw, by + bh, bx + bw - 8, by + bh)
+      ctx.lineTo(bx + 8, by + bh)
+      ctx.quadraticCurveTo(bx, by + bh, bx, by + bh - 8)
+      ctx.lineTo(bx, by + 8)
+      ctx.quadraticCurveTo(bx, by, bx + 8, by)
+      ctx.fill()
+
+      ctx.strokeStyle = isDead ? '#3d444d' : QUALITY_COLORS[item.quality]
+      ctx.lineWidth = 1.5
+      ctx.stroke()
+
+      // 角色名称
+      ctx.font = `bold ${Math.max(11, 12 * dpr)}px sans-serif`
+      ctx.fillStyle = isDead ? '#565e69' : '#e6edf3'
+      ctx.textAlign = 'center'
+      ctx.textBaseline = 'middle'
+      ctx.fillText(ch.name, bx + bw / 2, by + 18)
+
+      // 等级和职业
+      ctx.font = `${Math.max(9, 10 * dpr)}px sans-serif`
+      ctx.fillStyle = isDead ? '#484f58' : '#8b949e'
+      ctx.fillText(`Lv${ch.level} ${ch.role === 'mage' ? '\uD83D\uDD2C' : '\u2694'}`, bx + bw / 2, by + 34)
+
+      // 当前属性预览
+      ctx.font = `${Math.max(9, 10 * dpr)}px sans-serif`
+      ctx.fillStyle = isDead ? '#484f58' : '#58a6ff'
+      ctx.fillText(`ATK:${ch.atk}  DEF:${ch.def || 5}`, bx + bw / 2, by + 50)
+
+      // 预览加成效果（绿色高亮）
+      if (!isDead) {
+        ctx.fillStyle = '#3fb950'
+        const preview = []
+        if (item.bonusAtk) preview.push(`+${item.bonusAtk}atk`)
+        if (item.bonusDef) preview.push(`+${item.bonusDef}def`)
+        if (item.bonusHp) preview.push(`+${item.bonusHp}hp`)
+        if (preview.length > 0) {
+          ctx.font = `bold ${Math.max(9, 10 * dpr)}px sans-serif`
+          ctx.fillText(preview.join(' '), bx + bw / 2, by + 66)
+        }
+      } else {
+        ctx.font = `${Math.max(9, 10 * dpr)}px sans-serif`
+        ctx.fillStyle = '#f85149'
+        ctx.fillText('\u2717 已阵亡', bx + bw / 2, by + 66)
+      }
+    }
+
+    // 关闭提示
+    ctx.font = `${Math.max(10, 11 * dpr)}px sans-serif`
+    ctx.fillStyle = '#565e69'
+    ctx.textAlign = 'center'
+    ctx.fillText('点击面板外关闭', W / 2, panelY + panelH - 16)
   }
 
   // ==================== 渲染 ====================
@@ -2419,23 +3340,82 @@ export class TowerBattle {
       return
     }
 
-    // 背景（深色但可辨识）
-    ctx.fillStyle = '#12161e'
+    // ===== 胜利/失败界面 =====
+    if (this.phase === 'victory' || this.phase === 'defeat') {
+      this._renderResultScreen(ctx)
+      return
+    }
+
+    // ===== 背景：塔防战场 =====
+    // 主背景色
+    ctx.fillStyle = '#0d1117'
     ctx.fillRect(0, 0, W, H)
 
-    // 地面区域——留出底部技能栏空间（自适应高度）
-    const topBarH = Math.max(H * 0.065, 44)
-    const bottomBarH = Math.max(H * 0.17, 110)
-    const groundY = H - bottomBarH - 15  // 地面线在底部栏上方
-    ctx.fillStyle = '#1a2030'
-    ctx.fillRect(0, groundY, W, H - groundY)
+    // 地面区域——与底部面板实际高度保持一致
+    const topBarH = Math.max(H * 0.095, 56)
+    const bottomMargin = Math.max(8, 12 * this.dpr)
+    const skillBarH   = Math.max(H * 0.055, 40)
+    const tacticsBarH = Math.max(H * 0.06, 42)
+    const equipBarH   = Math.max(H * 0.155, 120)
+    const bottomBarH  = skillBarH + tacticsBarH + equipBarH + 8
+    const groundY     = H - bottomBarH - bottomMargin - 10  // 地面线在底部栏上方
 
-    // 地面纹理线
-    ctx.strokeStyle = 'rgba(100,120,160,0.08)'
+    // 战场地面（深色渐变）
+    const groundGrad = ctx.createLinearGradient(0, topBarH + 30, 0, groundY)
+    groundGrad.addColorStop(0, '#141c28')
+    groundGrad.addColorStop(0.5, '#162236')
+    groundGrad.addColorStop(1, '#1a2a42')
+    ctx.fillStyle = groundGrad
+    ctx.fillRect(0, topBarH + 30, W, groundY - topBarH - 30)
+
+    // 底部地面区域（到地面线为止）
+    ctx.fillStyle = '#1e3050'
+    ctx.fillRect(0, groundY, W, H - groundY - bottomMargin)
+
+    // 地面纹理线（网格感）——只画到地面区域，不覆盖底部面板
+    ctx.strokeStyle = 'rgba(80,120,180,0.07)'
     ctx.lineWidth = 1
-    for (let gx = 0; gx < W; gx += 40) {
-      ctx.beginPath(); ctx.moveTo(gx, groundY); ctx.lineTo(gx, H); ctx.stroke()
+    for (let gx = 0; gx < W; gx += 50) {
+      ctx.beginPath(); ctx.moveTo(gx, topBarH + 30); ctx.lineTo(gx, groundY); ctx.stroke()
     }
+    for (let gy = topBarH + 50; gy < groundY; gy += 50) {
+      ctx.beginPath(); ctx.moveTo(0, gy); ctx.lineTo(W, gy); ctx.stroke()
+    }
+
+    // ===== 边界墙（可视化的战场边缘）=====
+    const wallThickness = 4
+    const wallColor = 'rgba(100,160,220,0.35)'
+    ctx.strokeStyle = wallColor
+    ctx.lineWidth = wallThickness
+    ctx.lineCap = 'round'
+
+    // 左边界
+    ctx.beginPath()
+    ctx.moveTo(wallThickness / 2, topBarH + 25)
+    ctx.lineTo(wallThickness / 2, groundY)
+    ctx.stroke()
+
+    // 右边界
+    ctx.beginPath()
+    ctx.moveTo(W - wallThickness / 2, topBarH + 25)
+    ctx.lineTo(W - wallThickness / 2, groundY)
+    ctx.stroke()
+
+    // 上边界
+    ctx.beginPath()
+    ctx.moveTo(0, topBarH + 25)
+    ctx.lineTo(W, topBarH + 25)
+    ctx.stroke()
+
+    // 边界发光效果（内发光）
+    const glowColor = 'rgba(80,140,220,0.08)'
+    ctx.strokeStyle = glowColor
+    ctx.lineWidth = 12
+    ctx.lineCap = 'square'
+    ctx.beginPath()
+    ctx.rect(wallThickness + 5, topBarH + 30, W - wallThickness * 2 - 10, groundY - topBarH - 35)
+    ctx.stroke()
+    ctx.lineCap = 'round'
 
     // 我方区域（左侧淡蓝色）
     ctx.fillStyle = 'rgba(88,166,255,0.04)'
@@ -2470,6 +3450,7 @@ export class TowerBattle {
     this._renderParticles(ctx)
     this._renderDroppedItems(ctx)
     this._renderCrystal(ctx)
+    this._renderHomeCrystal(ctx)  // 己方水晶（左下角）
     this._renderMonsters(ctx)
     this._renderCharacters(ctx)
     this._renderProjectiles(ctx)
@@ -2480,6 +3461,7 @@ export class TowerBattle {
     ctx.restore()
 
     // UI层（不受相机影响）
+    this._renderEquipPanel(ctx)  // 装备分配面板（最上层）
     this._renderUI(ctx)
   }
 
@@ -2652,12 +3634,12 @@ export class TowerBattle {
 
       const color = QUALITY_COLORS[item.quality]
 
-      // 品质光环
+      // 品质光环（加大）
       const pulse = Math.sin(Date.now() / (item.pulseSpeed * 100)) * 0.3 + 1
-      const glowR = (18 + item.glowIntensity * pulse)
+      const glowR = (26 + item.glowIntensity * pulse * 1.3)
 
       if (item.quality !== 'common') {
-        const glowGrad = ctx.createRadialGradient(0, 0, 5, 0, 0, glowR)
+        const glowGrad = ctx.createRadialGradient(0, 0, 8, 0, 0, glowR)
         glowGrad.addColorStop(0, color + '40')
         glowGrad.addColorStop(1, color + '00')
         ctx.fillStyle = glowGrad
@@ -2666,47 +3648,55 @@ export class TowerBattle {
         ctx.fill()
       }
 
-      ctx.shadowBlur = item.glowIntensity * (item.quality === 'legendary' ? 1.5 : 1)
+      ctx.shadowBlur = item.glowIntensity * (item.quality === 'legendary' ? 1.8 : 1.2)
       ctx.shadowColor = color
 
-      // 物品图标底座
+      // 物品图标底座（加大到清晰可见）
+      const baseR = 42   // 28→42，加大50%
       ctx.fillStyle = '#1c2128'
       ctx.beginPath()
-      ctx.arc(0, 0, 17, 0, Math.PI * 2)
+      ctx.arc(0, 0, baseR, 0, Math.PI * 2)
       ctx.fill()
       ctx.strokeStyle = color
-      ctx.lineWidth = 2.5
+      ctx.lineWidth = 3.5    // 边框加粗
       ctx.stroke()
 
-      // 装备类型图标
+      // 装备类型图标（大字体）
       const slotIcon = { weapon: '\u2694', armor: '\u{1F6E1}', accessory: '\u{1F48D}' }
       ctx.fillStyle = color
-      ctx.font = 'bold 17px sans-serif'
+      ctx.font = 'bold 42px sans-serif'   // 28→42
       ctx.textAlign = 'center'
       ctx.textBaseline = 'middle'
-      ctx.fillText(slotIcon[item.slot] || '?', 0, 1)
+      ctx.fillText(slotIcon[item.slot] || '?', 0, 2)
 
-      // 时间条
+      // 装备名称（加大字体）
+      if (!item.collected) {
+        ctx.font = 'bold 14px sans-serif'   // 10→14
+        ctx.fillStyle = '#e6edf3'
+        ctx.fillText(item.name, 0, baseR + 20)
+      }
+
+      // 时间条（加宽）
       if (!item.collected) {
         const ratio = item.remaining / DROP_LIFETIME
         const barColor = ratio > 0.5 ? color : ratio > 0.25 ? '#ff8c00' : '#ff4444'
         ctx.fillStyle = 'rgba(0,0,0,0.7)'
-        ctx.fillRect(-16, 23, 32, 4)
+        ctx.fillRect(-24, 28, 48, 5)    // 宽32→48，高4→5
         ctx.fillStyle = barColor
-        ctx.fillRect(-16, 23, 32 * ratio, 4)
+        ctx.fillRect(-24, 28, 48 * ratio, 5)
       }
 
-      // 传说额外星光
+      // 传说额外星光（加大+外移）
       if (item.quality === 'legendary' && !item.collected) {
         for (let s = 0; s < 3; s++) {
           const starAngle = Date.now() / 800 + s * (Math.PI * 2 / 3)
-          const starR = 24 + Math.sin(Date.now() / 400 + s * 2) * 5
+          const starR = 36 + Math.sin(Date.now() / 400 + s * 2) * 6   // 24→36
           const sx = Math.cos(starAngle) * starR
           const sy = Math.sin(starAngle) * starR
           ctx.fillStyle = '#ffd700'
           ctx.globalAlpha = 0.6 + Math.sin(Date.now() / 200 + s) * 0.4
           ctx.beginPath()
-          ctx.arc(sx, sy, 2, 0, Math.PI * 2)
+          ctx.arc(sx, sy, 3.5, 0, Math.PI * 2)   // 星光点半径 2→3.5
           ctx.fill()
         }
         ctx.globalAlpha = item.collected ? (1 - item.collectAnim) : 1
@@ -2718,6 +3708,117 @@ export class TowerBattle {
   }
 
   // ===== 水晶渲染 =====
+
+  /**
+   * 渲染己方防御水晶（左下角，蓝色调）
+   */
+  _renderHomeCrystal(ctx) {
+    const c = this.homeCrystal
+    if (!c || c.scale <= 0) return
+
+    ctx.save()
+    ctx.translate(c.x + (c.shakeX || 0), c.y + (c.shakeY || 0))
+    ctx.scale(c.scale, c.scale)
+
+    // ===== 脆弱状态：红色闪烁警告 =====
+    const isVuln = c.vulnerable && !c.isDead
+    if (isVuln && c.vulnerableFlash > 0) {
+      const flashAlpha = 0.25 + Math.sin(this.battleTime * 0.008) * 0.2
+      ctx.fillStyle = `rgba(255,68,68,${flashAlpha})`
+      ctx.beginPath()
+      ctx.arc(0, 0, 50 + Math.sin(this.battleTime * 0.005) * 4, 0, Math.PI * 2)
+      ctx.fill()
+    }
+
+    // 光环（安全时蓝绿色调，脆弱时红色调）
+    const gradient = ctx.createRadialGradient(0, 0, 5, 0, 0, 45)
+    if (isVuln) {
+      gradient.addColorStop(0, 'rgba(255,100,80,0.6)')
+      gradient.addColorStop(0.5, 'rgba(200,60,50,0.2)')
+      gradient.addColorStop(1, 'rgba(200,60,50,0)')
+    } else {
+      gradient.addColorStop(0, 'rgba(64,180,255,0.7)')
+      gradient.addColorStop(0.5, 'rgba(40,140,220,0.25)')
+      gradient.addColorStop(1, 'rgba(40,140,220,0)')
+    }
+    ctx.fillStyle = gradient
+    ctx.beginPath()
+    ctx.arc(0, 0, 45, 0, Math.PI * 2)
+    ctx.fill()
+
+    // 水晶本体（蓝色六边形）
+    ctx.shadowBlur = c.hurtTimer > 0 ? 30 : 14
+    ctx.shadowColor = isVuln ? '#ff4444' : (c.hurtFlash > 0 ? '#ffffff' : '#40b4ff')
+    ctx.fillStyle = c.hurtFlash > 0 ? '#ffffff' : (isVuln ? '#ff6644' : '#40b4ff')
+
+    // 六边形（比敌方水晶略小）
+    ctx.beginPath()
+    for (let i = 0; i < 6; i++) {
+      const angle = (i / 6) * Math.PI * 2 - Math.PI / 2
+      const r = 30
+      const px = Math.cos(angle) * r
+      const py = Math.sin(angle) * r
+      if (i === 0) ctx.moveTo(px, py)
+      else ctx.lineTo(px, py)
+    }
+    ctx.closePath()
+    ctx.fill()
+
+    // 内核（发光）
+    ctx.fillStyle = isVuln ? 'rgba(255,200,150,0.3)' : 'rgba(150,220,255,0.35)'
+    ctx.beginPath()
+    for (let i = 0; i < 6; i++) {
+      const angle = (i / 6) * Math.PI * 2 - Math.PI / 2
+      const r = 15
+      if (i === 0) ctx.moveTo(Math.cos(angle) * r, Math.sin(angle) * r)
+      else ctx.lineTo(Math.cos(angle) * r, Math.sin(angle) * r)
+    }
+    ctx.closePath()
+    ctx.fill()
+
+    // 盾牌图标（安全状态）或 警告图标（脆弱状态）
+    ctx.shadowBlur = 0
+    ctx.font = `bold ${Math.max(16, 18 * this.dpr)}px sans-serif`
+    ctx.textAlign = 'center'
+    ctx.textBaseline = 'middle'
+    ctx.fillStyle = isVuln ? '#ffcc00' : '#e0f0ff'
+    ctx.fillText(isVuln ? '⚠️' : '🛡️', 0, 0)
+
+    // HP血条
+    if (c.maxHp && !c.isDead) {
+      const barW = 48
+      const barH = 5
+      const barY = 40
+      const ratio = Math.max(0, c.hp / c.maxHp)
+
+      // 背景
+      ctx.fillStyle = 'rgba(0,0,0,0.7)'
+      this._roundRect(ctx, -barW / 2, barY, barW, barH, 2)
+      ctx.fill()
+
+      // HP条（颜色根据血量变化）
+      const hpColor = ratio > 0.5 ? '#40b4ff' : ratio > 0.25 ? '#f59e0b' : '#ef4444'
+      ctx.fillStyle = hpColor
+      this._roundRect(ctx, -barW / 2, barY, barW * ratio, barH, 2)
+      ctx.fill()
+
+      // HP文字
+      ctx.font = `${Math.max(8, 9 * this.dpr)}px sans-serif`
+      ctx.fillStyle = '#c0d0e0'
+      ctx.textAlign = 'center'
+      ctx.textBaseline = 'top'
+      ctx.fillText(`${Math.ceil(c.hp)}/${c.maxHp}`, 0, barY + 7)
+    }
+
+    // 标签
+    ctx.font = `${Math.max(9, 10 * this.dpr)}px sans-serif`
+    ctx.textAlign = 'center'
+    ctx.textBaseline = 'bottom'
+    ctx.fillStyle = isVuln ? '#ff8888' : '#78a0c0'
+    ctx.fillText(isVuln ? '水晶受威胁!' : '己方水晶', 0, -52)
+
+    ctx.restore()
+  }
 
   _renderCrystal(ctx) {
     const c = this.crystal
@@ -3096,6 +4197,33 @@ export class TowerBattle {
       // ===== 恢复状态：消除scale翻转，再绘制UI文字（不受朝向影响）=====
       ctx.restore()
 
+      // ===== 攻击范围可视化圈（仅法师显示） =====
+      if (c.role === 'mage' && !c.isDead) {
+        ctx.save()
+        ctx.translate(c.x, c.y)
+        const rangePx = c.atkRange
+        // 攻击范围外圈（半透明白色）
+        ctx.beginPath()
+        ctx.arc(0, 0, rangePx, 0, Math.PI * 2)
+        ctx.strokeStyle = 'rgba(100,180,255,0.5)'
+        ctx.lineWidth = 2
+        ctx.setLineDash([8, 6])
+        ctx.stroke()
+        ctx.setLineDash([])
+        // 安全距离内圈
+        ctx.beginPath()
+        ctx.arc(0, 0, rangePx * 0.82, 0, Math.PI * 2)
+        ctx.strokeStyle = 'rgba(255,100,100,0.35)'
+        ctx.lineWidth = 1.5
+        ctx.setLineDash([4, 4])
+        ctx.stroke()
+        ctx.setLineDash([])
+        // 填充极淡色
+        ctx.fillStyle = 'rgba(100,180,255,0.06)'
+        ctx.fill()
+        ctx.restore()
+      }
+
       // ===== UI层（名字、等级、血条、选中框）—— 不受朝向翻转影响 =====
       ctx.save()
       ctx.translate(c.x, c.y)
@@ -3142,6 +4270,67 @@ export class TowerBattle {
       ctx.fillStyle = nameColor
       ctx.fillText(labelText, 0, labelY)
       ctx.shadowBlur = 0
+
+      // ===== BUFF图标栏（名字下方、血条上方）=====
+      if (c.buffs && c.buffs.length > 0) {
+        const iconSize = Math.max(16, 18 * this.dpr)
+        const gap = 3
+        const totalW = c.buffs.length * (iconSize + gap) - gap
+        const startX = -totalW / 2
+        const buffLabelY = labelY + 22
+
+        for (let bi = 0; bi < c.buffs.length; bi++) {
+          const b = c.buffs[bi]
+          const bx = startX + bi * (iconSize + gap)
+          const elapsed = Date.now() - b.startTime
+          const remain = Math.max(0, b.duration - elapsed)
+          const remainSec = (remain / 1000).toFixed(1)
+          const ratio = remain / b.duration
+
+          // 图标背景（圆角矩形 + 颜色）
+          ctx.save()
+          ctx.fillStyle = 'rgba(0,0,0,0.65)'
+          this._roundRect(ctx, bx, buffLabelY, iconSize, iconSize + 8, 4)
+          ctx.fill()
+          ctx.strokeStyle = b.color
+          ctx.lineWidth = 1.5
+          ctx.globalAlpha = 0.6 + ratio * 0.4
+          ctx.stroke()
+
+          // Buff图标emoji
+          ctx.font = `${Math.max(11, 12 * this.dpr)}px sans-serif`
+          ctx.textAlign = 'center'
+          ctx.textBaseline = 'middle'
+          ctx.fillStyle = '#ffffff'
+          ctx.fillText(b.icon, bx + iconSize / 2, buffLabelY + iconSize * 0.38)
+
+          // 倒计时数字（图标下方，小字）
+          const timerFont = Math.max(7, 8 * this.dpr)
+          ctx.font = `bold ${timerFont}px sans-serif`
+          // 最后3秒红色闪烁警告
+          if (remain <= 3000) {
+            ctx.globalAlpha = 0.6 + 0.4 * Math.sin(Date.now() / 200)
+            ctx.fillStyle = '#ff4444'
+            ctx.shadowColor = '#ff0000'
+            ctx.shadowBlur = 6
+          } else {
+            ctx.globalAlpha = 1
+            ctx.fillStyle = b.color
+          }
+          ctx.fillText(`${remainSec}s`, bx + iconSize / 2, buffLabelY + iconSize + 2)
+          ctx.restore()
+
+          // 底部进度条（表示剩余时间）
+          ctx.save()
+          ctx.fillStyle = 'rgba(0,0,0,0.7)'
+          this._roundRect(ctx, bx, buffLabelY + iconSize + 9, iconSize, 3, 2)
+          ctx.fill()
+          ctx.fillStyle = ratio > 0.15 ? b.color : '#ff4444'
+          this._roundRect(ctx, bx, buffLabelY + iconSize + 9, Math.max(3, iconSize * ratio), 3, 2)
+          ctx.fill()
+          ctx.restore()
+        }
+      }
 
       // ===== 血条（角色脚下：Y=8起，宽76px 高14px）=====
       const hpRatio = Math.max(0, c.currentHp / c.maxHp)
@@ -3299,6 +4488,185 @@ export class TowerBattle {
           ctx.arc(px, py, 2.5, 0, Math.PI * 2)
           ctx.fill()
         }
+        ctx.restore()
+      } else if (e.type === 'skill_ray') {
+        // 技能射线（火球/冰晶的贯穿光束）
+        const t = e.timer / e.duration
+        const alpha = Math.max(0, 1 - t * 2)
+        const w = (e.width || 10) * (1 - t * 0.5)
+        ctx.save()
+        ctx.globalAlpha = alpha
+
+        // 外发光（宽而模糊）
+        ctx.strokeStyle = e.glowColor || e.color
+        ctx.lineWidth = w * 3
+        ctx.shadowBlur = 20
+        ctx.shadowColor = e.glowColor || e.color
+        ctx.lineCap = 'round'
+        ctx.beginPath()
+        ctx.moveTo(e.startX, e.startY)
+        ctx.lineTo(e.endX, e.endY)
+        ctx.stroke()
+
+        // 核心亮线
+        ctx.strokeStyle = '#ffffff'
+        ctx.lineWidth = Math.max(1, w * 0.3)
+        ctx.shadowBlur = 8
+        ctx.shadowColor = '#fff'
+        ctx.globalAlpha = alpha * 0.9
+        ctx.beginPath()
+        ctx.moveTo(e.startX, e.startY)
+        ctx.lineTo(e.endX, e.endY)
+        ctx.stroke()
+        ctx.restore()
+      } else if (e.type === 'aoe_lightning') {
+        // 雷击AoE电圈特效
+        const t = e.timer / e.duration
+        const pulse = 1 + Math.sin(t * Math.PI * 6) * 0.15
+        const r = e.radius * pulse
+        const alpha = Math.max(0, (1 - t) * 0.8)
+
+        ctx.save()
+        // 外圈锯齿电弧环（多层）
+        for (let ring = 0; ring < 3; ring++) {
+          const ringR = r * (0.4 + ring * 0.35) * (0.8 + t * 0.4)
+          const ringAlpha = alpha * (1 - ring * 0.25)
+          ctx.globalAlpha = ringAlpha * 0.5
+          ctx.strokeStyle = '#ffee44'
+          ctx.lineWidth = 2.5 - ring * 0.5
+          ctx.shadowBlur = 12 + ring * 5
+          ctx.shadowColor = '#ffdd00'
+          ctx.beginPath()
+          const segments = 24 + ring * 8
+          for (let i = 0; i <= segments; i++) {
+            const angle = (i / segments) * Math.PI * 2
+            const jagged = r * 0.04 * (ring + 1) * Math.sin(i * 7.7 + t * 30 + ring * 2)
+            const px = e.x + Math.cos(angle) * (ringR + jagged)
+            const py = e.y + Math.sin(angle) * (ringR + jagged)
+            if (i === 0) ctx.moveTo(px, py)
+            else ctx.lineTo(px, py)
+          }
+          ctx.closePath()
+          ctx.stroke()
+        }
+
+        // 内部填充光晕
+        ctx.globalAlpha = alpha * 0.08
+        ctx.fillStyle = '#ffee00'
+        ctx.beginPath(); ctx.arc(e.x, e.y, r * 0.9, 0, Math.PI*2); ctx.fill()
+
+        // 从中心到每个命中目标的闪电链
+        if (e.targets && e.targets.length > 0) {
+          ctx.globalAlpha = alpha * 0.9
+          ctx.strokeStyle = '#ffff88'
+          ctx.lineWidth = 1.5
+          ctx.shadowBlur = 10
+          ctx.shadowColor = '#ffee00'
+          for (const tgt of e.targets) {
+            this._drawLightningBolt(ctx, e.x, e.y, tgt.x, tgt.y, 3)
+          }
+        }
+
+        ctx.restore()
+      } else if (e.type === 'buff_shockwave') {
+        // BUFF冲击波：从施法者向外扩散的圆环（战吼更大范围）
+        const t = e.timer / e.duration
+        const r = e.radius * t
+        const alpha = Math.max(0, (1 - t) * 0.85)
+        ctx.save()
+
+        // 多层扩散环
+        for (let ring = 0; ring < 2; ring++) {
+          const ringR = r * (0.6 + ring * 0.5)
+          const ringAlpha = alpha * (1 - ring * 0.35)
+          ctx.globalAlpha = ringAlpha
+          ctx.strokeStyle = e.color
+          ctx.lineWidth = (3.5 - ring) * (1 - t)
+          ctx.shadowBlur = 18
+          ctx.shadowColor = e.color
+          ctx.lineCap = 'round'
+          ctx.beginPath()
+          ctx.arc(e.x, e.y, Math.max(1, ringR), 0, Math.PI * 2)
+          ctx.stroke()
+        }
+
+        // 内部填充光晕
+        ctx.globalAlpha = alpha * 0.12
+        ctx.fillStyle = e.color
+        ctx.beginPath(); ctx.arc(e.x, e.y, Math.max(1, r), 0, Math.PI * 2); ctx.fill()
+
+        // 战吼AOE：额外显示文字标签
+        if (e.isAoe && t < 0.5) {
+          ctx.globalAlpha = alpha * 2
+          ctx.font = 'bold 14px sans-serif'
+          ctx.textAlign = 'center'
+          ctx.textBaseline = 'middle'
+          ctx.fillStyle = '#ffffff'
+          ctx.fillText('WAR CRY!', e.x, e.y - r - 12)
+        }
+
+        ctx.restore()
+      } else if (e.type === 'buff_aura') {
+        // Buff光环：围绕角色的持续发光效果（类似冰冻光环但颜色不同）
+        const elapsed = Date.now() - ((e.startTime || Date.now()) || Date.now())
+        const remainRatio = Math.max(0, 1 - (elapsed / e.duration))
+        if (remainRatio <= 0) { e.life = 0; return; }
+
+        const pulseScale = 1 + Math.sin(Date.now() / 180 + (e.buffId === 'berserk' ? 0 : 1)) * 0.10
+        const baseRadius = e.buffId === 'war_cry' ? 38 : 32
+        const auraR = baseRadius * pulseScale
+
+        ctx.save()
+
+        // 外层光晕（柔和发光）
+        const glowGrad = ctx.createRadialGradient(e.x, e.y, auraR * 0.3, e.x, e.y, auraR * 1.3)
+        glowGrad.addColorStop(0, e.color + '20')
+        glowGrad.addColorStop(0.7, e.color + '10')
+        glowGrad.addColorStop(1, e.color + '00')
+        ctx.fillStyle = glowGrad
+        ctx.beginPath(); ctx.arc(e.x, e.y, auraR * 1.3, 0, Math.PI * 2); ctx.fill()
+
+        // 主光环圈（带脉冲）
+        ctx.globalAlpha = 0.45 * remainRatio
+        ctx.strokeStyle = e.color
+        ctx.lineWidth = 2.5
+        ctx.shadowBlur = 16
+        ctx.shadowColor = e.color
+        ctx.setLineDash([8, 6])
+        ctx.beginPath()
+        ctx.arc(e.x, e.y, auraR, 0, Math.PI * 2)
+        ctx.stroke()
+        ctx.setLineDash([])
+
+        // 内部半透明填充
+        ctx.globalAlpha = 0.08 * remainRatio
+        ctx.fillStyle = e.color
+        ctx.beginPath(); ctx.arc(e.x, e.y, auraR, 0, Math.PI * 2); ctx.fill()
+
+        // 狂暴：额外火焰粒子
+        if (e.buffId === 'berserk') {
+          for (let i = 0; i < 5; i++) {
+            const angle = (Date.now() / 300 + i * Math.PI * 0.4) % (Math.PI * 2)
+            const dist = auraR * 0.75 + Math.sin(Date.now() / 150 + i * 2) * 8
+            const px = e.x + Math.cos(angle) * dist
+            const py = e.y + Math.sin(angle) * dist
+            ctx.globalAlpha = 0.7 * remainRatio * (0.5 + 0.5 * Math.sin(Date.now() / 100 + i))
+            ctx.fillStyle = '#ff8833'
+            ctx.beginPath(); ctx.arc(px, py, 2.5, 0, Math.PI * 2); ctx.fill()
+          }
+        } else if (e.buffId === 'war_cry') {
+          // 战吼：向上飘浮的光点
+          for (let i = 0; i < 4; i++) {
+            const angle = (Date.now() / 400 + i * Math.PI * 0.5) % (Math.PI * 2)
+            const dist = auraR * 0.6 + Math.sin(Date.now() / 200 + i) * 10
+            const px = e.x + Math.cos(angle) * dist
+            const py = e.y + Math.sin(angle) * dist * 0.6 - 5
+            ctx.globalAlpha = 0.65 * remainRatio
+            ctx.fillStyle = '#ffcc44'
+            ctx.beginPath(); ctx.arc(px, py, 2.5, 0, Math.PI * 2); ctx.fill()
+          }
+        }
+
         ctx.restore()
       }
     }
@@ -3548,6 +4916,95 @@ export class TowerBattle {
     ctx.closePath()
   }
 
+  // ===== 胜利/失败界面 =====
+
+  _renderResultScreen(ctx) {
+    const W = this.width
+    const H = this.height
+    const dpr = this.dpr
+    const isVictory = this.phase === 'victory'
+
+    // 半透明遮罩
+    ctx.fillStyle = 'rgba(0,0,0,0.85)'
+    ctx.fillRect(0, 0, W, H)
+
+    const cx = W / 2
+    const cy = H * 0.38
+
+    // 标题
+    ctx.font = `bold ${Math.max(36, 36 * dpr)}px sans-serif`
+    ctx.textAlign = 'center'
+    ctx.textBaseline = 'middle'
+
+    if (isVictory) {
+      ctx.shadowBlur = 25
+      ctx.shadowColor = '#ffd700'
+      ctx.strokeStyle = '#ffd700'
+      ctx.lineWidth = 2
+      ctx.strokeText('🎉 胜利！', cx, cy - 60)
+      ctx.fillStyle = '#ffd700'
+      ctx.fillText('🎉 胜利！', cx, cy - 60)
+      ctx.shadowBlur = 0
+    } else {
+      ctx.fillStyle = '#ff4444'
+      ctx.strokeText('💀 失败...', cx, cy - 60)
+      ctx.fillText('💀 失败...', cx, cy - 60)
+    }
+
+    // 统计信息
+    ctx.font = `${Math.max(15, 16 * dpr)}px sans-serif`
+    ctx.fillStyle = '#c9d1d9'
+    const statsText = [
+      `⚔ 击杀: ${this.stats.kills} 只`,
+      `🎒 掉落: ${this.stats.dropsCollected} 件`,
+      `⏱ 用时: ${(this.battleTime / 1000).toFixed(1)} 秒`
+    ]
+    for (let i = 0; i < statsText.length; i++) {
+      ctx.fillText(statsText[i], cx, cy + i * 30)
+    }
+
+    // 角色等级展示
+    if (isVictory && this.party) {
+      ctx.font = `${Math.max(13, 14 * dpr)}px sans-serif`
+      ctx.fillStyle = '#8b949e'
+      ctx.fillText('─── 角色等级 ───', cx, cy + 110)
+      ctx.fillStyle = '#58a6ff'
+      for (let i = 0; i < this.party.length; i++) {
+        const c = this.party[i]
+        ctx.fillText(`${c.name}: Lv${c.level}`, cx, cy + 140 + i * 26)
+      }
+    }
+
+    // 返回按钮
+    const btnW = Math.min(200 * dpr, W * 0.5)
+    const btnH = Math.max(46, 48 * dpr)
+    const btnX = (W - btnW) / 2
+    const btnY = H * 0.78
+
+    // 记录按钮区域（用于点击检测）
+    this._backBtnBounds = { x: btnX, y: btnY, w: btnW, h: btnH }
+
+    ctx.fillStyle = isVictory ? 'rgba(56,139,253,0.85)' : 'rgba(248,81,73,0.85)'
+    const br = 10
+    ctx.beginPath()
+    ctx.moveTo(btnX + br, btnY)
+    ctx.lineTo(btnX + btnW - br, btnY)
+    ctx.quadraticCurveTo(btnX + btnW, btnY, btnX + btnW, btnY + br)
+    ctx.lineTo(btnX + btnW, btnY + btnH - br)
+    ctx.quadraticCurveTo(btnX + btnW, btnY + btnH, btnX + btnW - br, btnY + btnH)
+    ctx.lineTo(btnX + br, btnY + btnH)
+    ctx.quadraticCurveTo(btnX, btnY + btnH, btnX, btnY + btnH - br)
+    ctx.lineTo(btnX, btnY + br)
+    ctx.quadraticCurveTo(btnX, btnY, btnX + br, btnY)
+    ctx.fill()
+
+    ctx.font = `bold ${Math.max(17, 18 * dpr)}px sans-serif`
+    ctx.textAlign = 'center'
+    ctx.textBaseline = 'middle'
+    ctx.fillStyle = '#ffffff'
+    ctx.fillText('返回城镇', cx, btnY + btnH / 2)
+  }
+
   // ===== UI层 =====
 
   _renderUI(ctx) {
@@ -3555,76 +5012,1341 @@ export class TowerBattle {
     const H = this.height
     const dpr = this.dpr
 
-    // 安全区域：顶部状态栏（自适应高度）
-    const topBarH = Math.max(H * 0.065, 44)
-    ctx.fillStyle = 'rgba(0,0,0,0.78)'
+    // ===== 顶部状态栏（塔防HUD）=====
+    const topBarH = Math.max(H * 0.095, 56)
+
+    // 渐变背景（深蓝→半透明，有质感）
+    const topGrad = ctx.createLinearGradient(0, 0, 0, topBarH)
+    topGrad.addColorStop(0, 'rgba(12,20,35,0.95)')
+    topGrad.addColorStop(1, 'rgba(18,28,48,0.85)')
+    ctx.fillStyle = topGrad
     ctx.fillRect(0, 0, W, topBarH)
 
-    // 水晶血量（左侧）
+    // 底部发光线分隔
+    ctx.strokeStyle = 'rgba(80,140,220,0.3)'
+    ctx.lineWidth = 1.5
+    ctx.beginPath()
+    ctx.moveTo(0, topBarH)
+    ctx.lineTo(W, topBarH)
+    ctx.stroke()
+
+    // ---- 左侧：水晶血量 ----
     const cHpRatio = Math.max(0, this.crystal.hp / this.crystal.maxHp)
-    ctx.fillStyle = '#8b949e'
-    ctx.font = `${Math.max(11, 12 * dpr)}px sans-serif`
+
+    // 水晶图标文字（💎）
+    ctx.font = `bold ${Math.max(14, 15 * dpr)}px sans-serif`
     ctx.textAlign = 'left'
-    ctx.fillText('敌方水晶', Math.max(8, 10), Math.max(16, 19))
-    ctx.fillStyle = 'rgba(255,255,255,0.18)'
-    const hpBarW = Math.min(108 * dpr, W * 0.25)
-    ctx.fillRect(Math.max(8, 10), Math.max(20, 24), hpBarW, Math.max(7, 9))
-    ctx.fillStyle = cHpRatio > 0.5 ? '#ffd700' : cHpRatio > 0.2 ? '#ff8c00' : '#ff4444'
-    ctx.fillRect(Math.max(8, 10), Math.max(20, 24), hpBarW * cHpRatio, Math.max(7, 9))
-    ctx.fillStyle = '#fff'
-    ctx.font = `${Math.max(9, 10 * dpr)}px sans-serif`
-    ctx.fillText(`${Math.max(0, this.crystal.hp)} / ${this.crystal.maxHp}`, Math.max(9, 12), Math.max(34, 41))
+    ctx.textBaseline = 'middle'
+    ctx.fillText('💎', Math.max(8, 10), topBarH * 0.32)
 
-    // ===== 波次进度显示（核心信息！） =====
-    const displayWave = Math.min(this.waveIndex, this.totalWaves)
-    const waveLabel = this.allWavesDone ? '✅ 全部完成' : `第 ${displayWave} / ${this.totalWaves} 波`
-    const waveColor = this.allWavesDone ? '#3fb950' : (this.waveActive ? '#ff8800' : '#8b949e')
-    ctx.fillStyle = waveColor
+    // "水晶" 标签
+    ctx.fillStyle = '#9eb0cc'
+    ctx.font = `${Math.max(11, 12 * dpr)}px sans-serif`
+    ctx.fillText('水晶', Math.max(30, 34), topBarH * 0.32)
+
+    // 血量数字
+    ctx.fillStyle = cHpRatio > 0.4 ? '#4ade80' : cHpRatio > 0.2 ? '#fbbf24' : '#f87171'
     ctx.font = `bold ${Math.max(13, 14 * dpr)}px sans-serif`
-    ctx.textAlign = 'center'
-    ctx.fillText(waveLabel, W / 2, Math.max(15, 19))
+    ctx.fillText(`${this.crystal.hp} / ${this.crystal.maxHp}`, Math.max(72, 80), topBarH * 0.32)
 
-    // 波次小进度条（当前波怪物剩余）
-    if (!this.allWavesDone && this.waveTotalCount > 0) {
-      const waveProgress = this.waveSpawnedCount / this.waveTotalCount
-      const barW = Math.min(100 * dpr, W * 0.3)
-      const barX = (W - barW) / 2
-      ctx.fillStyle = 'rgba(255,255,255,0.15)'
-      ctx.fillRect(barX, Math.max(21, 25), barW, Math.max(5, 6))
-      ctx.fillStyle = '#ff8800'
-      ctx.fillRect(barX, Math.max(21, 25), barW * waveProgress, Math.max(5, 6))
-      ctx.fillStyle = '#aaa'
-      ctx.font = `${Math.max(8, 9 * dpr)}px sans-serif`
-      ctx.fillText(`(${this.monsters.filter(m => !m.isDead).length} 只存活)`, W / 2, Math.max(35, 42))
-    } else if (this.crystal.isAttackable) {
-      ctx.fillStyle = '#ff4444'
-      ctx.font = `bold ${Math.max(10, 11 * dpr)}px sans-serif`
-      ctx.fillText('⚠ 攻击水晶！', W / 2, Math.max(32, 38))
+    // 血条
+    const hpBarW = Math.min(100 * dpr, W * 0.22)
+    const hpBarX = Math.max(8, 10)
+    const hpBarY = topBarH * 0.58
+    ctx.fillStyle = 'rgba(255,255,255,0.12)'
+    ctx.fillRect(hpBarX, hpBarY, hpBarW, Math.max(6, 7))
+    if (cHpRatio > 0) {
+      ctx.fillStyle = cHpRatio > 0.4 ? '#22c55e' : cHpRatio > 0.2 ? '#eab308' : '#ef4444'
+      ctx.fillRect(hpBarX, hpBarY, hpBarW * cHpRatio, Math.max(6, 7))
     }
 
-    // 击杀/掉落统计（右侧）
-    ctx.fillStyle = '#8b949e'
+    // ---- 中间：波次信息（醒目大字）----
+    const displayWave = Math.min(this.waveIndex, this.totalWaves)
+    const waveLabel = this.allWavesDone ? '✅ 全部通关!' :
+                      this.waveActive ? `⚔️ 第 ${displayWave} 波` : `第 ${displayWave} / ${this.totalWaves} 波`
+    const waveColor = this.allWavesDone ? '#4ade80' :
+                       (this.waveActive ? '#f97316' : '#94a3b8')
+
+    ctx.fillStyle = waveColor
+    ctx.font = `bold ${Math.max(16, 18 * dpr)}px sans-serif`
+    ctx.textAlign = 'center'
+    ctx.textBaseline = 'middle'
+    ctx.fillText(waveLabel, W / 2, topBarH * 0.36)
+
+    // 剩余怪物数量
+    if (!this.allWavesDone && this.waveTotalCount > 0) {
+      const remaining = Math.max(0, this.waveTotalCount - this.waveSpawnedCount + this.monsters.filter(m => !m.isDead).length)
+      const remainLabel = remaining > 0 ? `剩余: ${remaining}` : '清理中...'
+      ctx.fillStyle = remaining > 3 ? '#94a3b8' : remaining > 0 ? '#fbbf24' : '#4ade80'
+      ctx.font = `${Math.max(10, 11 * dpr)}px sans-serif`
+      ctx.fillText(remainLabel, W / 2, topBarH * 0.68)
+    }
+
+    // ---- 右侧：掉落/击杀统计 ----
+    ctx.fillStyle = '#7890b0'
     ctx.font = `${Math.max(10, 11 * dpr)}px sans-serif`
     ctx.textAlign = 'right'
-    ctx.fillText(`击杀: ${this.stats.kills}`, W - Math.max(8, 10), Math.max(15, 19))
-    ctx.fillText(`掉落: ${this.stats.dropsCollected}`, W - Math.max(8, 10), Math.max(30, 36))
+    ctx.textBaseline = 'middle'
+    const statsText = `💀${this.stats.kills || 0}  📦${this.stats.dropsCollected || 0}`
+    ctx.fillText(statsText, W - Math.max(8, 10), topBarH * 0.42)
 
-    // 底部提示（确保在安全区域内）
-    ctx.fillStyle = '#484f58'
-    ctx.font = `${Math.max(9, 10 * dpr)}px sans-serif`
-    ctx.textAlign = 'left'
-    let bottomHint = `第 ${this.stage.id} 关: ${this.stage.name}`
-    if (!this.crystal.isAttackable) {
-      bottomHint += ` | 🛡 消灭全部${this.totalMonstersAllWaves}只怪物后可攻击水晶`
-    } else {
-      bottomHint += ` | ⚠️ 水晶已暴露！集中火力！`
+    // 攻击水晶警告
+    if (this.crystal.isAttackable && !this.allWavesDone) {
+      ctx.fillStyle = '#f87171'
+      ctx.font = `bold ${Math.max(11, 12 * dpr)}px sans-serif`
+      ctx.textAlign = 'center'
+      ctx.textBaseline = 'middle'
+      ctx.fillText('⚠️ 水晶受攻击!', W / 2, topBarH * 0.85)
     }
-    // 底部提示放在安全区域（距底部自适应间距）
-    const _bottomBarH = Math.max(H * 0.17, 110)
-    ctx.fillText(bottomHint, Math.max(8, 10), H - Math.max(_bottomBarH * 0.15, 14))
+
+    // ===== 底部面板系统（战斗按钮 + 装备栏） =====
+    this._renderBottomPanel(ctx)
+
+    // 悬浮装备提示
+    this._renderItemTooltip(ctx)
   }
 
-  // 工具方法
+  // ==================== 底部面板（战斗策略 + 装备栏）====================
+
+  _renderBottomPanel(ctx) {
+    const W = this.width, H = this.height, dpr = this.dpr
+
+    // ---- 面板高度配置 ----
+    const bottomMargin = Math.max(8, 12 * dpr)       // 底部安全边距（避免被屏幕裁切）
+    const skillBarH   = Math.max(H * 0.055, 40)       // 技能栏（新增，在策略栏和装备栏之间）
+    const tacticsBarH = Math.max(H * 0.06, 42)        // 上栏：战斗按钮
+    const equipBarH   = Math.max(H * 0.22, 170)       // 下栏：装备+角色面板（加大以容纳三状态栏）
+    const totalBarH   = tacticsBarH + skillBarH + equipBarH + 8  // 中间间隔
+    const panelY      = H - totalBarH - bottomMargin   // 上移，留出底部边距
+
+    // ===== 最上栏：角色技能栏 =====
+    this._renderSkillBar(ctx, 0, panelY, W, skillBarH)
+
+    // ===== 策略按钮栏 =====
+    this._renderTacticsBar(ctx, 0, panelY + skillBarH + 4, W, tacticsBarH)
+
+    // ===== 装备背包 + 角色信息 =====
+    this._renderEquipInventory(ctx, 0, panelY + skillBarH + 4 + tacticsBarH + 4, W, equipBarH)
+
+    // 存储区域信息供点击检测使用
+    this._bottomPanelBounds = {
+      y: panelY,
+      skillBar: { x: 0, y: panelY, w: W, h: skillBarH },
+      tacticsBar: { x: 0, y: panelY + skillBarH + 4, w: W, h: tacticsBarH },
+      equipBar: { x: 0, y: panelY + skillBarH + 4 + tacticsBarH + 4, w: W, h: equipBarH },
+    }
+  }
+
+  // ===== 技能栏（显示当前选中角色的技能，支持手动释放） =====
+
+  _renderSkillBar(ctx, x, y, w, h) {
+    const dpr = this.dpr
+    const selected = this.party[this.selectedCharIndex]
+    if (!selected || !selected.skills) { ctx.save(); return }
+    const skills = selected.skills
+    ctx.save()
+
+    // 背景（深色半透明）
+    const grad = ctx.createLinearGradient(0, y, 0, y + h)
+    grad.addColorStop(0, 'rgba(18,24,38,0.92)')
+    grad.addColorStop(1, 'rgba(12,18,28,0.95)')
+    ctx.fillStyle = grad
+    ctx.fillRect(x, y, w, h)
+
+    // 顶部分隔线（淡蓝色发光）
+    ctx.strokeStyle = 'rgba(100,160,255,0.2)'
+    ctx.lineWidth = 1
+    ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x + w, y); ctx.stroke()
+
+    // 底部分隔线
+    ctx.strokeStyle = 'rgba(50,70,110,0.25)'
+    ctx.beginPath(); ctx.moveTo(x, y + h); ctx.lineTo(x + w, y + h); ctx.stroke()
+
+    // 角色名称标签
+    const labelX = x + Math.max(8, 10 * dpr)
+    const labelY = y + h / 2
+    ctx.font = `bold ${Math.max(9, 10 * dpr)}px sans-serif`
+    ctx.textAlign = 'left'
+    ctx.textBaseline = 'middle'
+    ctx.fillStyle = '#7aa2d8'
+    ctx.fillText(`${selected.name} 技能`, labelX, labelY)
+
+    // ---- 技能按钮 ----
+    this._skillBarButtons = []
+    const btnGap = Math.max(4, 5 * dpr)
+    const btnSize = Math.min(h * 0.72, 36 * dpr)       // 按钮尺寸（正方形）
+    const labelW = 70 * dpr                               // 标签区域宽度
+    const totalBtnW = skills.length * btnSize + (skills.length - 1) * btnGap
+    const startX = labelX + labelW + (w - labelW - Math.max(16, 20 * dpr) - totalBtnW) / 2
+    const btnY = y + (h - btnSize) / 2
+
+    for (let i = 0; i < skills.length; i++) {
+      const sk = skills[i]
+      const bx = startX + i * (btnSize + btnGap)
+
+      // CD状态检测
+      const cdRemaining = Math.max(0, selected.skillCDs[sk.id] || 0)
+      const onCD = cdRemaining > 0
+      const currentMp = selected.currentMp || 0
+      const mpCost = sk.mpCost || 0
+      const canAfford = currentMp >= mpCost
+      const unlocked = sk.unlockLevel ? (selected.level >= sk.unlockLevel) : true
+      const isDead = selected.isDead
+      const disabled = isDead || !unlocked || onCD || !canAfford
+
+      ctx.save()
+      ctx.translate(bx, btnY)
+
+      // 按钮背景
+      if (!unlocked) {
+        ctx.fillStyle = 'rgba(38,44,54,0.8)'
+        ctx.strokeStyle = '#333'
+        ctx.lineWidth = 1
+      } else if (onCD) {
+        const g = ctx.createRadialGradient(btnSize/2, btnSize/2, 2, btnSize/2, btnSize/2, btnSize*0.7)
+        g.addColorStop(0, 'rgba(50,45,65,0.85)')
+        g.addColorStop(1, 'rgba(35,32,48,0.75)')
+        ctx.fillStyle = g
+        ctx.strokeStyle = 'rgba(80,70,100,0.4)'
+        ctx.lineWidth = 1
+      } else if (!canAfford) {
+        const g = ctx.createRadialGradient(btnSize/2, btnSize/2, 2, btnSize/2, btnSize/2, btnSize*0.7)
+        g.addColorStop(0, 'rgba(90,40,35,0.8)')
+        g.addColorStop(1, 'rgba(65,30,26,0.7)')
+        ctx.fillStyle = g
+        ctx.strokeStyle = 'rgba(180,80,60,0.3)'
+        ctx.lineWidth = 1
+      } else {
+        // 正常可用：根据技能类型着色
+        const typeColor = sk.type === 'magic' ? [100, 50, 200] :
+                          sk.type === 'heal'  ? [50, 170, 90] :
+                          sk.type === 'buff'  ? [200, 150, 50] :
+                          [70, 85, 105]
+        const g = ctx.createRadialGradient(btnSize/2, btnSize/2, 2, btnSize/2, btnSize/2, btnSize*0.7)
+        g.addColorStop(0, `rgba(${typeColor[0]},${typeColor[1]},${typeColor[2]},0.8)`)
+        g.addColorStop(1, `rgba(${Math.floor(typeColor[0]*0.6)},${Math.floor(typeColor[1]*0.6)},${Math.floor(typeColor[2]*0.6)},0.65)`)
+        ctx.fillStyle = g
+        ctx.strokeStyle = `rgba(${typeColor[0]+50},${typeColor[1]+50},${typeColor[2]+50},0.5)`
+        ctx.lineWidth = 1.2
+      }
+
+      this._roundRect(ctx, 0, 0, btnSize, btnSize, 5)
+      ctx.fill()
+      ctx.stroke()
+
+      // CD遮罩扇形（从12点顺时针）
+      if (onCD && sk.cd > 0 && cdRemaining > 0) {
+        const cdRatio = Math.min(1, cdRemaining / sk.cd)
+        ctx.fillStyle = 'rgba(0,0,0,0.6)'
+        ctx.beginPath()
+        ctx.moveTo(btnSize/2, btnSize/2)
+        ctx.arc(btnSize/2, btnSize/2, btnSize * 0.48, -Math.PI / 2, -Math.PI / 2 + cdRatio * Math.PI * 2)
+        ctx.closePath()
+        ctx.fill()
+
+        // CD倒计时文字
+        const cdSec = Math.ceil(cdRemaining / 1000)
+        ctx.fillStyle = '#fff'
+        ctx.font = `bold ${Math.max(9, 10 * dpr)}px sans-serif`
+        ctx.textAlign = 'center'
+        ctx.textBaseline = 'middle'
+        ctx.fillText(`${cdSec}`, btnSize/2, btnSize/2)
+      } else {
+        // 技能名称（缩短显示）
+        ctx.fillStyle = !unlocked ? '#556' : (!canAfford ? '#e88' : '#eef')
+        ctx.font = `${Math.max(8, 9 * dpr)}px sans-serif`
+        ctx.textAlign = 'center'
+        ctx.textBaseline = 'middle'
+        const displayName = sk.name.length > 3 ? sk.name.slice(0, 3) : sk.name
+        ctx.fillText(displayName, btnSize/2, btnSize/2)
+
+        // MP消耗角标
+        if (mpCost > 0 && unlocked) {
+          const badgeR = Math.min(7, btnSize * 0.22)
+          const badgeX = btnSize - badgeR - 1
+          const badgeY = badgeR + 1
+          ctx.beginPath()
+          ctx.arc(badgeX, badgeY, badgeR, 0, Math.PI * 2)
+          ctx.fillStyle = canAfford ? 'rgba(60,120,220,0.85)' : 'rgba(200,60,60,0.85)'
+          ctx.fill()
+          ctx.fillStyle = '#fff'
+          ctx.font = `bold ${Math.max(6, 7 * dpr)}px sans-serif`
+          ctx.fillText(`${mpCost}`, badgeX, badgeY)
+        }
+      }
+
+      // 锁定标记（未解锁）
+      if (!unlocked) {
+        ctx.fillStyle = 'rgba(255,255,255,0.5)'
+        ctx.font = `bold ${Math.max(10, 11 * dpr)}px sans-serif`
+        ctx.textAlign = 'center'
+        ctx.textBaseline = 'middle'
+        ctx.fillText(`🔒${sk.unlockLevel}级`, btnSize/2, btnSize/2)
+      }
+
+      ctx.restore()
+
+      // 记录按钮位置供点击检测
+      this._skillBarButtons.push({
+        skillIdx: i,
+        skillId: sk.id,
+        charIndex: this.selectedCharIndex,
+        x: bx, y: btnY, w: btnSize, h: btnSize,
+        disabled,
+        onCD,
+        canAfford,
+        unlocked,
+      })
+    }
+
+    ctx.restore()
+  }
+
+  _renderTacticsBar(ctx, x, y, w, h) {
+    const dpr = this.dpr
+    ctx.save()
+
+    // 背景渐变（深色半透明，略带金属感）
+    const grad = ctx.createLinearGradient(0, y, 0, y + h)
+    grad.addColorStop(0, 'rgba(20,28,42,0.95)')
+    grad.addColorStop(1, 'rgba(14,20,32,0.98)')
+    ctx.fillStyle = grad
+    ctx.fillRect(x, y, w, h)
+
+    // 顶部发光分隔线
+    ctx.strokeStyle = 'rgba(80,140,220,0.25)'
+    ctx.lineWidth = 1
+    ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x + w, y); ctx.stroke()
+
+    // 底部分隔线
+    ctx.strokeStyle = 'rgba(60,80,120,0.3)'
+    ctx.beginPath(); ctx.moveTo(x, y + h); ctx.lineTo(x + w, y + h); ctx.stroke()
+
+    // 战斗按钮定义
+    // AI自动攻击状态：取第一个存活角色的状态作为全局显示
+    const aliveChar = this.party.find(c => !c.isDead)
+    const aiGlobalOn = aliveChar ? !!aliveChar.autoAttackEnabled : false
+
+    const buttons = [
+      {
+        id: 'auto_attack',
+        label: aiGlobalOn ? 'AI:开' : 'AI:关',
+        icon: '🤖',
+        active: aiGlobalOn,
+        desc: aiGlobalOn ? 'AI自动战斗中（点击关闭）' : '开启AI自动战斗'
+      },
+      {
+        id: 'target_nearest',
+        label: '最近目标',
+        icon: '🎯',
+        active: this.battleTactics.targetPriority === 'nearest',
+        desc: '优先攻击最近的敌人'
+      },
+      {
+        id: 'target_lowestHp',
+        label: '残血优先',
+        icon: '🩸',
+        active: this.battleTactics.targetPriority === 'lowestHp',
+        desc: '优先攻击HP最低的敌人'
+      },
+      {
+        id: 'target_ranged',
+        label: '先打远程',
+        icon: '🏹',
+        active: this.battleTactics.targetPriority === 'ranged',
+        desc: '优先攻击远程怪物'
+      },
+      {
+        id: 'hold_position',
+        label: '坚守位置',
+        icon: '🛡️',
+        active: !!this.battleTactics.holdPosition,
+        desc: '角色不自动移动'
+      },
+      {
+        id: 'focus_crystal',
+        label: '攻击水晶',
+        icon: '💎',
+        active: !!this.battleTactics.focusCrystal && this.crystal.isAttackable,
+        desc: '所有角色攻击水晶',
+        disabled: !this.crystal.isAttackable,
+      },
+    ]
+
+    const btnCount = buttons.length
+    const btnGap = Math.max(4, 6 * dpr)
+    const btnH = Math.max(h * 0.62, 30)
+    const btnW = Math.min((w - (btnCount + 1) * btnGap) / btnCount, 90 * dpr)
+    const totalW = btnCount * btnW + (btnCount - 1) * btnGap
+    const startX = x + (w - totalW) / 2
+    const btnY = y + (h - btnH) / 2
+
+    this._tacticButtons = [] // 存储按钮位置用于点击检测
+
+    for (let i = 0; i < btnCount; i++) {
+      const btn = buttons[i]
+      const bx = startX + i * (btnW + btnGap)
+
+      // 按钮背景
+      if (btn.disabled) {
+        ctx.fillStyle = 'rgba(40,46,56,0.7)'
+      } else if (btn.active) {
+        // 激活态：渐变高亮
+        const bGrad = ctx.createLinearGradient(bx, btnY, bx, btnY + btnH)
+        bGrad.addColorStop(0, 'rgba(59,130,246,0.8)')
+        bGrad.addColorStop(1, 'rgba(37,99,235,0.75)')
+        ctx.fillStyle = bGrad
+      } else {
+        ctx.fillStyle = 'rgba(45,52,64,0.85)'
+      }
+
+      this._roundRect(ctx, bx, btnY, btnW, btnH, 6)
+      ctx.fill()
+
+      // 边框
+      if (btn.active && !btn.disabled) {
+        ctx.strokeStyle = 'rgba(96,165,250,0.8)'
+        ctx.lineWidth = 1.5
+        this._roundRect(ctx, bx, btnY, btnW, btnH, 6)
+        ctx.stroke()
+      } else if (!btn.disabled) {
+        ctx.strokeStyle = 'rgba(70,80,100,0.5)'
+        ctx.lineWidth = 0.8
+        this._roundRect(ctx, bx, btnY, btnW, btnH, 6)
+        ctx.stroke()
+      }
+
+      // 图标
+      ctx.font = `${Math.max(12, 13 * dpr)}px sans-serif`
+      ctx.textAlign = 'center'
+      ctx.textBaseline = 'middle'
+      ctx.globalAlpha = btn.disabled ? 0.35 : (btn.active ? 1 : 0.7)
+      ctx.fillText(btn.icon, bx + btnW / 2, btnY + btnH * 0.35)
+
+      // 文字
+      ctx.font = `${Math.max(9, 10 * dpr)}px sans-serif`
+      ctx.fillStyle = btn.active ? '#e2e8f0' : (btn.disabled ? '#555' : '#94a3b8')
+      ctx.fillText(btn.label, bx + btnW / 2, btnY + btnH * 0.72)
+      ctx.globalAlpha = 1
+
+      this._tacticButtons.push({ ...btn, x: bx, y: btnY, w: btnW, h: btnH })
+    }
+
+    ctx.restore()
+  }
+
+  _renderEquipInventory(ctx, x, y, w, h) {
+    const dpr = this.dpr
+    // 每60帧输出一次inventory状态（避免刷屏）
+    if (Math.random() < 0.02) {
+      console.log(`[Tower] 渲染背包: inventory=[${this.inventory.map(i=>i?.name||'空').join(',')}] (${this.inventory.length}/${this.maxInventorySize})`)
+    }
+    ctx.save()
+
+    // 背景
+    const grad = ctx.createLinearGradient(0, y, 0, y + h)
+    grad.addColorStop(0, 'rgba(16,22,34,0.97)')
+    grad.addColorStop(1, 'rgba(10,15,24,0.99)')
+    ctx.fillStyle = grad
+    ctx.fillRect(x, y, w, h)
+
+    // 分割线：左侧装备区 | 右侧角色区
+    const splitX = w * 0.58
+    ctx.strokeStyle = 'rgba(60,80,120,0.25)'
+    ctx.lineWidth = 1
+    ctx.beginPath(); ctx.moveTo(splitX, y + 6); ctx.lineTo(splitX, y + h - 6); ctx.stroke()
+
+    // ========== 左侧：装备背包（加大字号+图标） ==========
+    const invPadding = Math.max(8, 10 * dpr)
+    const slotSize = Math.min((splitX - invPadding * 3) / 4, Math.max(52, 58 * dpr))   // 槽位加大
+    const invLabelY = y + Math.max(18, 20 * dpr)
+
+    // 标题 "临时背包"
+    ctx.fillStyle = '#889ab8'
+    ctx.font = `bold ${Math.max(13, 14 * dpr)}px sans-serif`   // 标题加大
+    ctx.textAlign = 'left'
+    ctx.textBaseline = 'middle'
+    ctx.fillText(`🎒 临时背包 (${this.inventory.length}/${this.maxInventorySize})`, x + invPadding, invLabelY)
+
+    // 装备槽位网格（2行 × 4列）
+    const gridStartY = invLabelY + Math.max(16, 18 * dpr)       // 标题间距加大
+    this._inventorySlots = []
+
+    for (let row = 0; row < 2; row++) {
+      for (let col = 0; col < 4; col++) {
+        const idx = row * 4 + col
+        const sx = x + invPadding + col * (slotSize + 6)
+        const sy = gridStartY + row * (slotSize + 6)
+
+        // 槽位背景
+        const item = this.inventory[idx]
+        if (item) {
+          // 有装备：品质色背景
+          const qColors = { common: '#374151', uncommon: '#1e3a5f', rare: '#3b2d5f', epic: '#4a1942', legendary: '#5c3d00' }
+          ctx.fillStyle = qColors[item.quality] || '#374151'
+          // 品质边框光效
+          const qc = item.quality === 'legendary' ? '#fbbf24' :
+                     item.quality === 'epic' ? '#a855f7' :
+                     item.quality === 'rare' ? '#3b82f6' : '#6b7280'
+          ctx.strokeStyle = qc
+          ctx.lineWidth = 1.5
+        } else {
+          ctx.fillStyle = 'rgba(30,38,52,0.85)'
+          ctx.strokeStyle = 'rgba(60,72,92,0.4)'
+          ctx.lineWidth = 1
+        }
+        this._roundRect(ctx, sx, sy, slotSize, slotSize, 5)
+        ctx.fill()
+        ctx.stroke()
+
+        // 待卖选中高亮（橙色闪烁边框）
+        if (item && this._sellTargetIndex === idx) {
+          ctx.strokeStyle = 'rgba(255,160,0,0.85)'
+          ctx.lineWidth = 2.5
+          this._roundRect(ctx, sx - 1.5, sy - 1.5, slotSize + 3, slotSize + 3, 6)
+          ctx.stroke()
+          // 小标记
+          ctx.fillStyle = '#ffa500'
+          ctx.font = `bold ${Math.max(10, 11 * dpr)}px sans-serif`   // 9→11
+          ctx.textAlign = 'right'
+          ctx.textBaseline = 'top'
+          ctx.fillText('卖', sx + slotSize - 2, sy + 2)
+        }
+
+        if (item) {
+          // 装备图标（加大）
+          const slotIcon = { weapon: '\u2694', armor: '\u{1F6E1}', accessory: '\u{1F48E}' }
+          ctx.font = `bold ${Math.max(22, 26 * dpr)}px sans-serif`   // 图标加大 20→26
+          ctx.textAlign = 'center'
+          ctx.textBaseline = 'middle'
+          ctx.fillText(slotIcon[item.slot] || '?', sx + slotSize / 2, sy + slotSize * 0.42)
+
+          // 等级文字（加大）
+          ctx.font = `bold ${Math.max(10, 11 * dpr)}px sans-serif`   // 等级 9→11
+          ctx.fillStyle = '#b0c0d4'
+          ctx.fillText(`Lv${item.level || 1}`, sx + slotSize / 2, sy + slotSize * 0.78)
+        } else {
+          // 空槽：加号提示（加大）
+          ctx.fillStyle = 'rgba(80,96,120,0.35)'
+          ctx.font = `bold ${Math.max(20, 24 * dpr)}px sans-serif`   // 加号 18→24
+          ctx.textAlign = 'center'
+          ctx.textBaseline = 'middle'
+          ctx.fillText('+', sx + slotSize / 2, sy + slotSize / 2)
+        }
+
+        this._inventorySlots.push({ idx, x: sx, y: sy, size: slotSize, item })
+      }
+    }
+
+    // ===== 底部按钮行：出售 | 金币 | 合成 =====
+    const btnRowY = y + h - Math.max(h * 0.13, 30) - 6
+    const btnRowH = Math.max(h * 0.13, 30)
+    const totalBtnW = splitX - invPadding * 2
+    // 三等分：卖出 | 金币 | 合成
+    const btnGap = 4
+    const singleBtnW = (totalBtnW - btnGap * 2) / 3
+
+    // 出售按钮（显示选中状态）
+    const hasSellTarget = this._sellTargetIndex >= 0 && this._sellTargetIndex < this.inventory.length
+    ctx.fillStyle = hasSellTarget ? 'rgba(180,80,50,0.88)' : 'rgba(120,70,50,0.75)'
+    this._roundRect(ctx, x + invPadding, btnRowY, singleBtnW, btnRowH, 5)
+    ctx.fill()
+    ctx.strokeStyle = hasSellTarget ? 'rgba(255,160,80,0.8)' : 'rgba(220,140,80,0.5)'
+    ctx.stroke()
+    // 如果有选中装备，显示"卖出: xxx"
+    const sellLabel = hasSellTarget ? `💰卖${this.inventory[this._sellTargetIndex].name}` : '💰 卖出'
+    ctx.fillStyle = hasSellTarget ? '#ffd700' : '#f0c080'
+    ctx.font = `bold ${Math.max(11, 12 * dpr)}px sans-serif`
+    ctx.textAlign = 'center'
+    ctx.textBaseline = 'middle'
+    ctx.fillText(sellLabel, x + invPadding + singleBtnW / 2, btnRowY + btnRowH / 2)
+    this._sellButton = { x: x + invPadding, y: btnRowY, w: singleBtnW, h: btnRowH }
+
+    // 金币显示
+    const goldX = x + invPadding + singleBtnW + btnGap
+    ctx.fillStyle = 'rgba(30,38,52,0.9)'
+    this._roundRect(ctx, goldX, btnRowY, singleBtnW, btnRowH, 5)
+    ctx.fill()
+    ctx.fillStyle = '#f1c40f'
+    ctx.font = `bold ${Math.max(13, 14 * dpr)}px sans-serif`
+    ctx.textAlign = 'center'
+    ctx.textBaseline = 'middle'
+    ctx.fillText(`💰 ${this.gold}`, goldX + singleBtnW / 2, btnRowY + btnRowH / 2)
+
+    // 合成按钮（三等分，足够宽）
+    const synthCost = 50
+    const synthBtnX = goldX + singleBtnW + btnGap
+    const synthBtnW = singleBtnW
+    const canSynth = this.gold >= synthCost && this.inventory.length >= 2
+    ctx.fillStyle = canSynth ? 'rgba(55,40,90,0.85)' : 'rgba(35,32,48,0.7)'
+    this._roundRect(ctx, synthBtnX, btnRowY, synthBtnW, btnRowH, 5)
+    ctx.fill()
+    ctx.strokeStyle = canSynth ? 'rgba(168,85,247,0.7)' : 'rgba(100,80,130,0.3)'
+    ctx.stroke()
+    ctx.fillStyle = canSynth ? '#c9a0ff' : '#666'
+    ctx.font = `bold ${Math.max(12, 13 * dpr)}px sans-serif`
+    ctx.textAlign = 'center'
+    ctx.textBaseline = 'middle'
+    ctx.fillText(`⚗️合成-${synthCost}`, synthBtnX + synthBtnW / 2, btnRowY + btnRowH / 2)
+    this._synthButton = { x: synthBtnX, y: btnRowY, w: synthBtnW, h: btnRowH }
+    this._synthCost = synthCost
+
+    // ========== 右侧：角色卡片（单卡片 + 切换） ==========
+    const charAreaX = splitX + 8
+    const charAreaW = w - splitX - 8
+
+    if (this.selectedCharIndex < 0) this.selectedCharIndex = 0
+    const idx = this.selectedCharIndex < this.party.length ? this.selectedCharIndex : 0
+    const c = this.party[idx]
+
+    // 标题行：角色名 + 页码
+    const labelY = y + Math.max(14, 16 * dpr)
+    ctx.font = `bold ${Math.max(11, 12 * dpr)}px sans-serif`
+    ctx.textAlign = 'left'
+    ctx.fillStyle = c.isDead ? '#666' : '#c8dce8'
+    ctx.fillText(c.name, charAreaX, labelY)
+
+    const pageText = `${idx + 1}/${this.party.length}`
+    ctx.textAlign = 'right'
+    ctx.fillStyle = '#5a6a80'
+    ctx.font = `${Math.max(9, 10 * dpr)}px sans-serif`
+    ctx.fillText(pageText, charAreaX + charAreaW, labelY)
+
+    // ===== 单角色大卡片 =====
+    const charCardH = Math.min(h - 52, 140 * dpr)   // 增大高度以容纳3条状态栏
+    const cardX = charAreaX
+    const cardY = labelY + Math.max(10, 12 * dpr)
+
+    // 卡片背景（玻璃质感）
+    const bgGrad = ctx.createLinearGradient(cardX, cardY, cardX, cardY + charCardH)
+    bgGrad.addColorStop(0, c.isDead ? 'rgba(35,30,30,0.92)' : 'rgba(28,42,58,0.88)')
+    bgGrad.addColorStop(1, c.isDead ? 'rgba(25,22,22,0.96)' : 'rgba(18,28,40,0.95)')
+    ctx.fillStyle = bgGrad
+    this._roundRect(ctx, cardX, cardY, charAreaW, charCardH, 10)
+    ctx.fill()
+    ctx.strokeStyle = c.isDead ? 'rgba(90,70,70,0.35)' : 'rgba(60,140,160,0.35)'
+    ctx.lineWidth = 1
+    this._roundRect(ctx, cardX, cardY, charAreaW, charCardH, 10)
+    ctx.stroke()
+
+    // ===== 左区：Idle头像 =====
+    const avatarSize = Math.min(charCardH - 12, 68 * dpr)
+    const avatarX = cardX + 8
+    const avatarY = cardY + (charCardH - avatarSize) / 2
+
+    // 绘制圆形裁剪的头像
+    ctx.save()
+    ctx.beginPath()
+    ctx.arc(avatarX + avatarSize / 2, avatarY + avatarSize / 2, avatarSize / 2, 0, Math.PI * 2)
+    ctx.clip()
+
+    // 用idle第一帧做头像
+    let avatarKey = null
+    if (c.name.includes('臻宝') || c.name === '臻宝') {
+      avatarKey = 'HERO_ZHENBAO_IDLE_01'
+    } else if (c.name.includes('李') || c.name.includes('小宝')) {
+      avatarKey = 'HERO_LIXIAOBAO_IDLE_0'
+    }
+    const avatarImg = avatarKey ? this.assets.get(avatarKey) : null
+    if (avatarImg && avatarImg.width > 0 && avatarImg.height > 0) {
+      ctx.drawImage(avatarImg, avatarX, avatarY, avatarSize, avatarSize)
+    } else {
+      // fallback：渐变色块+首字母
+      const abGrad = ctx.createLinearGradient(avatarX, avatarY, avatarX + avatarSize, avatarY + avatarSize)
+      abGrad.addColorStop(0, c.role === 'mage' ? '#4a3f9e' : '#9a6a32')
+      abGrad.addColorStop(1, c.role === 'mage' ? '#2d2558' : '#6a4520')
+      ctx.fillStyle = abGrad
+      ctx.fillRect(avatarX, avatarY, avatarSize, avatarSize)
+      ctx.font = `bold ${Math.max(20, avatarSize * 0.38)}px sans-serif`
+      ctx.textAlign = 'center'
+      ctx.textBaseline = 'middle'
+      ctx.fillStyle = c.isDead ? '#555' : '#e8f0f8'
+      ctx.fillText(c.name.charAt(0), avatarX + avatarSize / 2, avatarY + avatarSize / 2)
+    }
+    ctx.restore()
+
+    // 头像边框光圈
+    ctx.beginPath()
+    ctx.arc(avatarX + avatarSize / 2, avatarY + avatarSize / 2, avatarSize / 2 + 2, 0, Math.PI * 2)
+    ctx.strokeStyle = c.isDead ? '#555' : (c.role === 'mage' ? '#7c8ce8' : '#e8a84c')
+    ctx.lineWidth = 2
+    ctx.stroke()
+
+    // ===== 头像死亡状态：暗色遮罩 + 复活倒计时 + 进度条 =====
+    if (c.isDead && c.respawnTimer > 0) {
+      const cx = avatarX + avatarSize / 2
+      const cy = avatarY + avatarSize / 2
+
+      // 半透明暗色遮罩
+      ctx.save()
+      ctx.beginPath()
+      ctx.arc(cx, cy, avatarSize / 2, 0, Math.PI * 2)
+      ctx.clip()
+      ctx.fillStyle = 'rgba(0,0,0,0.68)'
+      ctx.fillRect(avatarX, avatarY, avatarSize, avatarSize)
+
+      // 死亡图标（骷髅💀）
+      ctx.font = `bold ${Math.max(22, avatarSize * 0.4)}px sans-serif`
+      ctx.textAlign = 'center'
+      ctx.textBaseline = 'middle'
+      ctx.fillText('☠', cx, cy - avatarSize * 0.08)
+
+      // 复活倒计时文字
+      const sec = Math.ceil(c.respawnTimer / 1000)
+      const timerFont = Math.max(12, avatarSize * 0.26)
+      ctx.font = `bold ${timerFont}px sans-serif`
+      // 倒计时闪烁效果（最后3秒变红闪烁）
+      const flashAlpha = sec <= 3 ? (0.6 + 0.4 * Math.sin(Date.now() / 200)) : 1
+      ctx.globalAlpha = flashAlpha
+      ctx.fillStyle = sec <= 3 ? '#ff4444' : '#58a6ff'
+      ctx.shadowColor = ctx.fillStyle
+      ctx.shadowBlur = 8
+      ctx.fillText(`${sec}s`, cx, cy + avatarSize * 0.32)
+
+      ctx.restore()
+
+      // 底部复活进度条（头像下方）
+      const respawnTime = (RESPAWN_TABLE[c.level] || c.level * 2) * (1 - (this._respawnBoost || 0))
+      const ratio = 1 - c.respawnTimer / (respawnTime * 1000)
+      const barW = avatarSize + 4
+      const barH = 5
+      const barX = avatarX - 2
+      const barY = avatarY + avatarSize + 3
+      ctx.fillStyle = 'rgba(0,0,0,0.7)'
+      this._roundRect(ctx, barX, barY, barW, barH, 3)
+      ctx.fill()
+      ctx.fillStyle = ratio > 0.95 ? '#4ade80' : '#58a6ff'
+      this._roundRect(ctx, barX, barY, Math.max(barH, barW * ratio), barH, 3)
+      ctx.fill()
+    }
+
+    // ===== 右区：信息 + 装备槽 =====
+    const infoX = avatarX + avatarSize + 12
+    const infoW = charAreaW - (infoX - cardX) - 44  // 留出切换按钮空间
+    const infoTop = cardY + 6
+
+    // 名称行
+    ctx.font = `bold ${Math.max(13, 14 * dpr)}px sans-serif`
+    ctx.textAlign = 'left'
+    ctx.textBaseline = 'top'
+    ctx.fillStyle = c.isDead ? '#555' : '#eef4fa'
+    ctx.fillText(c.name, infoX, infoTop)
+
+    // 等级+职业
+    ctx.font = `${Math.max(9, 10 * dpr)}px sans-serif`
+    const roleLabel = c.role === 'mage' ? '法师' : '战士'
+    const roleColor = c.role === 'mage' ? '#93b4f5' : '#f5c563'
+    ctx.fillStyle = c.isDead ? '#444' : roleColor
+    ctx.fillText(`Lv${c.level}  ${roleLabel}`, infoX, infoTop + 57)
+
+    // ===== 三个装备槽位（紧凑） =====
+    const slotKeys = ['weapon', 'armor', 'accessory']
+    const slotIcons = { weapon: '\u2694', armor: '\u{1F6E1}', accessory: '\u{1F48E}' }
+    const slotW = (infoW - 8) / 3
+    const slotH = Math.max(28, 26 * dpr)     // 缩小槽高，给状态条腾空间
+    const slotStartY = infoTop + 100           // 更靠近名称
+    this._charEquipSlots = []
+
+    for (let si = 0; si < 3; si++) {
+      const sk = slotKeys[si]
+      const sx = infoX + si * (slotW + 4)
+      const sy = slotStartY
+      const eqItem = c.equippedItems[sk]
+
+      // 槽位背景
+      if (eqItem) {
+        const qBg = { common: '#2a3040', uncommon: '#1a2a45', rare: '#2a2050', epic: '#3a1540', legendary: '#4a3000' }
+        ctx.fillStyle = qBg[eqItem.quality] || '#2a3040'
+        const qBorder = { common: '#555', uncommon: '#4a90c8', rare: '#7c5cf0', epic: '#c050d0', legendary: '#e8a000' }
+        ctx.strokeStyle = qBorder[eqItem.quality] || '#555'
+        ctx.lineWidth = 1.5
+      } else {
+        ctx.fillStyle = 'rgba(24,32,44,0.75)'
+        ctx.strokeStyle = 'rgba(60,76,100,0.3)'
+        ctx.lineWidth = 1
+      }
+      this._roundRect(ctx, sx, sy, slotW, slotH, 4)
+      ctx.fill()
+      ctx.stroke()
+
+      if (eqItem) {
+        // 已装备：图标 + 等级
+        ctx.font = `bold ${Math.max(13, 14 * dpr)}px sans-serif`
+        ctx.textAlign = 'center'
+        ctx.textBaseline = 'middle'
+        ctx.fillStyle = eqItem.quality === 'legendary' ? '#fbbf24' :
+                        eqItem.quality === 'epic' ? '#d8a0ff' : '#c8dae8'
+        ctx.fillText(slotIcons[sk], sx + slotW / 2, sy + slotH * 0.42)
+        ctx.font = `bold ${Math.max(7, 7 * dpr)}px sans-serif`
+        ctx.fillStyle = '#9ab'
+        ctx.fillText(`L${eqItem.level || 1}`, sx + slotW / 2, sy + slotH * 0.78)
+      } else {
+        // 空槽：只显示大+号
+        ctx.fillStyle = 'rgba(70,90,115,0.4)'
+        ctx.font = `bold ${Math.max(16, 18 * dpr)}px sans-serif`
+        ctx.textAlign = 'center'
+        ctx.textBaseline = 'middle'
+        ctx.fillText('+', sx + slotW / 2, sy + slotH / 2)
+      }
+
+      // 存储点击区域
+      this._charEquipSlots.push({ charIdx: idx, slot: sk, x: sx, y: sy, w: slotW, h: slotH })
+    }
+
+    // ===== 三条状态栏：HP(红) / MP(蓝) / EXP(白) 分开排列 =====
+    const barX = infoX
+    const barStartY = slotStartY + slotH + 10   // 装备栏下方留间距
+    const barW = infoW
+    const barH = 9              // 条高度加大
+    const barGap = 26            // 条之间明显间距
+
+    let cursorY = barStartY
+
+    // ---- HP 红色血条 ----
+    {
+      const hpRatio = Math.max(0, c.currentHp / c.maxHp)
+      // 背景
+      ctx.fillStyle = 'rgba(40,20,20,0.50)'
+      this._roundRect(ctx, barX, cursorY, barW, barH, 3)
+      ctx.fill()
+      // 前景（红色系）
+      if (hpRatio > 0) {
+        const hpColor = hpRatio > 0.5 ? '#e74c3c' : hpRatio > 0.25 ? '#e67e22' : '#c0392b'
+        ctx.fillStyle = hpColor
+        this._roundRect(ctx, barX, cursorY, Math.max(barH * 0.5, barW * hpRatio), barH, 3)
+        ctx.fill()
+      }
+      // 数值文字（条右侧外部）
+      ctx.font = `bold ${Math.max(8, 9 * dpr)}px sans-serif`
+      ctx.textAlign = 'left'
+      ctx.textBaseline = 'top'
+      ctx.fillStyle = hpRatio > 0.5 ? '#ff6b6b' : '#ffa07a'
+      ctx.fillText(`HP  ${c.currentHp} / ${c.maxHp}`, barX + 2, cursorY + barH + 2)
+    }
+    cursorY += barH + barGap
+
+    // ---- MP 蓝色蓝条 ----
+    {
+      const maxMp = c.maxMp || 30
+      const curMp = c.currentMp || 0
+      const mpRatio = maxMp > 0 ? Math.max(0, curMp / maxMp) : 0
+      ctx.fillStyle = 'rgba(15,25,45,0.48)'
+      this._roundRect(ctx, barX, cursorY, barW, barH, 3)
+      ctx.fill()
+      if (mpRatio > 0) {
+        ctx.fillStyle = '#3498db'
+        this._roundRect(ctx, barX, cursorY, Math.max(barH * 0.5, barW * mpRatio), barH, 3)
+        ctx.fill()
+      }
+      ctx.font = `bold ${Math.max(8, 9 * dpr)}px sans-serif`
+      ctx.textAlign = 'left'
+      ctx.textBaseline = 'top'
+      ctx.fillStyle = '#74b9ff'
+      ctx.fillText(`MP  ${curMp} / ${maxMp}`, barX + 2, cursorY + barH + 2)
+    }
+    cursorY += barH + barGap
+
+    // ---- EXP 白色经验条 ----
+    {
+      const curExp = c.totalExp || 0
+      const nextExp = EXP_TABLE[c.level + 1] || EXP_TABLE[EXP_TABLE.length - 1]
+      const prevExp = EXP_TABLE[c.level] || 0
+      const needed = nextExp - prevExp
+      const gained = Math.max(0, curExp - prevExp)
+      const expRatio = needed > 0 ? Math.min(1, gained / needed) : 0
+      // 暗背景
+      ctx.fillStyle = 'rgba(30,28,35,0.40)'
+      this._roundRect(ctx, barX, cursorY, barW, barH, 3)
+      ctx.fill()
+      // 白/灰前景
+      if (expRatio > 0) {
+        const expGrad = ctx.createLinearGradient(barX, cursorY, barX + barW * expRatio, cursorY)
+        expGrad.addColorStop(0, 'rgba(200,195,210,0.85)')
+        expGrad.addColorStop(1, 'rgba(220,218,228,0.95)')
+        ctx.fillStyle = expGrad
+        this._roundRect(ctx, barX, cursorY, Math.max(barH * 0.5, barW * expRatio), barH, 3)
+        ctx.fill()
+      }
+      // 数值
+      ctx.font = `bold ${Math.max(8, 9 * dpr)}px sans-serif`
+      ctx.textAlign = 'left'
+      ctx.textBaseline = 'top'
+      ctx.fillStyle = '#b8b4c4'
+      ctx.fillText(`EXP  ${gained} / ${needed}`, barX + 2, cursorY + barH + 2)
+    }
+
+    ctx.textBaseline = 'bottom'
+
+    // ===== 底部角色属性栏（攻击 / 防御 / 速度） =====
+    const attrY = cursorY + barH + 40   // EXP条下方间距
+    if (attrY + 16 < cardY + charCardH - 6) {    // 确保不超出卡片底部
+      const attrFont = `bold ${Math.max(7.5, 8 * dpr)}px sans-serif`
+      ctx.font = attrFont
+      ctx.textAlign = 'left'
+      ctx.textBaseline = 'top'
+
+      // 三列属性，等宽分布（攻击力走_getEffectiveAtk，显示buff加成）
+      const colW = infoW / 3
+      const effectiveAtk = this._getEffectiveAtk(c)
+      const atkBonus = effectiveAtk - (c.atk || 0)
+      const attrs = [
+        { label: '攻击', value: effectiveAtk, bonus: atkBonus, color: '#f5a062', icon: '\u2694' },
+        { label: '防御', value: c.def || 0, color: '#62b4f5', icon: '\u{1F6E1}' },
+        { label: '速度', value: c.spd || 0, color: '#9bf58a', icon: '\u231B' },
+      ]
+      for (let ai = 0; ai < 3; ai++) {
+        const ax = barX + ai * colW
+        const a = attrs[ai]
+        // 标签
+        ctx.fillStyle = 'rgba(160,175,195,0.55)'
+        ctx.fillText(a.label, ax, attrY)
+        // 数值（加粗高亮）
+        ctx.font = `bold ${Math.max(8, 9 * dpr)}px sans-serif`
+        // 有buff加成时：显示 "基础(+增量)" 格式，增量用更亮的颜色
+        if (a.bonus && a.bonus > 0) {
+          const baseText = `${a.value - a.bonus}`
+          const bonusText = `(+${a.bonus})`
+          ctx.fillStyle = a.color
+          ctx.fillText(baseText, ax + ctx.measureText(a.label).width + 3, attrY)
+          const baseW = ctx.measureText(baseText).width
+          ctx.fillStyle = '#4ade80'
+          ctx.fillText(bonusText, ax + ctx.measureText(a.label).width + 3 + baseW + 2, attrY)
+          // 小箭头↑提示
+          ctx.font = `${Math.max(7, 8 * dpr)}px sans-serif`
+          ctx.fillText('↑', ax + ctx.measureText(a.label).width + 3 + baseW + ctx.measureText(bonusText).width + 3, attrY - 1)
+        } else {
+          ctx.fillStyle = a.color
+          ctx.fillText(`${a.value}`, ax + ctx.measureText(a.label).width + 3, attrY)
+        }
+        ctx.font = attrFont
+      }
+    }
+
+    // ===== 左右切换按钮（卡片右侧边缘） =====
+    const btnSize = Math.min(26, charCardH * 0.3)
+    const btnCY = cardY + charCardH / 2
+    const leftBtnX = cardX + charAreaW - btnSize * 2 - 6
+    const rightBtnX = cardX + charAreaW - btnSize - 4
+
+    ;[{ dir: -1, bx: leftBtnX, enabled: idx > 0 },
+      { dir: 1, bx: rightBtnX, enabled: idx < this.party.length - 1 }].forEach(b => {
+      ctx.fillStyle = b.enabled ? 'rgba(50,130,180,0.6)' : 'rgba(40,52,68,0.35)'
+      this._roundRect(ctx, b.bx, btnCY - btnSize / 2, btnSize, btnSize, 5)
+      ctx.fill()
+      if (b.enabled) { ctx.strokeStyle = 'rgba(100,180,230,0.4)'; ctx.lineWidth = 0.8; this._roundRect(ctx, b.bx, btnCY - btnSize / 2, btnSize, btnSize, 5); ctx.stroke() }
+      ctx.font = `bold ${Math.max(11, 12 * dpr)}px sans-serif`
+      ctx.textAlign = 'center'
+      ctx.textBaseline = 'middle'
+      ctx.fillStyle = b.enabled ? '#c0e0ff' : '#445'
+      ctx.fillText(b.dir < 0 ? '\u25C0' : '\u25B6', b.bx + btnSize / 2, btnCY)
+    })
+
+    this._charSwitchBtns = [
+      { dir: -1, x: leftBtnX, y: btnCY - btnSize / 2, w: btnSize, h: btnSize },
+      { dir: 1, x: rightBtnX, y: btnCY - btnSize / 2, w: btnSize, h: btnSize },
+    ]
+    this._charCards = []  // 不再用，保留兼容
+
+    ctx.restore()
+  }
+
+  // ==================== 底部面板交互 ====================
+
+  /** 技能栏按钮点击：手动释放选中角色的技能 */
+  _onSkillBarTap(btn) {
+    const char = this.party[btn.charIndex]
+    if (!char || char.isDead) return
+    const sk = char.skills[btn.skillIdx]
+    if (!sk) return
+
+    // 扣除MP并施放
+    const mpCost = sk.mpCost || 0
+    if ((char.currentMp || 0) < mpCost) return  // MP不足（理论上disabled状态不会触发）
+    char.currentMp -= mpCost
+
+    console.log(`[Tower] 🎮 手动释放技能: ${char.name} -> ${sk.name} (idx=${btn.skillIdx})`)
+    this._castSkill(char, btn.skillIdx)
+  }
+
+  _onTacticButtonTap(btnId) {
+    const t = this.battleTactics
+    switch (btnId) {
+      case 'auto_attack': {
+        // 全局切换所有角色的AI自动攻击状态
+        const newState = !this.party.some(c => !c.isDead && c.autoAttackEnabled)
+        for (const c of this.party) {
+          if (!c.isDead) c.autoAttackEnabled = newState
+        }
+        console.log(`[Tower] AI自动攻击 ${newState ? '已开启' : '已关闭'}`)
+        break
+      }
+      case 'target_nearest':
+        t.targetPriority = t.targetPriority === 'nearest' ? 'nearest' : 'nearest' // 总是设为最近
+        t.targetPriority = 'nearest'
+        break
+      case 'target_lowestHp':
+        t.targetPriority = t.targetPriority === 'lowestHp' ? 'nearest' : 'lowestHp'
+        break
+      case 'target_ranged':
+        t.targetPriority = t.targetPriority === 'ranged' ? 'nearest' : 'ranged'
+        break
+      case 'hold_position':
+        t.holdPosition = !t.holdPosition
+        // 切换坚守时，停止所有角色移动
+        if (t.holdPosition) {
+          for (const c of this.party) { c.targetX = c.x; c.targetY = c.y }
+        }
+        break
+      case 'focus_crystal':
+        if (this.crystal.isAttackable) {
+          t.focusCrystal = !t.focusCrystal
+        }
+        break
+    }
+  }
+
+  _onInventorySlotTap(slot) {
+    const item = slot.item
+    if (!item) return
+
+    const now = Date.now()
+    const last = this._lastTapSlot
+
+    // 判定双击：同一格 + 时间窗口内
+    if (last && last.idx === slot.idx && (now - last.time) < this._DOUBLE_TAP_MS) {
+      // === 双击：穿戴到当前选中角色 ===
+      this._lastTapSlot = null  // 重置
+      this._equipToSelectedChar(item, slot.idx)
+      return
+    }
+
+    // === 单击：显示装备属性 + 标记为待卖选中（不穿戴） ===
+    this._lastTapSlot = { idx: slot.idx, time: now }
+    this._sellTargetIndex = slot.idx  // 选中此格，点"卖出"时卖这件
+
+    // 在该格位置上方弹出属性浮窗
+    const tipX = slot.x + slot.size / 2
+    const tipY = slot.y - 8
+    this._hoveredItem = { item, x: tipX, y: tipY, source: 'inventory' }
+    // 浮窗自动持续2秒后消失
+    this._tooltipTimer = setTimeout(() => {
+      if (this._hoveredItem?.item === item) {
+        this._hoveredItem = null
+      }
+    }, 2000)
+  }
+
+  /** 直接将背包中的装备穿戴到 selectedCharIndex 对应的角色 */
+  _equipToSelectedChar(item, invIdx) {
+    if (!item || invIdx === undefined || invIdx < 0) return
+    const idx = this.selectedCharIndex >= 0 ? this.selectedCharIndex : 0
+    const c = this.party[idx]
+    if (!c || c.isDead) return
+
+    const slotKey = item.slot || 'accessory'
+
+    // 检查该槽位是否已有装备，有则先卸下回背包（满则提示）
+    const oldItem = c.equippedItems[slotKey]
+    if (oldItem && this.inventory.length >= this.maxInventorySize) {
+      this._addFloatingText(this.width / 2, this.height * 0.55, `❌ ${c.name}的${slotKey}槽位有装备，但背包已满！`, '#f87171')
+      return
+    }
+    // 卸下旧装备回背包
+    if (oldItem) { this.inventory.push({ ...oldItem }) }
+
+    // 从背包移除新装备
+    this.inventory.splice(invIdx, 1)
+
+    // 退还旧属性 + 应用新属性
+    if (oldItem) {
+      if (oldItem.bonusHp) { c.maxHp -= oldItem.bonusHp; c.currentHp = Math.max(1, c.currentHp - oldItem.bonusHp) }
+      if (oldItem.bonusAtk) c.atk -= oldItem.bonusAtk
+      if (oldItem.bonusDef) c.def = Math.max(0, (c.def || 5) - oldItem.bonusDef)
+      if (oldItem.bonusSpd) c.spd = Math.max(0, c.spd - oldItem.bonusSpd)
+    }
+
+    // 装上新装备
+    c.equippedItems[slotKey] = item
+    if (item.bonusHp) { c.maxHp += item.bonusHp; c.currentHp += item.bonusHp }
+    if (item.bonusAtk) c.atk += item.bonusAtk
+    if (item.bonusDef) c.def = (c.def || 5) + item.bonusDef
+    if (item.bonusSpd) c.spd += item.bonusSpd
+
+    // 浮动提示
+    const bonusTexts = []
+    if (item.bonusHp) bonusTexts.push(`+${item.bonusHp}HP`)
+    if (item.bonusAtk) bonusTexts.push(`+${item.bonusAtk}ATK`)
+    if (item.bonusDef) bonusTexts.push(`+${item.bonusDef}DEF`)
+    if (item.bonusSpd) bonusTexts.push(`+${item.bonusSpd}SPD`)
+    this._addFloatingText(c.x, c.y - 200, `✨ ${c.name} 穿上 ${item.name}\n${bonusTexts.join(' ')}`, '#ffd700', 2.0)
+
+    // 粒子特效
+    const color = QUALITY_COLORS[item.quality] || '#fff'
+    for (let i = 0; i < 10; i++) {
+      const angle = (i / 10) * Math.PI * 2
+      this.particles.push({
+        x: c.x, y: c.y - 100,
+        vx: Math.cos(angle) * 50, vy: Math.sin(angle) * 50 - 30,
+        size: 3 + Math.random() * 3, color, life: 1, decay: 2.0,
+      })
+    }
+  }
+
+  /** 点击角色装备槽 → 卸下装备回背包 */
+  _onCharEquipSlotTap(slot) {
+    const c = this.party[slot.charIdx]
+    if (!c || c.isDead) return
+    const item = c.equippedItems[slot.slot]
+    if (!item) return
+
+    // 背包满则提示
+    if (this.inventory.length >= this.maxInventorySize) {
+      this._addFloatingText(this.width / 2, this.height * 0.55, `❌ 背包已满，无法卸下!`, '#f87171')
+      return
+    }
+
+    // 卸下：退还属性
+    if (item.bonusHp) { c.maxHp -= item.bonusHp; c.currentHp = Math.max(1, c.currentHp - item.bonusHp) }
+    if (item.bonusAtk) c.atk -= item.bonusAtk
+    if (item.bonusDef) c.def = Math.max(0, (c.def || 5) - item.bonusDef)
+    if (item.bonusSpd) c.spd = Math.max(0, c.spd - item.bonusSpd)
+
+    // 清空槽位，放入背包
+    c.equippedItems[slot.slot] = null
+    this.inventory.push({ ...item })
+
+    this._addFloatingText(c.x, c.y - 200, `📤 ${c.name} 卸下了 ${item.name}`, '#94a3b8')
+  }
+
+  /** 出售用户选中的背包装备（需先点击选中） */
+  _sellSelectedInventoryItem() {
+    if (this.inventory.length === 0) {
+      this._addFloatingText(this.width / 2, this.height * 0.55, '❌ 背包没有可卖的装备', '#f87171')
+      return
+    }
+
+    // 检查是否有用户选中的待售装备
+    const targetIdx = this._sellTargetIndex
+    if (targetIdx === undefined || targetIdx < 0 || !this.inventory[targetIdx]) {
+      this._addFloatingText(this.width / 2, this.height * 0.55, '👆 请先点击要卖的装备', '#fbbf24')
+      return
+    }
+
+    // 品质价格倍率
+    const priceMap = { common: 10, uncommon: 20, rare: 40, epic: 80, legendary: 160 }
+    const sold = this.inventory[targetIdx]
+    const base = priceMap[sold.quality] || 5
+    const value = base + (sold.level || 1) * 3
+
+    this.inventory.splice(targetIdx, 1)
+    this.gold += value
+    this._sellTargetIndex = -1  // 清除选中状态
+
+    this._addFloatingText(this.width / 2, this.height * 0.55,
+      `💰 出售 ${sold.name} → +${value}金币`, '#f1c40f')
+  }
+
+  _openEquipPanelForItem(item, invIdx) {
+    this.equipPanel = {
+      visible: true,
+      item: item,
+      invIndex: invIdx,       // 背包中的位置（穿戴后清空）
+      selectedCharIndex: -1,
+      animTimer: 0,
+      charButtons: [],
+    }
+
+    const W = this.width, H = this.height, dpr = this.dpr
+    const panelW = Math.min(340 * dpr, W * 0.88)
+    const panelH = Math.min(H * 0.45, 280 * dpr)
+    let startX = (W - panelW) / 2
+
+    for (let i = 0; i < this.party.length; i++) {
+      const c = this.party[i]
+      const btnW = Math.min(76 * dpr, panelW / this.party.length - 12), btnH = 86 * dpr
+      this.equipPanel.charButtons.push({
+        x: startX + i * (btnW + 8),
+        y: panelH * 0.48, w: btnW, h: btnH, charIndex: i
+      })
+    }
+  }
+
+  /** 合成装备：两个同槽位+同品质的装备合成升级（消耗金币） */
+  _synthesizeEquipment() {
+    const cost = this._synthCost || 50
+    if (this.inventory.length < 2) {
+      this._addFloatingText(this.width / 2, this.height * 0.55, '❌ 装备不足2件', '#f87171')
+      return
+    }
+    if (this.gold < cost) {
+      this._addFloatingText(this.width / 2, this.height * 0.55, `❌ 金币不足，需要${cost}💰`, '#f87171')
+      return
+    }
+
+    // 找出可合成的配对（同slot + 同quality，不要求同名）
+    console.log(`[Tower] 合成检测: inventory=${JSON.stringify(this.inventory.map(i => ({ n: i.name, s: i.slot, q: i.quality })))}`)
+    for (let i = 0; i < this.inventory.length; i++) {
+      for (let j = i + 1; j < this.inventory.length; j++) {
+        const a = this.inventory[i], b = this.inventory[j]
+        // 放宽条件：同槽位+同品质即可合成（不需要同名）
+        if (a.slot && b.slot && a.slot === b.slot && a.quality === b.quality) {
+          console.log(`[Tower] ✅ 找到可合成对: [${i}]${a.name}(${a.slot},${a.quality}) + [${j}]${b.name}(${b.slot},${b.quality})`)
+          // 合成！生成新装备（等级+1，属性温和提升）
+          // 设计原则：等级只提供HP/MP/少量防御，主要战力靠装备本身品质
+          const newLevel = (a.level || 1) + 1
+          // 成长公式：每级在基础值上叠加一小部分，避免膨胀过快
+          const grow = (base, lv) => {
+            if (!base || base <= 0) return 0
+            // 等级加成系数：每级+20%，线性累加但取整向下
+            return base + Math.floor(base * (lv - 1) * 0.2)
+          }
+          const newItem = {
+            ...a,
+            level: newLevel,
+            bonusHp: grow(a.bonusHp || 0, newLevel),
+            bonusAtk: grow(a.bonusAtk || 0, newLevel),
+            bonusDef: grow(a.bonusDef || 0, newLevel),
+            bonusSpd: grow(a.bonusSpd || 0, newLevel),
+            name: `${a.name}+${newLevel}`,
+          }
+
+          // 升级品质
+          const qualityOrder = ['common', 'uncommon', 'rare', 'epic', 'legendary']
+          const qi = qualityOrder.indexOf(a.quality)
+          if (qi >= 0 && newLevel >= 3 && qi < qualityOrder.length - 1) {
+            newItem.quality = qualityOrder[qi + 1]
+          }
+
+          // 移除旧物品，放入新物品
+          this.inventory.splice(j, 1)
+          this.inventory.splice(i, 1, newItem)
+
+          // 扣金币
+          this.gold -= cost
+
+          // 合成特效提示（含属性变化）
+          const attrText = [
+            newItem.bonusHp ? `HP+${newItem.bonusHp}` : '',
+            newItem.bonusAtk ? `攻+${newItem.bonusAtk}` : '',
+            newItem.bonusDef ? `防+${newItem.bonusDef}` : '',
+            newItem.bonusSpd ? `速+${newItem.bonusSpd}` : '',
+          ].filter(Boolean).join(' ')
+          console.log(`[Tower] ⚗️合成: ${a.name}Lv${a.level||1} + ${b.name}Lv${b.level||1} → ${newItem.name}, 属性: ${attrText}`)
+          this._addFloatingText(this.width / 2, this.height * 0.55,
+            `⚗️ ${newItem.name}\n${attrText || '属性提升'} (-${cost}💰)`, '#a78bfa')
+          return
+        }
+      }
+    }
+
+    // 没有可合成的对
+    console.log(`[Tower] ❌ 无可合成对: 需要同槽位+同品质的两件装备`)
+    this._addFloatingText(this.width / 2, this.height * 0.55, '❌ 没有可合成的装备', '#f87171')
+  }
+
+  /** 渲染悬浮装备属性提示框 */
+  _renderItemTooltip(ctx) {
+    const h = this._hoveredItem
+    if (!h || !h.item) return
+    const item = h.item
+    const W = this.width, H = this.height, dpr = this.dpr
+
+    // 品质配置
+    const qColors = {
+      common: { name: '普通', bg: '#2a3040', border: '#666', text: '#aab' },
+      uncommon: { name: '优秀', bg: '#1a3050', border: '#4a90c8', text: '#8ec8ff' },
+      rare: { name: '稀有', bg: '#282048', border: '#7c5cf0', text: '#c9a0ff' },
+      epic: { name: '史诗', bg: '#381438', border: '#d050d0', text: '#f0a0f0' },
+      legendary: { name: '传说', bg: '#403000', border: '#e8a800', text: '#ffd060' },
+    }
+    const qc = qColors[item.quality] || qColors.common
+
+    const slotNames = { weapon: '\u2694 武器', armor: '\u{1F6E1} 护甲', accessory: '\u{1F48E} 饰品' }
+
+    // 构建内容行
+    const lines = []
+    lines.push({ text: item.name, color: qc.text, size: 13, bold: true })
+    lines.push({ text: `${qc.name} ${slotNames[item.slot] || ''}  Lv${item.level || 1}`, color: qc.border, size: 10 })
+    if (item.bonusHp)   lines.push({ text: `\u2764 HP +${item.bonusHp}`, color: '#5ae08a', size: 10 })
+    if (item.bonusAtk)  lines.push({ text: `\u2694 ATK +${item.bonusAtk}`, color: '#f08050', size: 10 })
+    if (item.bonusDef)  lines.push({ text: `\u{1F6E1} DEF +${item.bonusDef}`, color: '#58b8e8', size: 10 })
+    if (item.bonusSpd)  lines.push({ text: `\u26A1 SPD +${item.bonusSpd}`, color: '#e8d850', size: 10 })
+
+    // 计算tooltip尺寸
+    const padX = Math.max(10, 12 * dpr)
+    const padY = Math.max(7, 8 * dpr)
+    const lineHeight = Math.max(16, 18 * dpr)
+    let maxW = 0
+    for (const l of lines) {
+      ctx.font = `${l.bold ? 'bold' : ''} ${Math.max(l.size, 9 * dpr)}px sans-serif`
+      maxW = Math.max(maxW, ctx.measureText(l.text).width)
+    }
+    const tipW = maxW + padX * 2
+    const tipH = lines.length * lineHeight + padY * 2
+
+    // 定位（在目标上方，避免超出屏幕）
+    let tipX = h.x - tipW / 2
+    let tipY = h.y - tipH - 8
+    if (tipX < 4) tipX = 4
+    if (tipX + tipW > W - 4) tipX = W - tipW - 4
+    if (tipY < 4) tipY = h.y + h.size || h.h || 30
+
+    // 绘制tooltip背景（带阴影）
+    ctx.save()
+    ctx.shadowColor = 'rgba(0,0,0,0.5)'
+    ctx.shadowBlur = 12
+    ctx.shadowOffsetY = 4
+    ctx.fillStyle = qc.bg
+    this._roundRect(ctx, tipX, tipY, tipW, tipH, 6)
+    ctx.fill()
+    ctx.shadowColor = 'transparent'
+
+    // 边框
+    ctx.strokeStyle = qc.border
+    ctx.lineWidth = 1.2
+    this._roundRect(ctx, tipX, tipY, tipW, tipH, 6)
+    ctx.stroke()
+
+    // 绘制文字
+    for (let i = 0; i < lines.length; i++) {
+      const l = lines[i]
+      ctx.font = `${l.bold ? 'bold' : ''} ${Math.max(l.size, 9 * dpr)}px sans-serif`
+      ctx.textAlign = 'left'
+      ctx.textBaseline = 'top'
+      ctx.fillStyle = l.color
+      ctx.fillText(l.text, tipX + padX, tipY + padY + i * lineHeight)
+    }
+
+    ctx.restore()
+  }
+
+  _addFloatingText(x, y, text, color) {
+    this.effects.push({
+      type: 'dmg_number', x, y, value: text, color,
+      scale: 0.9, life: 1.8, vy: -25
+    })
+  }
+
+  /** 绘制锯齿形闪电（从 x1,y1 到 x2,y2，segments 段数） */
+  _drawLightningBolt(ctx, x1, y1, x2, y2, segments) {
+    const pts = [{x: x1, y: y1}]
+    for (let i = 1; i < segments; i++) {
+      const t = i / segments
+      const bx = x1 + (x2 - x1) * t
+      const by = y1 + (y2 - y1) * t
+      const perpX = -(y2 - y1)
+      const perpY = (x2 - x1)
+      const perpLen = Math.sqrt(perpX*perpX + perpY*perpY) || 1
+      const offset = (Math.random() - 0.5) * 25
+      pts.push({ x: bx + (perpX / perpLen) * offset, y: by + (perpY / perpLen) * offset })
+    }
+    pts.push({x: x2, y: y2})
+    ctx.beginPath()
+    ctx.moveTo(pts[0].x, pts[0].y)
+    for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i].x, pts[i].y)
+    ctx.stroke()
+  }
+
   _roundRect(ctx, x, y, w, h, r) {
     ctx.beginPath()
     ctx.moveTo(x + r, y)
