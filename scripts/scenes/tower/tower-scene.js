@@ -15,6 +15,7 @@
 import { TOWER_STAGES } from '../../data/tower/stages.js'
 import { TowerBattle } from './tower-battle.js'
 import { charStateManager } from '../../data/character-state.js'
+import { SCENE } from '../../game.js'
 
 // 章节配置
 const CHAPTERS = [
@@ -124,11 +125,17 @@ export class TowerScene {
   _handleStageTap(x, y) {
     for (const btn of this.stageButtons) {
       if (x >= btn.x && x <= btn.x + btn.w && y >= btn.y && y <= btn.y + btn.h) {
-        if (btn.unlocked) this._startStage(btn.stage)
+        if (btn.unlocked) {
+          this.game.audio.playSFX('ui_confirm')
+          this._startStage(btn.stage)
+        }
         return
       }
     }
-    if (this._inBackButton(x, y)) this.game.popScene()
+    if (this._inBackButton(x, y)) {
+      this.game.audio.playSFX('ui_cancel')
+      this.game.changeScene(SCENE.TOWN)
+    }
   }
 
   // ===== 结算界面点击检测 =====
@@ -140,9 +147,11 @@ export class TowerScene {
     const btnX = W / 2 - btnW / 2
     const btnY = H * 0.78
     if (x >= btnX && x <= btnX + btnW && y >= btnY && y <= btnY + btnH) {
+      this.game.audio.playSFX('ui_confirm')
       this.phase = 'stage_select'
       this.battle = null
-      // 返回选关界面（城镇）
+      // 返回选关界面，停止战斗BGM
+      this.game.audio.stopBGM()
       console.log('[Tower] 结果页返回选关')
     }
   }
@@ -179,6 +188,8 @@ export class TowerScene {
     this.phase = 'battle'
     const party = this._loadTowerParty()
     this.battle = new TowerBattle(this, stage, party)
+    // 切换到塔防战斗BGM
+    this.game.audio.playBGM('bgm_tower')
   }
 
   // ========== 角色加载 ==========
@@ -210,8 +221,15 @@ export class TowerScene {
         maxHp: tmpl.maxHp,
         maxMp: tmpl.maxMp,
         atk: tmpl.atk,
+        matk: tmpl.matk || 0,
         def: tmpl.def,
         spd: tmpl.spd,
+        mpRegen: tmpl.mpRegen || 0,
+        hpRegen: tmpl.hpRegen || 0,
+        cdr: tmpl.cdr || 0,
+        lifesteal: tmpl.lifesteal || 0,
+        atkGrowth: tmpl.atkGrowth || 0.05,
+        matkGrowth: tmpl.matkGrowth || 0.05,
 
         currentHp: tmpl.maxHp,
         currentMp: tmpl.maxMp,
@@ -240,8 +258,8 @@ export class TowerScene {
   /** 默认角色模板（当没有存档时回退使用） */
   _getDefaultParty() {
     const templates = [
-      { id: 'zhenbao', name: '臻宝', role: 'warrior', maxHp: 120, maxMp: 30, atk: 18, def: 12, spd: 10 },
-      { id: 'lixiaobao', name: '李小宝', role: 'mage', maxHp: 80, maxMp: 80, atk: 22, def: 6, spd: 11 },
+      { id: 'zhenbao', name: '臻宝', role: 'warrior', maxHp: 120, maxMp: 30, atk: 22, matk: 8, def: 12, spd: 10, mpRegen: 0, hpRegen: 0, cdr: 0, lifesteal: 0, atkGrowth: 0.12, matkGrowth: 0.04 },
+      { id: 'lixiaobao', name: '李小宝', role: 'mage', maxHp: 80, maxMp: 80, atk: 10, matk: 45, def: 6, spd: 11, mpRegen: 2, hpRegen: 0, cdr: 0, lifesteal: 0, atkGrowth: 0.04, matkGrowth: 0.12 },
     ]
     return templates.map(t => ({
       ...t,
@@ -258,7 +276,10 @@ export class TowerScene {
     const templates = {
       zhenbao: {
         id: 'zhenbao', name: '臻宝', role: 'warrior',
-        maxHp: 120, maxMp: 30, atk: 18, def: 12, spd: 10,
+        maxHp: 120, maxMp: 30, atk: 22, matk: 8, def: 12, spd: 10,
+        mpRegen: 0, hpRegen: 0, cdr: 0, lifesteal: 0,
+        // 物理成长：atk每级+12%，matk每级+4%
+        atkGrowth: 0.12, matkGrowth: 0.04,
         skills: [
           { id: 'slash', name: '斩击', type: 'attack', power: 1.2, mpCost: 0, desc: '基础物理攻击' },
           { id: 'shield_bash', name: '盾击', type: 'attack', power: 0.8, mpCost: 5, desc: '盾击+眩晕', cd: 4000 },
@@ -268,7 +289,10 @@ export class TowerScene {
       },
       lixiaobao: {
         id: 'lixiaobao', name: '李小宝', role: 'mage',
-        maxHp: 80, maxMp: 80, atk: 22, def: 6, spd: 11,
+        maxHp: 80, maxMp: 80, atk: 10, matk: 45, def: 6, spd: 11,
+        mpRegen: 2, hpRegen: 0, cdr: 0, lifesteal: 0,
+        // 法术成长：atk每级+4%，matk每级+12%
+        atkGrowth: 0.04, matkGrowth: 0.12,
         skills: [
           { id: 'fireball', name: '火球术', type: 'magic', power: 1.5, mpCost: 8, cd: 5000,
             desc: '火球穿透3个敌人', pierceCount: 3 },
@@ -280,7 +304,10 @@ export class TowerScene {
       },
       lufei: {
         id: 'lufei', name: '路飞', role: 'fighter',
-        maxHp: 100, maxMp: 20, atk: 20, def: 8, spd: 12,
+        maxHp: 100, maxMp: 20, atk: 20, matk: 10, def: 8, spd: 12,
+        mpRegen: 1, hpRegen: 0, cdr: 0, lifesteal: 0,
+        // 平衡成长：atk每级+10%，matk每级+6%
+        atkGrowth: 0.10, matkGrowth: 0.06,
         skills: [
           { id: 'punch', name: '橡皮拳', type: 'attack', power: 1.0, mpCost: 0, desc: '物理攻击' },
           { id: 'gatling', name: '机关枪', type: 'attack', power: 0.4, mpCost: 10, hits: 5, desc: '5连击', unlockLevel: 3, cd: 8000 },
@@ -289,7 +316,10 @@ export class TowerScene {
       },
       tangguo: {
         id: 'tangguo', name: '糖果', role: 'healer',
-        maxHp: 90, maxMp: 60, atk: 12, def: 10, spd: 9,
+        maxHp: 90, maxMp: 60, atk: 8, matk: 18, def: 10, spd: 9,
+        mpRegen: 3, hpRegen: 2, cdr: 0, lifesteal: 0,
+        // 辅助成长：atk每级+5%，matk每级+10%
+        atkGrowth: 0.05, matkGrowth: 0.10,
         skills: [
           { id: 'candy_strike', name: '糖果击', type: 'attack', power: 0.9, mpCost: 0, desc: '物理攻击' },
           { id: 'heal', name: '甜蜜治疗', type: 'heal', power: 0.8, mpCost: 6, desc: '治疗队友', cd: 5000 },
@@ -307,10 +337,19 @@ export class TowerScene {
       const s = eq.stats || eq
       hero.maxHp += s.maxHp || 0
       hero.atk += s.atk || 0
+      hero.matk += s.matk || 0
       hero.def += s.def || 0
       hero.spd += s.spd || 0
+      hero.maxMp += s.maxMp || 0
+      hero.mpRegen += s.mpRegen || 0
+      hero.hpRegen += s.hpRegen || 0
+      hero.cdr += s.cdr || 0
+      hero.lifesteal += s.lifesteal || 0
     }
+    // CDR 上限 40%
+    hero.cdr = Math.min(0.4, hero.cdr)
     hero.currentHp = Math.min(hero.currentHp || hero.maxHp, hero.maxHp)
+    hero.currentMp = Math.min(hero.currentMp || hero.maxMp, hero.maxMp)
   }
 
   // ========== 渲染 ==========
@@ -536,8 +575,8 @@ export class TowerScene {
           const attrY = ry + cardH - 20 * dpr
           ctx.font = `bold ${9 * dpr}px sans-serif`
           ctx.fillStyle = '#2a2f38'
-          ctx.fillText(`💎 ${stage.crystalHp}HP`, contentX, attrY)
-          const stars = stage.crystalHp <= 1000 ? 1 : stage.crystalHp <= 3000 ? 2 : stage.crystalHp <= 6000 ? 3 : 4
+          const diffStars = stage.id <= 3 ? 1 : stage.id <= 7 ? 2 : stage.id <= 11 ? 3 : 4
+          ctx.fillText(`⚔️ ${diffStars}星难度`, contentX, attrY)
           ctx.fillText('\u2606'.repeat(4), contentX + 66 * dpr, attrY)
 
           // 居中大锁图标
@@ -600,18 +639,18 @@ export class TowerScene {
           if (displayDesc !== stage.desc) displayDesc += '..'
           ctx.fillText(displayDesc, contentX, ry + 30 * dpr)
 
-          // 第三行：底部属性栏（三段式：HP | 星级 | 怪物）
+          // 第三行：底部属性栏（三段式：难度 | 星级 | 怪物）
           const attrY = ry + cardH - 20 * dpr
           ctx.font = `bold ${9 * dpr}px sans-serif`
           ctx.textBaseline = 'top'
 
-          // 左段：HP
-          ctx.fillStyle = '#ffd70088'
-          ctx.fillText(`💎 ${stage.crystalHp}HP`, contentX, attrY)
+          // 左段：难度
+          const diffStars = stage.id <= 3 ? 1 : stage.id <= 7 ? 2 : stage.id <= 11 ? 3 : 4
+          ctx.fillStyle = '#a855f788'
+          ctx.fillText(`⚔️ ${diffStars}星难度`, contentX, attrY)
 
-          // 中段：星级（居中于卡片中间区域）
-          const stars = stage.crystalHp <= 1000 ? 1 : stage.crystalHp <= 3000 ? 2 : stage.crystalHp <= 6000 ? 3 : 4
-          const starStr = '\u2605'.repeat(stars) + '\u2606'.repeat(4 - stars)
+          // 中段：星级
+          const starStr = '\u2605'.repeat(diffStars) + '\u2606'.repeat(4 - diffStars)
           ctx.fillStyle = isBoss ? '#e67e2288' : '#f39c1266'
           const starX = x + cardW * 0.45
           ctx.fillText(starStr, starX, attrY)
@@ -708,7 +747,7 @@ export class TowerScene {
     // 副标题
     ctx.fillStyle = isWin ? '#f0d07040' : '#ff444420'
     ctx.font = `${14 * dpr}px sans-serif`
-    ctx.fillText(isWin ? '敌方水晶已被摧毁！' : '再接再厉，勇士！', W / 2, H * 0.2 + 36 * dpr)
+    ctx.fillText(isWin ? '所有波次已通过！' : '再接再厉，勇士！', W / 2, H * 0.2 + 36 * dpr)
 
     // 统计面板
     const panelW = Math.min(320 * dpr, W * 0.85)

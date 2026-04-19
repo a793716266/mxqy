@@ -13,9 +13,10 @@ import { InputManager } from './core/input-manager.js'
 import { AudioManager } from './core/audio-manager.js'
 import { AssetManager, ASSETS } from './core/asset-manager.js'
 import { SkillEffectManager } from './core/skill-effect-manager.js'
+import { SettingsPanel } from './ui/settings-panel.js'
 
 // 场景类型
-const SCENE = {
+export const SCENE = {
   MAIN_MENU: 'main-menu',
   TOWN: 'town',
   FIELD: 'field',
@@ -52,6 +53,7 @@ export class Game {
     this.audio = new AudioManager()
     this.assets = new AssetManager()
     this.effects = new SkillEffectManager(this)
+    this.settings = new SettingsPanel(this)  // 设置面板
 
     // 场景切换动画
     this._fadeAlpha = 0
@@ -212,6 +214,10 @@ export class Game {
     this.input.update()
     this.effects.update(this.deltaTime * 1000) // 更新特效（毫秒）
 
+    // 处理设置面板输入
+    this._handleSettingsInput()
+    this.settings.update(this.deltaTime)
+
     if (this.currentScene) {
       this.currentScene.update(this.deltaTime)
     }
@@ -220,6 +226,27 @@ export class Game {
     this._render()
 
     requestAnimationFrame(() => this._loop())
+  }
+
+  // 处理设置面板输入
+  _handleSettingsInput() {
+    if (!this.settings.visible) return
+
+    // 处理点击
+    const tap = this.input.consumeTap()
+    if (tap) {
+      this.settings.handleTap(tap.x, tap.y)
+    }
+
+    // 处理拖动
+    if (Object.keys(this.input.touches).length > 0) {
+      for (const id in this.input.touches) {
+        const t = this.input.touches[id]
+        this.settings.handleDrag(t.x, t.y)
+      }
+    } else {
+      this.settings.handleDragEnd()
+    }
   }
 
   _render() {
@@ -245,6 +272,9 @@ export class Game {
       ctx.fillStyle = `rgba(0, 0, 0, ${this._fadeAlpha})`
       ctx.fillRect(0, 0, this.width, this.height)
     }
+
+    // 渲染设置面板（在最上层）
+    this.settings.render(ctx)
 
     ctx.restore()
   }

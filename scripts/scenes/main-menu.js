@@ -5,6 +5,7 @@
 export class MainMenuScene {
   constructor(game) {
     this.game = game
+    this.game.audio.playBGM('bgm_menu')  // 主菜单BGM
     this.ctx = game.ctx
     this.width = game.width
     this.height = game.height
@@ -24,6 +25,14 @@ export class MainMenuScene {
         speed: Math.random() * 20 + 10,
         opacity: Math.random()
       })
+    }
+
+    // 设置按钮（右上角）
+    this.settingsBtn = {
+      x: this.width - 70 * this.dpr,
+      y: 20 * this.dpr,
+      w: 50 * this.dpr,
+      h: 50 * this.dpr
     }
   }
 
@@ -103,10 +112,21 @@ export class MainMenuScene {
       if (tap) {
         const tx = tap.x
         const ty = tap.y
+
+        // 检查设置按钮
+        if (this.settingsBtn &&
+            tx >= this.settingsBtn.x && tx <= this.settingsBtn.x + this.settingsBtn.w &&
+            ty >= this.settingsBtn.y && ty <= this.settingsBtn.y + this.settingsBtn.h) {
+          this.game.audio.playSFX('ui_confirm')
+          this.game.settings.show()
+          return
+        }
+
         if (this.buttons && Array.isArray(this.buttons)) {
           for (const btn of this.buttons) {
             if (tx >= btn.x && tx <= btn.x + btn.w &&
                 ty >= btn.y && ty <= btn.y + btn.h) {
+              this.game.audio.playSFX('ui_confirm')
               btn.action()
               break
             }
@@ -171,6 +191,31 @@ export class MainMenuScene {
     ctx.fillStyle = 'rgba(255,255,255,0.3)'
     ctx.textAlign = 'center'
     ctx.fillText('v0.1 Alpha', w / 2, h - 20 * this.dpr)
+
+    // 绘制设置按钮
+    this._drawSettingsButton(ctx)
+  }
+
+  _drawSettingsButton(ctx) {
+    const btn = this.settingsBtn
+    if (!btn) return
+
+    const r = 12 * this.dpr
+
+    // 按钮背景
+    ctx.beginPath()
+    ctx.arc(btn.x + btn.w / 2, btn.y + btn.h / 2, btn.w / 2, 0, Math.PI * 2)
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.15)'
+    ctx.fill()
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.3)'
+    ctx.lineWidth = 2 * this.dpr
+    ctx.stroke()
+
+    // 齿轮图标 (⚙️)
+    ctx.font = `${28 * this.dpr}px sans-serif`
+    ctx.textAlign = 'center'
+    ctx.textBaseline = 'middle'
+    ctx.fillText('⚙️', btn.x + btn.w / 2, btn.y + btn.h / 2)
   }
 
   _drawButton(ctx, btn) {

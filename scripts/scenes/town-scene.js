@@ -10,6 +10,7 @@ import { EquipmentPanel } from '../ui/equipment-panel.js'
 export class TownScene {
   constructor(game, data) {
     this.game = game
+    this.game.audio.playBGM('bgm_town')  // 切换到小镇BGM
     this.ctx = game.ctx
     this.width = game.width
     this.height = game.height
@@ -199,17 +200,19 @@ export class TownScene {
       if (tap) {
         // 对话框点击
         if (this.dialogue) {
+          this.game.audio.playSFX('ui_click')
           this._showNextDialogue()
           return
         }
-        
+
         // 检查是否点击了NPC（必须点击NPC的位置）
         const clickedNPC = this._checkClickNPC(tap)
         if (clickedNPC) {
+          this.game.audio.playSFX('ui_confirm')
           this._interactWithNPC(clickedNPC)
           return
         }
-        
+
         // 尝试激活摇杆
         this.movement.handleTap(tap)
       }
@@ -405,6 +408,7 @@ export class TownScene {
     const closeBtnRadius = 20 * this.dpr
     const dist = Math.sqrt((tx - closeBtnX - 20 * this.dpr) ** 2 + (ty - closeBtnY - 20 * this.dpr) ** 2)
     if (dist <= closeBtnRadius) {
+      this.game.audio.playSFX('ui_cancel')
       this.exploreMenu = null
       return
     }
@@ -433,8 +437,11 @@ export class TownScene {
       
       if (this._isInRect(tx, ty, btnX, btnY, btnW, btnH)) {
         if (dungeon.unlocked) {
+          this.game.audio.playSFX('ui_confirm')
           console.log(`[Town] 选择副本: ${dungeon.name}`)
           this.exploreMenu = null
+          // 切换场景时停止小镇BGM
+          this.game.audio.stopBGM()
           if (dungeon.area === 'tower') {
             this.game.changeScene('tower')
           } else {

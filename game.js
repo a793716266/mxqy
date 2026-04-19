@@ -16,8 +16,32 @@ const canvas = wx.createCanvas()
 // 创建游戏实例
 const game = new Game(canvas)
 
+// 预加载 sound 分包（微信小游戏必须先加载分包才能访问其资源）
+function preloadSoundPackage() {
+  return new Promise((resolve, reject) => {
+    if (typeof wx !== 'undefined' && wx.loadSubpackage) {
+      wx.loadSubpackage({
+        name: 'sound',
+        success: () => {
+          console.log('[分包] sound 分包加载成功')
+          resolve()
+        },
+        fail: (err) => {
+          console.warn('[分包] sound 分包加载失败:', err)
+          resolve() // 不阻塞游戏启动
+        }
+      })
+    } else {
+      resolve() // 非微信环境直接跳过
+    }
+  })
+}
+
 // 启动游戏循环
 game.start()
+
+// 异步加载 sound 分包
+preloadSoundPackage()
 
 console.log('[喵星奇缘] 游戏启动完成')
 

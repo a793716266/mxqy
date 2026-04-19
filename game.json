@@ -11,6 +11,10 @@
     {
       "name": "battle",
       "root": "subpackages/battle/"
+    },
+    {
+      "name": "sound",
+      "root": "subpackages/sound/"
     }
   ]
 }

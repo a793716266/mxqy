@@ -5,11 +5,16 @@
  * - id: 关卡编号（从1开始）
  * - name: 关卡名称
  * - desc: 描述
- * - crystalHp: 敌方水晶血量
  * - monsterType: 怪物类型（影响掉落和难度）
  * - spawnInterval: 刷怪间隔(ms)，越小越快
  * - maxMonsters: 最大同时存在怪物数
  * - waves: 波次定义（可选，不填则随机刷怪）
+ * - boss: BOSS标记（如 'goblin_shaman', 'orc_warlord', 'demon_lord'）
+ *
+ * 战斗机制：
+ * - 每波怪物消灭后出现虫洞，靠近传送进入下一波
+ * - 最后一波击败BOSS即胜利
+ * - 全员阵亡则失败
  *
  * 怪物类型克制关系：
  * slime(史莱姆) < goblin(哥布林) < orc(兽人) < wolf(恶狼) < undead(亡灵) < demon(恶魔) < dragon(幼龙)
@@ -21,7 +26,6 @@ export const TOWER_STAGES = [
     id: 1,
     name: '初来乍到',
     desc: '简单的小试炼，熟悉操作',
-    crystalHp: 500,
     monsterType: 'slime',
     spawnInterval: 4000,
     maxMonsters: 5,
@@ -34,7 +38,6 @@ export const TOWER_STAGES = [
     id: 2,
     name: '史莱姆浪潮',
     desc: '大量史莱姆来袭',
-    crystalHp: 800,
     monsterType: 'slime',
     spawnInterval: 3000,
     maxMonsters: 8,
@@ -43,7 +46,6 @@ export const TOWER_STAGES = [
     id: 3,
     name: '哥布林的袭击',
     desc: '哥布林带着同伴出现',
-    crystalHp: 1200,
     monsterType: 'goblin',
     spawnInterval: 3500,
     maxMonsters: 8,
@@ -56,7 +58,6 @@ export const TOWER_STAGES = [
     id: 4,
     name: '森林深处',
     desc: '哥布林占据了森林',
-    crystalHp: 1800,
     monsterType: 'goblin',
     spawnInterval: 2800,
     maxMonsters: 10,
@@ -64,8 +65,7 @@ export const TOWER_STAGES = [
   {
     id: 5,
     name: '精英·哥布林萨满',
-    desc: '击败萨满摧毁水晶',
-    crystalHp: 2500,
+    desc: '击败萨满通过此关',
     monsterType: 'goblin',
     spawnInterval: 3000,
     maxMonsters: 10,
@@ -77,7 +77,6 @@ export const TOWER_STAGES = [
     id: 6,
     name: '兽人的咆哮',
     desc: '强大的兽人部落',
-    crystalHp: 3000,
     monsterType: 'orc',
     spawnInterval: 3000,
     maxMonsters: 10,
@@ -86,7 +85,6 @@ export const TOWER_STAGES = [
     id: 7,
     name: '战狼群',
     desc: '成群的恶狼包围了你',
-    crystalHp: 2800,
     monsterType: 'wolf',
     spawnInterval: 2000,
     maxMonsters: 12,
@@ -95,7 +93,6 @@ export const TOWER_STAGES = [
     id: 8,
     name: '双线作战',
     desc: '狼群+兽人联合进攻',
-    crystalHp: 3500,
     monsterType: 'orc',
     spawnInterval: 2500,
     maxMonsters: 12,
@@ -104,7 +101,6 @@ export const TOWER_STAGES = [
     id: 9,
     name: '兽人精锐',
     desc: '兽人的精英部队',
-    crystalHp: 4000,
     monsterType: 'orc',
     spawnInterval: 2200,
     maxMonsters: 12,
@@ -112,8 +108,7 @@ export const TOWER_STAGES = [
   {
     id: 10,
     name: '精英·兽人战王',
-    desc: '摧毁战王的堡垒',
-    crystalHp: 6000,
+    desc: '击败战王的堡垒',
     monsterType: 'orc',
     spawnInterval: 2500,
     maxMonsters: 14,
@@ -125,7 +120,6 @@ export const TOWER_STAGES = [
     id: 11,
     name: '亡灵的呼吸',
     desc: '阴森的亡灵领域',
-    crystalHp: 5000,
     monsterType: 'undead',
     spawnInterval: 2800,
     maxMonsters: 12,
@@ -134,7 +128,6 @@ export const TOWER_STAGES = [
     id: 12,
     name: '骷髅海',
     desc: '无尽的骷髅大军',
-    crystalHp: 4500,
     monsterType: 'undead',
     spawnInterval: 1800,
     maxMonsters: 15,
@@ -143,7 +136,6 @@ export const TOWER_STAGES = [
     id: 13,
     name: '幽灵缠身',
     desc: '幽灵比骷髅更难对付',
-    crystalHp: 5500,
     monsterType: 'undead',
     spawnInterval: 2200,
     maxMonsters: 12,
@@ -152,7 +144,6 @@ export const TOWER_STAGES = [
     id: 14,
     name: '地狱前线',
     desc: '恶魔大军压境',
-    crystalHp: 7000,
     monsterType: 'demon',
     spawnInterval: 2500,
     maxMonsters: 14,
@@ -161,7 +152,6 @@ export const TOWER_STAGES = [
     id: 15,
     name: '精英·恶魔领主',
     desc: '最终决战',
-    crystalHp: 10000,
     monsterType: 'demon',
     spawnInterval: 2000,
     maxMonsters: 15,

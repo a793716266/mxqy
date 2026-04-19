@@ -50,7 +50,7 @@ export const EQUIP_TYPE_CONFIG = {
   weapon: {
     name: '武器',
     icon: '⚔️',
-    primaryStats: ['atk']
+    primaryStats: ['atk', 'matk']
   },
   armor: {
     name: '防具',
@@ -60,7 +60,7 @@ export const EQUIP_TYPE_CONFIG = {
   accessory: {
     name: '饰品',
     icon: '💍',
-    primaryStats: ['spd', 'maxMp', 'crit']
+    primaryStats: ['spd', 'maxMp', 'mpRegen', 'hpRegen', 'cdr', 'crit']
   }
 }
 
@@ -75,7 +75,9 @@ export const EQUIPMENT_CH1 = {
     rarity: 'common',
     desc: '一把略显陈旧的短剑',
     stats: {
-      atk: 5
+      atk: 15,
+      hpRegen: 5,
+      lifesteal: 0.02
     },
     price: 50,
     sellPrice: 20
@@ -87,8 +89,8 @@ export const EQUIPMENT_CH1 = {
     rarity: 'common',
     desc: '简单的木制法杖，适合新手法师',
     stats: {
-      atk: 4,
-      maxMp: 10
+      matk: 15,
+     mpRegen: 8,
     },
     price: 60,
     sellPrice: 25
@@ -103,7 +105,9 @@ export const EQUIPMENT_CH1 = {
     desc: '被咬一下也没事反正这货没啥攻击力',
     stats: {
       atk: 32,
-      crit: 0.1
+      matk: 8,
+      crit: 0.1,
+      lifesteal: 0.08
     },
     price: 200,
     sellPrice: 80
@@ -115,8 +119,10 @@ export const EQUIPMENT_CH1 = {
     rarity: 'rare',
     desc: '蕴含魔力的法杖',
     stats: {
-      atk: 30,
-      maxMp: 300
+      atk: 8,
+      matk: 40,
+      maxMp: 30,
+      mpRegen: 3
     },
     price: 220,
     sellPrice: 90
@@ -131,8 +137,10 @@ export const EQUIPMENT_CH1 = {
     desc: '这要是被抓一下不得了',
     stats: {
       atk: 220,
+      matk: 30,
       crit: 0.3,
-      maxHp: 120
+      maxHp: 120,
+      lifesteal: 0.15
     },
     price: 600,
     sellPrice: 240
@@ -146,10 +154,12 @@ export const EQUIPMENT_CH1 = {
     rarity: 'legendary',
     desc: '阳光草原的守护神兵，散发着温暖的光芒',
     stats: {
-      atk: 50,
+      atk: 80,
+      matk: 50,
       def: 32,
       crit: 0.12,
-      maxHp: 500
+      maxHp: 500,
+      lifesteal: 0.20
     },
     price: 1500,
     sellPrice: 600
@@ -164,8 +174,8 @@ export const EQUIPMENT_CH1 = {
     rarity: 'common',
     desc: '简单的皮革护甲',
     stats: {
-      def: 4,
-      maxHp: 15
+      def: 15,
+      maxHp: 150
     },
     price: 50,
     sellPrice: 20
@@ -177,9 +187,8 @@ export const EQUIPMENT_CH1 = {
     rarity: 'common',
     desc: '普通的布制长袍',
     stats: {
-      def: 2,
-      maxHp: 10,
-      maxMp: 15
+      def: 10,
+      maxHp: 120
     },
     price: 60,
     sellPrice: 25
@@ -193,22 +202,24 @@ export const EQUIPMENT_CH1 = {
     rarity: 'rare',
     desc: '由铁环编织的护甲',
     stats: {
-      def: 10,
-      maxHp: 40
+      def: 32,
+      hpRegen: 20,
+      maxHp: 500,
+      maxMp: 150
     },
     price: 250,
     sellPrice: 100
   },
   magic_robe: {
     id: 'magic_robe',
-    name: '魔法长袍',
+    name: '李小宝的魔法长袍',
     type: 'armor',
     rarity: 'rare',
     desc: '附有魔法防御的长袍',
     stats: {
-      def: 6,
-      maxHp: 25,
-      maxMp: 35
+      def: 20,
+      maxHp: 300,
+      maxMp: 500
     },
     price: 280,
     sellPrice: 110
@@ -217,14 +228,17 @@ export const EQUIPMENT_CH1 = {
   // 史诗防具
   guardian_armor: {
     id: 'guardian_armor',
-    name: '守护者铠甲',
+    name: '小贝的通用铠甲',
     type: 'armor',
     rarity: 'epic',
-    desc: '古代守护者留下的铠甲',
+    desc: '小贝的通用铠甲，可以适配任何职业，就是行动有点缓慢',
     stats: {
-      def: 18,
-      maxHp: 80,
-      spd: -2
+      def: 180,
+      maxHp: 1000,
+      maxMp: 400,
+      spd: -20,
+      mpRegen: 15,
+      hpRegen: 30
     },
     price: 700,
     sellPrice: 280
@@ -233,14 +247,16 @@ export const EQUIPMENT_CH1 = {
   // 传说防具
   sunlight_armor: {
     id: 'sunlight_armor',
-    name: '阳光圣甲',
+    name: '艾米的阳光圣甲',
     type: 'armor',
     rarity: 'legendary',
     desc: '阳光草原的守护圣甲，闪耀着神圣的光辉',
     stats: {
-      def: 25,
-      maxHp: 120,
-      spd: 3
+      def: 50,
+      maxHp: 1500,
+      maxMp: 500,
+      mpRegen: 30,
+      hpRegen: 150
     },
     price: 1600,
     sellPrice: 640
@@ -255,7 +271,8 @@ export const EQUIPMENT_CH1 = {
     rarity: 'common',
     desc: '一枚简单的戒指',
     stats: {
-      spd: 2
+      crit: 0.12,
+      mpRegen: 2
     },
     price: 40,
     sellPrice: 15
@@ -267,8 +284,8 @@ export const EQUIPMENT_CH1 = {
     rarity: 'common',
     desc: '带来好运的小饰物',
     stats: {
-      crit: 0.03,
-      spd: 1
+      crit: 0.3,
+      mpRegen: 2
     },
     price: 50,
     sellPrice: 20
@@ -280,10 +297,14 @@ export const EQUIPMENT_CH1 = {
     name: '安妮的羽毛',
     type: 'accessory',
     rarity: 'rare',
-    desc: '穿上后身轻如燕',
+    desc: '穿上后身轻如燕,但是防御会大幅度降低',
     stats: {
-      spd: 10,
-      crit: 0.05
+      spd: 50,
+      crit: 0.05,
+      matk: 15,
+      def: -50,
+      mpRegen: 2,
+      cdr: 0.30
     },
     price: 230,
     sellPrice: 90
@@ -295,8 +316,11 @@ export const EQUIPMENT_CH1 = {
     rarity: 'rare',
     desc: '蕴含魔力的水晶',
     stats: {
-      maxMp: 140,
-      atk: 5
+      maxMp: 340,
+      matk: 55,
+      mpRegen: 25,
+      cdr: 0.30,
+      crit: 0.2,
     },
     price: 250,
     sellPrice: 100
@@ -311,9 +335,13 @@ export const EQUIPMENT_CH1 = {
     desc: '这猫抓板好用，可惜被人坐断了不然威力更猛',
     stats: {
       atk: 58,
+      matk: 100,
       def: 38,
       spd: 20,
-      crit: 0.08
+      crit: 0.08,
+      mpRegen: 15,
+      cdr: 0.15,
+      hpRegen: 5
     },
     price: 800,
     sellPrice: 320
@@ -329,8 +357,13 @@ export const EQUIPMENT_CH1 = {
     stats: {
       maxHp: 380,
       maxMp: 160,
-      spd: 18,
-      crit: 0.10
+      matk: 150,
+      atk: 58,
+      spd: 30,
+      crit: 0.10,
+      mpRegen: 15,
+      cdr: 0.25,
+      hpRegen: 10
     },
     price: 1800,
     sellPrice: 720
