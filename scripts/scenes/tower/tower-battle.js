@@ -1017,16 +1017,16 @@ export class TowerBattle {
   _getEquipStats(item) {
     const lines = []
     if (!item) return lines
-    if (item.bonusHp)      lines.push({ text: `\u2764 HP +${item.bonusHp}`, color: '#5ae08a', size: 10 })
-    if (item.bonusAtk)     lines.push({ text: `\u2694 ATK +${item.bonusAtk}`, color: '#f08050', size: 10 })
-    if (item.bonusMatk)    lines.push({ text: `\u{1F52C} MATK +${item.bonusMatk}`, color: '#a78bfa', size: 10 })
-    if (item.bonusDef)     lines.push({ text: `\u{1F6E1} DEF +${item.bonusDef}`, color: '#58b8e8', size: 10 })
-    if (item.bonusSpd)     lines.push({ text: `\u26A1 SPD +${item.bonusSpd}`, color: '#e8d850', size: 10 })
-    if (item.bonusCrit)    lines.push({ text: `\uD83D\uDCBAT ${Math.round(item.bonusCrit * 100)}%`, color: '#ff69b4', size: 10 })
-    if (item.bonusLifesteal) lines.push({ text: `\u2764\uFE0F 吸血 ${Math.round(item.bonusLifesteal * 100)}%`, color: '#ff6b9d', size: 10 })
-    if (item.bonusMpRegen) lines.push({ text: `\u{1F4C9} MP/s +${item.bonusMpRegen}`, color: '#74b9ff', size: 10 })
-    if (item.bonusHpRegen) lines.push({ text: `\u2764\uFE0F HP/s +${item.bonusHpRegen}`, color: '#55efc4', size: 10 })
-    if (item.bonusCdr)     lines.push({ text: `\u23F1\uFE0F CDR +${Math.round(item.bonusCdr * 100)}%`, color: '#a29bfe', size: 10 })
+    if (item.bonusHp)      lines.push({ text: `\u2764 HP +${item.bonusHp}`, color: '#5ae08a', size: 12 })
+    if (item.bonusAtk)     lines.push({ text: `\u2694 ATK +${item.bonusAtk}`, color: '#f08050', size: 12 })
+    if (item.bonusMatk)    lines.push({ text: `\u{1F52C} MATK +${item.bonusMatk}`, color: '#a78bfa', size: 12 })
+    if (item.bonusDef)     lines.push({ text: `\u{1F6E1} DEF +${item.bonusDef}`, color: '#58b8e8', size: 12 })
+    if (item.bonusSpd)     lines.push({ text: `\u26A1 SPD +${item.bonusSpd}`, color: '#e8d850', size: 12 })
+    if (item.bonusCrit)    lines.push({ text: `\uD83D\uDCBAT ${Math.round(item.bonusCrit * 100)}%`, color: '#ff69b4', size: 12 })
+    if (item.bonusLifesteal) lines.push({ text: `\u2764\uFE0F 吸血 ${Math.round(item.bonusLifesteal * 100)}%`, color: '#ff6b9d', size: 12 })
+    if (item.bonusMpRegen) lines.push({ text: `\u{1F4C9} MP/s +${item.bonusMpRegen}`, color: '#74b9ff', size: 12 })
+    if (item.bonusHpRegen) lines.push({ text: `\u2764\uFE0F HP/s +${item.bonusHpRegen}`, color: '#55efc4', size: 12 })
+    if (item.bonusCdr)     lines.push({ text: `\u23F1\uFE0F CDR +${Math.round(item.bonusCdr * 100)}%`, color: '#a29bfe', size: 12 })
     return lines
   }
 
@@ -3707,7 +3707,7 @@ export class TowerBattle {
     ctx.stroke()
 
     // 标题：选择角色装备
-    ctx.font = `bold ${Math.max(16, 17 * dpr)}px sans-serif`
+    ctx.font = `bold ${Math.max(18, 20 * dpr)}px sans-serif`
     ctx.textAlign = 'center'
     ctx.textBaseline = 'middle'
     ctx.fillStyle = '#ffffff'
@@ -3716,7 +3716,7 @@ export class TowerBattle {
     // ===== 装备信息展示区（左侧大图标）=====
     const iconCx = W / 2
     const iconCy = panelY + 95
-    const iconR = 36 * dpr
+    const iconR = 42 * dpr
 
     // 品质光环
     const pulse = Math.sin(Date.now() / 400) * 0.25 + 1
@@ -3735,19 +3735,19 @@ export class TowerBattle {
     // 装备类型图标
     const slotIcon = { weapon: '\u2694', armor: '\u{1F6E1}', accessory: '\u{1F48E}' }
     ctx.fillStyle = QUALITY_COLORS[item.quality]
-    ctx.font = `bold ${Math.max(32, 34 * dpr)}px sans-serif`
+    ctx.font = `bold ${Math.max(36, 40 * dpr)}px sans-serif`
     ctx.textAlign = 'center'
     ctx.textBaseline = 'middle'
     ctx.fillText(slotIcon[item.slot] || '?', iconCx, iconCy)
 
     // 装备名称 + 品质标签
-    ctx.font = `bold ${Math.max(17, 18 * dpr)}px sans-serif`
+    ctx.font = `bold ${Math.max(19, 22 * dpr)}px sans-serif`
     ctx.fillStyle = QUALITY_COLORS[item.quality]
     ctx.fillText(`${QUALITY_NAMES[item.quality]} ${item.name}`, iconCx, iconCy + iconR + 24)
 
     // 属性加成列表（复用_getEquipStats，提取text字段渲染）
     const statLines = this._getEquipStats(item)
-    ctx.font = `${Math.max(13, 14 * dpr)}px sans-serif`
+    ctx.font = `${Math.max(14, 16 * dpr)}px sans-serif`
     ctx.fillStyle = '#c9d1d9'
     for (let i = 0; i < statLines.length; i++) {
       ctx.fillText(statLines[i].text, iconCx, iconCy + iconR + 50 + i * 24)
@@ -3762,7 +3762,7 @@ export class TowerBattle {
     ctx.stroke()
 
     // ===== 角色选择区域标题 =====
-    ctx.font = `${Math.max(13, 14 * dpr)}px sans-serif`
+    ctx.font = `${Math.max(14, 16 * dpr)}px sans-serif`
     ctx.fillStyle = '#8b949e'
     ctx.fillText('点击角色头像装备', W / 2, panelY + panelH * 0.58)
 
@@ -4203,7 +4203,7 @@ export class TowerBattle {
       ctx.shadowColor = color
 
       // 物品图标底座（加大到清晰可见）
-      const baseR = 42   // 28→42，加大50%
+      const baseR = 48   // 加大
       ctx.fillStyle = '#1c2128'
       ctx.beginPath()
       ctx.arc(0, 0, baseR, 0, Math.PI * 2)
@@ -4215,14 +4215,14 @@ export class TowerBattle {
       // 装备类型图标（大字体）
       const slotIcon = { weapon: '\u2694', armor: '\u{1F6E1}', accessory: '\u{1F48D}' }
       ctx.fillStyle = color
-      ctx.font = 'bold 42px sans-serif'   // 28→42
+      ctx.font = 'bold 48px sans-serif'
       ctx.textAlign = 'center'
       ctx.textBaseline = 'middle'
       ctx.fillText(slotIcon[item.slot] || '?', 0, 2)
 
       // 装备名称（加大字体）
       if (!item.collected) {
-        ctx.font = 'bold 14px sans-serif'   // 10→14
+        ctx.font = 'bold 16px sans-serif'
         ctx.fillStyle = '#e6edf3'
         ctx.fillText(item.name, 0, baseR + 20)
       }
@@ -6233,12 +6233,12 @@ export class TowerBattle {
 
     // ========== 左侧：装备背包（加大字号+图标） ==========
     const invPadding = Math.max(8, 10 * dpr)
-    const slotSize = Math.min((splitX - invPadding * 3) / 4, Math.max(52, 58 * dpr))   // 槽位加大
-    const invLabelY = y + Math.max(18, 20 * dpr)
+    const slotSize = Math.min((splitX - invPadding * 3) / 4, Math.max(58, 68 * dpr))   // 槽位加大
+    const invLabelY = y + Math.max(20, 24 * dpr)
 
     // 标题 "临时背包"
     ctx.fillStyle = '#889ab8'
-    ctx.font = `bold ${Math.max(13, 14 * dpr)}px sans-serif`   // 标题加大
+    ctx.font = `bold ${Math.max(15, 17 * dpr)}px sans-serif`   // 标题加大
     ctx.textAlign = 'left'
     ctx.textBaseline = 'middle'
     ctx.fillText(`🎒 临时背包 (${this.inventory.length}/${this.maxInventorySize})`, x + invPadding, invLabelY)
@@ -6282,7 +6282,7 @@ export class TowerBattle {
           ctx.stroke()
           // 小标记
           ctx.fillStyle = '#ffa500'
-          ctx.font = `bold ${Math.max(10, 11 * dpr)}px sans-serif`   // 9→11
+          ctx.font = `bold ${Math.max(12, 14 * dpr)}px sans-serif`
           ctx.textAlign = 'right'
           ctx.textBaseline = 'top'
           ctx.fillText('卖', sx + slotSize - 2, sy + 2)
@@ -6291,19 +6291,19 @@ export class TowerBattle {
         if (item) {
           // 装备图标（加大）
           const slotIcon = { weapon: '\u2694', armor: '\u{1F6E1}', accessory: '\u{1F48E}' }
-          ctx.font = `bold ${Math.max(22, 26 * dpr)}px sans-serif`   // 图标加大 20→26
+          ctx.font = `bold ${Math.max(26, 30 * dpr)}px sans-serif`
           ctx.textAlign = 'center'
           ctx.textBaseline = 'middle'
           ctx.fillText(slotIcon[item.slot] || '?', sx + slotSize / 2, sy + slotSize * 0.42)
 
           // 等级文字（加大）
-          ctx.font = `bold ${Math.max(10, 11 * dpr)}px sans-serif`   // 等级 9→11
+          ctx.font = `bold ${Math.max(12, 14 * dpr)}px sans-serif`
           ctx.fillStyle = '#b0c0d4'
           ctx.fillText(`Lv${item.level || 1}`, sx + slotSize / 2, sy + slotSize * 0.78)
         } else {
           // 空槽：加号提示（加大）
           ctx.fillStyle = 'rgba(80,96,120,0.35)'
-          ctx.font = `bold ${Math.max(20, 24 * dpr)}px sans-serif`   // 加号 18→24
+          ctx.font = `bold ${Math.max(24, 28 * dpr)}px sans-serif`
           ctx.textAlign = 'center'
           ctx.textBaseline = 'middle'
           ctx.fillText('+', sx + slotSize / 2, sy + slotSize / 2)
@@ -6331,7 +6331,7 @@ export class TowerBattle {
     // 如果有选中装备，显示"卖出: xxx"
     const sellLabel = hasSellTarget ? `💰卖${this.inventory[this._sellTargetIndex].name}` : '💰 卖出'
     ctx.fillStyle = hasSellTarget ? '#ffd700' : '#f0c080'
-    ctx.font = `bold ${Math.max(11, 12 * dpr)}px sans-serif`
+    ctx.font = `bold ${Math.max(13, 15 * dpr)}px sans-serif`
     ctx.textAlign = 'center'
     ctx.textBaseline = 'middle'
     ctx.fillText(sellLabel, x + invPadding + singleBtnW / 2, btnRowY + btnRowH / 2)
@@ -6343,7 +6343,7 @@ export class TowerBattle {
     this._roundRect(ctx, goldX, btnRowY, singleBtnW, btnRowH, 5)
     ctx.fill()
     ctx.fillStyle = '#f1c40f'
-    ctx.font = `bold ${Math.max(13, 14 * dpr)}px sans-serif`
+    ctx.font = `bold ${Math.max(15, 17 * dpr)}px sans-serif`
     ctx.textAlign = 'center'
     ctx.textBaseline = 'middle'
     ctx.fillText(`💰 ${this.gold}`, goldX + singleBtnW / 2, btnRowY + btnRowH / 2)
@@ -6359,7 +6359,7 @@ export class TowerBattle {
     ctx.strokeStyle = canSynth ? 'rgba(168,85,247,0.7)' : 'rgba(100,80,130,0.3)'
     ctx.stroke()
     ctx.fillStyle = canSynth ? '#c9a0ff' : '#666'
-    ctx.font = `bold ${Math.max(12, 13 * dpr)}px sans-serif`
+    ctx.font = `bold ${Math.max(13, 15 * dpr)}px sans-serif`
     ctx.textAlign = 'center'
     ctx.textBaseline = 'middle'
     ctx.fillText(`⚗️合成-${synthCost}`, synthBtnX + synthBtnW / 2, btnRowY + btnRowH / 2)
@@ -6376,7 +6376,7 @@ export class TowerBattle {
 
     // 标题行：角色名 + 页码
     const labelY = y + Math.max(14, 16 * dpr)
-    ctx.font = `bold ${Math.max(11, 12 * dpr)}px sans-serif`
+    ctx.font = `bold ${Math.max(14, 16 * dpr)}px sans-serif`
     ctx.textAlign = 'left'
     ctx.fillStyle = c.isDead ? '#666' : '#c8dce8'
     ctx.fillText(c.name, charAreaX, labelY)
@@ -6384,7 +6384,7 @@ export class TowerBattle {
     const pageText = `${idx + 1}/${this.party.length}`
     ctx.textAlign = 'right'
     ctx.fillStyle = '#5a6a80'
-    ctx.font = `${Math.max(9, 10 * dpr)}px sans-serif`
+    ctx.font = `${Math.max(11, 12 * dpr)}px sans-serif`
     ctx.fillText(pageText, charAreaX + charAreaW, labelY)
 
     // ===== 单角色大卡片 =====
@@ -6432,7 +6432,7 @@ export class TowerBattle {
       abGrad.addColorStop(1, c.role === 'mage' ? '#2d2558' : '#6a4520')
       ctx.fillStyle = abGrad
       ctx.fillRect(avatarX, avatarY, avatarSize, avatarSize)
-      ctx.font = `bold ${Math.max(20, avatarSize * 0.38)}px sans-serif`
+      ctx.font = `bold ${Math.max(24, avatarSize * 0.45)}px sans-serif`
       ctx.textAlign = 'center'
       ctx.textBaseline = 'middle'
       ctx.fillStyle = c.isDead ? '#555' : '#e8f0f8'
@@ -6508,7 +6508,7 @@ export class TowerBattle {
     ctx.fillText(c.name, infoX, infoTop)
 
     // 等级+职业
-    ctx.font = `${Math.max(9, 10 * dpr)}px sans-serif`
+    ctx.font = `${Math.max(11, 12 * dpr)}px sans-serif`
     const roleLabel = c.role === 'mage' ? '法师' : '战士'
     const roleColor = c.role === 'mage' ? '#93b4f5' : '#f5c563'
     ctx.fillStyle = c.isDead ? '#444' : roleColor
@@ -6518,8 +6518,8 @@ export class TowerBattle {
     const slotKeys = ['weapon', 'armor', 'accessory']
     const slotIcons = { weapon: '\u2694', armor: '\u{1F6E1}', accessory: '\u{1F48E}' }
     const slotW = (infoW - 8) / 3
-    const slotH = Math.max(28, 26 * dpr)     // 缩小槽高，给状态条腾空间
-    const slotStartY = infoTop + 100           // 更靠近名称
+    const slotH = Math.max(34, 32 * dpr)     // 槽位加大
+    const slotStartY = infoTop + 100
     this._charEquipSlots = []
 
     for (let si = 0; si < 3; si++) {
@@ -6546,19 +6546,19 @@ export class TowerBattle {
 
       if (eqItem) {
         // 已装备：图标 + 等级
-        ctx.font = `bold ${Math.max(13, 14 * dpr)}px sans-serif`
+        ctx.font = `bold ${Math.max(16, 18 * dpr)}px sans-serif`
         ctx.textAlign = 'center'
         ctx.textBaseline = 'middle'
         ctx.fillStyle = eqItem.quality === 'legendary' ? '#fbbf24' :
                         eqItem.quality === 'epic' ? '#d8a0ff' : '#c8dae8'
         ctx.fillText(slotIcons[sk], sx + slotW / 2, sy + slotH * 0.42)
-        ctx.font = `bold ${Math.max(7, 7 * dpr)}px sans-serif`
+        ctx.font = `bold ${Math.max(10, 10 * dpr)}px sans-serif`
         ctx.fillStyle = '#9ab'
         ctx.fillText(`L${eqItem.level || 1}`, sx + slotW / 2, sy + slotH * 0.78)
       } else {
         // 空槽：只显示大+号
         ctx.fillStyle = 'rgba(70,90,115,0.4)'
-        ctx.font = `bold ${Math.max(16, 18 * dpr)}px sans-serif`
+        ctx.font = `bold ${Math.max(20, 22 * dpr)}px sans-serif`
         ctx.textAlign = 'center'
         ctx.textBaseline = 'middle'
         ctx.fillText('+', sx + slotW / 2, sy + slotH / 2)
@@ -6594,7 +6594,7 @@ export class TowerBattle {
         ctx.fill()
       }
       // 数值文字（条右侧外部）
-      ctx.font = `bold ${Math.max(8, 9 * dpr)}px sans-serif`
+      ctx.font = `bold ${Math.max(10, 11 * dpr)}px sans-serif`
       ctx.textAlign = 'left'
       ctx.textBaseline = 'top'
       ctx.fillStyle = hpRatio > 0.5 ? '#ff6b6b' : '#ffa07a'
@@ -6615,7 +6615,7 @@ export class TowerBattle {
         this._roundRect(ctx, barX, cursorY, Math.max(barH * 0.5, barW * mpRatio), barH, 3)
         ctx.fill()
       }
-      ctx.font = `bold ${Math.max(8, 9 * dpr)}px sans-serif`
+      ctx.font = `bold ${Math.max(10, 11 * dpr)}px sans-serif`
       ctx.textAlign = 'left'
       ctx.textBaseline = 'top'
       ctx.fillStyle = '#74b9ff'
@@ -6645,7 +6645,7 @@ export class TowerBattle {
         ctx.fill()
       }
       // 数值
-      ctx.font = `bold ${Math.max(8, 9 * dpr)}px sans-serif`
+      ctx.font = `bold ${Math.max(10, 11 * dpr)}px sans-serif`
       ctx.textAlign = 'left'
       ctx.textBaseline = 'top'
       ctx.fillStyle = '#b8b4c4'
@@ -6657,7 +6657,7 @@ export class TowerBattle {
     // ===== 底部角色属性栏（攻击 / 防御 / 速度） =====
     const attrY = cursorY + barH + 40   // EXP条下方间距
     if (attrY + 16 < cardY + charCardH - 6) {    // 确保不超出卡片底部
-      const attrFont = `bold ${Math.max(7.5, 8 * dpr)}px sans-serif`
+      const attrFont = `bold ${Math.max(10, 11 * dpr)}px sans-serif`
       ctx.font = attrFont
       ctx.textAlign = 'left'
       ctx.textBaseline = 'top'
@@ -7055,17 +7055,17 @@ export class TowerBattle {
 
     // 构建内容行
     const lines = []
-    lines.push({ text: item.name, color: qc.text, size: 13, bold: true })
-    lines.push({ text: `${qc.name} ${slotNames[item.slot] || ''}  Lv${item.level || 1}`, color: qc.border, size: 10 })
+    lines.push({ text: item.name, color: qc.text, size: 15, bold: true })
+    lines.push({ text: `${qc.name} ${slotNames[item.slot] || ''}  Lv${item.level || 1}`, color: qc.border, size: 12 })
     lines.push(...this._getEquipStats(item))
 
     // 计算tooltip尺寸
     const padX = Math.max(10, 12 * dpr)
     const padY = Math.max(7, 8 * dpr)
-    const lineHeight = Math.max(16, 18 * dpr)
+    const lineHeight = Math.max(18, 22 * dpr)
     let maxW = 0
     for (const l of lines) {
-      ctx.font = `${l.bold ? 'bold' : ''} ${Math.max(l.size, 9 * dpr)}px sans-serif`
+      ctx.font = `${l.bold ? 'bold' : ''} ${Math.max(l.size, 11 * dpr)}px sans-serif`
       maxW = Math.max(maxW, ctx.measureText(l.text).width)
     }
     const tipW = maxW + padX * 2
@@ -7097,7 +7097,7 @@ export class TowerBattle {
     // 绘制文字
     for (let i = 0; i < lines.length; i++) {
       const l = lines[i]
-      ctx.font = `${l.bold ? 'bold' : ''} ${Math.max(l.size, 9 * dpr)}px sans-serif`
+      ctx.font = `${l.bold ? 'bold' : ''} ${Math.max(l.size, 11 * dpr)}px sans-serif`
       ctx.textAlign = 'left'
       ctx.textBaseline = 'top'
       ctx.fillStyle = l.color
