@@ -324,7 +324,7 @@ export class TowerBattle {
       alpha: 0,           // 0=透明, 1=全黑
       phase: 'none',      // 'none' | 'fading_out' | 'holding' | 'fading_in'
       timer: 0,
-      holdDuration: 600,  // 全黑保持时间(ms)
+      holdDuration: 1200,  // 全黑保持时间(ms)
       callback: null,     // 过渡完成后的回调
     }
 
@@ -480,15 +480,26 @@ export class TowerBattle {
     this.cardPhase.appliedEffects.push(card.id)
   }
 
-  /** 确认卡牌选择，进入战斗 */
+  /** 确认卡牌选择，黑屏过渡后进入战斗 */
   _confirmCards() {
     if (this.cardPhase.selectedIndex < 0) return
     const card = this.cardPhase.cards[this.cardPhase.selectedIndex]
     this._applyCardEffect(card)
-    this.phase = 'battle'
-    this._initPositions()
-    // 启动波次系统（延迟1秒后开始第一波）
-    this.waveCooldownTimer = 1000
+
+    // ★ 黑屏过渡效果（与虫洞传送一致）
+    const t = this.transition
+    t.active = true
+    t.phase = 'fading_out'
+    t.alpha = 0
+    t.timer = 0
+    t.label = '🎮 开始冒险...'
+    t.callback = () => {
+      // 全黑时切换到战斗阶段
+      this.phase = 'battle'
+      this._initPositions()
+      this.waveCooldownTimer = 1000
+      console.log('[Tower] 🎮 开始冒险！进入战斗')
+    }
   }
 
   // ==================== 初始化 ====================
@@ -630,10 +641,10 @@ export class TowerBattle {
     const shrinkY = (rawBottom - rawTop) * 0.15
 
     return {
-      left:   wallThickness + 4,
-      right:  W - wallThickness - 4,
-      top:    rawTop + shrinkY,
-      bottom: rawBottom,          // 底部直接贴技能栏
+      left:   (wallThickness + 4) + W * 0.065,     // 左侧留出石墙厚度
+      right:  (W - wallThickness - 4) - W * 0.065, // 右侧留出石墙厚度
+      top:    rawTop + shrinkY + H * 0.05,          // 上方额外缩进（石墙）
+      bottom: rawBottom - H * 0.04,                  // 底部也稍微缩进
     }
   }
 
@@ -1057,6 +1068,9 @@ export class TowerBattle {
     // Game主循环传入的dt单位是秒，内部逻辑需要毫秒
     const dtMs = dt * 1000
 
+    // 过场动画在任何阶段都需更新
+    this._updateTransition(dtMs)
+
     if (this.phase !== 'battle') {
       if (this.phase === 'card_select') {
         this.cardPhase.animTimer += dtMs
@@ -1064,6 +1078,9 @@ export class TowerBattle {
       return
     }
     this.battleTime += dtMs
+
+    // ★ 过场动画期间冻结所有战斗逻辑，等黑屏完全消失后再恢复
+    if (this.transition.active) return
 
     this._updateCharacters(dtMs)
     this._updateMonsters(dtMs)
@@ -1085,8 +1102,7 @@ export class TowerBattle {
       this._checkWormholeInteraction()
     }
 
-    // 过场动画更新（优先于其他逻辑）
-    this._updateTransition(dtMs)
+    // 过场动画更新（优先于其他逻辑）—— 已移至update顶部统一调用，此处删除避免重复
 
     this._updateCamera(dtMs)
     this._checkWinLose()
@@ -2570,6 +2586,8 @@ export class TowerBattle {
     t.phase = 'fading_out'
     t.alpha = 0
     t.timer = 0
+    t.label = '⚡ 传送中... ⚡'
+    t.callback = null
 
     console.log(`[Tower] 🌀 触发虫洞传送，开始过场动画...`)
   }
@@ -2581,16 +2599,22 @@ export class TowerBattle {
     const t = this.transition
     if (!t.active) return
 
-    t.timer += dt * 1000  // 转为毫秒
+    t.timer += dt  // dt单位：毫秒（由update传入）
 
     switch (t.phase) {
       case 'fading_out':
-        t.alpha = Math.min(1, t.alpha + dt * 4)
+        // 渐暗速度：1.5秒全黑（电影感）
+        t.alpha = Math.min(1, t.alpha + dt / 1500)
         if (t.alpha >= 1) {
           t.phase = 'holding'
           t.timer = 0
-          // 全黑时执行波次切换
-          this._executeWaveTransition()
+          // 全黑时执行回调或波次切换
+          if (t.callback) {
+            t.callback()
+            t.callback = null  // 执行一次后清除
+          } else {
+            this._executeWaveTransition()
+          }
         }
         break
       case 'holding':
@@ -2600,7 +2624,8 @@ export class TowerBattle {
         }
         break
       case 'fading_in':
-        t.alpha = Math.max(0, t.alpha - dt * 3)
+        // 渐亮速度：1.8秒恢复（比渐暗稍慢，有回味感）
+        t.alpha = Math.max(0, t.alpha - dt / 1800)
         if (t.alpha <= 0) {
           t.active = false
           t.phase = 'none'
@@ -2742,12 +2767,13 @@ export class TowerBattle {
 
     // 黑屏中央显示文字
     if (t.phase === 'holding' || t.alpha > 0.7) {
+      const label = t.label || '⚡ 传送中... ⚡'
       ctx.fillStyle = '#a855f7'
       ctx.font = `bold ${Math.max(18, 22 * this.dpr)}px sans-serif`
       ctx.textAlign = 'center'
       ctx.textBaseline = 'middle'
       ctx.globalAlpha = Math.min(1, t.alpha * 1.5)
-      ctx.fillText('⚡ 传送中... ⚡', this.width / 2, this.height / 2)
+      ctx.fillText(label, this.width / 2, this.height / 2)
       ctx.globalAlpha = 1
     }
   }
@@ -3833,50 +3859,74 @@ export class TowerBattle {
 
     if (this.phase === 'card_select') {
       this._renderCardSelect(ctx)
+      // ★ 过场黑屏（开始冒险按钮点击后）
+      this._renderTransition(ctx)
       return
     }
 
-    // ===== 胜利/失败界面 =====
     if (this.phase === 'victory' || this.phase === 'defeat') {
       this._renderResultScreen(ctx)
       return
     }
 
     // ===== 背景：塔防战场 =====
-    // 主背景色
+    // 填充底色（图片未加载时的fallback）
     ctx.fillStyle = '#0d1117'
     ctx.fillRect(0, 0, W, H)
 
-    // 地面区域——与底部面板实际高度保持一致
+    // 绘制塔防背景图（石墙作为视觉边界，角色在墙内活动）
+    const bgImg = this.assets.get('BG_TOWER_BATTLE')
+    if (bgImg && bgImg.width > 0) {
+      const area = this._getBattleArea()
+      const areaW = area.right - area.left
+      const areaH = area.bottom - area.top
+      const imgW = bgImg.width, imgH = bgImg.height
+            // 放大15%：让石墙外沿超出战斗区域，内沿（围墙内侧）对齐区域边界
+      // 这样角色被限制在战斗区域时，视觉上是在围墙里面活动
+      const scale = Math.max(areaW / imgW, areaH / imgH) * 1.75
+      const drawW = imgW * scale
+      const drawH = imgH * scale
+      const offsetX = area.left + (areaW - drawW) / 2
+      const offsetY = area.top + (areaH - drawH) / 2
+      ctx.drawImage(bgImg, offsetX, offsetY, drawW, drawH)
+    }
+
+    // 地面区域参数（后续UI元素定位用）
     const topBarH = Math.max(H * 0.095, 56)
     const bottomMargin = Math.max(8, 12 * this.dpr)
     const skillBarH   = Math.max(H * 0.055, 40)
     const tacticsBarH = Math.max(H * 0.06, 42)
     const equipBarH   = Math.max(H * 0.155, 120)
     const bottomBarH  = skillBarH + tacticsBarH + equipBarH + 8
-    const groundY     = H - bottomBarH - bottomMargin - 10  // 地面线在底部栏上方
+    const groundY     = H - bottomBarH - bottomMargin - 10
 
-    // 战场地面（深色渐变）
-    const groundGrad = ctx.createLinearGradient(0, topBarH + 30, 0, groundY)
-    groundGrad.addColorStop(0, '#141c28')
-    groundGrad.addColorStop(0.5, '#162236')
-    groundGrad.addColorStop(1, '#1a2a42')
+    // ===== 地面效果：DNF风格纵深感 =====
+    // 1) 地面渐变（上亮下暗，产生距离感）
+    const area = this._getBattleArea()
+    const grdTop = Math.min(area.top, topBarH + 30)
+    const grdBottom = Math.max(area.bottom, groundY)
+    const groundGrad = ctx.createLinearGradient(0, grdTop, 0, grdBottom)
+    groundGrad.addColorStop(0, 'rgba(255,245,180,0.25)')
+    groundGrad.addColorStop(0.4, 'rgba(240,220,140,0.18)')
+    groundGrad.addColorStop(1, 'rgba(200,175,100,0.35)')
     ctx.fillStyle = groundGrad
-    ctx.fillRect(0, topBarH + 30, W, groundY - topBarH - 30)
+    ctx.fillRect(area.left, area.top, area.right - area.left, area.bottom - area.top)
 
-    // 底部地面区域（到地面线为止）
-    ctx.fillStyle = '#1e3050'
-    ctx.fillRect(0, groundY, W, H - groundY - bottomMargin)
+    // 2) 地面底部边缘线（明确的地面终止线，增强立体感）
+    ctx.strokeStyle = 'rgba(160,140,90,0.5)'
+    ctx.lineWidth = 2
+    ctx.beginPath()
+    ctx.moveTo(area.left, area.bottom)
+    ctx.lineTo(area.right, area.bottom)
+    ctx.stroke()
 
-    // 地面纹理线（网格感）——只画到地面区域，不覆盖底部面板
-    ctx.strokeStyle = 'rgba(80,120,180,0.07)'
+    // 3) 地面顶部边缘线（与石墙衔接处）
+    ctx.strokeStyle = 'rgba(120,105,70,0.25)'
     ctx.lineWidth = 1
-    for (let gx = 0; gx < W; gx += 50) {
-      ctx.beginPath(); ctx.moveTo(gx, topBarH + 30); ctx.lineTo(gx, groundY); ctx.stroke()
-    }
-    for (let gy = topBarH + 50; gy < groundY; gy += 50) {
-      ctx.beginPath(); ctx.moveTo(0, gy); ctx.lineTo(W, gy); ctx.stroke()
-    }
+    ctx.beginPath()
+    ctx.moveTo(area.left, area.top)
+    ctx.lineTo(area.right, area.top)
+    ctx.stroke()
 
     // ===== 边界墙（可视化的战场边缘）=====
     const wallThickness = 4
@@ -4271,6 +4321,23 @@ export class TowerBattle {
         ctx.shadowColor = '#ffffff'
       }
 
+      // ★ 脚下阴影（椭圆，把怪物"钉"在地面上）★
+      if (!m.isDead) {
+        ctx.save()
+        const mshW = 28
+        const mshH = 9
+        ctx.beginPath()
+        ctx.ellipse(0, -1, mshW, mshH, 0, 0, Math.PI * 2)
+        const mshGrad = ctx.createRadialGradient(0, -1, 0, 0, -1, mshW)
+        mshGrad.addColorStop(0, 'rgba(40,35,20,0.40)')
+        mshGrad.addColorStop(0.6, 'rgba(30,25,15,0.22)')
+        mshGrad.addColorStop(1, 'rgba(20,18,10,0)')
+        ctx.fillStyle = mshGrad
+        ctx.fill()
+        ctx.restore()
+        ctx.shadowBlur = 0
+      }
+
       // 获取怪物精灵图片
       const img = this._getMonsterFrameImage(m)
       const spr = MONSTER_SPRITES[m.type] || MONSTER_SPRITES.slime
@@ -4474,6 +4541,24 @@ export class TowerBattle {
         ctx.shadowColor = '#ffd700'
       }
 
+      // ★ 脚下阴影（椭圆，把角色"钉"在地面上 — DNF风格）★
+      if (!c.isDead) {
+        ctx.save()
+        const shadowW = 44 + (c.levelUpFlash > 0 ? 8 : 0)
+        const shadowH = 14
+        ctx.beginPath()
+        ctx.ellipse(0, -2, shadowW, shadowH, 0, 0, Math.PI * 2)
+        // 渐变填充（中心深边缘淡）
+        const shGrad = ctx.createRadialGradient(0, -2, 0, 0, -2, shadowW)
+        shGrad.addColorStop(0, 'rgba(40,35,20,0.45)')
+        shGrad.addColorStop(0.6, 'rgba(30,25,15,0.28)')
+        shGrad.addColorStop(1, 'rgba(20,18,10,0)')
+        ctx.fillStyle = shGrad
+        ctx.fill()
+        ctx.restore()
+        ctx.shadowBlur = 0
+      }
+
       // 绘制角色精灵（受朝向翻转影响）
       const img = this._getCharFrameImage(c)
       if (img) {
@@ -4513,33 +4598,6 @@ export class TowerBattle {
 
       // ===== 恢复状态：消除scale翻转，再绘制UI文字（不受朝向影响）=====
       ctx.restore()
-
-      // ===== 攻击范围可视化圈（仅法师显示） =====
-      if (c.role === 'mage' && !c.isDead) {
-        ctx.save()
-        ctx.translate(c.x, c.y)
-        const rangePx = c.atkRange
-        // 攻击范围外圈（半透明白色）
-        ctx.beginPath()
-        ctx.arc(0, 0, rangePx, 0, Math.PI * 2)
-        ctx.strokeStyle = 'rgba(100,180,255,0.5)'
-        ctx.lineWidth = 2
-        ctx.setLineDash([8, 6])
-        ctx.stroke()
-        ctx.setLineDash([])
-        // 安全距离内圈
-        ctx.beginPath()
-        ctx.arc(0, 0, rangePx * 0.82, 0, Math.PI * 2)
-        ctx.strokeStyle = 'rgba(255,100,100,0.35)'
-        ctx.lineWidth = 1.5
-        ctx.setLineDash([4, 4])
-        ctx.stroke()
-        ctx.setLineDash([])
-        // 填充极淡色
-        ctx.fillStyle = 'rgba(100,180,255,0.06)'
-        ctx.fill()
-        ctx.restore()
-      }
 
       // ===== UI层（名字、等级、血条、选中框）—— 不受朝向翻转影响 =====
       ctx.save()

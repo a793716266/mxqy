@@ -67,6 +67,7 @@ export const ASSETS = {
   BG_CAVE: BATTLE_PKG + 'images/backgrounds/bg_cave.png',
   BG_TOWN: 'images/map/village.jpeg',
   BG_BOSS: BATTLE_PKG + 'images/backgrounds/bg_boss.png',
+  BG_TOWER_BATTLE: BATTLE_PKG + 'images/tower_battle_bg.webp',
   
   // 主角
   HERO_ZHENBAO: 'images/characters/hero_zhenbao.png',
