@@ -699,7 +699,7 @@ export class TowerBattle {
       if (!c.buffs) c.buffs = []
       c.moveSpeed = 120 + (c.spd || 10) * 5
       // 攻击范围：近战角色短距离，法系远程（大范围，覆盖大部分战场）
-      c.atkRange = (c.role === 'mage') ? 480 : 55
+      c.atkRange = (c.role === 'mage') ? 480 : 80
       c.isDead = false
       c.respawnTimer = 0
 
@@ -981,25 +981,25 @@ export class TowerBattle {
                  ]},
       // 暗影鼠 —— 快速近战
       goblin:  { name: '暗影鼠', hp: 160, atk: 20, def: 14, spd: 27, atkInterval: 1200, isRanged: false,
-                   atkRange: 50, moveSpeed: 85, skills: [
+                   atkRange: 75, moveSpeed: 85, skills: [
                      { name: '暗影咬', power: 1.4, type: 'attack', mpCost: 6 },
                      { name: '暗影突袭', power: 2.0, type: 'attack', mpCost: 18 }
                  ]},
       // 兽人 —— 肉盾近战
       orc:     { name: '兽人', hp: 360, atk: 22, def: 20, spd: 7, atkInterval: 1800, isRanged: false,
-                   atkRange: 48, moveSpeed: 45 },
+                   atkRange: 72, moveSpeed: 45 },
       // 恶狼 —— 快速近战群攻
       wolf:    { name: '恶狼', hp: 200, atk: 19, def: 8, spd: 14, atkInterval: 1000, isRanged: false,
-                   atkRange: 55, moveSpeed: 95 },
+                   atkRange: 78, moveSpeed: 95 },
       // 亡灵 —— 中速近战
       undead:  { name: '亡灵', hp: 300, atk: 18, def: 14, spd: 9, atkInterval: 1600, isRanged: false,
-                   atkRange: 50, moveSpeed: 50 },
+                   atkRange: 75, moveSpeed: 50 },
       // 恶魔 —— 慢但强力近战
       demon:   { name: '恶魔', hp: 560, atk: 28, def: 26, spd: 8, atkInterval: 2000, isRanged: false,
-                   atkRange: 52, moveSpeed: 38 },
+                   atkRange: 76, moveSpeed: 38 },
       // 幼龙 —— BOSS级（领主专用）
       dragon:  { name: '幼龙', hp: 900, atk: 35, def: 36, spd: 4, atkInterval: 2500, isRanged: false,
-                   atkRange: 60, moveSpeed: 28 }
+                   atkRange: 90, moveSpeed: 28 }
     }
     return templates[type] || templates.slime
   }
@@ -1348,6 +1348,45 @@ export class TowerBattle {
             const bArrived = Math.abs(b.x - b.targetX) < 8 && Math.abs(b.y - b.targetY) < 8
             if (aArrived) { a.targetX = a.x; a.targetY = a.y }
             if (bArrived) { b.targetX = b.x; b.targetY = b.y }
+          }
+        }
+      }
+    }
+  }
+
+  /**
+   * 怪物间碰撞分离：防止怪物互相重叠堆叠在角色身上
+   * 参照 _separateCharacters 的实现，对存活非传送中的怪物做推开
+   */
+  _separateMonsters(dt) {
+    const alive = this.monsters.filter(m => !m.isDead && !m.isSpawning)
+    if (alive.length < 2) return
+
+    const minDist = 70   // 怪物最小间距（像素）
+    const pushSpeed = 600 // 推开速度 px/s
+
+    for (let iter = 0; iter < 2; iter++) {
+      for (let i = 0; i < alive.length; i++) {
+        for (let j = i + 1; j < alive.length; j++) {
+          const a = alive[i]
+          const b = alive[j]
+          const dx = b.x - a.x
+          const dy = b.y - a.y
+          const dist = Math.sqrt(dx * dx + dy * dy)
+
+          if (dist < minDist && dist > 0.1) {
+            const overlap = minDist - dist
+            const nx = dx / dist
+            const ny = dy / dist
+            const pushAmt = Math.min(overlap * 0.5, pushSpeed * dt / 1000)
+
+            a.x -= nx * pushAmt
+            a.y -= ny * pushAmt
+            b.x += nx * pushAmt
+            b.y += ny * pushAmt
+
+            this._clampToBattleArea(a)
+            this._clampToBattleArea(b)
           }
         }
       }
@@ -2362,6 +2401,9 @@ export class TowerBattle {
       // 怪物边界钳制（防止移出活动区域）
       this._clampToBattleArea(m)
     }
+
+    // 怪物间碰撞分离（防止重叠堆叠）
+    this._separateMonsters(dt)
 
     // 检查所有波次怪物是否都死完了 → 触发水晶可攻击
     this._checkAllWavesCleared()
