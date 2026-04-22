@@ -159,26 +159,84 @@ const MONSTER_SPRITES = {
     type: 'slime_cat',
     idle: ['SLIME_CAT_IDLE_1', 'SLIME_CAT_IDLE_2', 'SLIME_CAT_IDLE_3', 'SLIME_CAT_IDLE_4', 'SLIME_CAT_IDLE_5', 'SLIME_CAT_IDLE_6', 'SLIME_CAT_IDLE_7'],
     attack: ['SLIME_CAT_ATTACK_0008', 'SLIME_CAT_ATTACK_0010', 'SLIME_CAT_ATTACK_0012', 'SLIME_CAT_ATTACK_0014', 'SLIME_CAT_ATTACK_0016', 'SLIME_CAT_ATTACK_0018', 'SLIME_CAT_ATTACK_0020', 'SLIME_CAT_ATTACK_0022'],
+    skill: ['SLIME_CAT_SKILL_0050', 'SLIME_CAT_SKILL_0053', 'SLIME_CAT_SKILL_0056', 'SLIME_CAT_SKILL_0059', 'SLIME_CAT_SKILL_0062', 'SLIME_CAT_SKILL_0065', 'SLIME_CAT_SKILL_0068', 'SLIME_CAT_SKILL_0071', 'SLIME_CAT_SKILL_0074', 'SLIME_CAT_SKILL_0077', 'SLIME_CAT_SKILL_0080'],
     walk: ['SLIME_CAT_WALK_01', 'SLIME_CAT_WALK_02', 'SLIME_CAT_WALK_03', 'SLIME_CAT_WALK_04', 'SLIME_CAT_WALK_05', 'SLIME_CAT_WALK_06', 'SLIME_CAT_WALK_07', 'SLIME_CAT_WALK_08', 'SLIME_CAT_WALK_09', 'SLIME_CAT_WALK_10', 'SLIME_CAT_WALK_11', 'SLIME_CAT_WALK_12'],
-    frameRate: { idle: 300, attack: 120, walk: 140 },
-    scale: 1.2
+    frameRate: { idle: 300, attack: 120, skill: 180, walk: 140 },
+    scale: 1.2,
+    // ★ 跳跃扑击技能配置
+    pounceSkill: {
+      name: '黏液扑击',
+      cooldown: 10000,       // CD 10秒
+      range: 500,            // 施法距离（跳跃距离，不需要敌人紧贴就能放）
+      aoeRadius: 100,        // 落地AOE伤害范围（只有落地位置附近100px内才受伤）
+      rootChance: 0.30,      // 禁锢概率 30%
+      rootDuration: 2500,    // 禁锢时长 2.5秒
+      power: 1.5,            // 倍率 1.5倍攻击力
+      dashSpeed: 600,        // 冲刺速度 px/s
+      preDashTime: 800,      // 蓄力闪光时间（前3帧）
+      damageFrame: 3,        // 造成伤害的帧索引（第4帧=0062）
+    },
   },
   goblin: {
     type: 'shadow_mouse',
     idle: ['SHADOW_MOUSE_IDLE_01', 'SHADOW_MOUSE_IDLE_02', 'SHADOW_MOUSE_IDLE_03', 'SHADOW_MOUSE_IDLE_04', 'SHADOW_MOUSE_IDLE_05', 'SHADOW_MOUSE_IDLE_06'],
     attack: ['SHADOW_MOUSE_ATTACK_01', 'SHADOW_MOUSE_ATTACK_02', 'SHADOW_MOUSE_ATTACK_03', 'SHADOW_MOUSE_ATTACK_04', 'SHADOW_MOUSE_ATTACK_05', 'SHADOW_MOUSE_ATTACK_06', 'SHADOW_MOUSE_ATTACK_07'],
+    skill: [
+      'SHADOW_MOUSE_SKILL_01','SHADOW_MOUSE_SKILL_02','SHADOW_MOUSE_SKILL_03',
+      'SHADOW_MOUSE_SKILL_04','SHADOW_MOUSE_SKILL_05','SHADOW_MOUSE_SKILL_06',
+      'SHADOW_MOUSE_SKILL_07','SHADOW_MOUSE_SKILL_08','SHADOW_MOUSE_SKILL_09',
+      'SHADOW_MOUSE_SKILL_10','SHADOW_MOUSE_SKILL_11','SHADOW_MOUSE_SKILL_12'
+    ],
     walk: ['SHADOW_MOUSE_WALK_01', 'SHADOW_MOUSE_WALK_02', 'SHADOW_MOUSE_WALK_03', 'SHADOW_MOUSE_WALK_04', 'SHADOW_MOUSE_WALK_05', 'SHADOW_MOUSE_WALK_06', 'SHADOW_MOUSE_WALK_07', 'SHADOW_MOUSE_WALK_08', 'SHADOW_MOUSE_WALK_09', 'SHADOW_MOUSE_WALK_10', 'SHADOW_MOUSE_WALK_11', 'SHADOW_MOUSE_WALK_12'],
-    frameRate: { idle: 280, attack: 100, walk: 130 },
-    scale: 1.0
+    frameRate: { idle: 280, attack: 100, skill: 120, walk: 130 },
+    scale: 1.0,
+    // ★ 暗影咬技能（近战3段攻击）★
+    biteSkill: {
+      name: '暗影咬',
+      cooldown: 15000,        // CD 15秒
+      range: 140,             // 中近程释放（大于普攻范围，避免冲突）
+      power: 1.4,             // 每段伤害倍率 1.4x ATK
+      hitCount: 3,            // 3段攻击
+      preBiteTime: 1000,      // 蓄力闪光时间（前3帧慢播~1s）
+      chargeFrameRate: 330,   // 蓄力阶段每帧330ms（3帧≈1秒）
+      attackFrameRate: 110,   // 攻击阶段每帧110ms（快速连打）
+    },
+    // ★ 暗影突袭技能（潜行BUFF）★
+    stealthSkill: {
+      name: '暗影突袭',
+      cooldown: 20000,        // CD 20秒
+      stealthDuration: 5000,  // 潜行持续5秒
+      speedBoost: 1.8,        // 移速加成 80%
+    },
   },
   orc: {
     type: 'slime_cat',
     idle: ['SLIME_CAT_IDLE_1', 'SLIME_CAT_IDLE_2', 'SLIME_CAT_IDLE_3', 'SLIME_CAT_IDLE_4', 'SLIME_CAT_IDLE_5', 'SLIME_CAT_IDLE_6', 'SLIME_CAT_IDLE_7'],
     attack: ['SLIME_CAT_ATTACK_0008', 'SLIME_CAT_ATTACK_0010', 'SLIME_CAT_ATTACK_0012', 'SLIME_CAT_ATTACK_0014', 'SLIME_CAT_ATTACK_0016', 'SLIME_CAT_ATTACK_0018', 'SLIME_CAT_ATTACK_0020', 'SLIME_CAT_ATTACK_0022'],
     walk: ['SLIME_CAT_WALK_01', 'SLIME_CAT_WALK_02', 'SLIME_CAT_WALK_03', 'SLIME_CAT_WALK_04', 'SLIME_CAT_WALK_05', 'SLIME_CAT_WALK_06', 'SLIME_CAT_WALK_07', 'SLIME_CAT_WALK_08', 'SLIME_CAT_WALK_09', 'SLIME_CAT_WALK_10', 'SLIME_CAT_WALK_11', 'SLIME_CAT_WALK_12'],
-    frameRate: { idle: 280, attack: 100, walk: 130 },
+    frameRate: { idle: 280, attack: 100, walk: 130, cast: 150 },
     scale: 1.5,
-    tint: '#8b5e3c'  // 兽人偏棕色
+    tint: '#8b5e3c',
+    // ★ 禁止喧哗技能（范围减伤光环）★
+    silenceSkill: {
+      name: '禁止喧哗',
+      cooldown: 20000,        // CD 20秒
+      range: 300,             // 影响半径300px
+      dmgReduction: 0.30,     // 降低30%伤害
+      duration: 5000,         // 持续5秒
+      castTime: 800,          // 施法前摇800ms
+    },
+    // ★ 幻化技能（残血自动变身）★
+    transformSkill: {
+      name: '幻化',
+      hpThreshold: 0.35,      // 血量≤35%时自动触发
+      atkBoost: 0.80,         // 攻击力+80%
+      defBoost: 1.00,         // 防御力+100%（翻倍）
+      spdBoost: 0.50,         // 移速+50%
+      atkSpeedBoost: 0.60,    // 攻速+60%
+      castTime: 1200,         // 变身施法时间（期间无敌）
+      duration: 99999999,     // 持久变身（直到战斗结束或死亡）
+    },
   },
   wolf: {
     type: 'shadow_mouse',
@@ -356,6 +414,7 @@ export class TowerBattle {
     this._initWaveDefinitions()
 
     // 实体数组
+    this.characters = party   // 角色数据（与party同一引用）
     this.monsters = []
     this.droppedItems = []
     this.projectiles = []
@@ -474,6 +533,7 @@ export class TowerBattle {
           break
         case 'gold_bonus':
           this.stats.goldEarned += eff.value
+          this.gold += eff.value  // ★ 同时加到可用金币（用于合成/购买）★
           break
       }
     }
@@ -536,7 +596,7 @@ export class TowerBattle {
    * 初始化10波波次定义（渐进难度）
    * 波次1-3：纯史莱姆猫
    * 波次4-6：史莱姆猫 + 暗影鼠
-   * 波次7-8：+ 兽人/狼等更强怪
+   * 波次7-8：+ 猫人/闪电猫等更强怪
    * 波次9：混合大军
    * 波次10：最终决战波
    */
@@ -547,7 +607,8 @@ export class TowerBattle {
     this.waveDefs = [
       // 第1-3波：纯普通怪，熟悉战斗节奏
       { waveNum: 1, monsters: [
-        { type: 'slime',   count: 3 }
+        { type: 'slime',   count: 0},
+        { type: 'orc',     count: 1, rarity: 'elite' }  
       ]},
       { waveNum: 2, monsters: [
         { type: 'slime',   count: 4 }
@@ -575,7 +636,7 @@ export class TowerBattle {
         { type: 'slime',   count: 2 },
         { type: 'goblin',  count: 3 },
         { type: 'orc',     count: 2 },
-        { type: 'orc',     count: 1, rarity: 'elite' }       // 精英兽人
+        { type: 'orc',     count: 1, rarity: 'elite' }       // 精英猫人
       ]},
       { waveNum: 8, monsters: [
         { type: 'slime',   count: 2 },
@@ -904,10 +965,17 @@ export class TowerBattle {
     const rcfg = TowerBattle._RARITY_CONFIG[rarity] || TowerBattle._RARITY_CONFIG.normal
     // 等级：第1波=1级，每波+2级（波次从0开始，所以 waveIndex*2+1）
     const monsterLevel = this.waveIndex * 2 + 1
-    // 每级属性增长系数（hp+8%, atk+5%, def+4%）
+    // 每级属性增长系数
+    //   hp +8%/级, atk +5%/级, def +4%/级
+    //   spd +5%/级（速度成长，后期怪物行动更敏捷）
+    //   atkInterval -2%/级（攻速缩短，攻击频率加快）
+    //   moveSpeed +3%/级（移速成长，追击能力增强）
     const lvScaleHp   = 1 + (monsterLevel - 1) * 0.08
     const lvScaleAtk  = 1 + (monsterLevel - 1) * 0.05
     const lvScaleDef  = 1 + (monsterLevel - 1) * 0.04
+    const lvScaleSpd  = 1 + (monsterLevel - 1) * 0.05
+    const lvScaleAtkInterval = 1 - Math.min(0.38, (monsterLevel - 1) * 0.02)  // 上限缩减38%，避免太快
+    const lvScaleMoveSpeed  = 1 + (monsterLevel - 1) * 0.03
     // 综合倍率 = 等级倍率 × 稀有度倍率
     const totalHpScale = lvScaleHp * rcfg.scale
     const totalAtkScale = lvScaleAtk * rcfg.scale
@@ -925,13 +993,13 @@ export class TowerBattle {
       maxHp: Math.round(tmpl.hp * totalHpScale),
       atk: Math.round(tmpl.atk * totalAtkScale),
       def: Math.round(tmpl.def * totalDefScale),
-      spd: tmpl.spd,
-      atkInterval: tmpl.atkInterval,
+      spd: Math.round(tmpl.spd * lvScaleSpd),                              // ★ 等级成长 ★
+      atkInterval: Math.max(400, Math.round(tmpl.atkInterval * lvScaleAtkInterval)),  // ★ 攻速成长（下限400ms）★
       atkTimer: Math.random() * 1000,
       x: (x != null) ? x : defaultX,
       y: (y != null) ? y : defaultY,
       targetX: 0, targetY: 0,
-      moveSpeed: tmpl.moveSpeed + (rarity === 'lord' ? -8 : rarity === 'elite' ? -3 : 0), // 领主稍慢
+      moveSpeed: Math.round((tmpl.moveSpeed + (rarity === 'lord' ? -8 : rarity === 'elite' ? -3 : 0)) * lvScaleMoveSpeed),  // ★ 移速成长 ★
       atkRange: tmpl.atkRange + (rarity === 'lord' ? 15 : rarity === 'elite' ? 6 : 0),     // 领主攻距更长
       isRanged: tmpl.isRanged || false,
       skills: tmpl.skills || null,
@@ -951,6 +1019,15 @@ export class TowerBattle {
       animFrame: 0,
       animTimer: 0,
       facingRight: false,
+      // ★ 技能系统属性
+      skillCD: 0,              // 跳跃扑击技能冷却计时
+      isCastingSkill: false,   // 是否正在施放技能
+      skillTimer: 0,           // 技能动画计时
+      skillStartX: 0,          // 技能起始位置X（跳跃用）
+      skillStartY: 0,          // 技能起始位置Y
+      skillTargetX: 0,         // 技能目标位置X
+      skillTargetY: 0,         // 技能目标位置Y
+      _currentTarget: null,    // 当前攻击目标（智能分配参考）
       expReward: Math.round((tmpl.expReward || Math.floor(tmpl.hp / 3)) * lvScaleHp * rcfg.expMult),
       // ★ 传送入场动画属性
       spawnAnim: 0,              // 0→1 出现进度（缩放+透明度）
@@ -959,6 +1036,28 @@ export class TowerBattle {
       isSpawning: true,          // 是否还在入场动画中
       spreadTargetX: spreadCX,   // 分散后的目标位置（AI正常移动目标）
       spreadTargetY: spreadCY,
+      // ★ 暗影鼠潜行属性（暗影突袭技能用）★
+      isStealthed: false,        // 是否处于潜行状态
+      stealthTimer: 0,           // 潜行剩余时间(ms)
+      stealthUntil: 0,           // 潜行结束时间戳(Date.now())
+      _stealthSkillActive: false, // 是否正在施放潜行技能（动画中）
+      _stealthSkillTimer: 0,     // 潜行技能施放计时
+      _biteSkillActive: false,   // 是否正在施放暗影咬技能（动画中）
+      _biteSkillTimer: 0,        // 暗影咬技能施放计时
+      // ★ 猫人属性（禁止喧哗/幻化技能用）★
+      isTransformed: false,       // 是否已幻化为人形
+      transformHpThreshold: 0.35, // 幻化触发血量阈值
+      hasTransformedThisLife: false,  // 本条命是否已经幻化过（每条命只触发1次）
+      _silenceAuraActive: false,  // 禁止喧哗光环是否激活中
+      _silenceAuraTimer: 0,       // 光环剩余时间(ms)
+      _silenceSkillActive: false, // 是否正在施放禁止喧哗（动画中）
+      _silenceSkillTimer: 0,      // 禁止喧哗施放计时
+      _transformActive: false,    // 是否正在幻化变身（动画中，期间无敌）
+      _transformTimer: 0,         // 幻化变身计时
+      _baseAtk: Math.round(tmpl.atk * totalAtkScale),           // 记录基础ATK（用于计算幻化加成）
+      _baseDef: Math.round(tmpl.def * totalDefScale),            // 记录基础DEF
+      _baseMoveSpeed: Math.round((tmpl.moveSpeed + (rarity === 'lord' ? -8 : rarity === 'elite' ? -3 : 0)) * lvScaleMoveSpeed),// 记录基础移速
+      _baseAtkInterval: Math.max(400, Math.round(tmpl.atkInterval * lvScaleAtkInterval)), // 记录基础攻速间隔
     }
     m.targetX = m.x       // 初始位置就是生成点
     m.targetY = m.y
@@ -973,33 +1072,36 @@ export class TowerBattle {
 
   _getMonsterTemplate(type) {
     const templates = {
-      // 史莱姆猫 —— 远程攻击，有技能（黏液喷射/包裹，可冻结）
-      slime:   { name: '史莱姆猫', hp: 180, atk: 12, def: 10, spd: 15, atkInterval: 3200, isRanged: true,
-                   atkRange: 220, moveSpeed: 40, skills: [
+      // 史莱姆猫 —— 远程攻击，有技能（黏液喷射/包裹可冻结 + 跳跃扑击）
+      slime:   { name: '史莱姆猫', hp: 360, atk: 12, def: 25, spd: 15, atkInterval: 3200, isRanged: true,
+                   atkRange: 220, moveSpeed: 40, goldDrop: [3, 8], skills: [
                      { name: '黏液喷射', power: 1.2, type: 'magic', effect: 'freeze', freezeChance: 0.25, freezeDuration: 2000, mpCost: 8 },
                      { name: '黏液包裹', power: 1.4, type: 'magic', effect: 'freeze', freezeChance: 0.40, freezeDuration: 3000, mpCost: 15 }
                  ]},
-      // 暗影鼠 —— 快速近战
-      goblin:  { name: '暗影鼠', hp: 160, atk: 20, def: 14, spd: 27, atkInterval: 1200, isRanged: false,
-                   atkRange: 75, moveSpeed: 85, skills: [
-                     { name: '暗影咬', power: 1.4, type: 'attack', mpCost: 6 },
-                     { name: '暗影突袭', power: 2.0, type: 'attack', mpCost: 18 }
+      // 暗影鼠 —— 快速近战，有双技能（暗影咬/暗影突袭）
+      goblin:  { name: '暗影鼠', hp: 200, atk: 20, def: 14, spd: 35, atkInterval: 1200, isRanged: false,
+                   atkRange: 75, moveSpeed: 85, goldDrop: [5, 12], skills: [
+                     { name: '暗影咬', power: 1.4, type: 'attack', hitCount: 3, mpCost: 6 },
+                     { name: '暗影突袭', type: 'buff', stealthDuration: 5000, mpCost: 18 }
                  ]},
-      // 兽人 —— 肉盾近战
-      orc:     { name: '兽人', hp: 360, atk: 22, def: 20, spd: 7, atkInterval: 1800, isRanged: false,
-                   atkRange: 72, moveSpeed: 45 },
-      // 恶狼 —— 快速近战群攻
-      wolf:    { name: '恶狼', hp: 200, atk: 19, def: 8, spd: 14, atkInterval: 1000, isRanged: false,
-                   atkRange: 78, moveSpeed: 95 },
-      // 亡灵 —— 中速近战
-      undead:  { name: '亡灵', hp: 300, atk: 18, def: 14, spd: 9, atkInterval: 1600, isRanged: false,
-                   atkRange: 75, moveSpeed: 50 },
-      // 恶魔 —— 慢但强力近战
-      demon:   { name: '恶魔', hp: 560, atk: 28, def: 26, spd: 8, atkInterval: 2000, isRanged: false,
-                   atkRange: 76, moveSpeed: 38 },
-      // 幼龙 —— BOSS级（领主专用）
-      dragon:  { name: '幼龙', hp: 900, atk: 35, def: 36, spd: 4, atkInterval: 2500, isRanged: false,
-                   atkRange: 90, moveSpeed: 28 }
+      // 猫人 —— 肉盾近战，双技能（禁止喧哗/幻化）
+      orc:     { name: '猫人', hp: 500, atk: 22, def: 20, spd: 7, atkInterval: 1800, isRanged: false,
+                   atkRange: 72, moveSpeed: 45, goldDrop: [10, 20], skills: [
+                     { name: '禁止喧哗', type: 'debuff', dmgReduction: 0.30, range: 300, duration: 5000 },
+                     { name: '幻化', type: 'transform', hpThreshold: 0.35 }
+                 ]},
+      // 闪电猫 —— 快速近战群攻
+      wolf:    { name: '闪电猫', hp: 200, atk: 29, def: 8, spd: 54, atkInterval: 500, isRanged: false,
+                   atkRange: 78, moveSpeed: 95, goldDrop: [6, 14] },
+      // 吵闹猫 —— 中速近战
+      undead:  { name: '吵闹猫', hp: 300, atk: 18, def: 22, spd: 9, atkInterval: 1600, isRanged: false,
+                   atkRange: 75, moveSpeed: 50, goldDrop: [8, 18] },
+      // 坏猫 —— 慢但强力近战
+      demon:   { name: '坏猫', hp: 560, atk: 28, def: 26, spd: 8, atkInterval: 2000, isRanged: false,
+                   atkRange: 76, moveSpeed: 38, goldDrop: [15, 30] },
+      // 斯莱姆猫王 —— BOSS级（领主专用）
+      dragon:  { name: '斯莱姆猫王', hp: 900, atk: 35, def: 36, spd: 14, atkInterval: 2500, isRanged: false,
+                   atkRange: 90, moveSpeed: 28, goldDrop: [50, 100] }
     }
     return templates[type] || templates.slime
   }
@@ -1084,6 +1186,8 @@ export class TowerBattle {
 
     this._updateCharacters(dtMs)
     this._updateMonsters(dtMs)
+    this._updateMonsterStealth(dtMs)  // ★ 暗影鼠潜行状态更新 ★
+    this._updateCatmanSilence(dtMs)    // ★ 猫人禁止喧哗光环更新 ★
     this._updateSpawner(dtMs)  // 波次刷怪系统
     this._updateBuffs(dtMs)    // BUFF衰减和到期清除
     const invBefore = this.inventory.length
@@ -1183,6 +1287,18 @@ export class TowerBattle {
 
       // 移动逻辑
       const isMoving = Math.abs(c.x - c.targetX) > 5 || Math.abs(c.y - c.targetY) > 5
+
+      // ★ 禁锢效果检测：被禁锢时阻止所有移动（包括AI和手动）★
+      const isRooted = c.rootedUntil && Date.now() < c.rootedUntil
+      if (isRooted) {
+        // 强制停止：重置target到当前位置，跳过后续移动逻辑
+        if (Math.abs(c.x - c.targetX) > 3 || Math.abs(c.y - c.targetY) > 3) {
+          c.targetX = c.x
+          c.targetY = c.y
+        }
+        // 更新动画为idle
+        if (c.animState !== 'idle') { c.animState = 'idle'; c.animFrame = 0 }
+      }
 
       // ===== AI自动寻敌：开启时自动向最近的敌人移动 =====
       // 注意：法师(远程)需要持续追踪敌人位置实现风筝，不受isMoving限制
@@ -1356,14 +1472,14 @@ export class TowerBattle {
 
   /**
    * 怪物间碰撞分离：防止怪物互相重叠堆叠在角色身上
-   * 参照 _separateCharacters 的实现，对存活非传送中的怪物做推开
+   * 关键：推开时同步更新 targetX/targetY，否则移动逻辑会立即抵消推开效果
    */
   _separateMonsters(dt) {
     const alive = this.monsters.filter(m => !m.isDead && !m.isSpawning)
     if (alive.length < 2) return
 
     const minDist = 70   // 怪物最小间距（像素）
-    const pushSpeed = 600 // 推开速度 px/s
+    const pushSpeed = 1000 // 推开速度 px/s（必须大于实体moveSpeed才能有效推开）
 
     for (let iter = 0; iter < 2; iter++) {
       for (let i = 0; i < alive.length; i++) {
@@ -1380,13 +1496,69 @@ export class TowerBattle {
             const ny = dy / dist
             const pushAmt = Math.min(overlap * 0.5, pushSpeed * dt / 1000)
 
+            // 推开实际位置
             a.x -= nx * pushAmt
             a.y -= ny * pushAmt
             b.x += nx * pushAmt
             b.y += ny * pushAmt
 
+            // 同步更新目标坐标（关键！防止移动逻辑下一帧抵消）
+            a.targetX -= nx * pushAmt
+            a.targetY -= ny * pushAmt
+            b.targetX += nx * pushAmt
+            b.targetY += ny * pushAmt
+
             this._clampToBattleArea(a)
             this._clampToBattleArea(b)
+            ;[a.targetX, a.targetY] = this._clampTargetToArea(a.targetX, a.targetY)
+            ;[b.targetX, b.targetY] = this._clampTargetToArea(b.targetX, b.targetY)
+          }
+        }
+      }
+    }
+  }
+
+  /**
+   * 角色与怪物间碰撞分离：防止怪物穿过角色身体、堆叠在一起
+   * 关键：推开时同步更新 targetX/targetY，否则移动逻辑会立即抵消推开效果
+   */
+  _separateCharMonster(dt) {
+    const chars = this.characters.filter(c => !c.isDead)
+    const mons = this.monsters.filter(m => !m.isDead && !m.isSpawning)
+    if (chars.length === 0 || mons.length === 0) return
+
+    const minDist = 65       // 角色-怪物最小间距（像素）
+    const pushSpeed = 1000   // 推开速度 px/s（必须大于实体moveSpeed才能有效推开）
+
+    for (let iter = 0; iter < 2; iter++) {
+      for (const c of chars) {
+        for (const m of mons) {
+          const dx = m.x - c.x
+          const dy = m.y - c.y
+          const dist = Math.sqrt(dx * dx + dy * dy)
+
+          if (dist < minDist && dist > 0.1) {
+            const overlap = minDist - dist
+            const nx = dx / dist
+            const ny = dy / dist
+            const pushAmt = Math.min(overlap * 0.5, pushSpeed * dt / 1000)
+
+            // 推开实际位置
+            c.x -= nx * pushAmt
+            c.y -= ny * pushAmt
+            m.x += nx * pushAmt
+            m.y += ny * pushAmt
+
+            // 同步更新目标坐标（关键！防止移动逻辑下一帧抵消推开效果）
+            c.targetX -= nx * pushAmt
+            c.targetY -= ny * pushAmt
+            m.targetX += nx * pushAmt
+            m.targetY += ny * pushAmt
+
+            this._clampToBattleArea(c)
+            this._clampToBattleArea(m)
+            ;[c.targetX, c.targetY] = this._clampTargetToArea(c.targetX, c.targetY)
+            ;[m.targetX, m.targetY] = this._clampTargetToArea(m.targetX, m.targetY)
           }
         }
       }
@@ -2102,6 +2274,16 @@ export class TowerBattle {
     if (!isFinite(dmg)) {
       dmg = 0
     }
+    // ★ 潜行免疫：暗影鼠潜行期间不受伤害（闪避提示）★
+    if (target.isStealthed && target.type === 'goblin') {
+      this._addFloatingText(target.x, target.y - 30, `💨 闪避!`, '#6366f1', 0.8)
+      return  // 不造成伤害
+    }
+    // ★ 幻化无敌：猫人幻化变身期间不受伤害（1200ms施法期间）★
+    if (target._transformActive && target.type === 'orc') {
+      this._addFloatingText(target.x, target.y - 30, `✨ 无敌!`, '#f59e0b', 0.8)
+      return  // 不造成伤害
+    }
     target.hp -= dmg
     // 确保hp不会变成NaN或Infinity
     if (!isFinite(target.hp)) {
@@ -2157,6 +2339,20 @@ export class TowerBattle {
       const expGain = Math.floor(expPerChar * (1 + bonus))
       c.totalExp = (c.totalExp || 0) + expGain
       this._checkLevelUp(c, expGain)
+    }
+
+    // ★ 金币掉落（与卡牌联动，显示在装备栏中）★
+    const tpl = this._getMonsterTemplate(monster.type)
+    if (tpl && tpl.goldDrop) {
+      const [minG, maxG] = tpl.goldDrop
+      const goldAmt = minG + Math.floor(Math.random() * (maxG - minG + 1))
+      // 精英/领主额外加成
+      const rarityMult = monster.rarity === 'lord' ? 2.5 : monster.rarity === 'elite' ? 1.5 : 1
+      const finalGold = Math.round(goldAmt * rarityMult)
+      this.gold += finalGold
+      this.stats.goldEarned += finalGold
+      // 飘字显示获得金币
+      this._addFloatingText(monster.x, monster.y - 40, `💰 +${finalGold}`, '#f1c40f', 1.5)
     }
 
     this._spawnDeathEffect(monster.x, monster.y, '#ff6b6b')
@@ -2349,8 +2545,8 @@ export class TowerBattle {
       // 更新怪物动画帧
       this._updateMonsterAnim(m, dt)
 
-      // ===== 选择目标：攻击最近的角色 =====
-      const target = this._findNearestChar(m)
+      // ===== 选择目标：智能分配（距离优先 + 负载均衡）=====
+      const target = this._findSmartTarget(m)
 
       if (!target) continue  // 无目标（理论上不应该发生）
 
@@ -2361,6 +2557,77 @@ export class TowerBattle {
       // 根据目标方向更新朝向
       if (Math.abs(dx) > 3) {
         m.facingRight = dx > 0
+      }
+
+      // ★ 技能冷却倒计时（所有怪物类型通用）
+      if (m.skillCD > 0) {
+        m.skillCD = Math.max(0, m.skillCD - dt)
+      }
+
+      // ★ 正在施放技能时，跳过普通移动/攻击逻辑，只更新技能动画 ===
+      if (m.isCastingSkill) {
+        // 根据怪物类型分发到对应技能方法
+        const spr = MONSTER_SPRITES[m.type]
+        if (spr && spr.pounceSkill) {
+          this._slimeCatPounceAttack(m, target)
+        } else if (m._biteSkillActive) {
+          this._shadowBite(m, target)
+        } else if (m._stealthSkillActive) {
+          this._shadowRush(m, target)
+        } else if (m._silenceSkillActive) {
+          this._catmanSilence(m, target)
+        } else if (m._transformActive) {
+          this._catmanTransform(m)
+        }
+        this._clampToBattleArea(m)  // 确保不跑出区域
+        continue  // 跳过后续的移动/攻击/边界钳制逻辑
+      }
+
+      // ★ 技能触发检测（CD就绪 + 不在攻击动画中）★
+      if (!m.isCastingSkill && !m.isAttacking && m.skillCD <= 0) {
+        const spr = MONSTER_SPRITES[m.type]
+
+        // 史莱姆猫：跳跃扑击（远程，500px范围内）
+        if (spr && spr.pounceSkill) {
+          const pCfg = spr.pounceSkill
+          if (dist <= pCfg.range + 50) {
+            this._slimeCatPounceAttack(m, target)
+            continue
+          }
+        }
+
+        // 暗影鼠：暗影咬（中近程，140px范围）+ 暗影突袭（BUFF，任意距离）
+        if (spr && m.type === 'goblin') {
+          // 暗影咬：使用biteSkill.range（140px），远超普攻范围避免冲突
+          const biteRange = (spr.biteSkill && spr.biteSkill.range) || 140
+          if (spr.biteSkill && dist <= biteRange) {
+            this._shadowBite(m, target)
+            continue
+          }
+          // 暗影突袭：潜行BUFF，随时可放（优先级低于暗影咬）
+          if (spr.stealthSkill && dist > biteRange + 30) {
+            this._shadowRush(m, target)
+            continue
+          }
+        }
+
+        // 猫人：禁止喧哗（300范围内，CD就绪时释放）
+        if (spr && m.type === 'orc' && spr.silenceSkill && dist <= (spr.silenceSkill.range || 300)) {
+          this._catmanSilence(m, target)
+          continue
+        }
+      }
+
+      // ★ 猫人幻化：独立检测（不受skillCD/isAttacking限制——残血紧急变身）★
+      if (m.type === 'orc' && !m.isCastingSkill && !m.hasTransformedThisLife && !m.isTransformed) {
+        const _tSpr = MONSTER_SPRITES[m.type]
+        const tCfg = (_tSpr && _tSpr.transformSkill) || null
+        // ★ 注意：怪物用 m.hp（不是 currentHp，那是角色的字段）★
+        if (tCfg && (m.hp || 0) / (m.maxHp || 1) <= (m.transformHpThreshold || 0.35)) {
+          console.log(`[Tower] ✨ 猫人 ${m.name} 触发幻化！HP:${Math.round(m.hp||0)}/${m.maxHp} (${Math.round((m.hp||0)/(m.maxHp||1)*100)}%)`)
+          this._catmanTransform(m)
+          continue
+        }
       }
 
       if (m.isRanged) {
@@ -2385,16 +2652,25 @@ export class TowerBattle {
         }
       } else {
         // ===== 近战怪物：贴身攻击 =====
+        // ★ 暗影鼠特例：如果暗影咬技能CD就绪且目标在biteRange内，优先跳过普攻让技能触发（L2553处处理）★
+        const _spr = MONSTER_SPRITES[m.type]
+        const _biteRange = (_spr && _spr.biteSkill && _spr.biteSkill.range) || 140
+        const _skipNormalForSkill = (m.type === 'goblin' && _spr && _spr.biteSkill &&
+                                       m.skillCD <= 0 && dist <= _biteRange)
+
         if (dist > m.atkRange) {
           m.x += (dx / dist) * m.moveSpeed * (dt / 1000)
           m.y += (dy / dist) * m.moveSpeed * (dt / 1000)
           if (m.animState !== 'walk') { m.animState = 'walk'; m.animFrame = 0 }
-        } else {
+        } else if (!_skipNormalForSkill) {
           if (m.animState !== 'attack') { m.animState = 'attack'; m.animFrame = 0 }
           m.atkTimer -= dt
           if (m.atkTimer <= 0 && !m.isAttacking) {
             this._monsterMeleeAttack(m, target, false)
           }
+        } else {
+          // 暗影鼠等待技能触发期间保持面向目标但不普攻
+          if (m.animState !== 'idle') { m.animState = 'idle'; m.animFrame = 0 }
         }
       }
       // end of movement/attack logic
@@ -2404,6 +2680,9 @@ export class TowerBattle {
 
     // 怪物间碰撞分离（防止重叠堆叠）
     this._separateMonsters(dt)
+
+    // 角色-怪物碰撞分离（防止怪物穿过角色）
+    this._separateCharMonster(dt)
 
     // 检查所有波次怪物是否都死完了 → 触发水晶可攻击
     this._checkAllWavesCleared()
@@ -2428,6 +2707,63 @@ export class TowerBattle {
     if (!frames || frames.length === 0) return null
     const key = frames[Math.min(m.animFrame, frames.length - 1)]
     return this.assets.get(key)
+  }
+
+  /**
+   * 智能目标分配（替代简单的最近目标）
+   * 策略：
+   * 1. 距离越近的角色优先级越高
+   * 2. 已被攻击者越少的角色优先级越高（负载均衡）
+   * 3. 综合评分 = 距离分(0~100) + 均衡加成(0~50)
+   */
+  _findSmartTarget(monster) {
+    const aliveChars = this.party.filter(c => !c.isDead)
+    if (aliveChars.length === 0) return null
+    if (aliveChars.length === 1) return aliveChars[0]
+
+    // 先统计每个角色当前有多少怪物在攻击它
+    const attackerCount = {}
+    for (const otherM of this.monsters) {
+      if (otherM.isDead || otherM.isSpawning || otherM === monster) continue
+      const t = otherM._currentTarget
+      if (t && !t.isDead) {
+        // 用对象引用作为key
+        const key = this.party.indexOf(t)
+        if (key >= 0) attackerCount[key] = (attackerCount[key] || 0) + 1
+      }
+    }
+
+    let bestTarget = null
+    let bestScore = -Infinity
+
+    for (let i = 0; i < aliveChars.length; i++) {
+      const c = aliveChars[i]
+      const dx = c.x - monster.x
+      const dy = c.y - monster.y
+      const dist = Math.sqrt(dx * dx + dy *dy)
+
+      // 距离分：距离越近分数越高（0~100），300px以外归零
+      const maxDist = 350
+      const distScore = Math.max(0, 100 * (1 - dist / maxDist))
+
+      // 负载均衡加成：攻击者越少加分越多（0~50）
+      const charIdx = this.party.indexOf(c)
+      const attackers = attackerCount[charIdx] || 0
+      const balanceScore = Math.max(0, 50 - attackers * 25)
+
+      // 综合评分
+      const score = distScore + balanceScore
+
+      if (score > bestScore) {
+        bestScore = score
+        bestTarget = c
+      }
+    }
+
+    // 记录当前目标（供其他怪物的负载均衡参考）
+    monster._currentTarget = bestTarget
+
+    return bestTarget
   }
 
   _findNearestChar(monster) {
@@ -2563,8 +2899,641 @@ export class TowerBattle {
     monster.atkTimer = monster.atkInterval
   }
 
+  /**
+   * ★ 史莱姆猫：跳跃扑击技能（黏液扑击）
+   *
+   * 技能流程（11帧动画）：
+   *   帧0-2 (0050/0053/0056)：蓄力阶段 → 屏幕闪光特效（0053帧时触发）
+   *   帧3-6 (0059~0071)：跳跃冲刺阶段 → 怪物从起点冲向目标
+   *   帧3 (0062) 触发范围伤害 + 禁锢判定
+   *   帧7-10 (0074~0080)：落地恢复阶段
+   *
+   * 效果：
+   * - 对500px范围内所有敌人造成1.5倍攻击力伤害
+   * - 30%概率禁锢目标2.5秒（无法移动）
+   * - CD: 10秒
+   */
+  _slimeCatPounceAttack(monster, target) {
+    const spr = MONSTER_SPRITES[monster.type]
+    if (!spr || !spr.pounceSkill) return
+
+    const cfg = spr.pounceSkill
+
+    // 标记进入技能状态
+    if (!monster.isCastingSkill) {
+      // === 首次调用：初始化技能状态 ===
+      monster.isCastingSkill = true
+      monster.animState = 'skill'
+      monster.animFrame = 0
+      monster.animTimer = 0
+      monster.skillTimer = 0
+      monster.skillStartX = monster.x
+      monster.skillStartY = monster.y
+      monster.skillTargetX = target.x
+      monster.skillTargetY = target.y
+      monster.isAttacking = true
+      monster.attackAnimTimer = 2000   // 技能总时长 2 秒
+      monster._pounceDamageDone = false
+
+      this._addFloatingText(monster.x, monster.y - 40, `⚡ ${cfg.name}!`, '#7ec850', 2.5)
+
+      // ★ 红色警示圈（落地AOE伤害范围，让玩家有时间躲开）★
+      this.effects.push({
+        type: 'pounce_warning',
+        x: target.x,
+        y: target.y,
+        radius: cfg.aoeRadius || 100,   // 警示圈显示实际伤害范围
+        timer: 0,
+        duration: 2000,
+        life: 2000,
+      })
+
+      // ★ 蓄力闪光特效（怪物身上，拳皇风格）★
+      this.effects.push({
+        type: 'pounce_flash',
+        x: monster.x,
+        y: monster.y,
+        timer: 0,
+        duration: 1200,
+        life: 1200,
+        radius: 5,
+        maxRadius: 140,
+      })
+
+      return  // 第一帧结束，等下一帧更新
+    }
+
+    // ================================================================
+    // 时间驱动三阶段（总时长 2000ms）
+    // 阶段1 蓄力警示：0~1200ms — 红圈警告 + 原地蓄力闪光
+    // 阶段2 冲刺伤害：1200~1650ms — 跳跃扑向目标，落地造成AOE
+    // 阶段3 收招恢复：1650~2000ms — 动画收尾
+    // ================================================================
+    const T_WARN_END = 1200
+    const T_DASH_END = 1650
+    const T_DMG_TIME = 1520
+    const T_TOTAL = 2000
+
+    monster.skillTimer += 16   // ~60fps dt
+    const t = monster.skillTimer
+
+    if (t < T_WARN_END) {
+      // 阶段1：蓄力警示 — 慢速循环蓄力帧(0,1,2)，给玩家反应时间
+      const warnP = t / T_WARN_END
+      monster.animFrame = Math.min(2, Math.floor(warnP * 12) % 3)
+    }
+    else if (t < T_DASH_END) {
+      // 阶段2：冲刺跳跃 + 落地伤害
+      const dashT = (t - T_WARN_END) / (T_DASH_END - T_WARN_END)
+      const startX = monster.skillStartX
+      const startY = monster.skillStartY
+      const overshoot = 30
+      const endX = monster.skillTargetX + (monster.skillTargetX > startX ? overshoot : -overshoot)
+      const endY = monster.skillTargetY
+
+      monster.x = startX + (endX - startX) * dashT
+      monster.y = startY + (endY - startY) * dashT
+      monster.targetX = monster.x
+      monster.targetY = monster.y
+      monster.animFrame = 3 + Math.min(5, Math.floor(dashT * 7))
+
+      if (t >= T_DMG_TIME && !monster._pounceDamageDone) {
+        monster._pounceDamageDone = true
+        const skillDmg = Math.floor(monster.atk * cfg.power * (0.85 + Math.random() * 0.3))
+        const aoeR = cfg.aoeRadius || 100   // 实际AOE伤害范围100px
+
+        // ★ 关键修复：伤害判定中心使用skillTargetX/Y（=警示圈位置）
+        // 而非 monster.x/y（冲刺插值位置），确保红圈提示与实际伤害区域一致！
+        // 史莱姆猫是远程怪，起始距离130-250px，冲刺途中位置≠目标位置，
+        // 用怪物当前位置做AOE判定会导致"看着有圈但打不中"
+        const dmgCenterX = monster.skillTargetX
+        const dmgCenterY = monster.skillTargetY
+
+        for (const c of this.party) {
+          if (c.isDead) continue
+          const dx = c.x - dmgCenterX
+          const dy = c.y - dmgCenterY
+          const dist = Math.sqrt(dx * dx + dy * dy)
+          if (dist <= aoeR) {
+            const distRatio = Math.max(0.3, 1 - dist / aoeR)
+            const finalDmg = Math.max(1, Math.floor(skillDmg * distRatio))
+            const reducedDmg = Math.max(1, finalDmg - (c.def || 0) * 0.3)
+            this._charTakeDamage(c, reducedDmg)
+            this._spawnHitEffect(c.x, c.y - 20, reducedDmg, '#7ec850')
+            this._addFloatingText(c.x, c.y - 50, `-${reducedDmg} [${cfg.name}]`, '#7ec850', 1.8)
+            if (Math.random() < cfg.rootChance) {
+              this._applyRootEffect(c, cfg.rootDuration)
+              this._addFloatingText(c.x, c.y - 70, '⛓ 禁锢!', '#ffaa00', 1.8)
+            }
+          }
+        }
+
+        this.effects.push({
+          type: 'buff_shockwave', x: dmgCenterX, y: dmgCenterY,
+          color: '#7ec850', radius: aoeR * 0.8,
+          timer: 0, duration: 500, isAoe: true, life: 500,
+        })
+      }
+    }
+    else {
+      // 阶段3：收招恢复
+      const recoverT = (t - T_DASH_END) / (T_TOTAL - T_DASH_END)
+      monster.animFrame = 9 + Math.min(1, Math.floor(recoverT * 3))
+    }
+
+    // === 技能结束 ===
+    if (t >= T_TOTAL) {
+      // 恢复正常状态
+      monster.isCastingSkill = false
+      monster.animState = 'idle'
+      monster.animFrame = 0
+      monster.animTimer = 0
+      monster.isAttacking = false
+      monster.attackAnimTimer = 0
+      monster._pounceDamageDone = false
+      monster.skillCD = cfg.cooldown
+      monster.atkTimer = monster.atkInterval
+
+      // 确保在战斗区域内
+      this._clampToBattleArea(monster)
+    }
+  }
+
+  /**
+   * ★ 暗影鼠：暗影咬（近战3段快速攻击）
+   *
+   * 技能流程（12帧动画，两段式帧率）：
+   *   阶段1 - 蓄力（帧0~2，慢播）：每帧330ms → 约1秒 → 拳皇风格闪光特效
+   *   阶段2 - 连打（帧3~11，快播）：每帧110ms → 快速3段攻击
+   *   伤害判定：帧4(第1段) / 帧7(第2段) / 帧10(第3段)
+   *   总时长：约 1.0s(蓄力) + 0.99s(攻击) ≈ 2秒
+   */
+  _shadowBite(monster, target) {
+    const spr = MONSTER_SPRITES[monster.type]
+    if (!spr || !spr.biteSkill) return
+
+    const cfg = spr.biteSkill
+
+    // 标记进入技能状态
+    if (!monster.isCastingSkill && !monster._biteSkillActive) {
+      // === 首次调用：初始化 ===
+      monster.isCastingSkill = true
+      monster._biteSkillActive = true
+      monster.animState = 'skill'
+      monster.animFrame = 0
+      monster.animTimer = 0
+      monster._biteSkillTimer = 0
+      monster.skillStartX = monster.x
+      monster.skillStartY = monster.y
+      monster.skillTargetX = target.x
+      monster.skillTargetY = target.y
+      monster.isAttacking = true
+      // 总时长：蓄力3帧*330ms + 攻击9帧*110ms ≈ 1990ms
+      const totalDuration = (3 * (cfg.chargeFrameRate || 330)) + (9 * (cfg.attackFrameRate || 110))
+      monster.attackAnimTimer = totalDuration
+      monster._biteHitsDone = []       // 已造成伤害的帧索引记录
+
+      this._addFloatingText(monster.x, monster.y - 40, `🗡 ${cfg.name}!`, '#a855f7', 2.0)
+
+      // ★ 蓄力闪光（拳皇风格，前3帧约1秒）★
+      this.effects.push({
+        type: 'bite_flash',
+        x: monster.x,
+        y: monster.y,
+        timer: 0,
+        duration: cfg.preBiteTime || 1000,
+        life: cfg.preBiteTime || 1000,
+        radius: 5,
+        maxRadius: 120,
+        color: '#a855f7',
+      })
+
+      // ★ 目标锁定光环（被锁定角色脚下的警告特效）★
+      this.effects.push({
+        type: 'bite_target_lock',
+        x: target.x,
+        y: target.y,
+        timer: 0,
+        duration: totalDuration,
+        life: totalDuration,
+        color: '#a855f7',
+      })
+
+      return  // 第一帧结束
+    }
+
+    // ===== 时间驱动（两段式帧率） =====
+    monster._biteSkillTimer += 16  // ~60fps dt
+    const t = monster._biteSkillTimer
+
+    // 两段式帧率：蓄力阶段慢播，攻击阶段快播
+    const chargeRate = cfg.chargeFrameRate || 330   // 帧0~2 每帧330ms
+    const attackRate = cfg.attackFrameRate || 110  // 帧3~11 每帧110ms
+    const chargeTime = 3 * chargeRate               // 蓄力阶段总时长 ≈ 990ms
+    const totalDuration = chargeTime + 9 * attackRate  // 总计 ≈ 1980ms
+
+    let frameIndex
+    if (t < chargeTime) {
+      // 蓄力阶段：帧0~2（慢）
+      frameIndex = Math.min(2, Math.floor(t / chargeRate))
+    } else {
+      // 攻击阶段：帧3~11（快）
+      const attackT = t - chargeTime
+      frameIndex = Math.min(11, 3 + Math.floor(attackT / attackRate))
+    }
+    monster.animFrame = frameIndex
+
+    // 3段伤害判定点：帧4(第1段) / 帧7(第2段) / 帧10(第3段)
+    const hitFrames = [4, 7, 10]
+    for (const hitF of hitFrames) {
+      if (frameIndex === hitF && !monster._biteHitsDone.includes(hitF)) {
+        monster._biteHitsDone.push(hitF)
+
+        // 使用技能锁定目标（角色），而非 _findNearestEnemy（那是给角色找怪物的）
+        const tgt = target
+        if (tgt && !tgt.isDead) {
+          const dx = tgt.x - monster.x
+          const dy = tgt.y - monster.y
+          const hitDist = Math.sqrt(dx * dx + dy * dy)
+
+          // 攻击范围内才命中（近战判定）
+          if (hitDist <= (monster.atkRange || 80) + 40) {
+            const biteDmg = Math.floor(monster.atk * cfg.power * (0.85 + Math.random() * 0.3))
+            const reducedDmg = Math.max(1, biteDmg - (tgt.def || 0) * 0.25)
+            this._charTakeDamage(tgt, reducedDmg)
+            this._spawnHitEffect(tgt.x, tgt.y - 20, reducedDmg, '#a855f7')
+            this._addFloatingText(tgt.x, tgt.y - 50, `-${reducedDmg}`, '#a855f7', 1.2)
+          }
+        }
+
+        // 每次命中都有小冲击波
+        this.effects.push({
+          type: 'buff_shockwave', x: monster.x, y: monster.y - 15,
+          color: '#a855f7', radius: 35,
+          timer: 0, duration: 250, life: 250,
+        })
+      }
+    }
+
+    // === 技能结束（全部帧播完或超时）===
+    if (t >= totalDuration || frameIndex >= 11) {
+      monster.isCastingSkill = false
+      monster._biteSkillActive = false
+      monster.animState = 'idle'
+      monster.animFrame = 0
+      monster.animTimer = 0
+      monster.isAttacking = false
+      monster.attackAnimTimer = 200  // 短暂收招硬直
+      monster._biteSkillTimer = 0
+      monster._biteHitsDone = []
+      monster.skillCD = cfg.cooldown  // CD 15秒
+      monster.atkTimer = monster.atkInterval
+    }
+  }
+
+  /**
+   * ★ 暗影鼠：暗影突袭（潜行BUFF）
+   *
+   * 技能效果：
+   * - 进入潜行状态 5 秒
+   * - 潜行期间怪物半透明（可见但朦胧），无法被选中/攻击
+   * - 潜行期间移速提升80%
+   * - CD: 20秒
+   */
+  _shadowRush(monster, target) {
+    const spr = MONSTER_SPRITES[monster.type]
+    if (!spr || !spr.stealthSkill) return
+
+    const cfg = spr.stealthSkill
+
+    // 标记进入施法状态
+    if (!monster.isCastingSkill && !monster._stealthSkillActive) {
+      monster.isCastingSkill = true
+      monster._stealthSkillActive = true
+      monster.animState = 'skill'  // 用技能帧做潜行动画（前几帧是蓄力动作）
+      monster.animFrame = 0
+      monster.animTimer = 0
+      monster._stealthSkillTimer = 0
+      monster.skillStartX = monster.x
+      monster.skillStartY = monster.y
+      monster.skillTargetX = target.x
+      monster.skillTargetY = target.y
+      monster.isAttacking = true
+      monster.attackAnimTimer = 800  // 施法动画约800ms
+
+      this._addFloatingText(monster.x, monster.y - 40, `👤 ${cfg.name}!`, '#6366f1', 2.0)
+
+      // ★ 潜行启动闪光特效 ★
+      this.effects.push({
+        type: 'stealth_flash',
+        x: monster.x,
+        y: monster.y,
+        timer: 0,
+        duration: 600,
+        life: 600,
+        color: '#6366f1',
+      })
+
+      return  // 第一帧
+    }
+
+    // ===== 时间驱动：800ms施法后进入潜行 =====
+    monster._stealthSkillTimer += 16
+    const t = monster._stealthSkillTimer
+
+    // 施法阶段（0~800ms）：播放技能帧动画
+    if (t < 800) {
+      const frameRate = 120
+      monster.animFrame = Math.min(5, Math.floor(t / frameRate))
+    } else if (t < 900) {
+      // 进入潜行的过渡帧
+      monster.animFrame = Math.min(11, 6 + Math.floor((t - 800) / 150))
+
+      // 正式进入潜行状态（只触发一次）
+      if (!monster.isStealthed) {
+        monster.isStealthed = true
+        monster.stealthUntil = Date.now() + cfg.stealthDuration
+        monster.stealthTimer = cfg.stealthDuration
+
+        // 记录潜行前的移速（恢复时用）
+        monster._preStealthMoveSpeed = monster.moveSpeed
+
+        // 提升移速
+        monster.moveSpeed = Math.round(monster.moveSpeed * cfg.speedBoost)
+
+        // 浮动提示
+        this._addFloatingText(monster.x, monster.y - 50, `👻 潜行 ${cfg.stealthDuration / 1000}s!`, '#6366f1', 1.8)
+
+        // 潜行烟雾特效
+        for (let i = 0; i < 8; i++) {
+          const angle = (i / 8) * Math.PI * 2
+          this.particles.push({
+            x: monster.x, y: monster.y,
+            vx: Math.cos(angle) * 40, vy: Math.sin(angle) * 20,
+            size: 4 + Math.random() * 4, color: 'rgba(99,102,241,0.6)',
+            life: 1, decay: 2.0,
+          })
+        }
+      }
+    } else {
+      // 施法完成 → 退出技能状态但保持潜行
+      monster.isCastingSkill = false
+      monster._stealthSkillActive = false
+      monster._stealthSkillTimer = 0
+      monster.animState = 'walk'  // 潜行时用行走帧（更自然）
+      monster.animFrame = 0
+      monster.isAttacking = false
+      monster.attackAnimTimer = 0
+      monster.skillCD = cfg.cooldown  // CD 20秒
+    }
+  }
+
+  /**
+   * ★ 猫人：禁止喧哗（范围减伤光环）
+   *
+   * 效果：300px范围内所有角色伤害降低30%，持续5秒，CD 20秒
+   * 流程：800ms前摇 → 激活光环5秒
+   */
+  _catmanSilence(monster, target) {
+    const spr = MONSTER_SPRITES[monster.type]
+    if (!spr || !spr.silenceSkill) return
+
+    const cfg = spr.silenceSkill
+
+    // 首次调用：初始化
+    if (!monster._silenceSkillActive) {
+      monster.isCastingSkill = true
+      monster._silenceSkillActive = true
+      monster.animState = 'cast'
+      monster.animFrame = 0
+      monster.animTimer = 0
+      monster._silenceSkillTimer = 0
+      monster.isAttacking = true
+      monster.attackAnimTimer = cfg.castTime + cfg.duration  // 总时长=前摇+持续
+
+      this._addFloatingText(monster.x, monster.y - 45, `🤫 ${cfg.name}!`, '#60a5fa', 2.0)
+
+      // 施法闪光特效
+      this.effects.push({
+        type: 'silence_cast_flash',
+        x: monster.x, y: monster.y,
+        timer: 0, duration: cfg.castTime, life: cfg.castTime,
+        color: '#60a5fa',
+      })
+      return
+    }
+
+    // 时间驱动
+    monster._silenceSkillTimer += 16
+    const t = monster._silenceSkillTimer
+
+    // 前摇阶段（施法动画）
+    if (t < cfg.castTime) {
+      return
+    }
+
+    // 前摇结束 → 激活沉默光环
+    if (!monster._silenceAuraActive) {
+      monster._silenceAuraActive = true
+      monster._silenceAuraTimer = cfg.duration
+      monster.isCastingSkill = false
+      monster.isAttacking = false
+      monster.attackAnimTimer = 200
+      monster.skillCD = cfg.cooldown
+
+      // 光环特效（跟随猫人）
+      this.effects.push({
+        type: 'silence_aura',
+        x: monster.x, y: monster.y,
+        timer: 0, duration: cfg.duration, life: cfg.duration,
+        range: cfg.range, color: '#60a5fa',
+      })
+
+      this._addFloatingText(monster.x, monster.y - 50, `💤 减伤30%!`, '#93c5fd', 1.6)
+    }
+
+    // 更新光环位置（跟随猫人）
+    for (const e of this.effects) {
+      if (e.type === 'silence_aura' && e.life > 0 && e._ownerId === undefined) {
+        e._ownerId = monster.id  // 标记归属，后续更新位置用
+      }
+    }
+  }
+
+  /**
+   * ★ 猫人：幻化变身（残血自动触发）
+   *
+   * 触发条件：HP ≤ 35% 且本条命未触发过
+   * 效果：
+   * - 变身期间(1200ms)无敌
+   * - 变身完成后：ATK+80%, DEF+100%(翻倍), SPD+50%, 攻速+60%
+   * - 持久变身（直到死亡或战斗结束）
+   */
+  _catmanTransform(monster) {
+    const spr = MONSTER_SPRITES[monster.type]
+    if (!spr || !spr.transformSkill) return
+
+    const cfg = spr.transformSkill
+
+    // 首次调用：初始化变身
+    if (!monster._transformActive) {
+      monster._transformActive = true
+      monster.isCastingSkill = true
+      monster.animState = 'cast'  // 用cast帧表示变身动作
+      monster.animFrame = 0
+      monster.animTimer = 0
+      monster._transformTimer = 0
+      monster.isAttacking = true
+      monster.attackAnimTimer = cfg.castTime
+
+      this._addFloatingText(monster.x, monster.y - 55, `✨ 幻化! ✨`, '#f59e0b', 2.2)
+
+      // 变身爆发光效（金色）
+      this.effects.push({
+        type: 'transform_burst',
+        x: monster.x, y: monster.y,
+        timer: 0, duration: cfg.castTime, life: cfg.castTime,
+        color: '#f59e0b',
+      })
+      return
+    }
+
+    // 时间驱动
+    monster._transformTimer += 16
+    const t = monster._transformTimer
+
+    // 变身期间无敌（不退出isCastingSkill直到变身完成）
+    if (t < cfg.castTime) {
+      return  // 变身进行中，保持无敌
+    }
+
+    // === 变身完成！应用属性加成 ===
+    if (!monster.isTransformed) {
+      monster.isTransformed = true
+      monster.hasTransformedThisLife = true
+      monster.isCastingSkill = false
+      monster._transformActive = false
+      monster._transformTimer = 0
+      monster.isAttacking = false
+      monster.attackAnimTimer = 300  // 短暂硬直后开始猛攻
+
+      // 记录当前值作为新基础（避免重复叠加）
+      const baseAtk = monster._baseAtk
+      const baseDef = monster._baseDef
+      const baseSpd = monster._baseMoveSpeed
+      const baseInterval = monster._baseAtkInterval
+
+      // 应用属性加成
+      monster.atk = Math.round(baseAtk * (1 + cfg.atkBoost))
+      monster.def = Math.round(baseDef * (1 + cfg.defBoost))
+      monster.moveSpeed = Math.round(baseSpd * (1 + cfg.spdBoost))
+      monster.atkInterval = Math.max(300, Math.round(baseInterval / (1 + cfg.atkSpeedBoost)))
+
+      // 名称变更提示
+      const oldName = monster.name
+      monster.name = `👤 人形${monster.name.replace(/^[^\u4e00-\u9fa5]*/, '')}`
+      monster.displayName = monster.name
+
+      this._addFloatingText(monster.x, monster.y - 65, `🔥 ${monster.name}! 🔥`, '#ef4444', 2.2)
+      console.log(`[Catman] ⚡ ${oldName} → ${monster.name} | ATK:${monster.atk} DEF:${monster.def} SPD:${monster.moveSpeed} INT:${monster.atkInterval}ms`)
+    }
+  }
+  _updateMonsterStealth(dt) {
+    const now = Date.now()
+    for (const m of this.monsters) {
+      if (m.isStealthed) {
+        m.stealthTimer = Math.max(0, m.stealthUntil - now)
+        if (m.stealthTimer <= 0) {
+          // 潜行结束
+          m.isStealthed = false
+          m.stealthUntil = 0
+          // 恢复移速
+          if (m._preStealthMoveSpeed != null) {
+            m.moveSpeed = m._preStealthMoveSpeed
+            m._preStealthMoveSpeed = null
+          }
+          this._addFloatingText(m.x, m.y - 50, `💨 潜行结束!`, '#94a3b8', 1.5)
+        }
+      }
+    }
+  }
+
+  /** 更新所有猫人禁止喧哗光环状态（每帧调用） */
+  _updateCatmanSilence(dt) {
+    for (const m of this.monsters) {
+      if (m._silenceAuraActive && m._silenceAuraTimer > 0) {
+        m._silenceAuraTimer = Math.max(0, m._silenceAuraTimer - dt)
+        if (m._silenceAuraTimer <= 0) {
+          m._silenceAuraActive = false
+          this._addFloatingText(m.x, m.y - 50, `💤 减伤结束`, '#94a3b8', 1.4)
+        }
+      }
+    }
+    // 同步更新silence_aura特效位置（跟随猫人）
+    for (const e of this.effects) {
+      if (e.type === 'silence_aura' && e.life > 0) {
+        const owner = this.monsters.find(m => m.id === e._ownerId)
+        if (owner && owner._silenceAuraActive) {
+          e.x = owner.x
+          e.y = owner.y
+        } else if (!owner || !owner._silenceAuraActive) {
+          e.life = 0  // 光环已失效
+        }
+      }
+    }
+  }
+
+  /**
+   * 检查角色是否在猫人的沉默减伤范围内
+   * 返回 { inRange: bool, reduction: number }
+   */
+  _checkSilenceReduction(char) {
+    let totalReduction = 0
+    for (const m of this.monsters) {
+      if (m.isDead || !m._silenceAuraActive || m.type !== 'orc') continue
+      const spr = MONSTER_SPRITES[m.type]
+      const range = (spr && spr.silenceSkill && spr.silenceSkill.range) || 300
+      const dx = char.x - m.x
+      const dy = char.y - m.y
+      const dist = Math.sqrt(dx * dx + dy * dy)
+      if (dist <= range) {
+        const reduction = (spr && spr.silenceSkill && spr.silenceSkill.dmgReduction) || 0.30
+        // 多只猫人叠加（上限60%）
+        totalReduction = Math.min(0.60, totalReduction + reduction)
+      }
+    }
+    return { inRange: totalReduction > 0, reduction: totalReduction }
+  }
+
+  _applyRootEffect(char, duration) {
+    if (!char.statusEffects) char.statusEffects = []
+    char.statusEffects.push({ type: 'root', duration: duration })
+    // root效果通过在_updateCharacters中检测来阻止移动
+    // 这里用frozenTimer复用机制（简化实现）
+    char.rootedUntil = Date.now() + duration
+    // 显示禁锢光环
+    this.effects.push({
+      type: 'root_aura',
+      x: char.x,
+      y: char.y,
+      life: duration / 1000,
+      maxLife: duration / 1000,
+      targetChar: char,  // 跟随角色位置
+    })
+  }
+
   _charTakeDamage(char, dmg) {
-    char.currentHp -= dmg
+    // ★ 猫人禁止喧哗减伤检查 ★
+    const silence = this._checkSilenceReduction(char)
+    let finalDmg = dmg
+    if (silence.inRange && silence.reduction > 0) {
+      finalDmg = Math.max(1, Math.floor(dmg * (1 - silence.reduction)))
+      if (Math.random() < 0.08) {  // 偶尔提示，不刷屏
+        this._addFloatingText(char.x, char.y - 60, `🤫 减伤${Math.round(silence.reduction * 100)}%`, '#93c5fd', 1.2)
+      }
+    }
+
+    char.currentHp -= finalDmg
     char.hurtTimer = 200
     char.hurtFlash = 150
     char.shakeX = (Math.random() - 0.5) * 8
@@ -3131,9 +4100,17 @@ export class TowerBattle {
           e.frame = Math.min(Math.floor(e.timer / hitData.frameRate), totalFrames - 1)
           e.life = Math.max(0, e.duration - e.timer)
         }
-      } else if (e.type === 'cast_ring' || e.type === 'freeze_aura') {
+      } else if (e.type === 'cast_ring' || e.type === 'freeze_aura' || e.type === 'root_aura') {
         // 时间衰减特效
         e.life -= dt / 1000
+        // 禁锢光环跟随角色位置
+        if (e.type === 'root_aura' && e.targetChar) {
+          e.x = e.targetChar.x
+          e.y = e.targetChar.y
+        }
+      } else if (e.type === 'pounce_flash') {
+        e.timer += dt
+        e.life = Math.max(0, e.duration - e.timer)
       } else if (e.type === 'skill_ray') {
         e.timer += dt
         e.life = Math.max(0, e.duration - e.timer)
@@ -3182,6 +4159,46 @@ export class TowerBattle {
         if (!e._startTime) { e._startTime = Date.now() }
         e.life = Math.max(0, e.maxLife - elapsed / 1000)
         e.timer += dt
+      }
+      // === 扑击蓄力闪光特效更新 ===
+      else if (e.type === 'pounce_flash') {
+        e.timer += dt
+        e.life = Math.max(0, (e.duration || 400) - e.timer)
+      }
+      // === 红色警示圈更新 ===
+      else if (e.type === 'pounce_warning') {
+        e.timer += dt
+        e.life = Math.max(0, (e.duration || 2000) - e.timer)
+      }
+      // === 暗影咬蓄力闪光 ===
+      else if (e.type === 'bite_flash') {
+        e.timer += dt
+        e.life = Math.max(0, (e.duration || 600) - e.timer)
+      }
+      // === 暗影咬目标锁定光环 ===
+      else if (e.type === 'bite_target_lock') {
+        e.timer += dt
+        e.life = Math.max(0, (e.duration || 2000) - e.timer)
+      }
+      // === 暗影突袭潜行闪光 ===
+      else if (e.type === 'stealth_flash') {
+        e.timer += dt
+        e.life = Math.max(0, (e.duration || 600) - e.timer)
+      }
+      // === 禁止喧哗施法光效 ===
+      else if (e.type === 'silence_cast_flash') {
+        e.timer += dt
+        e.life = Math.max(0, (e.duration || 800) - e.timer)
+      }
+      // === 禁止喧哗光环 ===
+      else if (e.type === 'silence_aura') {
+        e.timer += dt
+        e.life = Math.max(0, (e.duration || 5000) - e.timer)
+      }
+      // === 幻化变身爆发 ===
+      else if (e.type === 'transform_burst') {
+        e.timer += dt
+        e.life = Math.max(0, (e.duration || 1200) - e.timer)
       }
     }
     this.effects = this.effects.filter(e => e.life > 0)
@@ -4041,8 +5058,7 @@ export class TowerBattle {
     this._renderParticles(ctx)
     this._renderDroppedItems(ctx)
     this._renderWormhole(ctx)      // 虫洞（替代敌方水晶）
-    this._renderMonsters(ctx)
-    this._renderCharacters(ctx)
+    this._renderAllEntities(ctx)   // 角色+怪物统一按Y轴排序绘制（画家算法）
     this._renderProjectiles(ctx)
     this._renderSkillArcMenu(ctx) // 技能弧形菜单（在角色之上）
     this._renderEffects(ctx)
@@ -4232,7 +5248,7 @@ export class TowerBattle {
       const glowR = (26 + item.glowIntensity * pulse * 1.3)
 
       if (item.quality !== 'common') {
-        const glowGrad = ctx.createRadialGradient(0, 0, 8, 0, 0, glowR)
+        const glowGrad = ctx.createRadialGradient(0, 0, 8, 0, 0, Math.max(1, glowR))
         glowGrad.addColorStop(0, color + '40')
         glowGrad.addColorStop(1, color + '00')
         ctx.fillStyle = glowGrad
@@ -4305,21 +5321,76 @@ export class TowerBattle {
 
   // ==================== UI层 ====================
 
+  /**
+   * 统一渲染所有实体（角色+怪物），按Y轴从上到下排序绘制（画家算法）
+   * Y轴越大的实体后绘制 → 显示在更上层，遮挡Y值较小的实体
+   */
+  _renderAllEntities(ctx) {
+    // 收集所有需要渲染的实体
+    const entities = []
+
+    for (const c of this.party) {
+      if (!(c.isDead && c.respawnTimer <= 0)) {
+        entities.push({ type: 'char', entity: c, y: c.y })
+      }
+    }
+
+    for (const m of this.monsters) {
+      if (!(m.isDead && m.deathTimer <= 0)) {
+        entities.push({ type: 'monster', entity: m, y: m.y + (m.shakeY || 0) })
+      }
+    }
+
+    // 按Y坐标从小到大排序（Y小的先画=在后面，Y大的后画=在上面）
+    entities.sort((a, b) => a.y - b.y)
+
+    // 按顺序绘制每个实体
+    for (const e of entities) {
+      if (e.type === 'char') {
+        this._renderOneCharacter(ctx, e.entity)
+      } else {
+        this._renderOneMonster(ctx, e.entity)
+      }
+    }
+  }
+
   // ===== 怪物渲染（真实精灵）=====
 
-  _renderMonsters(ctx) {
-    for (const m of this.monsters) {
-      if (m.isDead && m.deathTimer <= 0) continue
+  /**
+   * 渲染单个怪物（供 _renderMonsters 和 _renderAllEntities 调用）
+   */
+  _renderOneMonster(ctx, m) {
+    if (m.isDead && m.deathTimer <= 0) return
 
-      ctx.save()
-      ctx.translate(m.x + (m.shakeX || 0), m.y + (m.shakeY || 0))
+    ctx.save()
+    ctx.translate(m.x + (m.shakeX || 0), m.y + (m.shakeY || 0))
+
+      // ===== ★ 潜行状态：半透明 + 闪烁（可见但朦胧）★
+      if (m.isStealthed) {
+        const stealthPulse = 0.25 + 0.15 * Math.sin(Date.now() / 120)
+        ctx.globalAlpha = stealthPulse
+      }
+
+      // ===== ★ 幻化变身中：金色发光 + 轻微放大（无敌期间）★
+      if (m._transformActive && m.type === 'orc') {
+        const transP = 1 + 0.12 * Math.sin(Date.now() / 80)   // 呼吸放大
+        ctx.scale(transP, transP)
+        ctx.shadowBlur = 18
+        ctx.shadowColor = '#f59e0b'
+      }
+
+      // ===== ★ 幻化完成后：持续金色光晕 ★
+      if (m.isTransformed && m.type === 'orc') {
+        ctx.shadowBlur = 10 + 4 * Math.sin(Date.now() / 200)
+        ctx.shadowColor = '#fbbf24'
+      }
 
       // ===== ★ 传送入场特效 =====
       if (m.isSpawning) {
         const p = m.spawnAnim  // 0→1
         const scale = p
         ctx.scale(scale, scale)
-        ctx.globalAlpha = Math.min(1, p * 2)  // 前50%淡入
+        ctx.globalAlpha = Math.min(1, p * 2)  // 前50%淡入（覆盖潜行alpha）
 
         // 底部传送圆环（类似虫洞效果）
         const ringR = 25 * (1 - p * 0.6)
@@ -4407,7 +5478,7 @@ export class TowerBattle {
           ctx.strokeStyle = 'rgba(255,80,80,' + (slashP * 0.6).toFixed(2) + ')'
           ctx.lineWidth = 2
           ctx.beginPath()
-          ctx.arc(-drawW * 0.2, -drawH * 0.3, 15 + (1 - slashP) * 12,
+          ctx.arc(-drawW * 0.2, -drawH * 0.3, Math.max(1, 15 + (1 - slashP) * 12),
                    Math.PI * 0.3 + (1 - slashP) * Math.PI * 0.5,
                    Math.PI * 0.7 + (1 - slashP) * Math.PI * 0.5)
           ctx.stroke()
@@ -4483,6 +5554,39 @@ export class TowerBattle {
         if (rcfg.label) {
           nameText = `${rcfg.label} ${m.name}`
         }
+        // ★ 潜行状态显示 👻 标记 ★
+        if (m.isStealthed) {
+          nameText = `👻 ${nameText}`
+          // 血条也变成靛蓝色（表示潜行中）
+          ctx.fillStyle = 'rgba(99,102,241,0.5)'
+          ctx.fillRect(-barW / 2, barY, barW, barH)
+          ctx.strokeStyle = 'rgba(139,132,240,0.7)'
+          ctx.lineWidth = 1.5
+          ctx.strokeRect(-barW / 2, barY, barW, barH)
+          // HP条用靛蓝色
+          if (hpRatio > 0) {
+            ctx.fillStyle = '#6366f1'
+            ctx.fillRect(-barW / 2 + 2, barY + 2, (barW - 4) * hpRatio, barH - 4)
+            ctx.fillStyle = 'rgba(130,120,255,0.35)'
+            ctx.fillRect(-barW / 2 + 2, barY + 2, (barW - 4) * hpRatio, 4)
+          }
+        }
+        // ★ 幻化状态：金色血条 + 🔥 标记 ★
+        if (m.isTransformed) {
+          nameText = `🔥 ${nameText}`
+          // 血条变成金色（表示强化形态）
+          ctx.fillStyle = 'rgba(245,158,11,0.4)'
+          ctx.fillRect(-barW / 2, barY, barW, barH)
+          ctx.strokeStyle = 'rgba(251,191,36,0.8)'
+          ctx.lineWidth = 1.8
+          ctx.strokeRect(-barW / 2, barY, barW, barH)
+          if (hpRatio > 0) {
+            ctx.fillStyle = '#f59e0b'
+            ctx.fillRect(-barW / 2 + 2, barY + 2, (barW - 4) * hpRatio, barH - 4)
+            ctx.fillStyle = 'rgba(255,200,80,0.45)'
+            ctx.fillRect(-barW / 2 + 2, barY + 2, (barW - 4) * hpRatio, 4)
+          }
+        }
         nameText += ` Lv${m.level}`
 
         const fontSize = Math.max(16, Math.round(14 * this.dpr))
@@ -4519,18 +5623,27 @@ export class TowerBattle {
       }
 
       ctx.restore()
+  }
+
+  /**
+   * 渲染所有怪物（批量调用，保持向后兼容）
+   */
+  _renderMonsters(ctx) {
+    for (const m of this.monsters) {
+      this._renderOneMonster(ctx, m)
     }
   }
 
   // ===== 角色渲染（真实精灵）=====
 
-  _renderCharacters(ctx) {
-    for (let i = 0; i < this.party.length; i++) {
-      const c = this.party[i]
-      if (c.isDead && c.respawnTimer <= 0) continue
+  /**
+   * 渲染单个角色（供 _renderCharacters 和 _renderAllEntities 调用）
+   */
+  _renderOneCharacter(ctx, c) {
+    if (c.isDead && c.respawnTimer <= 0) return
 
-      ctx.save()
-      ctx.translate(c.x, c.y)
+    ctx.save()
+    ctx.translate(c.x, c.y)
 
       // 朝向：精灵图默认朝左，朝右时需水平翻转
       if (c.facingRight) {
@@ -4554,7 +5667,7 @@ export class TowerBattle {
         ctx.fillRect(-26, 12, 52 * ratio, 6)
 
         ctx.restore()
-        continue
+        return
       }
 
       // 攻击前摇位移（向前冲 + 轻微放大）
@@ -4615,7 +5728,7 @@ export class TowerBattle {
           ctx.shadowBlur = 12
           ctx.shadowColor = '#ffd700'
           ctx.beginPath()
-          ctx.arc(drawW * 0.3, -drawH * 0.3, 25 + (1 - slashProgress) * 18,
+          ctx.arc(drawW * 0.3, -drawH * 0.3, Math.max(1, 25 + (1 - slashProgress) * 18),
                    -Math.PI * 0.8 + (1 - slashProgress) * Math.PI * 0.6,
                    -Math.PI * 0.3 + (1 - slashProgress) * Math.PI * 0.6, false)
           ctx.stroke()
@@ -4788,7 +5901,7 @@ export class TowerBattle {
       }
 
       // 选中指示器（包围角色整体）
-      if (i === this.selectedCharIndex) {
+      if (this.party.indexOf(c) === this.selectedCharIndex) {
         ctx.strokeStyle = '#ffd700'
         ctx.lineWidth = 1.5
         ctx.setLineDash([4, 4])
@@ -4798,6 +5911,14 @@ export class TowerBattle {
       }
 
       ctx.restore()
+  }
+
+  /**
+   * 渲染所有角色（批量调用，保持向后兼容）
+   */
+  _renderCharacters(ctx) {
+    for (let i = 0; i < this.party.length; i++) {
+      this._renderOneCharacter(ctx, this.party[i])
     }
   }
 
@@ -4846,7 +5967,7 @@ export class TowerBattle {
         ctx.globalAlpha = alpha
         ctx.fillStyle = p.color
         ctx.beginPath()
-        ctx.arc(p.trail[i].x, p.trail[i].y, size, 0, Math.PI * 2)
+        ctx.arc(p.trail[i].x, p.trail[i].y, Math.max(0.5, size), 0, Math.PI * 2)
         ctx.fill()
       }
       ctx.globalAlpha = 1
@@ -4855,7 +5976,7 @@ export class TowerBattle {
       ctx.shadowColor = p.color
       ctx.fillStyle = p.color
       ctx.beginPath()
-      ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2)
+      ctx.arc(p.x, p.y, Math.max(0.5, p.size), 0, Math.PI * 2)
       ctx.fill()
       ctx.shadowBlur = 0
       ctx.restore()
@@ -5189,8 +6310,9 @@ export class TowerBattle {
 
       } else if (e.type === 'cast_ring') {
         // 施法光圈：从怪物扩散的圆环 —— 离屏隔离
-        const t = 1 - (e.life / e.maxLife)
-        const r = e.radius + (e.maxRadius - e.radius) * t
+        const maxL = Math.max(0.001, e.maxLife || 0.6)
+        const t = Math.min(2, 1 - (e.life / maxL))
+        const r = Math.max(1, e.radius + (e.maxRadius - e.radius) * t)
         const alpha = Math.max(0, 1 - t * 1.5)
         const dia = Math.ceil(r * 2) + 20
         if (!e._off) { e._off = (typeof wx !== 'undefined' && wx.createCanvas) ? wx.createCanvas() : null; e._offS = 0; }
@@ -5205,7 +6327,7 @@ export class TowerBattle {
           offCtx.shadowBlur = 12
           offCtx.shadowColor = e.color
           offCtx.beginPath()
-          offCtx.arc(cx, cy, r, 0, Math.PI * 2)
+          offCtx.arc(cx, cy, Math.max(1, r), 0, Math.PI * 2)
           offCtx.stroke()
           offCtx.globalAlpha = alpha * 0.15
           offCtx.fillStyle = e.color
@@ -5217,7 +6339,7 @@ export class TowerBattle {
           ctx.strokeStyle = e.color
           ctx.lineWidth = 3 * (1 - t * 0.6)
           ctx.beginPath()
-          ctx.arc(e.x, e.y, r, 0, Math.PI * 2)
+          ctx.arc(e.x, e.y, Math.max(1, r), 0, Math.PI * 2)
           ctx.stroke()
           ctx.globalAlpha = alpha * 0.15
           ctx.fillStyle = e.color
@@ -5226,8 +6348,9 @@ export class TowerBattle {
         }
       } else if (e.type === 'freeze_aura') {
         // 冰冻光环：围绕目标的蓝色霜冻效果 —— 离屏隔离
-        const t = e.life / e.maxLife
-        const pulseScale = 1 + Math.sin(Date.now() / 150) * 0.08
+        const maxL = Math.max(0.001, e.maxLife || 1)
+        const t = Math.max(0, Math.min(1, e.life / maxL))
+        const pulseScale = Math.max(0.5, 1 + Math.sin(Date.now() / 150) * 0.08)
         const dia = 80
         if (!e._off) { e._off = (typeof wx !== 'undefined' && wx.createCanvas) ? wx.createCanvas() : null; e._offS = 0; }
         if (e._off && e._offS !== dia) { e._off.width = dia; e._off.height = dia; e._offS = dia; }
@@ -5241,7 +6364,7 @@ export class TowerBattle {
           offCtx.shadowBlur = 15
           offCtx.shadowColor = '#44aaff'
           offCtx.beginPath()
-          offCtx.arc(cx, cy, 28 * pulseScale, 0, Math.PI * 2)
+          offCtx.arc(cx, cy, Math.max(1, 28 * pulseScale), 0, Math.PI * 2)
           offCtx.stroke()
           offCtx.globalAlpha = 0.12 * t
           offCtx.fillStyle = '#88ddff'
@@ -5265,11 +6388,428 @@ export class TowerBattle {
           ctx.strokeStyle = '#66ccff'
           ctx.lineWidth = 2
           ctx.beginPath()
-          ctx.arc(e.x, e.y, 28 * pulseScale, 0, Math.PI * 2)
+          ctx.arc(e.x, e.y, Math.max(1, 28 * pulseScale), 0, Math.PI * 2)
           ctx.stroke()
           ctx.globalAlpha = 0.12 * t
           ctx.fillStyle = '#88ddff'
           ctx.fill()
+          ctx.restore()
+        }
+      } else if (e.type === 'root_aura') {
+        // 禁锢光环：围绕目标的橙黄色锁链效果
+        const t = Math.max(0, e.maxLife > 0 ? e.life / e.maxLife : 0)
+        const pulseScale = Math.max(0.5, 1 + Math.sin(Date.now() / 120) * 0.12)
+        const r = Math.max(10, 50)
+
+        ctx.save()
+        ctx.translate(e.x, e.y)
+
+        // 外圈锁链（旋转）
+        ctx.save()
+        ctx.rotate(Date.now() / 800)
+        ctx.strokeStyle = '#ff8c00'
+        ctx.lineWidth = 2.5
+        ctx.globalAlpha = Math.max(0, 0.5 * t)
+        ctx.setLineDash([8, 6])
+        ctx.beginPath()
+        ctx.arc(0, 0, Math.max(1, r * pulseScale), 0, Math.PI * 1.5)
+        ctx.stroke()
+
+        // 反向锁链
+        ctx.strokeStyle = '#ffaa00'
+        ctx.rotate(-Date.now() / 500)
+        ctx.beginPath()
+        ctx.arc(0, 0, Math.max(1, r * 0.85 * pulseScale), Math.PI * 0.5, Math.PI * 2)
+        ctx.stroke()
+        ctx.restore()
+
+        // 内圈填充（半透明橙色）
+        ctx.globalAlpha = 0.15 * t
+        ctx.fillStyle = '#ff6600'
+        ctx.beginPath()
+        ctx.arc(0, 0, Math.max(1, r * 0.7 * pulseScale), 0, Math.PI * 2)
+        ctx.fill()
+
+        // 锁链节点（4角）
+        ctx.setLineDash([])
+        for (let i = 0; i < 4; i++) {
+          const angle = Date.now() / 300 + i * Math.PI / 2
+          const dist = Math.max(1, r * 0.9 * pulseScale)
+          const px = Math.cos(angle) * dist
+          const py = Math.sin(angle) * dist
+          ctx.globalAlpha = 0.8 * t
+          ctx.fillStyle = '#ffcc00'
+          ctx.beginPath()
+          ctx.arc(px, py, Math.max(1, 4), 0, Math.PI * 2)
+          ctx.fill()
+        }
+
+        // ⛓ 文字标记
+        if (t > 0.5) {
+          ctx.globalAlpha = (t - 0.5) * 2
+          ctx.font = 'bold 14px sans-serif'
+          ctx.textAlign = 'center'
+          ctx.textBaseline = 'middle'
+          ctx.fillStyle = '#ffaa00'
+          ctx.fillText('⛓', 0, -r * pulseScale - 10)
+        }
+
+        ctx.restore()
+      } else if (e.type === 'pounce_flash') {
+        // 跳跃扑击蓄力闪光特效（拳皇风格）
+        const dur = e.duration || 400
+        const progress = dur > 0 ? Math.min(1, e.timer / dur) : 1
+        const flashAlpha = progress < 0.5 ? progress * 2 : (1 - progress) * 2
+
+        if (flashAlpha > 0.05) {
+          ctx.save()
+          ctx.translate(e.x, e.y)
+
+          const currentR = Math.max(1, e.radius + (e.maxRadius - e.radius) * progress)
+
+          // ★ 核心闪光：白色全屏感 ★
+          const gradient = ctx.createRadialGradient(0, 0, 0.1, 0, 0, currentR)
+          gradient.addColorStop(0, `rgba(255,255,255,${flashAlpha * 0.95})`)
+          gradient.addColorStop(0.3, `rgba(200,240,150,${flashAlpha * 0.6})`)
+          gradient.addColorStop(0.6, `rgba(126,200,80,${flashAlpha * 0.25})`)
+          gradient.addColorStop(1, 'rgba(126,200,80,0)')
+          ctx.fillStyle = gradient
+          ctx.beginPath()
+          ctx.arc(0, 0, currentR, 0, Math.PI * 2)
+          ctx.fill()
+
+          // 放射线（类似KOF超必杀闪光）
+          ctx.strokeStyle = `rgba(255,255,200,${flashAlpha * 0.7})`
+          ctx.lineWidth = 2
+          const rayCount = 12
+          for (let i = 0; i < rayCount; i++) {
+            const angle = (i / rayCount) * Math.PI * 2 + Date.now() / 500
+            const len = currentR * (0.6 + progress * 0.4)
+            ctx.beginPath()
+            ctx.moveTo(Math.cos(angle) * currentR * 0.3, Math.sin(angle) * currentR * 0.3)
+            ctx.lineTo(Math.cos(angle) * len, Math.sin(angle) * len)
+            ctx.stroke()
+          }
+
+          // 星芒（中心十字）
+          ctx.strokeStyle = `rgba(255,255,255,${flashAlpha})`
+          ctx.lineWidth = 3
+          const starLen = currentR * 0.5
+          ctx.beginPath()
+          ctx.moveTo(-starLen, 0); ctx.lineTo(starLen, 0)
+          ctx.moveTo(0, -starLen); ctx.lineTo(0, starLen)
+          ctx.stroke()
+
+          ctx.restore()
+        }
+      } else if (e.type === 'pounce_warning') {
+        // ★ 红色攻击警示圈（显示在目标位置，提示玩家躲避）★
+        const warnT = (e.timer || 0) / Math.max(1, e.duration || 2000)
+        const pulse = 1 + Math.sin(Date.now() / 120) * 0.08
+        const r = Math.max(1, e.radius) * pulse
+
+        ctx.save()
+        ctx.translate(e.x, e.y)
+
+        // 警戒红圈（带脉冲和旋转虚线）
+        const warnAlpha = 0.35 + Math.sin(Date.now() / 200) * 0.15
+
+        // 外圈红色光晕
+        ctx.beginPath()
+        ctx.arc(0, 0, Math.max(1, r), 0, Math.PI * 2)
+        ctx.strokeStyle = `rgba(255,50,50,${warnAlpha})`
+        ctx.lineWidth = 3
+        ctx.setLineDash([12, 8])
+        ctx.lineDashOffset = -Date.now() / 40
+        ctx.stroke()
+
+        // 内圈填充（半透明红）
+        ctx.setLineDash([])
+        ctx.beginPath()
+        ctx.arc(0, 0, Math.max(1, r * 0.92), 0, Math.PI * 2)
+        ctx.fillStyle = 'rgba(255,0,0,0.06)'
+        ctx.fill()
+
+        // 内部十字准星
+        ctx.strokeStyle = `rgba(255,80,80,${warnAlpha * 0.6})`
+        ctx.lineWidth = 1.5
+        const crossR = r * 0.6
+        ctx.beginPath()
+        ctx.moveTo(-crossR, 0); ctx.lineTo(crossR, 0)
+        ctx.moveTo(0, -crossR); ctx.lineTo(0, crossR)
+        ctx.stroke()
+
+        // ⚠ 警告文字
+        if (warnT < 0.7) {
+          ctx.font = 'bold 14px sans-serif'
+          ctx.textAlign = 'center'
+          ctx.textBaseline = 'middle'
+          ctx.fillStyle = `rgba(255,60,60,${warnAlpha * (1 - warnT)})`
+          ctx.fillText('⚠ 扑击!', 0, -r - 16)
+        }
+
+        ctx.restore()
+      } else if (e.type === 'bite_flash') {
+        // ★ 暗影咬蓄力闪光（紫色拳皇风格）★
+        const dur = e.duration || 600
+        const progress = dur > 0 ? Math.min(1, e.timer / dur) : 1
+        const flashAlpha = progress < 0.5 ? progress * 2 : (1 - progress) * 2
+
+        if (flashAlpha > 0.05) {
+          ctx.save()
+          ctx.translate(e.x, e.y)
+
+          const currentR = Math.max(1, e.radius + (e.maxRadius - e.radius) * progress)
+          const flashColor = e.color || '#a855f7'
+
+          // 紫色核心闪光
+          const gradient = ctx.createRadialGradient(0, 0, 0.1, 0, 0, currentR)
+          gradient.addColorStop(0, `rgba(200,180,255,${flashAlpha * 0.9})`)
+          gradient.addColorStop(0.3, `rgba(168,85,247,${flashAlpha * 0.55})`)
+          gradient.addColorStop(0.6, `rgba(99,102,241,${flashAlpha * 0.2})`)
+          gradient.addColorStop(1, 'rgba(99,102,241,0)')
+          ctx.fillStyle = gradient
+          ctx.beginPath(); ctx.arc(0, 0, currentR, 0, Math.PI * 2); ctx.fill()
+
+          // 放射线
+          ctx.strokeStyle = `rgba(180,160,255,${flashAlpha * 0.6})`
+          ctx.lineWidth = 2
+          for (let i = 0; i < 10; i++) {
+            const angle = (i / 10) * Math.PI * 2 + Date.now() / 400
+            const len = currentR * (0.5 + progress * 0.5)
+            ctx.beginPath()
+            ctx.moveTo(Math.cos(angle) * currentR * 0.25, Math.sin(angle) * currentR * 0.25)
+            ctx.lineTo(Math.cos(angle) * len, Math.sin(angle) * len)
+            ctx.stroke()
+          }
+
+          // 星芒
+          ctx.strokeStyle = `rgba(230,220,255,${flashAlpha})`
+          ctx.lineWidth = 2.5
+          const starLen = currentR * 0.45
+          ctx.beginPath()
+          ctx.moveTo(-starLen, 0); ctx.lineTo(starLen, 0)
+          ctx.moveTo(0, -starLen); ctx.lineTo(0, starLen)
+          ctx.stroke()
+
+          ctx.restore()
+        }
+      } else if (e.type === 'bite_target_lock') {
+        // ★ 暗影咬目标锁定光环（被锁定角色脚下）★
+        const dur = e.duration || 2000
+        const progress = dur > 0 ? Math.min(1, e.timer / dur) : 1
+        // 前半段渐显，后半段保持
+        const alpha = progress < 0.15 ? progress / 0.15 : 0.75
+        const pulse = 0.85 + 0.15 * Math.sin(e.timer * 0.008)
+
+        ctx.save()
+        ctx.translate(e.x, e.y)
+        ctx.globalAlpha = alpha * pulse
+
+        const lockR = 28 + 6 * Math.sin(e.timer * 0.005)   // 22~34px呼吸
+
+        // 外圈旋转虚线环（锁定标记感）
+        ctx.rotate(-e.timer * 0.003)
+        ctx.strokeStyle = '#a855f7'
+        ctx.lineWidth = 2 * dpr
+        ctx.setLineDash([6, 4])
+        ctx.beginPath()
+        ctx.arc(0, -lockR * 0.3, lockR, 0, Math.PI * 2)
+        ctx.stroke()
+
+        // 内圈实线细环
+        ctx.setLineDash([])
+        ctx.strokeStyle = '#c084fc'
+        ctx.lineWidth = 1.5 * dpr
+        ctx.globalAlpha *= 0.6
+        ctx.beginPath()
+        ctx.arc(0, -lockR * 0.3, lockR * 0.6, 0, Math.PI * 2)
+        ctx.stroke()
+
+        // 底部填充光晕
+        const glowGrad = ctx.createRadialGradient(0, -lockR * 0.3, 0, 0, -lockR * 0.3, lockR * 1.1)
+        glowGrad.addColorStop(0, 'rgba(168,85,247,0.25)')
+        glowGrad.addColorStop(0.6, 'rgba(168,85,247,0.08)')
+        glowGrad.addColorStop(1, 'rgba(168,85,247,0)')
+        ctx.fillStyle = glowGrad
+        ctx.beginPath()
+        ctx.arc(0, -lockR * 0.3, lockR * 1.1, 0, Math.PI * 2)
+        ctx.fill()
+
+        // ⚠ 锁定文字
+        ctx.setLineDash([])
+        ctx.globalAlpha = alpha
+        ctx.font = `bold ${Math.max(10, 11 * this.dpr)}px sans-serif`
+        ctx.fillStyle = '#a855f7'
+        ctx.textAlign = 'center'
+        ctx.textBaseline = 'middle'
+        ctx.fillText('⚠', 0, -lockR * 0.3 - lockR - 8)
+
+        ctx.restore()
+      } else if (e.type === 'stealth_flash') {
+        // ★ 暗影突袭潜行闪光（靛蓝色消散）★
+        const dur = e.duration || 600
+        const progress = dur > 0 ? Math.min(1, e.timer / dur) : 1
+        const alpha = 1 - progress
+
+        if (alpha > 0.05) {
+          ctx.save()
+          ctx.translate(e.x, e.y)
+          const r = 50 * (0.6 + progress * 0.4)
+
+          // 靛蓝扩散光环
+          const gradient = ctx.createRadialGradient(0, 0, 0.1, 0, 0, r)
+          gradient.addColorStop(0, `rgba(99,102,241,${alpha * 0.5})`)
+          gradient.addColorStop(0.5, `rgba(79,70,229,${alpha * 0.25})`)
+          gradient.addColorStop(1, 'rgba(49,46,129,0)')
+          ctx.fillStyle = gradient
+          ctx.beginPath(); ctx.arc(0, 0, r, 0, Math.PI * 2); ctx.fill()
+
+          // 螺旋烟雾粒子感
+          ctx.strokeStyle = `rgba(139,132,240,${alpha * 0.45})`
+          ctx.lineWidth = 1.5
+          for (let i = 0; i < 6; i++) {
+            const angle = Date.now() / 300 + (i / 6) * Math.PI * 2
+            const spiralR = r * (0.3 + progress * 0.7)
+            ctx.beginPath()
+            ctx.arc(
+              Math.cos(angle) * spiralR * 0.5,
+              Math.sin(angle) * spiralR * 0.5,
+              Math.max(1, 4 + progress * 8), 0, Math.PI * 2
+            )
+            ctx.stroke()
+          }
+
+          ctx.restore()
+        }
+      } else if (e.type === 'silence_cast_flash') {
+        // ★ 禁止喧哗施法光效（天蓝色蓄力闪光）★
+        const dur = e.duration || 800
+        const progress = dur > 0 ? Math.min(1, e.timer / dur) : 1
+        const flashAlpha = progress < 0.5 ? progress * 2 : (1 - progress) * 2
+
+        if (flashAlpha > 0.05) {
+          ctx.save()
+          ctx.translate(e.x, e.y)
+          const r = 40 + progress * 60
+
+          // 天蓝色径向光晕
+          const grad = ctx.createRadialGradient(0, 0, 1, 0, 0, r)
+          grad.addColorStop(0, `rgba(96,165,250,${flashAlpha * 0.6})`)
+          grad.addColorStop(0.4, `rgba(59,130,246,${flashAlpha * 0.3})`)
+          grad.addColorStop(1, 'rgba(37,99,235,0)')
+          ctx.fillStyle = grad
+          ctx.beginPath(); ctx.arc(0, 0, r, 0, Math.PI * 2); ctx.fill()
+
+          // "🤫" 文字提示（放大淡入）
+          ctx.globalAlpha = flashAlpha * 0.9
+          ctx.font = `bold ${Math.max(18, 20 * this.dpr)}px sans-serif`
+          ctx.fillStyle = '#60a5fa'
+          ctx.textAlign = 'center'
+          ctx.textBaseline = 'middle'
+          ctx.fillText('🤫', 0, -r - 12)
+
+          // 内圈波纹环
+          ctx.globalAlpha = flashAlpha * 0.5
+          ctx.strokeStyle = '#93c5fd'
+          ctx.lineWidth = 2 * this.dpr
+          for (let ring = 0; ring < 2; ring++) {
+            const ringR = r * (0.3 + ring * 0.35)
+            ctx.beginPath(); ctx.arc(0, 0, ringR, 0, Math.PI * 2); ctx.stroke()
+          }
+
+          ctx.restore()
+        }
+      } else if (e.type === 'silence_aura') {
+        // ★ 禁止喧哗光环（跟随猫人，300px范围减伤区域可视化）★
+        const dur = e.duration || 5000
+        const t = Math.min(1, e.timer / dur)
+        const alpha = 0.25 + 0.08 * Math.sin(e.timer * 0.006)   // 呼吸脉动
+        const range = e.range || 300
+
+        if (!e._off) { e._off = null; e._offS = 0 }
+        const dia = Math.ceil(range * 2.4) + 10
+
+        ctx.save()
+        ctx.translate(e.x, e.y)
+
+        // 外圈范围指示（虚线大圆）
+        ctx.globalAlpha = alpha * 0.35
+        ctx.strokeStyle = '#60a5fa'
+        ctx.lineWidth = 1.5 * this.dpr
+        ctx.setLineDash([8, 6])
+        ctx.beginPath(); ctx.arc(0, -range * 0.15, range, 0, Math.PI * 2); ctx.stroke()
+
+        // 内圈填充光晕
+        ctx.setLineDash([])
+        const auraGrad = ctx.createRadialGradient(0, -range * 0.15, 1, 0, -range * 0.15, range * 0.9)
+        auraGrad.addColorStop(0, 'rgba(96,165,250,0.06)')
+        auraGrad.addColorStop(0.5, 'rgba(96,165,250,0.03)')
+        auraGrad.addColorStop(1, 'rgba(96,165,250,0)')
+        ctx.fillStyle = auraGrad
+        ctx.globalAlpha = alpha * 0.6
+        ctx.beginPath(); ctx.arc(0, -range * 0.15, range, 0, Math.PI * 2); ctx.fill()
+
+        // 底部文字提示
+        ctx.setLineDash([])
+        ctx.globalAlpha = alpha * 0.7
+        ctx.font = `${Math.max(9, 10 * this.dpr)}px sans-serif`
+        ctx.fillStyle = '#93c5fd'
+        ctx.textAlign = 'center'
+        ctx.fillText('🤫 减伤30%', 0, -range * 0.15 - range - 6)
+
+        ctx.restore()
+      } else if (e.type === 'transform_burst') {
+        // ★ 幻化变身爆发特效（金色爆发光芒）★
+        const dur = e.duration || 1200
+        const progress = dur > 0 ? Math.min(1, e.timer / dur) : 1
+        const burstAlpha = 1 - progress * 0.7
+
+        if (burstAlpha > 0.05) {
+          ctx.save()
+          ctx.translate(e.x, e.y)
+
+          const expandR = 20 + progress * 100  // 从20扩散到120
+
+          // 金色核心强光
+          const coreGrad = ctx.createRadialGradient(0, 0, 0, 0, 0, expandR)
+          coreGrad.addColorStop(0, `rgba(255,255,255,${burstAlpha})`)
+          coreGrad.addColorStop(0.2, `rgba(245,158,11,${burstAlpha * 0.85})`)
+          coreGrad.addColorStop(0.55, `rgba(234,88,12,${burstAlpha * 0.45})`)
+          coreGrad.addColorStop(1, 'rgba(234,88,12,0)')
+          ctx.fillStyle = coreGrad
+          ctx.beginPath(); ctx.arc(0, 0, expandR, 0, Math.PI * 2); ctx.fill()
+
+          // 放射光线（8条）
+          ctx.globalAlpha = burstAlpha * 0.7
+          ctx.strokeStyle = '#fbbf24'
+          ctx.lineWidth = 2 * this.dpr
+          for (let i = 0; i < 8; i++) {
+            const angle = (i / 8) * Math.PI * 2 + e.timer * 0.003
+            const len = expandR * (0.6 + 0.4 * Math.sin(progress * Math.PI))
+            ctx.beginPath()
+            ctx.moveTo(Math.cos(angle) * expandR * 0.2, Math.sin(angle) * expandR * 0.2)
+            ctx.lineTo(Math.cos(angle) * len, Math.sin(angle) * len)
+            ctx.stroke()
+          }
+
+          // 外圈冲击波环
+          ctx.globalAlpha = burstAlpha * 0.5
+          ctx.strokeStyle = '#f59e0b'
+          ctx.lineWidth = 3 * this.dpr
+          ctx.beginPath(); ctx.arc(0, 0, expandR * 0.95, 0, Math.PI * 2); ctx.stroke()
+
+          // ✨ 文字提示
+          ctx.globalAlpha = burstAlpha
+          ctx.font = `bold ${Math.max(14, 16 * this.dpr)}px sans-serif`
+          ctx.fillStyle = '#f59e0b'
+          ctx.shadowBlur = 10
+          ctx.shadowColor = '#f59e0b'
+          ctx.textAlign = 'center'
+          ctx.textBaseline = 'middle'
+          ctx.fillText('✨ 幻化! ✨', 0, -expandR - 16)
+          ctx.shadowBlur = 0
+
           ctx.restore()
         }
       } else if (e.type === 'skill_ray') {
@@ -5339,7 +6879,7 @@ export class TowerBattle {
           }
           offCtx.globalAlpha = alpha * 0.08
           offCtx.fillStyle = '#ffee00'
-          offCtx.beginPath(); offCtx.arc(cx, cy, r * 0.9, 0, Math.PI*2); offCtx.fill()
+          offCtx.beginPath(); offCtx.arc(cx, cy, Math.max(1, r * 0.9), 0, Math.PI*2); offCtx.fill()
 
           if (e.targets && e.targets.length > 0) {
             offCtx.globalAlpha = alpha * 0.9
@@ -5357,7 +6897,7 @@ export class TowerBattle {
           ctx.save()
           ctx.globalAlpha = alpha * 0.08
           ctx.fillStyle = '#ffee00'
-          ctx.beginPath(); ctx.arc(e.x, e.y, r * 0.9, 0, Math.PI*2); ctx.fill()
+          ctx.beginPath(); ctx.arc(e.x, e.y, Math.max(1, r * 0.9), 0, Math.PI*2); ctx.fill()
           ctx.restore()
         }
       } else if (e.type === 'buff_shockwave') {
@@ -5411,12 +6951,12 @@ export class TowerBattle {
         ctx.save()
 
         // 外层光晕（柔和发光）
-        const glowGrad = ctx.createRadialGradient(e.x, e.y, auraR * 0.3, e.x, e.y, auraR * 1.3)
+        const glowGrad = ctx.createRadialGradient(e.x, e.y, Math.max(0.1, auraR * 0.3), e.x, e.y, Math.max(1, auraR * 1.3))
         glowGrad.addColorStop(0, e.color + '20')
         glowGrad.addColorStop(0.7, e.color + '10')
         glowGrad.addColorStop(1, e.color + '00')
         ctx.fillStyle = glowGrad
-        ctx.beginPath(); ctx.arc(e.x, e.y, auraR * 1.3, 0, Math.PI * 2); ctx.fill()
+        ctx.beginPath(); ctx.arc(e.x, e.y, Math.max(1, auraR * 1.3), 0, Math.PI * 2); ctx.fill()
 
         // 主光环圈（带脉冲）
         ctx.globalAlpha = 0.45 * remainRatio
@@ -5426,14 +6966,14 @@ export class TowerBattle {
         ctx.shadowColor = e.color
         ctx.setLineDash([8, 6])
         ctx.beginPath()
-        ctx.arc(e.x, e.y, auraR, 0, Math.PI * 2)
+        ctx.arc(e.x, e.y, Math.max(1, auraR), 0, Math.PI * 2)
         ctx.stroke()
         ctx.setLineDash([])
 
         // 内部半透明填充
         ctx.globalAlpha = 0.08 * remainRatio
         ctx.fillStyle = e.color
-        ctx.beginPath(); ctx.arc(e.x, e.y, auraR, 0, Math.PI * 2); ctx.fill()
+        ctx.beginPath(); ctx.arc(e.x, e.y, Math.max(1, auraR), 0, Math.PI * 2); ctx.fill()
 
         // 狂暴：额外火焰粒子
         if (e.buffId === 'berserk') {
@@ -5511,7 +7051,7 @@ export class TowerBattle {
       ctx.globalAlpha = p.life
       ctx.fillStyle = p.color
       ctx.beginPath()
-      ctx.arc(p.x, p.y, p.size * p.life, 0, Math.PI * 2)
+      ctx.arc(p.x, p.y, Math.max(0.5, p.size * p.life), 0, Math.PI * 2)
       ctx.fill()
       ctx.restore()
     }
@@ -6930,11 +8470,20 @@ export class TowerBattle {
       return
     }
 
-    // 卸下：退还属性
+    // 卸下：退还所有属性（必须与 _equipToSelectedChar 中应用列表完全一致！）
     if (item.bonusHp) { c.maxHp -= item.bonusHp; c.currentHp = Math.max(1, c.currentHp - item.bonusHp) }
     if (item.bonusAtk) c.atk -= item.bonusAtk
+    if (item.bonusMatk) c.matk = Math.max(0, (c.matk || 0) - item.bonusMatk)
     if (item.bonusDef) c.def = Math.max(0, (c.def || 5) - item.bonusDef)
     if (item.bonusSpd) c.spd = Math.max(0, c.spd - item.bonusSpd)
+    if (item.bonusCrit) c.critChance = Math.max(0, (c.critChance || 0) - item.bonusCrit)
+    if (item.bonusLifesteal) c.lifesteal = Math.max(0, (c.lifesteal || 0) - item.bonusLifesteal)
+    if (item.bonusMpRegen) c.mpRegen = Math.max(0, (c.mpRegen || 0) - item.bonusMpRegen)
+    if (item.bonusHpRegen) c.hpRegen = Math.max(0, (c.hpRegen || 0) - item.bonusHpRegen)
+    if (item.bonusCdr) c.cdr = Math.max(0, (c.cdr || 0) - item.bonusCdr)
+
+    // 重新计算移动速度
+    c.moveSpeed = 120 + (c.spd || 10) * 5
 
     // 清空槽位，放入背包
     c.equippedItems[slot.slot] = null
