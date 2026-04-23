@@ -5062,10 +5062,10 @@ export class TowerBattle {
     this._renderParticles(ctx)
     this._renderDroppedItems(ctx)
     this._renderWormhole(ctx)      // 虫洞（替代敌方水晶）
-    this._renderAllEntities(ctx)   // 角色+怪物统一按Y轴排序绘制（画家算法）
-    this._renderProjectiles(ctx)
+    // ★ 角色+怪物+投射物+空间特效：统一按Y轴排序（画家算法）★
+    this._renderAllEntities(ctx)
     this._renderSkillArcMenu(ctx) // 技能弧形菜单（在角色之上）
-    this._renderEffects(ctx)
+    this._renderEffects(ctx)       // 非空间型特效（飘字等，最上层）
     this._renderFloatingTexts(ctx)
 
     // 过场动画（最上层黑屏）
@@ -5328,15 +5328,13 @@ export class TowerBattle {
   // ==================== UI层 ====================
 
   /**
-   * 统一渲染所有实体（角色+怪物+空间特效），按Y轴从上到下排序绘制（画家算法）
+   * 统一渲染所有实体（角色+怪物+投射物+空间特效），按Y轴从上到下排序绘制（画家算法）
    * Y轴越大的实体后绘制 → 显示在更上层，遮挡Y值较小的实体
    *
-   * 空间型特效（有x/y坐标）参与Y排序：
-   *   - ice_wave_sword（冰晶术波动剑）
-   *   - char_hit（角色命中帧）
-   *   - skill_effect_frames（技能击中帧）
-   *   - skill_beam（技能光束/射线）
-   *   - cast_ring（施法光圈）
+   * 参与Y排序的元素：
+   *   - char（角色）、monster（怪物）
+   *   - projectile（投射物：冰晶术/普通弹道等）
+   *   - 空间型特效（ice_wave_sword/char_hit/skill_effect_frames/skill_beam/cast_ring）
    * 非空间型（dmg_number飘字等）仍由 _renderEffects 在最上层绘制
    */
   _renderAllEntities(ctx) {
@@ -5355,6 +5353,12 @@ export class TowerBattle {
       if (!(m.isDead && m.deathTimer <= 0)) {
         entities.push({ type: 'monster', entity: m, y: m.y + (m.shakeY || 0) })
       }
+    }
+
+    // ★ 投射物：参与Y轴排序 ★
+    for (const p of this.projectiles) {
+      if (p.hit && !p._keepDrawing) continue
+      entities.push({ type: 'projectile', entity: p, y: p.y })
     }
 
     // ★ 空间型特效：参与Y轴排序 ★
@@ -5381,6 +5385,8 @@ export class TowerBattle {
         this._renderOneCharacter(ctx, e.entity)
       } else if (e.type === 'monster') {
         this._renderOneMonster(ctx, e.entity)
+      } else if (e.type === 'projectile') {
+        this._renderOneProjectile(ctx, e.entity)
       } else if (e.type === 'effect') {
         this._renderOneSpatialEffect(ctx, e.entity)
       }
@@ -5404,6 +5410,65 @@ export class TowerBattle {
         this._drawCastRing(ctx, e)
       }
     } catch (_) { /* 单个特效异常隔离 */ }
+  }
+
+  /**
+   * 渲染单个投射物（供 _renderAllEntities Y排序调用）
+   */
+  _renderOneProjectile(ctx, p) {
+    try {
+      ctx.save()
+
+      // ★ 冰晶术投射物：用ICE帧动画渲染 ★
+      if (p.isIceShard) {
+        const iceData = HIT_EFFECTS.ice
+        if (iceData && iceData.frames && iceData.frames.length) {
+          const frameKey = iceData.frames[p.animFrame || 0]
+          const frameImg = this.assets.get(frameKey)
+          if (frameImg) {
+            // 拖尾残影
+            ctx.globalAlpha = 0.25
+            for (let i = Math.max(0, p.trail.length - 5); i < p.trail.length; i++) {
+              const t = p.trail[i]
+              if (!t) continue
+              const trailAlpha = (i - (p.trail.length - 5)) / 5 * 0.35
+              ctx.globalAlpha = trailAlpha
+              ctx.drawImage(frameImg, t.x - p.size*0.6/2, t.y - p.size*0.6/2,
+                p.size * 0.6, p.size * 0.6)
+            }
+            // 本体
+            ctx.globalAlpha = 1
+            ctx.shadowBlur = 12
+            ctx.shadowColor = '#66ddff'
+            ctx.drawImage(frameImg, p.x - p.size / 2, p.y - p.size / 2, p.size, p.size)
+            ctx.shadowBlur = 0
+            ctx.restore()
+            return
+          }
+        }
+      }
+
+      // 默认投射物（拖尾 + 圆形）
+      for (let i = 0; i < p.trail.length; i++) {
+        const alpha = (i / p.trail.length) * 0.45
+        const size = p.size * (i / p.trail.length) * 0.8
+        ctx.globalAlpha = alpha
+        ctx.fillStyle = p.color
+        ctx.beginPath()
+        ctx.arc(p.trail[i].x, p.trail[i].y, Math.max(0.5, size), 0, Math.PI * 2)
+        ctx.fill()
+      }
+      ctx.globalAlpha = 1
+
+      ctx.shadowBlur = p.isSkill ? 14 : 10
+      ctx.shadowColor = p.color
+      ctx.fillStyle = p.color
+      ctx.beginPath()
+      ctx.arc(p.x, p.y, Math.max(0.5, p.size), 0, Math.PI * 2)
+      ctx.fill()
+      ctx.shadowBlur = 0
+    } catch (_) { /* 投射物渲染异常隔离 */ }
+    ctx.restore()
   }
 
   // ===== 怪物渲染（真实精灵）=====
