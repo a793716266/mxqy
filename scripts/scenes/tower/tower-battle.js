@@ -6225,9 +6225,11 @@ export class TowerBattle {
         }
 
       } else if (e.type === 'ice_wave_sword') {
-        // ★ DNF 冰刃波动剑：每刃播完11帧动画 → 下一刃 → 全部生成后从刃1逐个消失 ★
+        // ★ 冰刃波动剑：沿x/y轴正常生成冰块（无旋转变换）★
         const beamLen = Math.sqrt((e.endX - e.startX)**2 + (e.endY - e.startY)**2)
         const angle = Math.atan2(e.endY - e.startY, e.endX - e.startX)
+        const dirX = Math.cos(angle)
+        const dirY = Math.sin(angle)
 
         const hitData = HIT_EFFECTS.ice
         if (!hitData || !hitData.frames || !hitData.frames.length) return
@@ -6243,78 +6245,49 @@ export class TowerBattle {
         const bladeMinSize = 55
         const bladeSpacing = beamLen / (bladeNum - 1)
 
-        // 离屏canvas
-        const offW = Math.ceil(beamLen) + 120
-        const offH = bladeMaxSize + 60
-        if (!e._offCV) {
-          e._offCV = (typeof wx !== 'undefined' && wx.createCanvas) ? wx.createCanvas() : null
-          e._offW = offW; e._offH = offH
-        }
-        if (e._offCV && (e._offW !== offW || e._offH !== offH)) {
-          e._offCV.width = offW; e._offCV.height = offH
-          e._offW = offW; e._offH = offH
-        }
+        for (let b = 0; b < bladeNum; b++) {
+          // 刃的位置：沿射线方向，用实际x/y坐标（无旋转）
+          const distFromStart = b * bladeSpacing
+          if (distFromStart > beamLen + bladeMaxSize) continue
 
-        if (e._offCV) {
-          const octx = e._offCV.getContext('2d')
-          octx.clearRect(0, 0, offW, offH)
+          // 出生时刻
+          const birthTime = e._bladeBirths ? e._bladeBirths[b] : b * bladeAnimDur
+          if (e.timer < birthTime) continue
 
-          const cx = 60, cy = offH / 2
+          const bladeAge = e.timer - birthTime
 
-          for (let b = 0; b < bladeNum; b++) {
-            // 刃的固定位置（沿射线，从角色到目标）
-            const distFromStart = b * bladeSpacing
-            if (distFromStart > beamLen + bladeMaxSize) continue
+          // 大小：近小远大
+          const sizeRatio = Math.min(1, b / (bladeNum - 1))
+          const targetSize = bladeMinSize + (bladeMaxSize - bladeMinSize) * sizeRatio
 
-            // ★ 出生时刻：每个刃独立（上一刃动画结束 = 下一刃出生）★
-            const birthTime = e._bladeBirths ? e._bladeBirths[b] : b * bladeAnimDur
-            if (e.timer < birthTime) continue  // 还没出生
+          // 帧动画
+          const frameIdx = bladeAge < bladeAnimDur
+            ? Math.floor(bladeAge / frameRate) % totalFrames
+            : totalFrames - 1
 
-            // 这个刃存在了多久（ms）
-            const bladeAge = e.timer - birthTime
+          const bladeImg = this.assets.get(hitData.frames[frameIdx])
+          if (!bladeImg) continue
 
-            // ★ 大小：近小远大（固定分布）★
-            const sizeRatio = Math.min(1, b / (bladeNum - 1))
-            const targetSize = bladeMinSize + (bladeMaxSize - bladeMinSize) * sizeRatio
-
-            // ★ 每刃11帧动画：独立循环，播完停在最后一帧 ★
-            // bladeAge < bladeAnimDur: 播放动画
-            // bladeAge >= bladeAnimDur: 刃已完成动画，停在第11帧（最后一帧）
-            const frameIdx = bladeAge < bladeAnimDur
-              ? Math.floor(bladeAge / frameRate) % totalFrames
-              : totalFrames - 1   // 停在最后一帧
-
-            const bladeImg = this.assets.get(hitData.frames[frameIdx])
-            if (!bladeImg) continue
-
-            // ★ 消散阶段：8刃全部生成后，从刃0开始逐个消失 ★
-            let alpha = 1
-            if (e.timer > totalGenDur) {
-              const fadeDur = e.duration - totalGenDur
-              const fadeProgress = (e.timer - totalGenDur) / fadeDur
-              // 刃b的消散时机：索引小的先消失
-              const disappearDelay = (b / bladeNum) * 0.7
-              const localFade = Math.max(0, (fadeProgress - disappearDelay) / 0.4)
-              alpha = Math.max(0, 1 - localFade)
-            }
-            if (alpha <= 0.03) continue
-
-            // 无弯曲：全部在同一水平线上
-            const posX = cx + distFromStart
-            const finalPosY = cy
-
-            octx.globalAlpha = Math.max(0, Math.min(1, alpha))
-            octx.drawImage(bladeImg,
-              posX - targetSize / 2, finalPosY - targetSize / 2,
-              targetSize, targetSize)
+          // 消散阶段
+          let alpha = 1
+          if (e.timer > totalGenDur) {
+            const fadeDur = e.duration - totalGenDur
+            const fadeProgress = (e.timer - totalGenDur) / fadeDur
+            const disappearDelay = (b / bladeNum) * 0.7
+            const localFade = Math.max(0, (fadeProgress - disappearDelay) / 0.4)
+            alpha = Math.max(0, 1 - localFade)
           }
+          if (alpha <= 0.03) continue
 
-          ctx.save()
-          ctx.translate(e.startX, e.startY)
-          ctx.rotate(angle)
-          ctx.drawImage(e._offCV, -cx, -cy)
-          ctx.restore()
+          // ★ 直接在世界坐标系绘制，无旋转变换 ★
+          const bx = e.startX + dirX * distFromStart
+          const by = e.startY + dirY * distFromStart
+          ctx.globalAlpha = Math.max(0, Math.min(1, alpha))
+          ctx.drawImage(bladeImg,
+            bx - targetSize / 2, by - targetSize / 2,
+            targetSize, targetSize)
         }
+        ctx.globalAlpha = 1
 
       } else if (e.type === 'cast_ring') {
         // 施法光圈：从怪物扩散的圆环 —— 离屏隔离
