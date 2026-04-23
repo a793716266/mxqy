@@ -6177,8 +6177,8 @@ export class TowerBattle {
 
         // 帧尺寸配置（不同技能用不同大小和间距）
         const isFire = e.hitType === 'fireball'
-        const baseSize = isFire ? 70 : 120   // 冰晶波动剑：大幅加大！
-        const spacing = isFire ? 28 : 22      // 冰晶：更密排，形成连续冰刃
+        const baseSize = isFire ? 110 : 120   // 火球术：加大到110
+        const spacing = isFire ? 38 : 22      // 火球：间距加大，避免过度重叠
         const tileCount = Math.ceil(beamLen / spacing)  // 需要多少帧来铺满射线
 
         // 创建/复用离屏canvas（只在首次或尺寸变化时重置——避免每帧重分配内存！）
@@ -7107,13 +7107,13 @@ export class TowerBattle {
   _renderSkillEffectFrames(ctx, effect) {
     const frameMap = {
       fireball_hit: {
-        prefix: 'EFFECT_FIREBALL_HIT_', count: 24
+        prefix: 'EFFECT_FIREBALL_HIT_', count: 24, size: 120   // 火球击中：大爆炸
       },
       ice_hit: {
-        prefix: 'EFFECT_ICE_SHARD_HIT_', count: 11
+        prefix: 'EFFECT_ICE_SHARD_HIT_', count: 11, size: 100   // 冰晶击中：中等
       },
       lightning_hit: {
-        prefix: 'EFFECT_LIGHTNING_HIT_', count: 12
+        prefix: 'EFFECT_LIGHTNING_HIT_', count: 12, size: 110   // 雷击：较大
       }
     }
     const info = frameMap[effect.skillType]
@@ -7122,7 +7122,7 @@ export class TowerBattle {
     const key = `${info.prefix}${String(frameIdx + 1).padStart(2, '0')}`
     const img = this.assets.get(key)
     if (img) {
-      const size = 80
+      const size = info.size || 80
       // 离屏Canvas隔离渲染 —— 防止帧图片半透明像素污染主画布背景
       const s = size + 4
       if (!effect._off) { effect._off = (typeof wx !== 'undefined' && wx.createCanvas) ? wx.createCanvas() : null; effect._offS = 0; }
@@ -7153,15 +7153,15 @@ export class TowerBattle {
 
     const hitData = HIT_EFFECTS.ice
     if (!hitData || !hitData.frames || !hitData.frames.length) return
-    const frameRate = hitData.frameRate || 44
+    const frameRate = hitData.frameRate || 100
     const totalFrames = hitData.frames.length
 
     const bladeNum = 8
     const bladeAnimDur = totalFrames * frameRate
     const totalGenDur = bladeAnimDur * bladeNum
 
-    const bladeMaxSize = 110
-    const bladeMinSize = 55
+    const bladeMaxSize = 230
+    const bladeMinSize = 110
     const bladeSpacing = beamLen / (bladeNum - 1)
 
     for (let b = 0; b < bladeNum; b++) {
@@ -7205,7 +7205,9 @@ export class TowerBattle {
     const key = hitData.frames[e.frame]
     const img = this.assets.get(key)
     if (!img) return
-    const size = 80 + Math.min(e.timer / 10, 20)
+    // ★ 按hitType区分大小：火球最大、雷电次之、冰晶中等 ★
+    const baseSize = e.hitType === 'fireball' ? 110 : e.hitType === 'lightning' ? 100 : 90
+    const size = baseSize + Math.min(e.timer / 10, 20)
     const s = Math.ceil(size) + 4
     if (!e._off) { e._off = (typeof wx !== 'undefined' && wx.createCanvas) ? wx.createCanvas() : null; e._offS = 0; }
     if (e._off && e._offS !== s) { e._off.width = s; e._off.height = s; e._offS = s; }
@@ -7242,8 +7244,8 @@ export class TowerBattle {
     if (!frameImg) return
 
     const isFire = e.hitType === 'fireball'
-    const baseSize = isFire ? 70 : 120
-    const spacing = isFire ? 28 : 22
+    const baseSize = isFire ? 110 : 120   // 火球术：加大到110
+    const spacing = isFire ? 38 : 22       // 火球：间距加大
 
     const offW = Math.ceil(beamLen) + 100
     const offH = baseSize + 60
