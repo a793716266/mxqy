@@ -12,19 +12,12 @@
  * - 开局卡牌选择加成效果
  */
 
-import { TOWER_STAGES } from '../../data/tower/stages.js'
+import { getStageConfig, getStageList } from '../../data/tower/stage-configs.js'
 import { TowerBattle } from './tower-battle.js'
 import { charStateManager } from '../../data/character-state.js'
 import { SCENE } from '../../game.js'
 
-// 章节配置
-const CHAPTERS = [
-  { name: '第1章：初入试炼', startIdx: 0, endIdx: 4, color: '#2ecc71', icon: '🌿' },
-  { name: '第2章：兽人领地', startIdx: 5, endIdx: 9, color: '#e67e22', icon: '⚔' },
-  { name: '第3章：亡灵禁地', startIdx: 10, endIdx: 14, color: '#9b59b6', icon: '💀' },
-]
-
-// 怪物名称映射
+// 怪物名称映射（渲染用）
 const MONSTER_NAMES = {
   slime: '史莱姆', goblin: '哥布林', orc: '兽人',
   wolf: '恶狼', undead: '亡灵', demon: '恶魔', dragon: '幼龙'
@@ -171,10 +164,23 @@ export class TowerScene {
     const listTop = (52 + 38 + 6) * dpr   // headerH + tabH + 间距
     let totalH = 0
 
-    for (const ch of CHAPTERS) {
+    // ★ 动态从配置生成章节分组 ★
+    const stageList = getStageList()
+    const chapters = []
+    let currentChapter = null
+    for (const stage of stageList) {
+      if (!currentChapter || stage.chapter !== currentChapter) {
+        currentChapter = stage.chapter
+        const icon = currentChapter === 1 ? '🌿' : currentChapter === 2 ? '⚔' : '💀'
+        const color = currentChapter === 1 ? '#2ecc71' : currentChapter === 2 ? '#e67e22' : '#9b59b6'
+        chapters.push({ chapter: currentChapter, name: `第${currentChapter}章`, icon, color, stages: [] })
+      }
+      chapters[chapters.length - 1].stages.push(stage)
+    }
+
+    for (const ch of chapters) {
       totalH += 36 * dpr   // 章节标题
-      const stageCount = Math.min(ch.endIdx - ch.startIdx + 1,
-        TOWER_STAGES.length - ch.startIdx)
+      const stageCount = ch.stages.length
       // 双列布局：每行2个卡片
       const rows = Math.ceil(stageCount / 2)
       totalH += rows * (cardH + cardGap) - cardGap  // 最后一个不加gap
@@ -187,7 +193,9 @@ export class TowerScene {
     this.currentStage = stage
     this.phase = 'battle'
     const party = this._loadTowerParty()
-    this.battle = new TowerBattle(this, stage, party)
+    // 从新配置系统获取关卡配置
+    const stageConfig = getStageConfig(stage.id)
+    this.battle = new TowerBattle(this, stageConfig, party)
     // 切换到塔防战斗BGM
     this.game.audio.playBGM('bgm_tower')
   }
@@ -413,18 +421,31 @@ export class TowerScene {
     ctx.fillStyle = 'rgba(13,17,23,0.85)'
     ctx.fillRect(0, tabY, W, tabH)
 
+    // ★ 动态生成章节分组（从配置读取）★
+    const stageList = getStageList()
+    const chapters = []
+    let curCh = null
+    for (const s of stageList) {
+      if (!curCh || s.chapter !== curCh) {
+        curCh = s.chapter
+        const icon = curCh === 1 ? '🌿' : curCh === 2 ? '⚔' : '💀'
+        const color = curCh === 1 ? '#2ecc71' : curCh === 2 ? '#e67e22' : '#9b59b6'
+        chapters.push({ chapter: curCh, name: `第${curCh}章`, icon, color, stages: [] })
+      }
+      chapters[chapters.length - 1].stages.push(s)
+    }
     const tabPadding = 12 * dpr
     const tabBtnH = tabH - 10 * dpr
-    const totalTabW = CHAPTERS.reduce((sum, ch) => {
+    const totalTabW = chapters.reduce((sum, ch) => {
       ctx.font = `bold ${11 * dpr}px sans-serif`
-      return sum + ctx.measureText(`${ch.icon} 第${CHAPTERS.indexOf(ch)+1}章`).width + 24 * dpr
+      return sum + ctx.measureText(`${ch.icon} ${ch.name}`).width + 24 * dpr
     }, 0)
     const tabStartX = Math.max(tabPadding, (W - totalTabW) / 2)
     let tabX = tabStartX
 
-    CHAPTERS.forEach((ch, ci) => {
+    chapters.forEach((ch, ci) => {
       ctx.font = `bold ${11 * dpr}px sans-serif`
-      const tw = ctx.measureText(`${ch.icon} 第${ci+1}章`).width + 20 * dpr
+      const tw = ctx.measureText(`${ch.icon} ${ch.name}`).width + 20 * dpr
       ctx.fillStyle = ch.color + '18'
       this._roundRect(ctx, tabX, tabY + 5 * dpr, tw, tabBtnH, 6 * dpr)
       ctx.fill()
@@ -437,7 +458,7 @@ export class TowerScene {
       ctx.font = `bold ${11 * dpr}px sans-serif`
       ctx.textAlign = 'center'
       ctx.textBaseline = 'middle'
-      ctx.fillText(`${ch.icon} 第${ci+1}章`, tabX + tw / 2, tabY + tabH / 2)
+      ctx.fillText(`${ch.icon} ${ch.name}`, tabX + tw / 2, tabY + tabH / 2)
       tabX += tw + 8 * dpr
     })
     ctx.textBaseline = 'bottom'
@@ -459,7 +480,8 @@ export class TowerScene {
     const cardH = 110 * dpr   // 卡片高度随dpr缩放，确保内容不溢出
     const cardGap = 10 * dpr
 
-    for (const ch of CHAPTERS) {
+    // ★ 使用前面已计算的 chapters ★
+    for (const ch of chapters) {
       // 章节分隔标题
       const chRenderY = curY - this.scrollY
       if (chRenderY > listTop - 30 * dpr && chRenderY < H + 20 * dpr) {
@@ -477,14 +499,13 @@ export class TowerScene {
 
       // 章节内的关卡（双列布局）
       let colIdx = 0
-      for (let si = ch.startIdx; si <= ch.endIdx && si < TOWER_STAGES.length; si++) {
-        const stage = TOWER_STAGES[si]
+      for (const stage of ch.stages) {
         const x = padding + colIdx * (cardW + colGap)
         const screenY = curY
         const ry = curY - this.scrollY
-        const unlocked = si === 0 || this._isStageUnlocked(si)
+        const unlocked = stage.id === 1 || this._isStageUnlocked(stage.id)
         const isBoss = !!stage.boss
-        const passed = this._isStageUnlocked(si)
+        const passed = this._isStageUnlocked(stage.id)
 
         if (ry > H + 20 * dpr || ry + cardH < listTop - 20 * dpr) {
           colIdx++
@@ -877,14 +898,17 @@ export class TowerScene {
     ctx.closePath()
   }
 
-  _isStageUnlocked(idx) {
+  _isStageUnlocked(stageId) {
+    // stageId: 1-indexed（1,2,3...），第1关永远解锁
+    if (stageId <= 1) return true
     const data = this.game.data?.get?.('tower_progress') || {}
-    return data[`stage_${idx - 1}`] === true
+    return data[`stage_${stageId - 2}`] === true
   }
 
-  saveProgress(stageIndex) {
+  saveProgress(stageId) {
+    // 通过关卡 stageId，0-indexed 存储
     const data = this.game.data?.get?.('tower_progress') || {}
-    data[`stage_${stageIndex}`] = true
+    data[`stage_${stageId - 1}`] = true
     this.game.data?.set?.('tower_progress', data)
     this.game.data?.save?.()
   }

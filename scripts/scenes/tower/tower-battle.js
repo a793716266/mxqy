@@ -346,7 +346,7 @@ const CARD_POOL = [
 // ========== 主类 ==========
 
 export class TowerBattle {
-  constructor(scene, stage, party) {
+  constructor(scene, stageConfig, party) {
     this.scene = scene
     this.game = scene.game
     this.ctx = scene.ctx
@@ -356,7 +356,8 @@ export class TowerBattle {
       height: { get() { return scene.height } },
       dpr:   { get() { return scene.dpr || 1 } },
     })
-    this.stage = stage
+    // ★ 使用外部配置，不再硬编码 ★
+    this.stageConfig = stageConfig
     this.party = party
 
     // 阶段: card_select | battle | victory | defeat
@@ -397,7 +398,8 @@ export class TowerBattle {
     this.waveTotalCount = 0     // 当前波总数量
     this.waveActive = false     // 当前波是否在活跃中
     this.waveCooldownTimer = 0  // 波次间冷却计时器
-    this.waveCooldown = 3000    // 波次间冷却3秒
+    // ★ 从配置读取波次间冷却时间（可每关自定义）★
+    this.waveCooldown = (this.stageConfig && this.stageConfig.waveCooldown) || 3000
     this.allWavesDone = false   // 所有波次是否已完成
     this._waveClearCooldownActive = false  // 当前波怪物死完后的冷却阶段
     this._firstWaveSpawned = false         // 第一波是否已生成（第一波特殊：直接从中心传送出现）
@@ -410,8 +412,16 @@ export class TowerBattle {
       animTimer: 0,
     }
 
-    // 波次定义：每波怪物类型和数量（渐进难度）
-    this._initWaveDefinitions()
+    // ★ 波次定义：从配置读取（不再硬编码）★
+    this.waveDefs = this.stageConfig.waves || []
+    this.totalWaves = this.waveDefs.length
+    // 计算总怪物数用于UI显示
+    this.totalMonstersAllWaves = 0
+    for (const w of this.waveDefs) {
+      for (const m of w.monsters) {
+        this.totalMonstersAllWaves += m.count
+      }
+    }
 
     // 实体数组
     this.characters = party   // 角色数据（与party同一引用）
@@ -590,90 +600,6 @@ export class TowerBattle {
     this._addFloatingText(this.wormhole.x, this.wormhole.y - 70,
       '🌀 虫洞已开启！靠近传送', '#a855f7', 3.0)
     console.log(`[Tower] ===== 第${this.waveIndex}波消灭完毕！虫洞已激活 =====`)
-  }
-
-  /**
-   * 初始化10波波次定义（渐进难度）
-   * 波次1-3：纯史莱姆猫
-   * 波次4-6：史莱姆猫 + 暗影鼠
-   * 波次7-8：+ 猫人/闪电猫等更强怪
-   * 波次9：混合大军
-   * 波次10：最终决战波
-   */
-  _initWaveDefinitions() {
-    // 每波怪物等级 = 波次×2 + 1（第1波=1级，第2波=3级...第10波=19级）
-    // 稀有度：normal(普通) / elite(精英) / lord(领主)
-    // 精英怪从第4波开始出现，领主仅在第10波（最后一波）出现
-    this.waveDefs = [
-      // 第1-3波：纯普通怪，熟悉战斗节奏
-      { waveNum: 1, monsters: [
-        { type: 'slime',   count: 3}
-      ]},
-      { waveNum: 2, monsters: [
-        { type: 'slime',   count: 4 }
-      ]},
-      { waveNum: 3, monsters: [
-        { type: 'slime',   count: 5 }
-      ]},
-      // 第4-6波：出现第二种怪 + 首只精英
-      { waveNum: 4, monsters: [
-        { type: 'slime',   count: 3 },
-        { type: 'goblin',  count: 2 }
-      ]},
-      { waveNum: 5, monsters: [
-        { type: 'slime',   count: 3 },
-        { type: 'goblin',  count: 2 },
-        { type: 'slime',   count: 1, rarity: 'elite' }       // 首只精英
-      ]},
-      { waveNum: 6, monsters: [
-        { type: 'slime',   count: 2 },
-        { type: 'goblin',  count: 4 },
-        { type: 'goblin',  count: 1, rarity: 'elite' }       // 精英暗影鼠
-      ]},
-      // 第7-8波：三种怪混合 + 精英增多
-      { waveNum: 7, monsters: [
-        { type: 'slime',   count: 2 },
-        { type: 'goblin',  count: 3 },
-        { type: 'orc',     count: 2 },
-        { type: 'orc',     count: 1, rarity: 'elite' }       // 精英猫人
-      ]},
-      { waveNum: 8, monsters: [
-        { type: 'slime',   count: 2 },
-        { type: 'goblin',  count: 3 },
-        { type: 'orc',     count: 2 },
-        { type: 'slime',   count: 1, rarity: 'elite' },
-        { type: 'goblin',  count: 1, rarity: 'elite' }
-      ]},
-      // 第9波：四种怪 + 多只精英，为最终BOSS做铺垫
-      { waveNum: 9, monsters: [
-        { type: 'slime',   count: 3 },
-        { type: 'goblin',  count: 3 },
-        { type: 'orc',     count: 2 },
-        { type: 'wolf',    count: 1 },
-        { type: 'orc',     count: 1, rarity: 'elite' },
-        { type: 'wolf',    count: 1, rarity: 'elite' }
-      ]},
-      // 第10波（最终波）：大量精英 + 1只领主幼龙
-      { waveNum: 10, monsters: [
-        { type: 'slime',   count: 3 },
-        { type: 'goblin',  count: 3 },
-        { type: 'orc',     count: 2 },
-        { type: 'wolf',    count: 2 },
-        { type: 'undead',  count: 1 },
-        { type: 'slime',   count: 1, rarity: 'elite' },
-        { type: 'goblin',  count: 1, rarity: 'elite' },
-        { type: 'orc',     count: 1, rarity: 'elite' },
-        { type: 'wolf',    count: 1, rarity: 'elite' },
-        { type: 'dragon',  count: 1, rarity: 'lord' }         // ★ 最终领主：幼龙 ★
-      ]},
-    ]
-    // 计算总怪物数用于UI显示
-    this.totalMonstersAllWaves = 0
-    for (const w of this.waveDefs) {
-      for (const m of w.monsters) {
-        this.totalMonstersAllWaves += m.count
-      }
-    }
   }
 
   /**
@@ -962,19 +888,27 @@ export class TowerBattle {
     // ===== 稀有度与等级计算 =====
     rarity = rarity || 'normal'
     const rcfg = TowerBattle._RARITY_CONFIG[rarity] || TowerBattle._RARITY_CONFIG.normal
-    // 等级：第1波=1级，每波+2级（波次从0开始，所以 waveIndex*2+1）
-    const monsterLevel = this.waveIndex * 2 + 1
-    // 每级属性增长系数
-    //   hp +8%/级, atk +5%/级, def +4%/级
-    //   spd +5%/级（速度成长，后期怪物行动更敏捷）
-    //   atkInterval -2%/级（攻速缩短，攻击频率加快）
-    //   moveSpeed +3%/级（移速成长，追击能力增强）
-    const lvScaleHp   = 1 + (monsterLevel - 1) * 0.08
-    const lvScaleAtk  = 1 + (monsterLevel - 1) * 0.05
-    const lvScaleDef  = 1 + (monsterLevel - 1) * 0.04
-    const lvScaleSpd  = 1 + (monsterLevel - 1) * 0.05
-    const lvScaleAtkInterval = 1 - Math.min(0.38, (monsterLevel - 1) * 0.02)  // 上限缩减38%，避免太快
-    const lvScaleMoveSpeed  = 1 + (monsterLevel - 1) * 0.03
+    // ★ 等级：从配置函数计算（默认 waveNum*2+1）★
+    const waveNum = this.waveIndex + 1  // waveIndex是0-based，waveNum是1-based
+    const monsterLevelFn = this.stageConfig.monsterLevelFn || ((n) => n * 2 + 1)
+    const monsterLevel = monsterLevelFn(waveNum)
+    // ★ 从配置读取属性缩放函数（可每关自定义）★
+    const hpScaleFn   = this.stageConfig.hpScaleFn   || ((lv) => 1 + (lv - 1) * 0.08)
+    const atkScaleFn  = this.stageConfig.atkScaleFn  || ((lv) => 1 + (lv - 1) * 0.05)
+    const defScaleFn  = this.stageConfig.defScaleFn  || ((lv) => 1 + (lv - 1) * 0.04)
+    const spdScaleFn  = this.stageConfig.spdScaleFn  || ((lv) => 1 + (lv - 1) * 0.05)
+    const atkIntFn    = this.stageConfig.atkIntervalFn || ((lv) => 1 - Math.min(0.38, (lv - 1) * 0.02))
+    const moveSpdFn   = this.stageConfig.moveSpdFn    || ((lv) => 1 + (lv - 1) * 0.03)
+    const expMultFn   = this.stageConfig.expMultFn    || ((lv) => 1 + (lv - 1) * 0.1)
+
+    const lvScaleHp   = hpScaleFn(monsterLevel)
+    const lvScaleAtk  = atkScaleFn(monsterLevel)
+    const lvScaleDef  = defScaleFn(monsterLevel)
+    const lvScaleSpd  = spdScaleFn(monsterLevel)
+    const lvScaleAtkInterval = atkIntFn(monsterLevel)
+    const lvScaleMoveSpeed  = moveSpdFn(monsterLevel)
+    const lvScaleExp  = expMultFn(monsterLevel)
+
     // 综合倍率 = 等级倍率 × 稀有度倍率
     const totalHpScale = lvScaleHp * rcfg.scale
     const totalAtkScale = lvScaleAtk * rcfg.scale
@@ -1027,7 +961,7 @@ export class TowerBattle {
       skillTargetX: 0,         // 技能目标位置X
       skillTargetY: 0,         // 技能目标位置Y
       _currentTarget: null,    // 当前攻击目标（智能分配参考）
-      expReward: Math.round((tmpl.expReward || Math.floor(tmpl.hp / 3)) * lvScaleHp * rcfg.expMult),
+      expReward: Math.round((tmpl.expReward || Math.floor(tmpl.hp / 3)) * lvScaleExp * rcfg.expMult),
       // ★ 传送入场动画属性
       spawnAnim: 0,              // 0→1 出现进度（缩放+透明度）
       spawnTimer: 0,             // 传送动画计时器(ms)
@@ -1152,11 +1086,23 @@ export class TowerBattle {
 
   _rollDropQuality(rarity) {
     const boost = this._dropRareBoost || 0
+    // ★ 从配置读取掉落参数（可每关自定义）★
+    const drops = this.stageConfig.drops || {}
+    const rarityBonusCfg = drops.rarityBonus || { elite: 0.2, lord: 0.4 }
+    const qualityWeights = drops.qualityWeights || {
+      common: 0.60, rare: 0.25, epic: 0.12, legendary: 0.03
+    }
+
     // 精英/领主必定掉落更好品质
-    const rarityBonus = rarity === 'lord' ? 0.4 : rarity === 'elite' ? 0.2 : 0
+    const rarityBonus = rarity === 'lord'
+      ? (rarityBonusCfg.lord || 0.4)
+      : rarity === 'elite'
+        ? (rarityBonusCfg.elite || 0.2)
+        : 0
     const r = Math.random() * (1 - rarityBonus) + rarityBonus  // 右偏随机
+
     let cumulative = 0
-    for (const [q, p] of Object.entries(QUALITY_DROP_CHANCE)) {
+    for (const [q, p] of Object.entries(qualityWeights)) {
       cumulative += (q === 'legendary' || q === 'epic') ? p * (1 + boost * 0.5) : p
       if (r <= cumulative) return q
     }
