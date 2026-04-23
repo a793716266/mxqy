@@ -607,8 +607,7 @@ export class TowerBattle {
     this.waveDefs = [
       // 第1-3波：纯普通怪，熟悉战斗节奏
       { waveNum: 1, monsters: [
-        { type: 'slime',   count: 0},
-        { type: 'orc',     count: 1, rarity: 'elite' }  
+        { type: 'slime',   count: 3}
       ]},
       { waveNum: 2, monsters: [
         { type: 'slime',   count: 4 }
@@ -2566,18 +2565,45 @@ export class TowerBattle {
 
       // ★ 正在施放技能时，跳过普通移动/攻击逻辑，只更新技能动画 ===
       if (m.isCastingSkill) {
-        // 根据怪物类型分发到对应技能方法
-        const spr = MONSTER_SPRITES[m.type]
-        if (spr && spr.pounceSkill) {
-          this._slimeCatPounceAttack(m, target)
-        } else if (m._biteSkillActive) {
-          this._shadowBite(m, target)
-        } else if (m._stealthSkillActive) {
-          this._shadowRush(m, target)
-        } else if (m._silenceSkillActive) {
-          this._catmanSilence(m, target)
-        } else if (m._transformActive) {
-          this._catmanTransform(m)
+        // 根据怪物类型分发到对应技能方法（try-catch保护：防止技能内部异常卡死游戏循环）
+        try {
+          const spr = MONSTER_SPRITES[m.type]
+          if (spr && spr.pounceSkill) {
+            this._slimeCatPounceAttack(m, target)
+          } else if (m._biteSkillActive) {
+            this._shadowBite(m, target)
+          } else if (m._stealthSkillActive) {
+            this._shadowRush(m, target)
+          } else if (m._silenceSkillActive) {
+            this._catmanSilence(m, target)
+          } else if (m._transformActive) {
+            this._catmanTransform(m)
+          }
+        } catch (err) {
+          console.error(`[Tower] 技能执行异常(${m.type})，强制重置:`, err.message || err)
+          // 强制恢复：防止怪物永久卡死在施法状态
+          m.isCastingSkill = false
+          m._biteSkillActive = false
+          m._stealthSkillActive = false
+          m._silenceSkillActive = false
+          m._silenceAuraActive = false
+          m._transformActive = false
+          m.isAttacking = false
+          m.animState = 'idle'
+          m.animFrame = 0
+        }
+        // ★ 安全超时检查：防止任何技能状态永久卡死 ★
+        if (m.attackAnimTimer > 8000) {
+          console.warn(`[Tower] ${m.name} 技能超时(>8s)，强制恢复`)
+          m.isCastingSkill = false
+          m._biteSkillActive = false
+          m._stealthSkillActive = false
+          m._silenceSkillActive = false
+          m._silenceAuraActive = false
+          m._transformActive = false
+          m.isAttacking = false
+          m.animState = 'idle'
+          m.attackAnimTimer = 0
         }
         this._clampToBattleArea(m)  // 确保不跑出区域
         continue  // 跳过后续的移动/攻击/边界钳制逻辑
@@ -3074,6 +3100,31 @@ export class TowerBattle {
 
     const cfg = spr.biteSkill
 
+    // ★ 首次调用时缓存目标引用（后续帧不再重新查找，防止目标切换导致异常）★
+    if (!monster.isCastingSkill && !monster._biteSkillActive && target && !target.isDead) {
+      monster._biteLockedTarget = target
+    }
+    // 始终使用锁定的目标（如果锁定目标已死，用当前传入的fallback）
+    const lockedTarget = monster._biteLockedTarget
+    const effectiveTarget = (lockedTarget && !lockedTarget.isDead && lockedTarget.currentHp > 0)
+      ? lockedTarget : target
+
+    // ★ 安全检查：有效目标是否存在 ★
+    if (!effectiveTarget || effectiveTarget.isDead || !(effectiveTarget.currentHp > 0)) {
+      console.log(`[Tower] 暗影咬目标已死亡，提前结束技能`)
+      monster.isCastingSkill = false
+      monster._biteSkillActive = false
+      monster.animState = 'idle'
+      monster.animFrame = 0
+      monster.isAttacking = false
+      monster.attackAnimTimer = 200
+      monster._biteSkillTimer = 0
+      monster._biteHitsDone = []
+      monster._biteLockedTarget = null  // 清除锁定引用
+      monster.skillCD = cfg.cooldown || 15000
+      return
+    }
+
     // 标记进入技能状态
     if (!monster.isCastingSkill && !monster._biteSkillActive) {
       // === 首次调用：初始化 ===
@@ -3085,8 +3136,8 @@ export class TowerBattle {
       monster._biteSkillTimer = 0
       monster.skillStartX = monster.x
       monster.skillStartY = monster.y
-      monster.skillTargetX = target.x
-      monster.skillTargetY = target.y
+      monster.skillTargetX = effectiveTarget.x
+      monster.skillTargetY = effectiveTarget.y
       monster.isAttacking = true
       // 总时长：蓄力3帧*330ms + 攻击9帧*110ms ≈ 1990ms
       const totalDuration = (3 * (cfg.chargeFrameRate || 330)) + (9 * (cfg.attackFrameRate || 110))
@@ -3149,9 +3200,9 @@ export class TowerBattle {
       if (frameIndex === hitF && !monster._biteHitsDone.includes(hitF)) {
         monster._biteHitsDone.push(hitF)
 
-        // 使用技能锁定目标（角色），而非 _findNearestEnemy（那是给角色找怪物的）
-        const tgt = target
-        if (tgt && !tgt.isDead) {
+        // 使用锁定的有效目标（首次锁定后不再切换）
+        const tgt = effectiveTarget
+        if (tgt && !tgt.isDead && tgt.currentHp > 0) {
           const dx = tgt.x - monster.x
           const dy = tgt.y - monster.y
           const hitDist = Math.sqrt(dx * dx + dy * dy)
@@ -3176,7 +3227,8 @@ export class TowerBattle {
     }
 
     // === 技能结束（全部帧播完或超时）===
-    if (t >= totalDuration || frameIndex >= 11) {
+    // ★ 安全超时：5秒强制结束（防止计时异常导致永久卡死）★
+    if (t >= totalDuration || frameIndex >= 11 || t > 5000) {
       monster.isCastingSkill = false
       monster._biteSkillActive = false
       monster.animState = 'idle'
@@ -3186,6 +3238,7 @@ export class TowerBattle {
       monster.attackAnimTimer = 200  // 短暂收招硬直
       monster._biteSkillTimer = 0
       monster._biteHitsDone = []
+      monster._biteLockedTarget = null  // 清除锁定目标引用
       monster.skillCD = cfg.cooldown  // CD 15秒
       monster.atkTimer = monster.atkInterval
     }
@@ -4900,6 +4953,9 @@ export class TowerBattle {
     const W = this.width
     const H = this.height
 
+    // ★ 外层 save/restore 保护：防止内部 save/restore 不匹配导致 Canvas 状态混乱 ★
+    ctx.save()
+
     // ★ 关键：先重置Canvas状态为默认值，再执行clearRect！
     // 如果GCO不是source-over，clearRect可能无法正确清除像素（导致背景变色残留）
     ctx.globalCompositeOperation = 'source-over'
@@ -4920,11 +4976,13 @@ export class TowerBattle {
       this._renderCardSelect(ctx)
       // ★ 过场黑屏（开始冒险按钮点击后）
       this._renderTransition(ctx)
+      ctx.restore()  // ★ 恢复 Canvas 状态（与 L4957 的 save 配对）★
       return
     }
 
     if (this.phase === 'victory' || this.phase === 'defeat') {
       this._renderResultScreen(ctx)
+      ctx.restore()  // ★ 恢复 Canvas 状态（与 L4957 的 save 配对）★
       return
     }
 
@@ -5220,6 +5278,8 @@ export class TowerBattle {
       ctx.textBaseline = 'bottom'
       ctx.fillText('点击任意一张卡牌开始战斗', W / 2, H - 24 * dpr)
     }
+    // ★ 正常路径结尾：恢复 Canvas 状态 ★
+    ctx.restore()
   }
 
   // ===== 掉落物渲染 =====
@@ -5987,6 +6047,8 @@ export class TowerBattle {
 
   _renderEffects(ctx) {
     for (const e of this.effects) {
+      // ★ 单个特效异常隔离：防止某个特效的Canvas操作崩溃整个渲染循环（尤其移动端）★
+      try {
       if (e.type === 'dmg_number') {
         ctx.save()
         ctx.globalAlpha = Math.min(1, e.life)
@@ -7001,6 +7063,10 @@ export class TowerBattle {
 
         ctx.restore()
       }
+      } catch (effectErr) {
+        // ★ 单个特效渲染异常：跳过该特效，不崩溃游戏循环 ★
+        if (e && e.type) { e.life = 0 }
+      }
     }
   }
 
@@ -7435,9 +7501,13 @@ export class TowerBattle {
     ctx.textBaseline = 'middle'
     ctx.fillText(centerLabel, W / 2, topBarH * 0.36)
 
-    // 剩余怪物数量
+    // 剩余怪物数量（防御性过滤：排除 null/undefined，确保计数准确）
     if (!this.allWavesDone && this.waveTotalCount > 0) {
-      const remaining = Math.max(0, this.waveTotalCount - this.waveSpawnedCount + this.monsters.filter(m => !m.isDead).length)
+      const validMonsters = this.monsters.filter(m => m != null)
+      const aliveCount = validMonsters.filter(m => !m.isDead).length
+      // 未生成完的 + 还活着的 = 真实剩余数
+      const unspawned = Math.max(0, this.waveTotalCount - this.waveSpawnedCount)
+      const remaining = unspawned + aliveCount
       const remainLabel = remaining > 0 ? `剩余: ${remaining}` : '清理中...'
       ctx.fillStyle = remaining > 3 ? '#94a3b8' : remaining > 0 ? '#fbbf24' : '#4ade80'
       ctx.font = `${Math.max(10, 11 * dpr)}px sans-serif`
