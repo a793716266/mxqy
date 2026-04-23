@@ -5328,23 +5328,48 @@ export class TowerBattle {
   // ==================== UI层 ====================
 
   /**
-   * 统一渲染所有实体（角色+怪物），按Y轴从上到下排序绘制（画家算法）
+   * 统一渲染所有实体（角色+怪物+空间特效），按Y轴从上到下排序绘制（画家算法）
    * Y轴越大的实体后绘制 → 显示在更上层，遮挡Y值较小的实体
+   *
+   * 空间型特效（有x/y坐标）参与Y排序：
+   *   - ice_wave_sword（冰晶术波动剑）
+   *   - char_hit（角色命中帧）
+   *   - skill_effect_frames（技能击中帧）
+   *   - skill_beam（技能光束/射线）
+   *   - cast_ring（施法光圈）
+   * 非空间型（dmg_number飘字等）仍由 _renderEffects 在最上层绘制
    */
   _renderAllEntities(ctx) {
     // 收集所有需要渲染的实体
     const entities = []
 
+    // 角色
     for (const c of this.party) {
       if (!(c.isDead && c.respawnTimer <= 0)) {
         entities.push({ type: 'char', entity: c, y: c.y })
       }
     }
 
+    // 怪物
     for (const m of this.monsters) {
       if (!(m.isDead && m.deathTimer <= 0)) {
         entities.push({ type: 'monster', entity: m, y: m.y + (m.shakeY || 0) })
       }
+    }
+
+    // ★ 空间型特效：参与Y轴排序 ★
+    const SPATIAL_EFFECT_TYPES = ['ice_wave_sword', 'char_hit', 'skill_effect_frames', 'skill_beam', 'cast_ring']
+    for (const e of this.effects) {
+      if (!SPATIAL_EFFECT_TYPES.includes(e.type)) continue
+      if ((e.life !== undefined && e.life <= 0)) continue
+      // 计算特效的中心Y坐标用于排序
+      let effectCenterY
+      if (e.type === 'ice_wave_sword' || e.type === 'skill_beam') {
+        effectCenterY = (e.startY + e.endY) / 2
+      } else {
+        effectCenterY = e.y || 0
+      }
+      entities.push({ type: 'effect', entity: e, y: effectCenterY })
     }
 
     // 按Y坐标从小到大排序（Y小的先画=在后面，Y大的后画=在上面）
@@ -5354,10 +5379,31 @@ export class TowerBattle {
     for (const e of entities) {
       if (e.type === 'char') {
         this._renderOneCharacter(ctx, e.entity)
-      } else {
+      } else if (e.type === 'monster') {
         this._renderOneMonster(ctx, e.entity)
+      } else if (e.type === 'effect') {
+        this._renderOneSpatialEffect(ctx, e.entity)
       }
     }
+  }
+
+  /**
+   * 渲染单个空间型特效（供 _renderAllEntities Y排序调用）
+   */
+  _renderOneSpatialEffect(ctx, e) {
+    try {
+      if (e.type === 'ice_wave_sword') {
+        this._drawIceWaveSword(ctx, e)
+      } else if (e.type === 'char_hit') {
+        this._drawCharHit(ctx, e)
+      } else if (e.type === 'skill_effect_frames') {
+        this._renderSkillEffectFrames(ctx, e)
+      } else if (e.type === 'skill_beam') {
+        this._drawSkillBeam(ctx, e)
+      } else if (e.type === 'cast_ring') {
+        this._drawCastRing(ctx, e)
+      }
+    } catch (_) { /* 单个特效异常隔离 */ }
   }
 
   // ===== 怪物渲染（真实精灵）=====
@@ -5992,7 +6038,10 @@ export class TowerBattle {
   // ===== 特效渲染 =====
 
   _renderEffects(ctx) {
+    // ★ 空间型特效已由 _renderAllEntities 按Y轴排序绘制，此处跳过 ★
+    const SPATIAL_TYPES = ['ice_wave_sword', 'char_hit', 'skill_effect_frames', 'skill_beam', 'cast_ring']
     for (const e of this.effects) {
+      if (SPATIAL_TYPES.includes(e.type)) continue
       // ★ 单个特效异常隔离：防止某个特效的Canvas操作崩溃整个渲染循环（尤其移动端）★
       try {
       if (e.type === 'dmg_number') {
@@ -7025,6 +7074,202 @@ export class TowerBattle {
         ctx.drawImage(img, effect.x - size / 2, effect.y - size / 2, size, size)
         ctx.restore()
       }
+    }
+  }
+
+  // ===== 空间型特效绘制方法（供 Y轴排序渲染调用）=====
+
+  /** 冰晶术波动剑：沿x/y正常方向逐个生成冰块 */
+  _drawIceWaveSword(ctx, e) {
+    const beamLen = Math.sqrt((e.endX - e.startX)**2 + (e.endY - e.startY)**2)
+    const angle = Math.atan2(e.endY - e.startY, e.endX - e.startX)
+    const dirX = Math.cos(angle)
+    const dirY = Math.sin(angle)
+
+    const hitData = HIT_EFFECTS.ice
+    if (!hitData || !hitData.frames || !hitData.frames.length) return
+    const frameRate = hitData.frameRate || 44
+    const totalFrames = hitData.frames.length
+
+    const bladeNum = 8
+    const bladeAnimDur = totalFrames * frameRate
+    const totalGenDur = bladeAnimDur * bladeNum
+
+    const bladeMaxSize = 110
+    const bladeMinSize = 55
+    const bladeSpacing = beamLen / (bladeNum - 1)
+
+    for (let b = 0; b < bladeNum; b++) {
+      const distFromStart = b * bladeSpacing
+      if (distFromStart > beamLen + bladeMaxSize) continue
+      const birthTime = e._bladeBirths ? e._bladeBirths[b] : b * bladeAnimDur
+      if (e.timer < birthTime) continue
+      const bladeAge = e.timer - birthTime
+      const sizeRatio = Math.min(1, b / (bladeNum - 1))
+      const targetSize = bladeMinSize + (bladeMaxSize - bladeMinSize) * sizeRatio
+      const frameIdx = bladeAge < bladeAnimDur
+        ? Math.floor(bladeAge / frameRate) % totalFrames
+        : totalFrames - 1
+      const bladeImg = this.assets.get(hitData.frames[frameIdx])
+      if (!bladeImg) continue
+
+      let alpha = 1
+      if (e.timer > totalGenDur) {
+        const fadeDur = e.duration - totalGenDur
+        const fadeProgress = (e.timer - totalGenDur) / fadeDur
+        const disappearDelay = (b / bladeNum) * 0.7
+        const localFade = Math.max(0, (fadeProgress - disappearDelay) / 0.4)
+        alpha = Math.max(0, 1 - localFade)
+      }
+      if (alpha <= 0.03) continue
+
+      const bx = e.startX + dirX * distFromStart
+      const by = e.startY + dirY * distFromStart
+      ctx.globalAlpha = Math.max(0, Math.min(1, alpha))
+      ctx.drawImage(bladeImg,
+        bx - targetSize / 2, by - targetSize / 2,
+        targetSize, targetSize)
+    }
+    ctx.globalAlpha = 1
+  }
+
+  /** 角色命中特效帧（hit帧） */
+  _drawCharHit(ctx, e) {
+    const hitData = HIT_EFFECTS[e.hitType]
+    if (!hitData || !hitData.frames || !hitData.frames[e.frame]) return
+    const key = hitData.frames[e.frame]
+    const img = this.assets.get(key)
+    if (!img) return
+    const size = 80 + Math.min(e.timer / 10, 20)
+    const s = Math.ceil(size) + 4
+    if (!e._off) { e._off = (typeof wx !== 'undefined' && wx.createCanvas) ? wx.createCanvas() : null; e._offS = 0; }
+    if (e._off && e._offS !== s) { e._off.width = s; e._off.height = s; e._offS = s; }
+    const offCtx = e._off ? e._off.getContext('2d') : null
+    if (offCtx) {
+      offCtx.clearRect(0, 0, s, s)
+      offCtx.globalAlpha = Math.max(0, 1 - (e.timer / e.duration) * 0.5)
+      offCtx.drawImage(img, (s - size) / 2, (s - size) / 2, size, size)
+      ctx.globalAlpha = 1
+      ctx.drawImage(e._off, e.x - s / 2, e.y - s / 2)
+    } else {
+      ctx.save()
+      ctx.globalAlpha = Math.max(0, 1 - (e.timer / e.duration) * 0.5)
+      ctx.drawImage(img, e.x - size / 2, e.y - size / 2, size, size)
+      ctx.restore()
+    }
+  }
+
+  /** 技能光束/射线（密排帧动画） */
+  _drawSkillBeam(ctx, e) {
+    const beamLen = Math.sqrt((e.endX - e.startX)**2 + (e.endY - e.startY)**2)
+
+    let fadeAlpha = 1
+    if (e.timer > e.duration * 0.5) {
+      fadeAlpha = 1 - (e.timer - e.duration * 0.5) / (e.duration * 0.5)
+    }
+    if (fadeAlpha <= 0) return
+
+    const hitData = HIT_EFFECTS[e.hitType]
+    if (!hitData || !hitData.frames || !hitData.frames.length) return
+
+    const curFrameKey = hitData.frames[e.animFrame || 0]
+    const frameImg = this.assets.get(curFrameKey)
+    if (!frameImg) return
+
+    const isFire = e.hitType === 'fireball'
+    const baseSize = isFire ? 70 : 120
+    const spacing = isFire ? 28 : 22
+
+    const offW = Math.ceil(beamLen) + 100
+    const offH = baseSize + 60
+    if (!e._offCV) {
+      e._offCV = (typeof wx !== 'undefined' && wx.createCanvas) ? wx.createCanvas() : null
+      e._offW = offW
+      e._offH = offH
+    }
+    if (e._offCV && (e._offW !== offW || e._offH !== offH)) {
+      e._offCV.width = offW
+      e._offCV.height = offH
+      e._offW = offW
+      e._offH = offH
+    }
+
+    if (e._offCV) {
+      const octx = e._offCV.getContext('2d')
+      octx.clearRect(0, 0, offW, offH)
+      const cx = 60, cy = offH / 2
+      const angle = Math.atan2(e.endY - e.startY, e.endX - e.startX)
+
+      for (let i = 0; i <= beamLen; i += spacing) {
+        const progress = i / beamLen
+        const jetProgress = Math.min(1, e.timer / (e.duration * 0.45))
+        if (progress > jetProgress) break
+
+        const px = cx + i
+        const py = cy
+        const size = baseSize * (1 - progress * 0.3)
+
+        octx.globalAlpha = fadeAlpha * (1 - progress * 0.6)
+        octx.drawImage(frameImg,
+          px - size / 2, py - size / 2,
+          size, size)
+      }
+
+      ctx.save()
+      ctx.translate(e.startX, e.startY)
+      ctx.rotate(angle)
+      ctx.drawImage(e._offCV, -cx, -cy)
+      ctx.restore()
+    } else {
+      const angle = Math.atan2(e.endY - e.startY, e.endX - e.startX)
+      for (let i = 0; i <= beamLen; i += spacing) {
+        const progress = i / beamLen
+        const jetProgress = Math.min(1, e.timer / (e.duration * 0.45))
+        if (progress > jetProgress) break
+        const size = baseSize * (1 - progress * 0.3)
+        const px = e.startX + Math.cos(angle) * i
+        const py = e.startY + Math.sin(angle) * i
+        ctx.save()
+        ctx.globalAlpha = fadeAlpha * (1 - progress * 0.6)
+        ctx.drawImage(frameImg, px - size / 2, py - size / 2, size, size)
+        ctx.restore()
+      }
+    }
+  }
+
+  /** 施法光圈：从怪物扩散的圆环 */
+  _drawCastRing(ctx, e) {
+    const maxL = Math.max(0.001, e.maxLife || 0.6)
+    const t = Math.min(2, 1 - (e.life / maxL))
+    const r = Math.max(1, e.radius + (e.maxRadius - e.radius) * t)
+    const alpha = Math.max(0, 1 - t * 1.5)
+    const dia = Math.ceil(r * 2) + 20
+    if (!e._off) { e._off = (typeof wx !== 'undefined' && wx.createCanvas) ? wx.createCanvas() : null; e._offS = 0; }
+    if (e._off && e._offS !== dia) { e._off.width = dia; e._off.height = dia; e._offS = dia; }
+    const offCtx = e._off ? e._off.getContext('2d') : null
+    const cx = dia / 2, cy = dia / 2
+    if (offCtx) {
+      offCtx.clearRect(0, 0, dia, dia)
+      offCtx.strokeStyle = e.color || '#88ccff'
+      offCtx.lineWidth = 3
+      offCtx.globalAlpha = alpha
+      offCtx.beginPath()
+      offCtx.arc(cx, cy, r, 0, Math.PI * 2)
+      offCtx.stroke()
+      if (alpha > 0.15) {
+        offCtx.fillStyle = (e.color || '#88ccff') + '18'
+        offCtx.fill()
+      }
+      ctx.drawImage(e._off, e.x - cx, e.y - cy)
+    } else {
+      ctx.save()
+      ctx.strokeStyle = e.color || '#88ccff'
+      ctx.lineWidth = 3
+      ctx.globalAlpha = alpha
+      ctx.beginPath()
+      ctx.arc(e.x, e.y, r, 0, Math.PI * 2)
+      ctx.stroke()
+      ctx.restore()
     }
   }
 
