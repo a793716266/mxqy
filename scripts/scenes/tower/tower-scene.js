@@ -46,11 +46,99 @@ export class TowerScene {
     this._scrollStartScroll = 0 // 滚动开始时的scrollY
     this._isDragging = false
     this.animTime = 0
+
+    // ★ 虚拟摇杆状态 ★
+    this._joystick = {
+      active: false,      // 是否有手指在摇杆区
+      touchId: null,      // 摇杆对应的 touch id
+      baseX: 0, baseY: 0, // 基准点（按下位置）
+      dx: 0, dy: 0,       // 偏移量（-1~1）
+      RADIUS: 100,        // 摇杆有效半径(px)
+      DEAD_ZONE: 0.15,   // 死区
+    }
   }
 
   init() {
     // 输入由全局 InputManager(wx.onTouchStart) 统一处理
     // 不再使用 canvas.addEventListener（真机无效）
+
+    // ★ 注册摇杆监听 ★
+    this.game.input.onMove(this._onJoystickMove.bind(this))
+    this.game.input.onEnd(this._onJoystickEnd.bind(this))
+  }
+
+  // ========== 虚拟摇杆处理 ==========
+
+  /** 计算左下角摇杆区域（随屏幕尺寸自适应） */
+  _joystickBounds() {
+    const dpr = this.dpr
+    const R = this._joystick.RADIUS * dpr
+    return {
+      x: 80 * dpr,                  // 距左边缘
+      y: this.height - 50 * dpr,   // 距底边缘
+      r: R,
+    }
+  }
+
+  /** 是否点在摇杆区域内 */
+  _isInJoystickArea(x, y) {
+    const b = this._joystickBounds()
+    const dx = x - b.x, dy = y - b.y
+    return Math.sqrt(dx * dx + dy * dy) <= b.r
+  }
+
+  /** touchmove 回调：处理摇杆输入 */
+  _onJoystickMove(e) {
+    if (this.phase !== 'battle' || !this.battle) return
+    const j = this._joystick
+    const activeTouch = e.touches[0]   // 第一个 touch
+    if (!activeTouch) return
+    const tx = activeTouch.clientX * this.dpr
+    const ty = activeTouch.clientY * this.dpr
+
+    if (!j.active) {
+      // 检测是否在摇杆区按下
+      if (this._isInJoystickArea(tx, ty)) {
+        j.active = true
+        j.touchId = activeTouch.identifier
+        j.baseX = tx; j.baseY = ty
+        j.dx = 0; j.dy = 0
+      }
+      // 手指已在摇杆区，移动中持续更新
+    } else {
+      // 已在摇杆区：只响应对应 touchId 的移动
+      if (activeTouch.identifier !== j.touchId) return
+      const dx = tx - j.baseX
+      const dy = ty - j.baseY
+      const dist = Math.sqrt(dx * dx + dy * dy)
+      const clampDist = Math.min(dist, j.RADIUS * this.dpr)
+      if (dist > 0) {
+        j.dx = (dx / dist) * clampDist / (j.RADIUS * this.dpr)
+        j.dy = (dy / dist) * clampDist / (j.RADIUS * this.dpr)
+        // 死区处理
+        const mag = Math.sqrt(j.dx * j.dx + j.dy * j.dy)
+        if (mag < j.DEAD_ZONE) { j.dx = 0; j.dy = 0 }
+      } else {
+        j.dx = 0; j.dy = 0
+      }
+      // 发送摇杆输入到战斗系统
+      this.battle.onJoystickInput(j.dx, j.dy)
+    }
+  }
+
+  /** touchend 回调：释放摇杆 */
+  _onJoystickEnd(e) {
+    if (this.phase !== 'battle' || !this.battle) return
+    const j = this._joystick
+    for (const t of e.changedTouches) {
+      if (t.identifier === j.touchId) {
+        j.active = false
+        j.touchId = null
+        j.dx = 0; j.dy = 0
+        // 松开摇杆时通知战斗系统停止移动
+        this.battle.onJoystickInput(0, 0)
+      }
+    }
   }
 
 
@@ -81,21 +169,6 @@ export class TowerScene {
     if (input.dragging) {
       if (this.phase === 'stage_select') {
         this.scrollY = Math.max(0, Math.min(this.scrollY - input.dragDelta.y, this._maxScroll()))
-      } else if (this.phase === 'battle' && this.battle?.onTapMove) {
-        // 滑动时也更新悬浮位置
-        if (input.touches[0]) {
-          const t = input.touches[0]
-          this.battle.onTapMove(t.x, t.y)
-        }
-      }
-    }
-
-    // 战斗阶段：即使没有滑动，只要手指在屏幕上就检测装备悬浮
-    if (this.phase === 'battle' && !input.dragging && this.battle?.onTapMove) {
-      const keys = Object.keys(input.touches)
-      if (keys.length > 0) {
-        const t = input.touches[keys[0]]
-        this.battle.onTapMove(t.x, t.y)
       }
     }
 
@@ -107,7 +180,10 @@ export class TowerScene {
       if (this.phase === 'stage_select') {
         this._handleStageTap(tap.x, tap.y)
       } else if (this.phase === 'battle' && this.battle?.onTap) {
-        this.battle.onTap(tap.x, tap.y)
+        // 摇杆区域点击不触发 UI 交互
+        if (!this._isInJoystickArea(tap.x, tap.y)) {
+          this.battle.onTap(tap.x, tap.y)
+        }
       } else if (this.phase === 'result') {
         this._handleResultTap(tap.x, tap.y)
       }
@@ -413,7 +489,10 @@ export class TowerScene {
 
     try {
       if (this.phase === 'stage_select') this._renderStageSelect(ctx)
-      else if (this.phase === 'battle') { this.battle?.render() }
+      else if (this.phase === 'battle') {
+        this.battle?.render()
+        this._renderJoystick(ctx)   // ★ 摇杆 UI 叠加层
+      }
       else if (this.phase === 'result') this._renderResult(ctx)
     } catch(e) {
       console.error(`[TowerScene] 💥 render 崩溃! phase=${this.phase}`, e)
@@ -945,6 +1024,58 @@ export class TowerScene {
     ctx.lineTo(x, y + r)
     ctx.quadraticCurveTo(x, y, x + r, y)
     ctx.closePath()
+  }
+
+  // ========== 虚拟摇杆渲染 ==========
+
+  _renderJoystick(ctx) {
+    const j = this._joystick
+    const dpr = this.dpr
+    const R = j.RADIUS * dpr
+    const bx = 80 * dpr           // base x
+    const by = this.height - 50 * dpr  // base y
+
+    // 外圈（半透明底）
+    ctx.beginPath()
+    ctx.arc(bx, by, R, 0, Math.PI * 2)
+    ctx.fillStyle = 'rgba(0,0,0,0.25)'
+    ctx.fill()
+    ctx.strokeStyle = 'rgba(255,255,255,0.15)'
+    ctx.lineWidth = 1.5 * dpr
+    ctx.stroke()
+
+    // 方向指示线（静态十字）
+    ctx.strokeStyle = 'rgba(255,255,255,0.08)'
+    ctx.lineWidth = 1 * dpr
+    ctx.beginPath()
+    ctx.moveTo(bx - R * 0.7, by); ctx.lineTo(bx + R * 0.7, by)
+    ctx.moveTo(bx, by - R * 0.7); ctx.lineTo(bx, by + R * 0.7)
+    ctx.stroke()
+
+    // 内圈（摇杆头）
+    if (j.active && (Math.abs(j.dx) > 0.01 || Math.abs(j.dy) > 0.01)) {
+      // 摇杆被推动：内圈跟随偏移
+      const knobR = R * 0.45
+      const knobX = bx + j.dx * R * 0.8
+      const knobY = by + j.dy * R * 0.8
+
+      // 渐变发光
+      const grad = ctx.createRadialGradient(knobX, knobY, 0, knobX, knobY, knobR)
+      grad.addColorStop(0, 'rgba(255,255,255,0.85)')
+      grad.addColorStop(0.5, 'rgba(180,200,255,0.5)')
+      grad.addColorStop(1, 'rgba(100,140,255,0.1)')
+      ctx.beginPath()
+      ctx.arc(knobX, knobY, knobR, 0, Math.PI * 2)
+      ctx.fillStyle = grad
+      ctx.fill()
+    } else {
+      // 静止：中心小圆点
+      const knobR = R * 0.25
+      ctx.beginPath()
+      ctx.arc(bx, by, knobR, 0, Math.PI * 2)
+      ctx.fillStyle = 'rgba(255,255,255,0.35)'
+      ctx.fill()
+    }
   }
 
   _isStageUnlocked(stageId) {

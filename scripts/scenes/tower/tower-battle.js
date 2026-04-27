@@ -283,9 +283,10 @@ class TowerBattle {
   }
 
   _getBattleArea() {
-    const topBarH = Math.max(this.height * 0.095, 56)
-    const groundY = this.height - Math.max(this.height * 0.155, 120) - Math.max(8, 12 * this.dpr) - 10
-    return { left: 4, right: this.width - 4, top: topBarH + 25, bottom: groundY }
+    // 与原始调参一致：顶部留 topBarH+30，底部留 17% 屏幕高度，左右各 20px
+    const safeTop = Math.max(this.height * 0.065, 44) + 30
+    const safeBottom = this.height - Math.max(this.height * 0.17, 110) - 15
+    return { left: 20, right: this.width - 20, top: safeTop, bottom: safeBottom }
   }
 
   /** 将实体钳制在战斗区域内 */
@@ -410,7 +411,9 @@ class TowerBattle {
   }
 
   _updateCamera(dt) {
-    this.camera.shakeX *= 0.9; this.camera.shakeY *= 0.9
+    this.camera.shakeX *= 0.85; this.camera.shakeY *= 0.85
+    if (Math.abs(this.camera.shakeX) < 0.1) this.camera.shakeX = 0
+    if (Math.abs(this.camera.shakeY) < 0.1) this.camera.shakeY = 0
     // ★ 移动指示器衰减
     if (this._moveIndicator && this._moveIndicator.timer > 0) {
       this._moveIndicator.timer -= dt
@@ -483,10 +486,7 @@ class TowerBattle {
 
     try {
     ctx.save()
-    // 相机抖动
-    if (this.camera.shakeX || this.camera.shakeY) {
-      ctx.translate(this.camera.shakeX, this.camera.shakeY)
-    }
+    // ★ 相机震动统一由 UI.render() 处理，此处不再 translate 避免双重叠加
 
     switch (this.phase) {
       case 'card_select': {
@@ -521,9 +521,31 @@ class TowerBattle {
   /** 处理点击/触控 */
   onTap(x, y) { UI.onTap(this, x, y) }
 
-  /** 键盘/摇杆输入（可选） */
+  /** 虚拟摇杆输入：将方向映射到当前选中角色的 targetX/Y（速度帧率无关） */
   onJoystickInput(dx, dy) {
-    // 可扩展：虚拟摇杆控制角色移动
+    const c = this.party[this.selectedCharIndex]
+    if (!c || c.dead) return
+    const area = this._getBattleArea()
+    const r = c.width / 2 || 20
+    const BASE_SPEED = 280   // px/s
+
+    if (dx === 0 && dy === 0) {
+      // 松开：停止移动（让 AI 可以接管）
+      c.targetX = c.x
+      c.targetY = c.y
+      return
+    }
+
+    const dist = Math.sqrt(dx * dx + dy * dy) || 1
+    const actualSpeed = BASE_SPEED * dist
+    // 目标位置：方向向量 × 速度 / 60fps（近似每帧速度）
+    const perFrame = actualSpeed / 60
+    const newX = Math.max(area.left + r, Math.min(area.right - r, c.x + (dx / dist) * perFrame))
+    const newY = Math.max(area.top + r, Math.min(area.bottom - r, c.y + (dy / dist) * perFrame))
+
+    c.targetX = newX
+    c.targetY = newY
+    c._manualMoveTime = Date.now()   // 重置手动移动保护（1.5s 内 AI 不接管）
   }
 
   // ========== 生命周期 ==========
