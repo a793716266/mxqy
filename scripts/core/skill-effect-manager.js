@@ -112,8 +112,9 @@ export class SkillEffectManager {
    */
   update(dt) {
     const toRemove = []
+    const effects = this.effects || []
 
-    for (const effect of this.effects) {
+    for (const effect of effects) {
       if (!effect.isPlaying) continue
 
       // 更新时间
@@ -161,7 +162,8 @@ export class SkillEffectManager {
    * @param {CanvasRenderingContext2D} ctx - Canvas上下文
    */
   render(ctx) {
-    for (const effect of this.effects) {
+    const effects = this.effects || []
+    for (const effect of effects) {
       if (!effect.isPlaying) continue
       if (!effect.images || effect.images.length === 0) continue
       // ★ 已被角色绑定的特效不再重复绘制（避免两套画面）

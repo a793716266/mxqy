@@ -6,16 +6,18 @@
  * - 使用逻辑像素坐标（非物理像素）
  * - 原点在左上角
  * - X轴向右增加，Y轴向下增加
- * 
- * 如何标记障碍物：
- * 1. 在游戏中看到坐标显示（右上角黄色文字）
- * 2. 走到障碍物旁边，记录坐标
- * 3. 在下方数组中添加障碍物信息
- * 
- * 示例：
- * { type: 'rect', x: 500, y: 300, width: 100, height: 80, name: '大树' }
- * { type: 'circle', x: 800, y: 600, radius: 50, name: '水池' }
  */
+
+// 动态导入小镇碰撞数据（避免循环依赖）
+let _townCollisions = null
+
+async function _getTownCollisions() {
+  if (_townCollisions === null) {
+    const { generateTownCollisions } = await import('./town-map-data.js')
+    _townCollisions = generateTownCollisions()
+  }
+  return _townCollisions
+}
 
 export const MAP_COLLISIONS = {
   grassland: {
@@ -25,6 +27,14 @@ export const MAP_COLLISIONS = {
       // { type: 'rect', x: 500, y: 300, width: 100, height: 80, name: '大树1' },
       // { type: 'circle', x: 800, y: 600, radius: 50, name: '水池' },
     ]
+  },
+  
+  town: {
+    name: '喵星村',
+    // 碰撞数据由 town-map-data.js 动态生成
+    // 通过 getMapCollisions('town') 获取时自动加载
+    _dynamic: true,
+    obstacles: []
   },
   
   // 其他地图的碰撞配置
@@ -42,6 +52,29 @@ export const MAP_COLLISIONS = {
 /**
  * 获取指定地图的碰撞数据
  */
-export function getMapCollisions(mapId) {
-  return MAP_COLLISIONS[mapId]?.obstacles || []
+export async function getMapCollisions(mapId) {
+  const mapData = MAP_COLLISIONS[mapId]
+  if (!mapData) return []
+  
+  // 小镇使用动态生成的碰撞数据
+  if (mapData._dynamic && mapId === 'town') {
+    return await _getTownCollisions()
+  }
+  
+  return mapData.obstacles || []
+}
+
+/**
+ * 同步版本（用于field-scene等已存在的同步调用场景）
+ * 小镇数据在首次调用时缓存
+ */
+export function getMapCollisionsSync(mapId) {
+  const mapData = MAP_COLLISIONS[mapId]
+  if (!mapData) return []
+  
+  if (mapData._dynamic && mapId === 'town' && _townCollisions !== null) {
+    return _townCollisions
+  }
+  
+  return mapData.obstacles || []
 }

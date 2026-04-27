@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "skills": {
+    "game-assets": {
+      "source": "MeowjitoAI/meowa-skills",
+      "sourceType": "github",
+      "computedHash": "b2ff93cc4a1d3f671801ba215ee185e551c1cb90c76cef88f7c8b9a2e069cf33"
+    }
+  }
+}

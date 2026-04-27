@@ -13,7 +13,8 @@
  */
 
 import { getStageConfig, getStageList } from '../../data/tower/stage-configs.js'
-import { TowerBattle } from './tower-battle.js'
+import TowerBattleModule from './tower-battle.js'
+const TowerBattle = TowerBattleModule.default || TowerBattleModule
 import { charStateManager } from '../../data/character-state.js'
 import { SCENE } from '../../game.js'
 
@@ -58,7 +59,7 @@ export class TowerScene {
   update(dt) {
     this.animTime += dt / 1000
     if (this.phase === 'battle' && this.battle) {
-      this.battle.update(dt)
+      this.battle.update(dt * 1000)  // game.js deltaTime 是秒，tower-battle 期望毫秒
       // 检测战斗内"返回城镇"按钮点击
       if (this.battle._backToResult) {
         this.battle._backToResult = false
@@ -195,7 +196,16 @@ export class TowerScene {
     const party = this._loadTowerParty()
     // 从新配置系统获取关卡配置
     const stageConfig = getStageConfig(stage.id)
-    this.battle = new TowerBattle(this, stageConfig, party)
+    this.battle = new TowerBattle({
+      canvas: this.game.canvas,
+      width: this.width,
+      height: this.height,
+      dpr: this.dpr || 1,
+      stage: stageConfig,
+      scene: this,
+      assets: this.game?.assets,
+      party: party
+    })
     // 切换到塔防战斗BGM
     this.game.audio.playBGM('bgm_tower')
   }
@@ -223,6 +233,7 @@ export class TowerScene {
       party.push({
         id: tmpl.id,
         name: tmpl.name,
+        heroType: tmpl.id,          // ★ 精灵映射关键：zhenbao / lixiaobao 等
         role: tmpl.role,
 
         // 属性全部从模板取（1级初始值）
@@ -245,7 +256,7 @@ export class TowerScene {
         exp: 0,
 
         // 技能从角色模板取
-        skills: [...tmpl.skills],
+        skills: [...(tmpl.skills || [{ id: 'basic_attack', name: '攻击', type: 'attack', power: 1.0, mpCost: 0 }])],
 
         // 装备为空——战斗中通过掉落获取
         equipment: {},
@@ -257,10 +268,33 @@ export class TowerScene {
         attackTimer: 0, isAttacking: false,
         attackAnimTimer: 0, skillCDs: {},
         statusEffects: [],
+
+        // ★ 动画系统字段
+        animState: 'idle',
+        animFrame: 0,
+        animTimer: 0,
+        _animStartTime: Date.now(),
+
+        // ★ 移动/攻击/AI字段
+        moveSpeed: tmpl.spd * 8,
+        atkRange: tmpl.role === 'mage' ? 320 : 80,
+        autoAttackEnabled: true,
+        autoSkillTimer: 3000,
+        autoSkillInterval: 5000,
+        facingRight: false,
+        isCasting: false,
+        castSkillId: null,
+        hurtFlash: 0,
+        hurtTimer: 0,
+        levelUpFlash: 0,
+        buffs: [],
+
+        rootedUntil: 0,
+        _facingLocked: false,
       })
     }
 
-    return party || this._getDefaultParty()
+    return (party && party.length > 0) ? party : this._getDefaultParty()
   }
 
   /** 默认角色模板（当没有存档时回退使用） */
@@ -271,10 +305,21 @@ export class TowerScene {
     ]
     return templates.map(t => ({
       ...t,
+      heroType: t.id,              // ★ 精灵映射
       currentHp: t.maxHp, currentMp: t.maxMp, level: 1, exp: 0,
       isDead: false, respawnTimer: 0, x: 0, y: 0, targetX: 0, targetY: 0,
       attackTimer: 0, isAttacking: false, attackAnimTimer: 0, skillCDs: {},
-      statusEffects: [], equipment: {}, buffs: [], skills: [
+      statusEffects: [], equipment: {}, buffs: [],
+      // ★ 动画系统
+      animState: 'idle', animFrame: 0, animTimer: 0, _animStartTime: Date.now(),
+      // ★ 移动/攻击/AI
+      moveSpeed: t.spd * 8,
+      atkRange: t.role === 'mage' ? 320 : 80,
+      autoAttackEnabled: true, autoSkillTimer: 3000, autoSkillInterval: 5000,
+      facingRight: false, isCasting: false, castSkillId: null,
+      hurtFlash: 0, hurtTimer: 0, levelUpFlash: 0,
+      rootedUntil: 0, _facingLocked: false,
+      skills: [
         { id: 'basic_attack', name: '攻击', type: 'attack', power: 1.0, mpCost: 0, desc: '基础攻击' }
       ],
     }))
@@ -366,9 +411,13 @@ export class TowerScene {
     const ctx = this.ctx
     ctx.clearRect(0, 0, this.width, this.height)
 
-    if (this.phase === 'stage_select') this._renderStageSelect(ctx)
-    else if (this.phase === 'battle') this.battle.render()
-    else if (this.phase === 'result') this._renderResult(ctx)
+    try {
+      if (this.phase === 'stage_select') this._renderStageSelect(ctx)
+      else if (this.phase === 'battle') { this.battle?.render() }
+      else if (this.phase === 'result') this._renderResult(ctx)
+    } catch(e) {
+      console.error(`[TowerScene] 💥 render 崩溃! phase=${this.phase}`, e)
+    }
   }
 
   // ===== 选关界面（重设计：双列网格 + 清晰层级 + 合理间距） =====
@@ -832,7 +881,7 @@ export class TowerScene {
       ctx.textAlign = 'center'
       ctx.fillText('-- 角色状态 --', W / 2, lvlY)
 
-      this.battle.party.forEach((c, i) => {
+      (this.battle.party || []).forEach((c, i) => {
         const lx = W / 2 - (this.battle.party.length - 1) * 50 * dpr + i * 100 * dpr - 30 * dpr
         const ly2 = lvlY + 26 * dpr
         ctx.fillStyle = c.isDead ? '#484f58' : '#f0e6d3'

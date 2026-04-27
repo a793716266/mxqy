@@ -68,27 +68,51 @@ export const ASSETS = {
   BG_TOWN: 'images/map/village.jpeg',
   BG_BOSS: BATTLE_PKG + 'images/backgrounds/bg_boss.png',
   BG_TOWER_BATTLE: BATTLE_PKG + 'images/tower_battle_bg.png',
-  
+
+  // ========== 小镇地图对象资源 ==========
+  TOWN_SHOP: 'images/map/town/shop.png',
+  TOWN_WEAPON_SHOP: 'images/map/town/weapon_shop.png',
+  TOWN_POTION_SHOP: 'images/map/town/potion_shop.png',
+  TOWN_QUEST_BOARD: 'images/map/town/quest_board.png',
+  TOWN_TREE: 'images/map/town/tree.png',
+  TOWN_FOREST: 'images/map/town/forest.png',
+  TOWN_MOUNTAIN: 'images/map/town/mountain.png',
+  TOWN_ROCK: 'images/map/town/rock.png',
+  TOWN_ROAD_H: 'images/map/town/road_h.png',
+  TOWN_ROAD_T: 'images/map/town/road_t.png',
+  TOWN_ROAD_CROSS: 'images/map/town/road_cross.png',
+  TOWN_ROAD_CURVE: 'images/map/town/road_curve.png',
+  TOWN_GRASS: 'images/map/town/grass.png',
+  TOWN_GRASS2: 'images/map/town/grass2.png',
+  TOWN_GRASS3: 'images/map/town/grass3.png',
+  TOWN_GRASS_PILE: 'images/map/town/grass_pile.png',
+  TOWN_FLOWER1: 'images/map/town/flower1.png',
+  TOWN_FLOWER2: 'images/map/town/flower2.png',
+  TOWN_FLOWER3: 'images/map/town/flower3.png',
+
   // 主角
   HERO_ZHENBAO: 'images/characters/hero_zhenbao.png',
   HERO_LIXIAOBAO: 'images/characters/hero_lixiaobao.png',
   
   // 臻宝动画帧 - 统一放在 transparent/zhenbao/ 目录下管理
-  // walk: 8帧(03~10), idle: 5帧, slash: 13帧（battle分包）
+  // walk: 8帧(01~08), idle: 8帧, slash: 13帧（battle分包）
+  HERO_ZHENBAO_WALK_01: BATTLE_PKG + 'images/characters_anim/transparent/zhenbao/walk/walk_01.png',
+  HERO_ZHENBAO_WALK_02: BATTLE_PKG + 'images/characters_anim/transparent/zhenbao/walk/walk_02.png',
   HERO_ZHENBAO_WALK_03: BATTLE_PKG + 'images/characters_anim/transparent/zhenbao/walk/walk_03.png',
   HERO_ZHENBAO_WALK_04: BATTLE_PKG + 'images/characters_anim/transparent/zhenbao/walk/walk_04.png',
   HERO_ZHENBAO_WALK_05: BATTLE_PKG + 'images/characters_anim/transparent/zhenbao/walk/walk_05.png',
   HERO_ZHENBAO_WALK_06: BATTLE_PKG + 'images/characters_anim/transparent/zhenbao/walk/walk_06.png',
   HERO_ZHENBAO_WALK_07: BATTLE_PKG + 'images/characters_anim/transparent/zhenbao/walk/walk_07.png',
   HERO_ZHENBAO_WALK_08: BATTLE_PKG + 'images/characters_anim/transparent/zhenbao/walk/walk_08.png',
-  HERO_ZHENBAO_WALK_09: BATTLE_PKG + 'images/characters_anim/transparent/zhenbao/walk/walk_09.png',
-  HERO_ZHENBAO_WALK_10: BATTLE_PKG + 'images/characters_anim/transparent/zhenbao/walk/walk_10.png',
 
   HERO_ZHENBAO_IDLE_01: BATTLE_PKG + 'images/characters_anim/transparent/zhenbao/idle/idle_01.png',
   HERO_ZHENBAO_IDLE_02: BATTLE_PKG + 'images/characters_anim/transparent/zhenbao/idle/idle_02.png',
   HERO_ZHENBAO_IDLE_03: BATTLE_PKG + 'images/characters_anim/transparent/zhenbao/idle/idle_03.png',
   HERO_ZHENBAO_IDLE_04: BATTLE_PKG + 'images/characters_anim/transparent/zhenbao/idle/idle_04.png',
   HERO_ZHENBAO_IDLE_05: BATTLE_PKG + 'images/characters_anim/transparent/zhenbao/idle/idle_05.png',
+  HERO_ZHENBAO_IDLE_06: BATTLE_PKG + 'images/characters_anim/transparent/zhenbao/idle/idle_06.png',
+  HERO_ZHENBAO_IDLE_07: BATTLE_PKG + 'images/characters_anim/transparent/zhenbao/idle/idle_07.png',
+  HERO_ZHENBAO_IDLE_08: BATTLE_PKG + 'images/characters_anim/transparent/zhenbao/idle/idle_08.png',
 
   // zhenbao 斩击攻击帧（13帧）
   HERO_ZHENBAO_SLASH_01: BATTLE_PKG + 'images/characters_anim/transparent/zhenbao/slash/zhenbao_slash_01.png',
@@ -105,77 +129,82 @@ export const ASSETS = {
   HERO_ZHENBAO_SLASH_12: BATTLE_PKG + 'images/characters_anim/transparent/zhenbao/slash/zhenbao_slash_12.png',
   HERO_ZHENBAO_SLASH_13: BATTLE_PKG + 'images/characters_anim/transparent/zhenbao/slash/zhenbao_slash_13.png',
 
-  // zhenbao 普攻帧（4帧，轻攻击）
+  // zhenbao 普攻帧（8帧，轻攻击）
   HERO_ZHENBAO_ATTACK_01: BATTLE_PKG + 'images/characters_anim/transparent/zhenbao/attack/attack_01.png',
   HERO_ZHENBAO_ATTACK_02: BATTLE_PKG + 'images/characters_anim/transparent/zhenbao/attack/attack_02.png',
   HERO_ZHENBAO_ATTACK_03: BATTLE_PKG + 'images/characters_anim/transparent/zhenbao/attack/attack_03.png',
   HERO_ZHENBAO_ATTACK_04: BATTLE_PKG + 'images/characters_anim/transparent/zhenbao/attack/attack_04.png',
+  HERO_ZHENBAO_ATTACK_05: BATTLE_PKG + 'images/characters_anim/transparent/zhenbao/attack/attack_05.png',
+  HERO_ZHENBAO_ATTACK_06: BATTLE_PKG + 'images/characters_anim/transparent/zhenbao/attack/attack_06.png',
+  HERO_ZHENBAO_ATTACK_07: BATTLE_PKG + 'images/characters_anim/transparent/zhenbao/attack/attack_07.png',
+  HERO_ZHENBAO_ATTACK_08: BATTLE_PKG + 'images/characters_anim/transparent/zhenbao/attack/attack_08.png',
+
+  // zhenbao 盾击技能帧（8帧，shield_bash技能）
+  HERO_ZHENBAO_SHIELD_01: BATTLE_PKG + 'images/characters_anim/transparent/zhenbao/shield/shield_01.png',
+  HERO_ZHENBAO_SHIELD_02: BATTLE_PKG + 'images/characters_anim/transparent/zhenbao/shield/shield_02.png',
+  HERO_ZHENBAO_SHIELD_03: BATTLE_PKG + 'images/characters_anim/transparent/zhenbao/shield/shield_03.png',
+  HERO_ZHENBAO_SHIELD_04: BATTLE_PKG + 'images/characters_anim/transparent/zhenbao/shield/shield_04.png',
+  HERO_ZHENBAO_SHIELD_05: BATTLE_PKG + 'images/characters_anim/transparent/zhenbao/shield/shield_05.png',
+  HERO_ZHENBAO_SHIELD_06: BATTLE_PKG + 'images/characters_anim/transparent/zhenbao/shield/shield_06.png',
+  HERO_ZHENBAO_SHIELD_07: BATTLE_PKG + 'images/characters_anim/transparent/zhenbao/shield/shield_07.png',
+  HERO_ZHENBAO_SHIELD_08: BATTLE_PKG + 'images/characters_anim/transparent/zhenbao/shield/shield_08.png',
+
+  // zhenbao BUFF技能帧（8帧，war_cry/buff技能）
+  HERO_ZHENBAO_BUFF_01: BATTLE_PKG + 'images/characters_anim/transparent/zhenbao/buff/buff_01.png',
+  HERO_ZHENBAO_BUFF_02: BATTLE_PKG + 'images/characters_anim/transparent/zhenbao/buff/buff_02.png',
+  HERO_ZHENBAO_BUFF_03: BATTLE_PKG + 'images/characters_anim/transparent/zhenbao/buff/buff_03.png',
+  HERO_ZHENBAO_BUFF_04: BATTLE_PKG + 'images/characters_anim/transparent/zhenbao/buff/buff_04.png',
+  HERO_ZHENBAO_BUFF_05: BATTLE_PKG + 'images/characters_anim/transparent/zhenbao/buff/buff_05.png',
+  HERO_ZHENBAO_BUFF_06: BATTLE_PKG + 'images/characters_anim/transparent/zhenbao/buff/buff_06.png',
+  HERO_ZHENBAO_BUFF_07: BATTLE_PKG + 'images/characters_anim/transparent/zhenbao/buff/buff_07.png',
+  HERO_ZHENBAO_BUFF_08: BATTLE_PKG + 'images/characters_anim/transparent/zhenbao/buff/buff_08.png',
   
-  // 李小宝: 8帧walk + 2帧idle（battle分包，独立目录管理）
-  HERO_LIXIAOBAO_WALK_0: BATTLE_PKG + 'images/characters_anim/transparent/lixiaobao/walk/lixiaobao_walk_0.png',
-  HERO_LIXIAOBAO_WALK_1: BATTLE_PKG + 'images/characters_anim/transparent/lixiaobao/walk/lixiaobao_walk_1.png',
-  HERO_LIXIAOBAO_WALK_2: BATTLE_PKG + 'images/characters_anim/transparent/lixiaobao/walk/lixiaobao_walk_2.png',
-  HERO_LIXIAOBAO_WALK_3: BATTLE_PKG + 'images/characters_anim/transparent/lixiaobao/walk/lixiaobao_walk_3.png',
-  HERO_LIXIAOBAO_WALK_4: BATTLE_PKG + 'images/characters_anim/transparent/lixiaobao/walk/lixiaobao_walk_4.png',
-  HERO_LIXIAOBAO_WALK_5: BATTLE_PKG + 'images/characters_anim/transparent/lixiaobao/walk/lixiaobao_walk_5.png',
-  HERO_LIXIAOBAO_WALK_6: BATTLE_PKG + 'images/characters_anim/transparent/lixiaobao/walk/lixiaobao_walk_6.png',
-  HERO_LIXIAOBAO_WALK_7: BATTLE_PKG + 'images/characters_anim/transparent/lixiaobao/walk/lixiaobao_walk_7.png',
-  HERO_LIXIAOBAO_IDLE_0: BATTLE_PKG + 'images/characters_anim/transparent/lixiaobao/idle/lixiaobao_idle_0.png',
-  HERO_LIXIAOBAO_IDLE_1: BATTLE_PKG + 'images/characters_anim/transparent/lixiaobao/idle/lixiaobao_idle_1.png',
+  // 李小宝: walk(8帧) - 新处理素材
+  HERO_LIXIAOBAO_WALK_01: BATTLE_PKG + 'images/characters_anim/transparent/lixiaobao/walk/walk_01.png',
+  HERO_LIXIAOBAO_WALK_02: BATTLE_PKG + 'images/characters_anim/transparent/lixiaobao/walk/walk_02.png',
+  HERO_LIXIAOBAO_WALK_03: BATTLE_PKG + 'images/characters_anim/transparent/lixiaobao/walk/walk_03.png',
+  HERO_LIXIAOBAO_WALK_04: BATTLE_PKG + 'images/characters_anim/transparent/lixiaobao/walk/walk_04.png',
+  HERO_LIXIAOBAO_WALK_05: BATTLE_PKG + 'images/characters_anim/transparent/lixiaobao/walk/walk_05.png',
+  HERO_LIXIAOBAO_WALK_06: BATTLE_PKG + 'images/characters_anim/transparent/lixiaobao/walk/walk_06.png',
+  HERO_LIXIAOBAO_WALK_07: BATTLE_PKG + 'images/characters_anim/transparent/lixiaobao/walk/walk_07.png',
+  HERO_LIXIAOBAO_WALK_08: BATTLE_PKG + 'images/characters_anim/transparent/lixiaobao/walk/walk_08.png',
 
-  // 李小宝: attack(5帧)
-  HERO_LIXIAOBAO_ATTACK_01: BATTLE_PKG + 'images/characters_anim/transparent/lixiaobao/attack/attack_01.png',
-  HERO_LIXIAOBAO_ATTACK_02: BATTLE_PKG + 'images/characters_anim/transparent/lixiaobao/attack/attack_02.png',
-  HERO_LIXIAOBAO_ATTACK_03: BATTLE_PKG + 'images/characters_anim/transparent/lixiaobao/attack/attack_03.png',
-  HERO_LIXIAOBAO_ATTACK_04: BATTLE_PKG + 'images/characters_anim/transparent/lixiaobao/attack/attack_04.png',
-  HERO_LIXIAOBAO_ATTACK_05: BATTLE_PKG + 'images/characters_anim/transparent/lixiaobao/attack/attack_05.png',
+  // 李小宝: idle(8帧) - 新处理素材
+  HERO_LIXIAOBAO_IDLE_01: BATTLE_PKG + 'images/characters_anim/transparent/lixiaobao/idle/idle_01.png',
+  HERO_LIXIAOBAO_IDLE_02: BATTLE_PKG + 'images/characters_anim/transparent/lixiaobao/idle/idle_02.png',
+  HERO_LIXIAOBAO_IDLE_03: BATTLE_PKG + 'images/characters_anim/transparent/lixiaobao/idle/idle_03.png',
+  HERO_LIXIAOBAO_IDLE_04: BATTLE_PKG + 'images/characters_anim/transparent/lixiaobao/idle/idle_04.png',
+  HERO_LIXIAOBAO_IDLE_05: BATTLE_PKG + 'images/characters_anim/transparent/lixiaobao/idle/idle_05.png',
+  HERO_LIXIAOBAO_IDLE_06: BATTLE_PKG + 'images/characters_anim/transparent/lixiaobao/idle/idle_06.png',
+  HERO_LIXIAOBAO_IDLE_07: BATTLE_PKG + 'images/characters_anim/transparent/lixiaobao/idle/idle_07.png',
+  HERO_LIXIAOBAO_IDLE_08: BATTLE_PKG + 'images/characters_anim/transparent/lixiaobao/idle/idle_08.png',
 
-  // 李小宝: cast_attack(5帧) - 法杖攻击
+  // 李小宝: cast_attack(5帧) - 法杖攻击（旧素材保留）
   HERO_LIXIAOBAO_CAST_ATK_01: BATTLE_PKG + 'images/characters_anim/transparent/lixiaobao/cast_attack/cast_attack_01.png',
   HERO_LIXIAOBAO_CAST_ATK_02: BATTLE_PKG + 'images/characters_anim/transparent/lixiaobao/cast_attack/cast_attack_02.png',
   HERO_LIXIAOBAO_CAST_ATK_03: BATTLE_PKG + 'images/characters_anim/transparent/lixiaobao/cast_attack/cast_attack_03.png',
   HERO_LIXIAOBAO_CAST_ATK_04: BATTLE_PKG + 'images/characters_anim/transparent/lixiaobao/cast_attack/cast_attack_04.png',
   HERO_LIXIAOBAO_CAST_ATK_05: BATTLE_PKG + 'images/characters_anim/transparent/lixiaobao/cast_attack/cast_attack_05.png',
 
-  // 李小宝: cast_fireball(11帧)
-  HERO_LIXIAOBAO_FIREBALL_01: BATTLE_PKG + 'images/characters_anim/transparent/lixiaobao/cast_fireball/fireball_cast_01.png',
-  HERO_LIXIAOBAO_FIREBALL_02: BATTLE_PKG + 'images/characters_anim/transparent/lixiaobao/cast_fireball/fireball_cast_02.png',
-  HERO_LIXIAOBAO_FIREBALL_03: BATTLE_PKG + 'images/characters_anim/transparent/lixiaobao/cast_fireball/fireball_cast_03.png',
-  HERO_LIXIAOBAO_FIREBALL_04: BATTLE_PKG + 'images/characters_anim/transparent/lixiaobao/cast_fireball/fireball_cast_04.png',
-  HERO_LIXIAOBAO_FIREBALL_05: BATTLE_PKG + 'images/characters_anim/transparent/lixiaobao/cast_fireball/fireball_cast_05.png',
-  HERO_LIXIAOBAO_FIREBALL_06: BATTLE_PKG + 'images/characters_anim/transparent/lixiaobao/cast_fireball/fireball_cast_06.png',
-  HERO_LIXIAOBAO_FIREBALL_07: BATTLE_PKG + 'images/characters_anim/transparent/lixiaobao/cast_fireball/fireball_cast_07.png',
-  HERO_LIXIAOBAO_FIREBALL_08: BATTLE_PKG + 'images/characters_anim/transparent/lixiaobao/cast_fireball/fireball_cast_08.png',
-  HERO_LIXIAOBAO_FIREBALL_09: BATTLE_PKG + 'images/characters_anim/transparent/lixiaobao/cast_fireball/fireball_cast_09.png',
-  HERO_LIXIAOBAO_FIREBALL_10: BATTLE_PKG + 'images/characters_anim/transparent/lixiaobao/cast_fireball/fireball_cast_10.png',
-  HERO_LIXIAOBAO_FIREBALL_11: BATTLE_PKG + 'images/characters_anim/transparent/lixiaobao/cast_fireball/fireball_cast_11.png',
+  // 李小宝: cast_ice(8帧) - 新处理素材
+  HERO_LIXIAOBAO_ICE_01: BATTLE_PKG + 'images/characters_anim/transparent/lixiaobao/cast_ice/cast_ice_01.png',
+  HERO_LIXIAOBAO_ICE_02: BATTLE_PKG + 'images/characters_anim/transparent/lixiaobao/cast_ice/cast_ice_02.png',
+  HERO_LIXIAOBAO_ICE_03: BATTLE_PKG + 'images/characters_anim/transparent/lixiaobao/cast_ice/cast_ice_03.png',
+  HERO_LIXIAOBAO_ICE_04: BATTLE_PKG + 'images/characters_anim/transparent/lixiaobao/cast_ice/cast_ice_04.png',
+  HERO_LIXIAOBAO_ICE_05: BATTLE_PKG + 'images/characters_anim/transparent/lixiaobao/cast_ice/cast_ice_05.png',
+  HERO_LIXIAOBAO_ICE_06: BATTLE_PKG + 'images/characters_anim/transparent/lixiaobao/cast_ice/cast_ice_06.png',
+  HERO_LIXIAOBAO_ICE_07: BATTLE_PKG + 'images/characters_anim/transparent/lixiaobao/cast_ice/cast_ice_07.png',
+  HERO_LIXIAOBAO_ICE_08: BATTLE_PKG + 'images/characters_anim/transparent/lixiaobao/cast_ice/cast_ice_08.png',
 
-  // 李小宝: cast_ice(8帧)
-  HERO_LIXIAOBAO_ICE_01: BATTLE_PKG + 'images/characters_anim/transparent/lixiaobao/cast_ice/ice_shard_cast_01.png',
-  HERO_LIXIAOBAO_ICE_02: BATTLE_PKG + 'images/characters_anim/transparent/lixiaobao/cast_ice/ice_shard_cast_02.png',
-  HERO_LIXIAOBAO_ICE_03: BATTLE_PKG + 'images/characters_anim/transparent/lixiaobao/cast_ice/ice_shard_cast_03.png',
-  HERO_LIXIAOBAO_ICE_04: BATTLE_PKG + 'images/characters_anim/transparent/lixiaobao/cast_ice/ice_shard_cast_04.png',
-  HERO_LIXIAOBAO_ICE_05: BATTLE_PKG + 'images/characters_anim/transparent/lixiaobao/cast_ice/ice_shard_cast_05.png',
-  HERO_LIXIAOBAO_ICE_06: BATTLE_PKG + 'images/characters_anim/transparent/lixiaobao/cast_ice/ice_shard_cast_06.png',
-  HERO_LIXIAOBAO_ICE_07: BATTLE_PKG + 'images/characters_anim/transparent/lixiaobao/cast_ice/ice_shard_cast_07.png',
-  HERO_LIXIAOBAO_ICE_08: BATTLE_PKG + 'images/characters_anim/transparent/lixiaobao/cast_ice/ice_shard_cast_08.png',
-
-  // 李小宝: cast_lightning(15帧)
-  HERO_LIXIAOBAO_LIGHTNING_01: BATTLE_PKG + 'images/characters_anim/transparent/lixiaobao/cast_lightning/lightning_cast_01.png',
-  HERO_LIXIAOBAO_LIGHTNING_02: BATTLE_PKG + 'images/characters_anim/transparent/lixiaobao/cast_lightning/lightning_cast_02.png',
-  HERO_LIXIAOBAO_LIGHTNING_03: BATTLE_PKG + 'images/characters_anim/transparent/lixiaobao/cast_lightning/lightning_cast_03.png',
-  HERO_LIXIAOBAO_LIGHTNING_04: BATTLE_PKG + 'images/characters_anim/transparent/lixiaobao/cast_lightning/lightning_cast_04.png',
-  HERO_LIXIAOBAO_LIGHTNING_05: BATTLE_PKG + 'images/characters_anim/transparent/lixiaobao/cast_lightning/lightning_cast_05.png',
-  HERO_LIXIAOBAO_LIGHTNING_06: BATTLE_PKG + 'images/characters_anim/transparent/lixiaobao/cast_lightning/lightning_cast_06.png',
-  HERO_LIXIAOBAO_LIGHTNING_07: BATTLE_PKG + 'images/characters_anim/transparent/lixiaobao/cast_lightning/lightning_cast_07.png',
-  HERO_LIXIAOBAO_LIGHTNING_08: BATTLE_PKG + 'images/characters_anim/transparent/lixiaobao/cast_lightning/lightning_cast_08.png',
-  HERO_LIXIAOBAO_LIGHTNING_09: BATTLE_PKG + 'images/characters_anim/transparent/lixiaobao/cast_lightning/lightning_cast_09.png',
-  HERO_LIXIAOBAO_LIGHTNING_10: BATTLE_PKG + 'images/characters_anim/transparent/lixiaobao/cast_lightning/lightning_cast_10.png',
-  HERO_LIXIAOBAO_LIGHTNING_11: BATTLE_PKG + 'images/characters_anim/transparent/lixiaobao/cast_lightning/lightning_cast_11.png',
-  HERO_LIXIAOBAO_LIGHTNING_12: BATTLE_PKG + 'images/characters_anim/transparent/lixiaobao/cast_lightning/lightning_cast_12.png',
-  HERO_LIXIAOBAO_LIGHTNING_13: BATTLE_PKG + 'images/characters_anim/transparent/lixiaobao/cast_lightning/lightning_cast_13.png',
-  HERO_LIXIAOBAO_LIGHTNING_14: BATTLE_PKG + 'images/characters_anim/transparent/lixiaobao/cast_lightning/lightning_cast_14.png',
-  HERO_LIXIAOBAO_LIGHTNING_15: BATTLE_PKG + 'images/characters_anim/transparent/lixiaobao/cast_lightning/lightning_cast_15.png',
+  // 李小宝: cast_lightning(8帧) - 新处理素材
+  HERO_LIXIAOBAO_LIGHTNING_01: BATTLE_PKG + 'images/characters_anim/transparent/lixiaobao/cast_lightning/cast_lightning_01.png',
+  HERO_LIXIAOBAO_LIGHTNING_02: BATTLE_PKG + 'images/characters_anim/transparent/lixiaobao/cast_lightning/cast_lightning_02.png',
+  HERO_LIXIAOBAO_LIGHTNING_03: BATTLE_PKG + 'images/characters_anim/transparent/lixiaobao/cast_lightning/cast_lightning_03.png',
+  HERO_LIXIAOBAO_LIGHTNING_04: BATTLE_PKG + 'images/characters_anim/transparent/lixiaobao/cast_lightning/cast_lightning_04.png',
+  HERO_LIXIAOBAO_LIGHTNING_05: BATTLE_PKG + 'images/characters_anim/transparent/lixiaobao/cast_lightning/cast_lightning_05.png',
+  HERO_LIXIAOBAO_LIGHTNING_06: BATTLE_PKG + 'images/characters_anim/transparent/lixiaobao/cast_lightning/cast_lightning_06.png',
+  HERO_LIXIAOBAO_LIGHTNING_07: BATTLE_PKG + 'images/characters_anim/transparent/lixiaobao/cast_lightning/cast_lightning_07.png',
+  HERO_LIXIAOBAO_LIGHTNING_08: BATTLE_PKG + 'images/characters_anim/transparent/lixiaobao/cast_lightning/cast_lightning_08.png',
 
   // 李小宝: hit_fireball(24帧) - 火球命中特效
   LXB_HIT_FIREBALL_01: BATTLE_PKG + 'images/characters_anim/transparent/lixiaobao/hit_fireball/fireball_hit_01.png',
@@ -302,9 +331,6 @@ export const ASSETS = {
   EFFECT_FIREBALL_CAST_06: BATTLE_PKG + 'images/characters_anim/transparent/lixiaobao/cast_fireball/fireball_cast_06.png',
   EFFECT_FIREBALL_CAST_07: BATTLE_PKG + 'images/characters_anim/transparent/lixiaobao/cast_fireball/fireball_cast_07.png',
   EFFECT_FIREBALL_CAST_08: BATTLE_PKG + 'images/characters_anim/transparent/lixiaobao/cast_fireball/fireball_cast_08.png',
-  EFFECT_FIREBALL_CAST_09: BATTLE_PKG + 'images/characters_anim/transparent/lixiaobao/cast_fireball/fireball_cast_09.png',
-  EFFECT_FIREBALL_CAST_10: BATTLE_PKG + 'images/characters_anim/transparent/lixiaobao/cast_fireball/fireball_cast_10.png',
-  EFFECT_FIREBALL_CAST_11: BATTLE_PKG + 'images/characters_anim/transparent/lixiaobao/cast_fireball/fireball_cast_11.png',
 
   // 李小宝技能特效 - 火球术击中（24帧）
   EFFECT_FIREBALL_HIT_01: BATTLE_PKG + 'images/characters_anim/transparent/lixiaobao/hit_fireball/fireball_hit_01.png',
@@ -331,16 +357,6 @@ export const ASSETS = {
   EFFECT_FIREBALL_HIT_22: BATTLE_PKG + 'images/characters_anim/transparent/lixiaobao/hit_fireball/fireball_hit_22.png',
   EFFECT_FIREBALL_HIT_23: BATTLE_PKG + 'images/characters_anim/transparent/lixiaobao/hit_fireball/fireball_hit_23.png',
   EFFECT_FIREBALL_HIT_24: BATTLE_PKG + 'images/characters_anim/transparent/lixiaobao/hit_fireball/fireball_hit_24.png',
-
-  // 李小宝技能特效 - 冰晶术施法（8帧）
-  EFFECT_ICE_SHARD_CAST_01: BATTLE_PKG + 'images/characters_anim/transparent/lixiaobao/cast_ice/ice_shard_cast_01.png',
-  EFFECT_ICE_SHARD_CAST_02: BATTLE_PKG + 'images/characters_anim/transparent/lixiaobao/cast_ice/ice_shard_cast_02.png',
-  EFFECT_ICE_SHARD_CAST_03: BATTLE_PKG + 'images/characters_anim/transparent/lixiaobao/cast_ice/ice_shard_cast_03.png',
-  EFFECT_ICE_SHARD_CAST_04: BATTLE_PKG + 'images/characters_anim/transparent/lixiaobao/cast_ice/ice_shard_cast_04.png',
-  EFFECT_ICE_SHARD_CAST_05: BATTLE_PKG + 'images/characters_anim/transparent/lixiaobao/cast_ice/ice_shard_cast_05.png',
-  EFFECT_ICE_SHARD_CAST_06: BATTLE_PKG + 'images/characters_anim/transparent/lixiaobao/cast_ice/ice_shard_cast_06.png',
-  EFFECT_ICE_SHARD_CAST_07: BATTLE_PKG + 'images/characters_anim/transparent/lixiaobao/cast_ice/ice_shard_cast_07.png',
-  EFFECT_ICE_SHARD_CAST_08: BATTLE_PKG + 'images/characters_anim/transparent/lixiaobao/cast_ice/ice_shard_cast_08.png',
 
   // 李小宝技能特效 - 冰晶术击中（11帧）
   EFFECT_ICE_SHARD_HIT_01: BATTLE_PKG + 'images/characters_anim/transparent/lixiaobao/hit_ice/ice_shard_hit_01.png',
@@ -447,23 +463,6 @@ export const ASSETS = {
   SHADOW_MOUSE_WALK_10: BATTLE_PKG + 'images/characters_anim/transparent/shadow_mouse/walk/walk_10.png',
   SHADOW_MOUSE_WALK_11: BATTLE_PKG + 'images/characters_anim/transparent/shadow_mouse/walk/walk_11.png',
   SHADOW_MOUSE_WALK_12: BATTLE_PKG + 'images/characters_anim/transparent/shadow_mouse/walk/walk_12.png',
-
-  // 李小宝技能特效 - 雷击术释放（15帧）
-  EFFECT_LIGHTNING_CAST_01: BATTLE_PKG + 'images/characters_anim/transparent/lixiaobao/cast_lightning/lightning_cast_01.png',
-  EFFECT_LIGHTNING_CAST_02: BATTLE_PKG + 'images/characters_anim/transparent/lixiaobao/cast_lightning/lightning_cast_02.png',
-  EFFECT_LIGHTNING_CAST_03: BATTLE_PKG + 'images/characters_anim/transparent/lixiaobao/cast_lightning/lightning_cast_03.png',
-  EFFECT_LIGHTNING_CAST_04: BATTLE_PKG + 'images/characters_anim/transparent/lixiaobao/cast_lightning/lightning_cast_04.png',
-  EFFECT_LIGHTNING_CAST_05: BATTLE_PKG + 'images/characters_anim/transparent/lixiaobao/cast_lightning/lightning_cast_05.png',
-  EFFECT_LIGHTNING_CAST_06: BATTLE_PKG + 'images/characters_anim/transparent/lixiaobao/cast_lightning/lightning_cast_06.png',
-  EFFECT_LIGHTNING_CAST_07: BATTLE_PKG + 'images/characters_anim/transparent/lixiaobao/cast_lightning/lightning_cast_07.png',
-  EFFECT_LIGHTNING_CAST_08: BATTLE_PKG + 'images/characters_anim/transparent/lixiaobao/cast_lightning/lightning_cast_08.png',
-  EFFECT_LIGHTNING_CAST_09: BATTLE_PKG + 'images/characters_anim/transparent/lixiaobao/cast_lightning/lightning_cast_09.png',
-  EFFECT_LIGHTNING_CAST_10: BATTLE_PKG + 'images/characters_anim/transparent/lixiaobao/cast_lightning/lightning_cast_10.png',
-  EFFECT_LIGHTNING_CAST_11: BATTLE_PKG + 'images/characters_anim/transparent/lixiaobao/cast_lightning/lightning_cast_11.png',
-  EFFECT_LIGHTNING_CAST_12: BATTLE_PKG + 'images/characters_anim/transparent/lixiaobao/cast_lightning/lightning_cast_12.png',
-  EFFECT_LIGHTNING_CAST_13: BATTLE_PKG + 'images/characters_anim/transparent/lixiaobao/cast_lightning/lightning_cast_13.png',
-  EFFECT_LIGHTNING_CAST_14: BATTLE_PKG + 'images/characters_anim/transparent/lixiaobao/cast_lightning/lightning_cast_14.png',
-  EFFECT_LIGHTNING_CAST_15: BATTLE_PKG + 'images/characters_anim/transparent/lixiaobao/cast_lightning/lightning_cast_15.png',
 
   // 李小宝技能特效 - 雷击术击中（12帧）
   EFFECT_LIGHTNING_HIT_01: BATTLE_PKG + 'images/characters_anim/transparent/lixiaobao/hit_lightning/lightning_hit_01.png',

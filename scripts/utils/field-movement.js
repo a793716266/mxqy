@@ -55,6 +55,10 @@ export class FieldMovement {
     // 主角（将在init()中初始化）
     this.mainCharacter = null
     
+    // 碰撞检测系统
+    this.obstacles = []           // 障碍物数组（逻辑像素坐标）
+    this.playerRadius = 25 * this.dpr  // 玩家碰撞半径
+    
     // 触摸事件回调
     this._onTouchMove = null
     this._onTouchEnd = null
@@ -134,6 +138,67 @@ export class FieldMovement {
     this.game.input.onMove(this._onTouchMove)
     this.game.input.onEnd(this._onTouchEnd)
   }
+
+  /**
+   * 设置障碍物数据（碰撞检测）
+   * @param {Array} obstacles - 障碍物数组，每个元素格式：{ type: 'rect', x, y, width, height, name }
+   */
+  setObstacles(obstacles) {
+    // 转换为物理像素坐标（乘以dpr）
+    this.obstacles = (obstacles || []).map(obs => {
+      if (obs.type === 'rect') {
+        return {
+          type: 'rect',
+          x: obs.x * this.dpr,
+          y: obs.y * this.dpr,
+          width: obs.width * this.dpr,
+          height: obs.height * this.dpr,
+          name: obs.name || '障碍'
+        }
+      } else if (obs.type === 'circle') {
+        return {
+          type: 'circle',
+          x: obs.x * this.dpr,
+          y: obs.y * this.dpr,
+          radius: obs.radius * this.dpr,
+          name: obs.name || '圆形障碍'
+        }
+      }
+      return null
+    }).filter(Boolean)
+    
+    console.log(`[FieldMovement] 设置了 ${this.obstacles.length} 个碰撞障碍物`)
+  }
+
+  /**
+   * 检查玩家当前位置是否与障碍物碰撞
+   */
+  _checkCollision(x, y) {
+    if (!this.obstacles || this.obstacles.length === 0) return false
+    
+    for (const obs of this.obstacles) {
+      if (obs.type === 'rect') {
+        // 矩形碰撞：找矩形上离玩家最近的点，计算距离
+        const closestX = Math.max(obs.x, Math.min(x, obs.x + obs.width))
+        const closestY = Math.max(obs.y, Math.min(y, obs.y + obs.height))
+        const distX = x - closestX
+        const distY = y - closestY
+        const distance = Math.sqrt(distX * distX + distY * distY)
+        
+        if (distance < this.playerRadius) {
+          return true
+        }
+      } else if (obs.type === 'circle') {
+        // 圆形碰撞
+        const dist = Math.sqrt((x - obs.x) ** 2 + (y - obs.y) ** 2)
+        if (dist < this.playerRadius + obs.radius) {
+          return true
+        }
+      }
+    }
+    
+    return false
+  }
   
   /**
    * 销毁移动系统
@@ -181,13 +246,34 @@ export class FieldMovement {
         const moveX = (dx / dist) * this.playerSpeed * dt
         const moveY = (dy / dist) * this.playerSpeed * dt
 
+        // 保存旧位置
+        const oldX = this.playerX
+        const oldY = this.playerY
+
         this.playerX += moveX
         this.playerY += moveY
 
-        // 边界限制（地图边界）
-        const margin = 50 * this.dpr
-        this.playerX = Math.max(margin, Math.min(this.mapWidth - margin, this.playerX))
-        this.playerY = Math.max(margin, Math.min(this.mapHeight - margin, this.playerY))
+        // 边界限制（严格限制在地图内，用玩家半径作为边距）
+        const boundaryMargin = this.playerRadius
+        this.playerX = Math.max(boundaryMargin, Math.min(this.mapWidth - boundaryMargin, this.playerX))
+        this.playerY = Math.max(boundaryMargin, Math.min(this.mapHeight - boundaryMargin, this.playerY))
+
+        // 碰撞检测 - 碰撞则回退（支持分轴滑动：尝试单轴移动）
+        if (this._checkCollision(this.playerX, this.playerY)) {
+          // 先尝试只走X轴
+          this.playerX = oldX + moveX
+          this.playerY = oldY
+          if (this._checkCollision(this.playerX, this.playerY)) {
+            // X也不行，尝试只走Y轴
+            this.playerX = oldX
+            this.playerY = oldY + moveY
+            if (this._checkCollision(this.playerX, this.playerY)) {
+              // 都不行，完全回退
+              this.playerX = oldX
+              this.playerY = oldY
+            }
+          }
+        }
 
         // 更新相机位置（跟随玩家）
         this._updateCamera()
@@ -225,7 +311,10 @@ export class FieldMovement {
     if (this._effectiveMoving) {
       // 走路动画
       if (heroId === 'zhenbao') {
-        frameDuration = 0.100 // 臻宝8帧（walk_03~10），100ms/帧 ≈ 0.8秒循环
+        frameDuration = 0.100 // 臻宝8帧（walk_01~08），100ms/帧 ≈ 0.8秒循环
+        totalFrames = 8
+      } else if (heroId === 'lixiaobao') {
+        frameDuration = 0.100 // 李小宝8帧（walk_01~08），100ms/帧 ≈ 0.8秒循环
         totalFrames = 8
       } else if (heroId === 'slime_cat') {
         frameDuration = 0.083 // 史莱姆猫12帧walk，83ms/帧 ≈ 1秒循环
@@ -245,6 +334,9 @@ export class FieldMovement {
       if (heroId === 'zhenbao') {
         frameDuration = 0.200 // 臻宝5帧（减帧版），200ms/帧 = 1秒循环
         totalFrames = 5
+      } else if (heroId === 'lixiaobao') {
+        frameDuration = 0.125 // 李小宝8帧（idle_01~08），125ms/帧 = 1秒循环
+        totalFrames = 8
       } else if (heroId === 'slime_cat') {
         frameDuration = 0.143 // 史莱姆猫7帧idle，143ms/帧 ≈ 1秒循环
         totalFrames = 7
@@ -347,6 +439,11 @@ export class FieldMovement {
           follower.y += moveY
           follower.facingLeft = targetPos.facingLeft
           follower.isMoving = true
+
+          // 队友边界限制（防止跑出地图）
+          const fMargin = this.playerRadius * 0.8
+          follower.x = Math.max(fMargin, Math.min(this.mapWidth - fMargin, follower.x))
+          follower.y = Math.max(fMargin, Math.min(this.mapHeight - fMargin, follower.y))
         } else {
           // 距离足够近，且主角已停止移动时，才让队友也停止
           // 使用主角的_effectiveMoving判断，避免循环依赖
@@ -387,6 +484,9 @@ export class FieldMovement {
         if (heroId === 'zhenbao') {
           frameDuration = 0.100 // 臻宝8帧
           totalFrames = 8
+        } else if (heroId === 'lixiaobao') {
+          frameDuration = 0.100 // 李小宝8帧
+          totalFrames = 8
         } else if (heroId === 'slime_cat') {
           frameDuration = 0.083 // 史莱姆猫12帧walk
           totalFrames = 12
@@ -405,6 +505,9 @@ export class FieldMovement {
         if (heroId === 'zhenbao') {
           frameDuration = 0.200
           totalFrames = 5
+        } else if (heroId === 'lixiaobao') {
+          frameDuration = 0.125 // 李小宝8帧idle
+          totalFrames = 8
         } else if (heroId === 'slime_cat') {
           frameDuration = 0.143 // 史莱姆猫7帧idle
           totalFrames = 7
@@ -473,10 +576,15 @@ export class FieldMovement {
     let frameKey = null
     
     if (heroId === 'zhenbao') {
-      // 臻宝使用新版动画（walk帧从walk_03开始，需+3偏移）
+      // 臻宝使用新版动画（walk帧从walk_01开始，+1偏移）
       const frameType = isMoving ? 'WALK' : 'IDLE'
-      const offset = isMoving ? 3 : 1
+      const offset = isMoving ? 1 : 1
       frameKey = `HERO_ZHENBAO_${frameType}_${(animFrame + offset).toString().padStart(2, '0')}`
+    } else if (heroId === 'lixiaobao') {
+      // 李小宝使用透明背景动画（walk/idle帧从01开始，+1偏移）
+      const frameType = isMoving ? 'WALK' : 'IDLE'
+      const offset = isMoving ? 1 : 1
+      frameKey = `HERO_LIXIAOBAO_${frameType}_${(animFrame + offset).toString().padStart(2, '0')}`
     } else if (heroId === 'slime_cat') {
       // 史莱姆猫使用专属动画资源（transparent/slime_cat目录）
       const frameType = isMoving ? 'WALK' : 'IDLE'
@@ -518,33 +626,75 @@ export class FieldMovement {
     }
     
     if (img) {
-      const targetHeight = 130 * this.dpr
+      const targetHeight = 80 * this.dpr
       const scale = targetHeight / img.height
       const targetWidth = img.width * scale
       
+      // 绘制脚下阴影（椭圆）
+      const shadowY = screenPos.y + targetHeight / 2 - 8 * this.dpr
+      const shadowRx = targetWidth * 0.4
+      const shadowRy = targetHeight * 0.12
+      ctx.save()
+      ctx.beginPath()
+      ctx.ellipse(screenPos.x, shadowY, shadowRx, shadowRy, 0, 0, Math.PI * 2)
+      const shadowGrad = ctx.createRadialGradient(
+        screenPos.x, shadowY, 0,
+        screenPos.x, shadowY, shadowRx
+      )
+      shadowGrad.addColorStop(0, 'rgba(0,0,0,0.35)')
+      shadowGrad.addColorStop(1, 'rgba(0,0,0,0)')
+      ctx.fillStyle = shadowGrad
+      ctx.fill()
+      ctx.restore()
+      
       ctx.save()
       
-      if (facingLeft) {
-        // 向左时不翻转（图片本身朝左）
-        ctx.drawImage(
-          img,
-          screenPos.x - targetWidth / 2,
-          screenPos.y - targetHeight / 2,
-          targetWidth,
-          targetHeight
-        )
+      // 根据角色素材默认朝向决定是否翻转：
+      // 臻宝: 默认朝右 → 向左(facingLeft)时翻转
+      // 李小宝/其他: 默认朝左 → 向右(!facingLeft)时翻转
+      if (heroId === 'zhenbao') {
+        if (facingLeft) {
+          ctx.translate(screenPos.x, screenPos.y)
+          ctx.scale(-1, 1)
+          ctx.translate(-screenPos.x, -screenPos.y)
+          ctx.drawImage(
+            img,
+            screenPos.x - targetWidth / 2,
+            screenPos.y - targetHeight / 2,
+            targetWidth,
+            targetHeight
+          )
+        } else {
+          ctx.drawImage(
+            img,
+            screenPos.x - targetWidth / 2,
+            screenPos.y - targetHeight / 2,
+            targetWidth,
+            targetHeight
+          )
+        }
       } else {
-        // 向右时翻转
-        ctx.translate(screenPos.x, screenPos.y)
-        ctx.scale(-1, 1)
-        ctx.translate(-screenPos.x, -screenPos.y)
-        ctx.drawImage(
-          img,
-          screenPos.x - targetWidth / 2,
-          screenPos.y - targetHeight / 2,
-          targetWidth,
-          targetHeight
-        )
+        // 李小宝及其他角色：默认朝左
+        if (!facingLeft) {
+          ctx.translate(screenPos.x, screenPos.y)
+          ctx.scale(-1, 1)
+          ctx.translate(-screenPos.x, -screenPos.y)
+          ctx.drawImage(
+            img,
+            screenPos.x - targetWidth / 2,
+            screenPos.y - targetHeight / 2,
+            targetWidth,
+            targetHeight
+          )
+        } else {
+          ctx.drawImage(
+            img,
+            screenPos.x - targetWidth / 2,
+            screenPos.y - targetHeight / 2,
+            targetWidth,
+            targetHeight
+          )
+        }
       }
       
       ctx.restore()

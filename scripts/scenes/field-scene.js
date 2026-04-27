@@ -4,7 +4,7 @@
 
 import { ENEMIES_CH1, ENEMIES_CH2, getEnemyByLevel } from '../data/enemies.js'
 import { HEROES } from '../data/heroes.js'
-import { getMapCollisions } from '../data/map_collisions.js'
+import { getMapCollisions, getMapCollisionsSync } from '../data/map_collisions.js'
 import { charStateManager } from '../data/character-state.js'
 import { CharacterInfoPanel } from '../ui/character-info-panel.js'
 import { equipmentManager } from '../managers/equipment-manager.js'
@@ -121,8 +121,8 @@ export class FieldScene {
     // 地图元素（宝箱、资源点）
     this.mapObjects = this._generateMapObjects()
     
-    // 地图碰撞数据
-    this.obstacles = getMapCollisions(this.areaId)
+    // 地图碰撞数据（使用同步版本，避免返回Promise）
+    this.obstacles = getMapCollisionsSync(this.areaId)
     console.log(`[Field] 加载了 ${this.obstacles.length} 个障碍物`)
   }
   
@@ -634,7 +634,10 @@ export class FieldScene {
     if (this._effectiveMoving) {
       // 走路动画
       if (heroId === 'zhenbao') {
-        frameDuration = 0.100 // 臻宝8帧（walk_03~10），100ms/帧 ≈ 0.8秒循环
+        frameDuration = 0.100 // 臻宝8帧（walk_01~08），100ms/帧 ≈ 0.8秒循环
+        totalFrames = 8
+      } else if (heroId === 'lixiaobao') {
+        frameDuration = 0.100 // 李小宝8帧（walk_01~08），100ms/帧 ≈ 0.8秒循环
         totalFrames = 8
       } else if (heroId === 'slime_cat') {
         frameDuration = 0.083 // 史莱姆猫12帧walk，83ms/帧 ≈ 1秒循环
@@ -654,6 +657,9 @@ export class FieldScene {
       if (heroId === 'zhenbao') {
         frameDuration = 0.200 // 臻宝5帧（减帧版），200ms/帧 = 1秒循环
         totalFrames = 5
+      } else if (heroId === 'lixiaobao') {
+        frameDuration = 0.125 // 李小宝8帧idle（idle_01~08），125ms/帧 = 1秒循环
+        totalFrames = 8
       } else if (heroId === 'slime_cat') {
         frameDuration = 0.143 // 史莱姆猫7帧idle，143ms/帧 ≈ 1秒循环
         totalFrames = 7
@@ -773,6 +779,7 @@ export class FieldScene {
   }
 
   _checkAndRespawnMonsters() {
+    if (!this.mapMonsters || !Array.isArray(this.mapMonsters)) return
     const aliveCount = this.mapMonsters.filter(m => m.alive).length
     const minMonsters = 10 // 最少保留10只怪物
 
@@ -867,6 +874,7 @@ export class FieldScene {
    * 更新队友跟随
    */
   _updateFollowers(dt) {
+    if (!this.followers || !Array.isArray(this.followers)) return
     if (this.followers.length === 0) return
 
     // 记录主角位置历史（每3帧记录一次，避免太密集）
@@ -953,6 +961,9 @@ export class FieldScene {
         if (heroId === 'zhenbao') {
           frameDuration = 0.100
           totalFrames = 8
+        } else if (heroId === 'lixiaobao') {
+          frameDuration = 0.100 // 李小宝8帧walk
+          totalFrames = 8
         } else if (heroId === 'slime_cat') {
           frameDuration = 0.083  // 史莱姆猫12帧walk
           totalFrames = 12
@@ -971,6 +982,9 @@ export class FieldScene {
         if (heroId === 'zhenbao') {
           frameDuration = 0.200
           totalFrames = 5
+        } else if (heroId === 'lixiaobao') {
+          frameDuration = 0.125 // 李小宝8帧idle
+          totalFrames = 8
         } else if (heroId === 'slime_cat') {
           frameDuration = 0.143  // 史莱姆猫7帧idle
           totalFrames = 7
@@ -1358,6 +1372,7 @@ export class FieldScene {
    * 渲染跟随队友
    */
   _renderFollowers(ctx) {
+    if (!this.followers || !Array.isArray(this.followers)) return
     const targetHeight = 130 * this.dpr
 
     for (const follower of this.followers) {
@@ -1371,12 +1386,21 @@ export class FieldScene {
       const isCat = heroId.toLowerCase().includes('cat') || heroId === 'mao' // 猫咪角色
 
       if (heroId === 'zhenbao') {
-        // 臻宝使用新版动画（walk帧从walk_03开始，需+3偏移）
+        // 臻宝使用新版动画（walk帧从walk_01开始，+1偏移）
         if (follower._effectiveMoving) {
-          const walkKey = `HERO_ZHENBAO_WALK_${(follower.animFrame + 3).toString().padStart(2, '0')}`
+          const walkKey = `HERO_ZHENBAO_WALK_${(follower.animFrame + 1).toString().padStart(2, '0')}`
           frameImg = this.game.assets.get(walkKey)
         } else {
           const idleKey = `HERO_ZHENBAO_IDLE_${(follower.animFrame + 1).toString().padStart(2, '0')}`
+          frameImg = this.game.assets.get(idleKey)
+        }
+      } else if (heroId === 'lixiaobao') {
+        // 李小宝使用透明背景动画（帧从01开始，+1偏移，默认朝左）
+        if (follower._effectiveMoving) {
+          const walkKey = `HERO_LIXIAOBAO_WALK_${(follower.animFrame + 1).toString().padStart(2, '0')}`
+          frameImg = this.game.assets.get(walkKey)
+        } else {
+          const idleKey = `HERO_LIXIAOBAO_IDLE_${(follower.animFrame + 1).toString().padStart(2, '0')}`
           frameImg = this.game.assets.get(idleKey)
         }
       } else if (heroId === 'slime_cat') {
@@ -1427,25 +1451,49 @@ export class FieldScene {
 
         ctx.save()
 
-        // 根据朝向决定是否翻转
-        if (!follower.facingLeft) {
-          ctx.translate(screenX, screenY)
-          ctx.scale(-1, 1)
-          ctx.drawImage(
-            frameImg,
-            -renderWidth / 2,
-            -renderHeight / 2,
-            renderWidth,
-            renderHeight
-          )
+        // 根据角色素材默认朝向决定是否翻转（与主角一致）
+        if (heroId === 'zhenbao') {
+          // 臻宝：默认朝右 → facingLeft 时翻转
+          if (follower.facingLeft) {
+            ctx.translate(screenX, screenY)
+            ctx.scale(-1, 1)
+            ctx.drawImage(
+              frameImg,
+              -renderWidth / 2,
+              -renderHeight / 2,
+              renderWidth,
+              renderHeight
+            )
+          } else {
+            ctx.drawImage(
+              frameImg,
+              screenX - renderWidth / 2,
+              screenY - renderHeight / 2,
+              renderWidth,
+              renderHeight
+            )
+          }
         } else {
-          ctx.drawImage(
-            frameImg,
-            screenX - renderWidth / 2,
-            screenY - renderHeight / 2,
-            renderWidth,
-            renderHeight
-          )
+          // 李小宝及其他：默认朝左 → !facingLeft 时翻转
+          if (!follower.facingLeft) {
+            ctx.translate(screenX, screenY)
+            ctx.scale(-1, 1)
+            ctx.drawImage(
+              frameImg,
+              -renderWidth / 2,
+              -renderHeight / 2,
+              renderWidth,
+              renderHeight
+            )
+          } else {
+            ctx.drawImage(
+              frameImg,
+              screenX - renderWidth / 2,
+              screenY - renderHeight / 2,
+              renderWidth,
+              renderHeight
+            )
+          }
         }
 
         ctx.restore()
@@ -1472,12 +1520,21 @@ export class FieldScene {
     const isCat = heroId.toLowerCase().includes('cat') || heroId === 'mao' // 猫咪角色
 
     if (heroId === 'zhenbao') {
-      // 臻宝使用新版动画（walk帧从walk_03开始，需+3偏移）
+      // 臻宝使用新版动画（walk帧从walk_01开始，+1偏移）
       if (this._effectiveMoving) {
-        const walkKey = `HERO_ZHENBAO_WALK_${(this.animFrame + 3).toString().padStart(2, '0')}`
+        const walkKey = `HERO_ZHENBAO_WALK_${(this.animFrame + 1).toString().padStart(2, '0')}`
         frameImg = this.game.assets.get(walkKey)
       } else {
         const idleKey = `HERO_ZHENBAO_IDLE_${(this.animFrame + 1).toString().padStart(2, '0')}`
+        frameImg = this.game.assets.get(idleKey)
+      }
+    } else if (heroId === 'lixiaobao') {
+      // 李小宝使用透明背景动画（帧从01开始，+1偏移，默认朝左）
+      if (this._effectiveMoving) {
+        const walkKey = `HERO_LIXIAOBAO_WALK_${(this.animFrame + 1).toString().padStart(2, '0')}`
+        frameImg = this.game.assets.get(walkKey)
+      } else {
+        const idleKey = `HERO_LIXIAOBAO_IDLE_${(this.animFrame + 1).toString().padStart(2, '0')}`
         frameImg = this.game.assets.get(idleKey)
       }
     } else if (heroId === 'slime_cat') {
@@ -1527,27 +1584,50 @@ export class FieldScene {
       // 保存当前状态
       ctx.save()
 
-      // 根据朝向决定是否翻转（角色图片本身朝左，所以向右时才翻转）
-      if (!this.facingLeft) {
-        // 向右时翻转图片（把朝左的图片翻成朝右）
-        ctx.translate(screenX, screenY)
-        ctx.scale(-1, 1)
-        ctx.drawImage(
-          frameImg,
-          -renderWidth / 2,
-          -renderHeight / 2,
-          renderWidth,
-          renderHeight
-        )
+      // 根据角色素材默认朝向决定是否翻转
+      // 臻宝: 默认朝右 → 向左(facingLeft)时翻转
+      // 李小宝及其他: 默认朝左 → 向右(!facingLeft)时翻转
+      if (heroId === 'zhenbao') {
+        if (this.facingLeft) {
+          ctx.translate(screenX, screenY)
+          ctx.scale(-1, 1)
+          ctx.drawImage(
+            frameImg,
+            -renderWidth / 2,
+            -renderHeight / 2,
+            renderWidth,
+            renderHeight
+          )
+        } else {
+          ctx.drawImage(
+            frameImg,
+            screenX - renderWidth / 2,
+            screenY - renderHeight / 2,
+            renderWidth,
+            renderHeight
+          )
+        }
       } else {
-        // 向左时不翻转（图片本身朝左）
-        ctx.drawImage(
-          frameImg,
-          screenX - renderWidth / 2,
-          screenY - renderHeight / 2,
-          renderWidth,
-          renderHeight
-        )
+        // 李小宝及其他角色：默认朝左
+        if (!this.facingLeft) {
+          ctx.translate(screenX, screenY)
+          ctx.scale(-1, 1)
+          ctx.drawImage(
+            frameImg,
+            -renderWidth / 2,
+            -renderHeight / 2,
+            renderWidth,
+            renderHeight
+          )
+        } else {
+          ctx.drawImage(
+            frameImg,
+            screenX - renderWidth / 2,
+            screenY - renderHeight / 2,
+            renderWidth,
+            renderHeight
+          )
+        }
       }
 
       // 恢复状态
@@ -1887,6 +1967,7 @@ export class FieldScene {
   }
   
   _renderMinimap(ctx) {
+    if (!this.mapMonsters || !this.mapObjects) return
     const mapSize = 80 * this.dpr
     const mapX = this.width - mapSize - 15 * this.dpr
     const mapY = 85 * this.dpr

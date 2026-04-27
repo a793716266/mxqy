@@ -223,7 +223,11 @@ export class Game {
     }
 
     // 渲染
-    this._render()
+    try {
+      this._render()
+    } catch(e) {
+      console.error(`[Game] 💥 _render 崩溃! scene=${this.currentScene?.constructor?.name}`, e)
+    }
 
     requestAnimationFrame(() => this._loop())
   }
