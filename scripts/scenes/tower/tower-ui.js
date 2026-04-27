@@ -883,7 +883,10 @@ function renderOneCharacter(ctx, c, battle) {
 
   // 攻击动画位移
   if (c.attackAnimTimer > 0 && c.animState === 'attack') { const progress = c.attackAnimTimer / 350; ctx.translate(16 * progress, -4 * Math.sin((1 - progress) * Math.PI)); const s = 1 + (1 - progress) * 0.15; ctx.scale(s, s) }
+  // ★ 施法动画位移（包含 cast_attack/cast_ice/cast_lightning/cast_fireball 等所有 cast_ 前缀状态）
   else if (c.castSkillId && c.attackAnimTimer > 0) { const progress = c.attackAnimTimer / 600; ctx.translate(0, -6 * Math.sin(progress * Math.PI * 3)); ctx.scale(1 + Math.sin(progress * Math.PI * 2) * 0.08, 1 + Math.sin(progress * Math.PI * 2) * 0.08) }
+  // ★ 法师自动攻击位移（cast_ 前缀但无 castSkillId 的普攻场景）
+  else if (c.attackAnimTimer > 0 && c.animState && c.animState.startsWith('cast_')) { const progress = c.attackAnimTimer / 500; ctx.translate(8 * (c.facingRight ? -1 : 1) * (1 - progress), -4 * Math.sin(progress * Math.PI)); ctx.scale(1 + (1 - progress) * 0.06, 1 + (1 - progress) * 0.06) }
 
   if (c.hurtFlash > 0) { ctx.shadowBlur = 22; ctx.shadowColor = '#ffffff' }
   if (c.levelUpFlash > 0) { ctx.shadowBlur = 15 + c.levelUpFlash * 20; ctx.shadowColor = '#ffd700' }
@@ -1268,9 +1271,17 @@ function getCharFrameImage(char, battle) {
 function getMonsterFrameImage(monster, battle) {
   const MONSTER_SPRITES = require('./tower-config').MONSTER_SPRITES
   const spr = MONSTER_SPRITES[monster.type] || MONSTER_SPRITES.slime
-  // ★ 帧直接在 spr[state] 下（idle/attack/walk/skill），不是 spr.frames[state]
-  const state = monster.isDead ? (spr.death ? 'death' : 'idle')
-    : (monster.attackAnimTimer > 0 ? (spr.attack ? 'attack' : 'idle') : 'idle')
+  // ★ 优先使用 monster.animState（之前只看 attackAnimTimer，导致 walk/skill 状态无帧）
+  let state
+  if (monster.isDead) {
+    state = spr.death ? 'death' : 'idle'
+  } else if (monster.animState && spr[monster.animState]) {
+    state = monster.animState
+  } else if (monster.attackAnimTimer > 0 && spr.attack) {
+    state = 'attack'
+  } else {
+    state = 'idle'
+  }
   // 根据怪物当前动画状态选择帧数组，fallback 链：当前状态 → idle → walk → 第一个可用数组
   const frames = spr[state] || spr.idle || spr.walk || Object.values(spr).find(v => Array.isArray(v)) || []
   if (!frames || frames.length === 0) return null
@@ -1429,7 +1440,9 @@ function onSkillBarTap(battle, btn) {
   const mpCost = sk.mpCost || 0; if ((char.currentMp || 0) < mpCost) return
   char.currentMp -= mpCost
   console.log(`[Tower] 🎮 手动释放技能: ${char.name} -> ${sk.name}`)
-  castSkill(battle, char, btn.skillIdx)
+  // ★ 调用统一 castSkill（已移至 tower-combat.js）
+  const Combat = require('./tower-combat.js')
+  Combat.castSkill(battle, char, btn.skillIdx)
 }
 
 function onTacticButtonTap(battle, btnId) {
@@ -1453,120 +1466,6 @@ function onInventorySlotTap(battle, slot) {
   battle._sellTargetIndex = slot.idx
   battle._hoveredItem = { item, x: slot.x + slot.size / 2, y: slot.y - 8, source: 'inventory' }
   battle._tooltipTimer = setTimeout(() => { if (battle._hoveredItem?.item === item) battle._hoveredItem = null }, 2000)
-}
-
-/** 施放技能（完整版 - 含魔法攻击/投射物/特效） */
-function castSkill(battle, char, skillIdx) {
-  const sk = char.skills[skillIdx]; if (!sk) return
-  console.log(`[Tower] 施放技能: ${sk.name} (id=${sk.id}, type=${sk.type})`)
-
-  // ★ 技能动画状态映射
-  const SKILL_ANIM_MAP = {
-    shield_bash: 'shield',
-    war_cry: 'buff',
-    berserk: 'buff',
-  }
-  const skillAnim = SKILL_ANIM_MAP[sk.id]
-  if (skillAnim) {
-    char.animState = skillAnim
-    char._animStartTime = Date.now()
-    setTimeout(() => {
-      if (char && char.animState === skillAnim) {
-        char.animState = 'idle'
-        char._animStartTime = Date.now()
-      }
-    }, 800)
-  }
-
-  // Buff 类技能：委托给 combat 模块
-  if (sk.type === 'buff') {
-    const Combat = require('./tower-combat.js')
-    Combat.applyBuffSkill(battle, char, sk)
-  }
-
-  // ★ 魔法攻击类技能：发射投射物 + 伤害 + 特效
-  if (sk.type === 'magic' || sk.type === 'attack') {
-    const Combat = require('./tower-combat.js')
-    const Effects = require('./tower-effects.js')
-    const HIT_EFFECTS = require('./tower-config').HIT_EFFECTS
-    const SKILL_VISUAL = require('./tower-config').SKILL_VISUAL
-
-    // 找最近的敌人作为目标
-    const Characters = require('./tower-characters.js')
-    // 直接查找最近怪物
-    let bestTarget = null, bestDist = Infinity
-    for (const m of (battle.monsters || [])) {
-      if (m.isDead) continue
-      const d = (m.x - char.x) ** 2 + (m.y - char.y) ** 2
-      if (d < bestDist) { bestDist = d; bestTarget = m }
-    }
-
-    if (bestTarget) {
-      const effectiveMatk = Combat.getEffectiveMatk(char)
-      const baseDmg = Combat.calcDamage(effectiveMatk * (sk.power || 1.3), bestTarget.def || 0, true)
-      let finalDmg = Math.floor(baseDmg * (0.85 + Math.random() * 0.3))
-
-      // 暴击
-      const critChance = char.critChance || 0
-      let isCrit = false
-      if (critChance > 0 && Math.random() < critChance) {
-        finalDmg = Math.floor(finalDmg * 1.5); isCrit = true
-      }
-
-      // 根据技能子类型决定视觉效果
-      const hitType = sk.effect || sk.id || 'ice'  // fireball/ice/lightning
-      const vis = SKILL_VISUAL.get(hitType)
-
-      // ★ 发射投射物
-      battle.projectiles.push({
-        x: char.x + (char.facingRight ? 30 : -30), y: char.y - 40,
-        targetX: bestTarget.x, targetY: bestTarget.y,
-        target: bestTarget, dmg: finalDmg,
-        speed: 300 + Math.random() * 80,
-        color: hitType === 'fireball' ? '#ff6622' : hitType === 'lightning' ? '#ffee44' : '#66ddff',
-        size: vis ? vis.beamBaseSize / 20 : 10,
-        isSkill: true, trail: [],
-        skillName: sk.name,
-        onHit: (proj) => {
-          Combat.applyDamage(battle, proj.target, 'char', proj.dmg)
-          if (char.lifesteal && char.lifesteal > 0) Combat.applyLifesteal(battle, char, proj.dmg)
-          // 命中特效
-          const hitFrames = HIT_EFFECTS[hitType]
-          if (hitFrames && hitFrames.frames) {
-            const effectSize = vis ? vis.hitFrameSize : 120
-            battle.effects.push({
-              type: 'skill_effect_frames',
-              x: proj.target.x, y: proj.target.y - 20,
-              frames: hitFrames.frames, frameRate: hitFrames.frameRate || 60,
-              size: effectSize, animFrame: 0, animTimer: 0,
-              life: hitFrames.frames.length * (hitFrames.frameRate || 60) / 1000,
-            })
-          }
-          // 命中粒子
-          Effects.spawnParticles(battle, proj.target.x, proj.target.y, {
-            count: 8, color: proj.color, speed: 120, size: 4, decay: 3
-          })
-          // 伤害飘字
-          Effects.addFloatingText(battle, proj.target.x, proj.target.y - 30,
-            isCrit ? `-${finalDmg}💥` : `-${finalDmg}`, isCrit ? '#ffff00' : '#ff6b6b', 1.5)
-          // 屏幕微震
-          Effects.applyScreenShake(battle, 2, 2)
-        }
-      })
-
-      // 施法闪光
-      Effects.spawnParticles(battle, char.x, char.y - 50, {
-        count: 6, color: '#ffffff', speed: 80, size: 3, decay: 4
-      })
-    }
-  }
-
-  // 通用施法状态（视觉反馈 + CD）
-  char.isCasting = true
-  char.castSkillId = sk.id
-  char.attackAnimTimer = 500
-  if (!char.skillCDs) char.skillCDs = {}
-  char.skillCDs[sk.id] = sk.cd || 5000
 }
 
 /** 应用祝福卡效果（调用 battle 实例的 _applyCardEffect 真正生效） */
@@ -1615,7 +1514,6 @@ module.exports = {
   onInventorySlotTap,
   onCharEquipSlotTap,
 
-  // 内部使用（供 tower-battle 调度器调用）
-  castSkill,
+  // 内部使用
   applyCardEffect,
 }

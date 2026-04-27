@@ -405,6 +405,122 @@ function updateBuffs(battle, dtMs) {
   }
 }
 
+// ========== 技能施放（统一入口）==========
+
+/** 施放技能（完整版 - 含魔法攻击/投射物/特效）
+ * ★ 统一入口：AI自动施法 + 玩家手动施法都走这个函数
+ */
+function castSkill(battle, char, skillIdx) {
+  const sk = char.skills[skillIdx]; if (!sk) return
+  console.log(`[Tower] 施放技能: ${sk.name} (id=${sk.id}, type=${sk.type})`)
+
+  // ★ 技能动画状态映射
+  const SKILL_ANIM_MAP = {
+    shield_bash: 'shield',
+    war_cry: 'buff',
+    berserk: 'buff',
+  }
+  // ★ 魔法技能动画映射（根据技能 effect/id 匹配施法动画）
+  const MAGIC_ANIM_MAP = {
+    fireball: 'cast_attack',
+    ice: 'cast_ice',
+    ice_shard: 'cast_ice',
+    lightning: 'cast_lightning',
+    meteor: 'cast_attack',
+  }
+  const skillAnim = SKILL_ANIM_MAP[sk.id]
+  const magicAnim = (sk.type === 'magic' || sk.type === 'attack') ? (MAGIC_ANIM_MAP[sk.effect || sk.id] || 'cast_attack') : null
+  const effectiveAnim = skillAnim || magicAnim
+
+  if (effectiveAnim) {
+    char.animState = effectiveAnim
+    char._animStartTime = Date.now()
+    // 动画结束后自动恢复idle（约800ms后）
+    setTimeout(() => {
+      if (char && char.animState === effectiveAnim) {
+        char.animState = 'idle'
+        char._animStartTime = Date.now()
+      }
+    }, 800)
+  }
+
+  // ★ 施法状态（暂停AI + 视觉反馈 + CD）
+  char.isCasting = true
+  char.castSkillId = sk.id
+  char.attackAnimTimer = 600
+
+  if (sk.type === 'buff') {
+    applyBuffSkill(battle, char, sk)
+  }
+
+  // ★ 魔法攻击类技能：发射投射物 + 伤害 + 特效
+  if (sk.type === 'magic' || sk.type === 'attack') {
+    const HIT_EFFECTS = require('./tower-config').HIT_EFFECTS
+    const SKILL_VISUAL = require('./tower-config').SKILL_VISUAL
+
+    let bestTarget = null, bestDist = Infinity
+    for (const m of (battle.monsters || [])) {
+      if (m.isDead) continue
+      const d = (m.x - char.x) ** 2 + (m.y - char.y) ** 2
+      if (d < bestDist) { bestDist = d; bestTarget = m }
+    }
+
+    if (bestTarget) {
+      const effectiveMatk = getEffectiveMatk(char)
+      const baseDmg = calcDamage(effectiveMatk * (sk.power || 1.3), bestTarget.def || 0, true)
+      let finalDmg = Math.floor(baseDmg * (0.85 + Math.random() * 0.3))
+      const critChance = char.critChance || 0
+      let isCrit = false
+      if (critChance > 0 && Math.random() < critChance) {
+        finalDmg = Math.floor(finalDmg * 1.5); isCrit = true
+      }
+
+      const hitType = sk.effect || sk.id || 'ice'
+      const vis = SKILL_VISUAL.get(hitType)
+
+      battle.projectiles.push({
+        x: char.x + (char.facingRight ? 30 : -30), y: char.y - 40,
+        targetX: bestTarget.x, targetY: bestTarget.y,
+        target: bestTarget, dmg: finalDmg,
+        speed: 300 + Math.random() * 80,
+        color: hitType === 'fireball' ? '#ff6622' : hitType === 'lightning' ? '#ffee44' : '#66ddff',
+        size: vis ? vis.beamBaseSize / 20 : 10,
+        isSkill: true, trail: [],
+        skillName: sk.name,
+        onHit: (proj) => {
+          applyDamage(battle, proj.target, 'char', proj.dmg)
+          if (char.lifesteal && char.lifesteal > 0) applyLifesteal(battle, char, proj.dmg)
+          const hitFrames = HIT_EFFECTS[hitType]
+          if (hitFrames && hitFrames.frames) {
+            const effectSize = vis ? vis.hitFrameSize : 120
+            battle.effects.push({
+              type: 'skill_effect_frames',
+              x: proj.target.x, y: proj.target.y - 20,
+              frames: hitFrames.frames, frameRate: hitFrames.frameRate || 60,
+              size: effectSize, animFrame: 0, animTimer: 0,
+              life: hitFrames.frames.length * (hitFrames.frameRate || 60) / 1000,
+            })
+          }
+          Effects.spawnParticles(battle, proj.target.x, proj.target.y, {
+            count: 8, color: proj.color, speed: 120, size: 4, decay: 3
+          })
+          Effects.addFloatingText(battle, proj.target.x, proj.target.y - 30,
+            isCrit ? `-${finalDmg}💥` : `-${finalDmg}`, isCrit ? '#ffff00' : '#ff6b6b', 1.5)
+          applyScreenShake(battle, 2, 2)
+        }
+      })
+
+      Effects.spawnParticles(battle, char.x, char.y - 50, {
+        count: 6, color: '#ffffff', speed: 80, size: 3, decay: 4
+      })
+    }
+  }
+
+  // CD
+  if (!char.skillCDs) char.skillCDs = {}
+  char.skillCDs[sk.id] = sk.cd || 5000
+}
+
 // ========== 怪物模板 ==========
 
 function getMonsterTemplate(type) {
@@ -436,25 +552,6 @@ function getMonsterTemplate(type) {
   return templates[type] || templates.slime
 }
 
-/**
- * 冰晶投射物沿途碰撞检测
- * 冰晶是穿透型投射物，飞行过程中对路径上的怪物造成伤害
- */
-function updateIceShardCollision(battle, p) {
-  if (!p || p.hit) return
-  const iceRadius = 14
-  for (const m of (battle.monsters || [])) {
-    if (m.isDead) continue
-    // 避免重复命中（用 _iceHitSet 记录）
-    if (!p._iceHitSet) p._iceHitSet = new Set()
-    if (p._iceHitSet.has(m)) continue
-    const dx = m.x - p.x, dy = m.y - p.y
-    if (dx * dx + dy * dy < (iceRadius + (m.radius || 16)) ** 2) {
-      applyDamage(battle, m, 'char', p.damage || 10)
-      p._iceHitSet.add(m)
-    }
-  }
-}
 
 module.exports = {
   calcDamage,
@@ -467,5 +564,5 @@ module.exports = {
   applyBuffSkill,
   updateBuffs,
   getMonsterTemplate,
-  updateIceShardCollision,
+  castSkill,
 }

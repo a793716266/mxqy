@@ -239,8 +239,8 @@ function runMageKitingAI(battle, c, enemy, dt, isMoving) {
     c.attackTimer = c.atkInterval || 900
     c.isAttacking = true
     c.attackAnimTimer = 500
-    // ★ 法师应显示施法动画帧
-    c.animState = 'cast_fireball'
+    // ★ 法师应显示施法动画帧（cast_attack 是 lixiaobao 在 HERO_SPRITES 中的实际 key）
+    c.animState = 'cast_attack'
     c.animFrame = 0
     c._animStartTime = Date.now()
   }
@@ -346,7 +346,9 @@ function tryAutoCastSkill(battle, c) {
   if ((c.currentMp || 0) < (skill.mpCost || 0)) return
   c.currentMp -= skill.mpCost
   console.log(`[Tower] 🎮 AI自动释放: ${c.name} -> ${skill.name}`)
-  castSkill(battle, c, c.skills.indexOf(skill))
+  // ★ 调用统一 castSkill（已移至 tower-combat.js）
+  const Combat = require('./tower-combat.js')
+  Combat.castSkill(battle, c, c.skills.indexOf(skill))
 }
 
 // ========== 角色渲染 ==========
@@ -406,112 +408,7 @@ function roundRect(ctx,x,y,w,h,r){
   ctx.quadraticCurveTo(x,y+h,x,y+r); ctx.closePath()
 }
 
-/** 施放技能（完整版） - 从 combat 或 UI 调用 */
-function castSkill(battle, char, skillIdx) {
-  const sk = char.skills[skillIdx]; if (!sk) return
-  console.log(`[Tower] 施放技能: ${sk.name} (id=${sk.id}, type=${sk.type})`)
 
-  // ★ 技能动画状态映射
-  const SKILL_ANIM_MAP = {
-    shield_bash: 'shield',
-    war_cry: 'buff',
-    berserk: 'buff',
-  }
-  const skillAnim = SKILL_ANIM_MAP[sk.id]
-  if (skillAnim) {
-    char.animState = skillAnim
-    char._animStartTime = Date.now()
-    // 动画结束后自动恢复idle（约800ms后）
-    setTimeout(() => {
-      if (char && char.animState === skillAnim) {
-        char.animState = 'idle'
-        char._animStartTime = Date.now()
-      }
-    }, 800)
-  }
-
-  // ★ 所有技能都应暂停AI并播放动画（统一处理）
-  char.isCasting = true
-  char.castSkillId = sk.id
-  char.attackAnimTimer = 600
-
-  if (sk.type === 'buff') {
-    const Combat = require('./tower-combat.js')
-    Combat.applyBuffSkill(battle, char, sk)
-  }
-
-  // ★ 魔法攻击类技能：发射投射物 + 伤害 + 特效
-  if (sk.type === 'magic' || sk.type === 'attack') {
-    const Combat = require('./tower-combat.js')
-    const Effects = require('./tower-effects.js')
-    const HIT_EFFECTS = require('./tower-config').HIT_EFFECTS
-    const SKILL_VISUAL = require('./tower-config').SKILL_VISUAL
-
-    let bestTarget = null, bestDist = Infinity
-    for (const m of (battle.monsters || [])) {
-      if (m.isDead) continue
-      const d = (m.x - char.x) ** 2 + (m.y - char.y) ** 2
-      if (d < bestDist) { bestDist = d; bestTarget = m }
-    }
-
-    if (bestTarget) {
-      const effectiveMatk = Combat.getEffectiveMatk(char)
-      const baseDmg = Combat.calcDamage(effectiveMatk * (sk.power || 1.3), bestTarget.def || 0, true)
-      let finalDmg = Math.floor(baseDmg * (0.85 + Math.random() * 0.3))
-      const critChance = char.critChance || 0
-      let isCrit = false
-      if (critChance > 0 && Math.random() < critChance) {
-        finalDmg = Math.floor(finalDmg * 1.5); isCrit = true
-      }
-
-      const hitType = sk.effect || sk.id || 'ice'
-      const vis = SKILL_VISUAL.get(hitType)
-
-      battle.projectiles.push({
-        x: char.x + (char.facingRight ? 30 : -30), y: char.y - 40,
-        targetX: bestTarget.x, targetY: bestTarget.y,
-        target: bestTarget, dmg: finalDmg,
-        speed: 300 + Math.random() * 80,
-        color: hitType === 'fireball' ? '#ff6622' : hitType === 'lightning' ? '#ffee44' : '#66ddff',
-        size: vis ? vis.beamBaseSize / 20 : 10,
-        isSkill: true, trail: [],
-        skillName: sk.name,
-        onHit: (proj) => {
-          Combat.applyDamage(battle, proj.target, 'char', proj.dmg)
-          if (char.lifesteal && char.lifesteal > 0) Combat.applyLifesteal(battle, char, proj.dmg)
-          const hitFrames = HIT_EFFECTS[hitType]
-          if (hitFrames && hitFrames.frames) {
-            const effectSize = vis ? vis.hitFrameSize : 120
-            battle.effects.push({
-              type: 'skill_effect_frames',
-              x: proj.target.x, y: proj.target.y - 20,
-              frames: hitFrames.frames, frameRate: hitFrames.frameRate || 60,
-              size: effectSize, animFrame: 0, animTimer: 0,
-              life: hitFrames.frames.length * (hitFrames.frameRate || 60) / 1000,
-            })
-          }
-          Effects.spawnParticles(battle, proj.target.x, proj.target.y, {
-            count: 8, color: proj.color, speed: 120, size: 4, decay: 3
-          })
-          Effects.addFloatingText(battle, proj.target.x, proj.target.y - 30,
-            isCrit ? `-${finalDmg}💥` : `-${finalDmg}`, isCrit ? '#ffff00' : '#ff6b6b', 1.5)
-          Effects.applyScreenShake(battle, 2, 2)
-        }
-      })
-
-      Effects.spawnParticles(battle, char.x, char.y - 50, {
-        count: 6, color: '#ffffff', speed: 80, size: 3, decay: 4
-      })
-    }
-  }
-
-  // 通用施法状态
-  char.isCasting = true
-  char.castSkillId = sk.id
-  char.attackAnimTimer = 500
-  if (!char.skillCDs) char.skillCDs = {}
-  char.skillCDs[sk.id] = sk.cd || 5000
-}
 
 module.exports = {
   updateCharacters,

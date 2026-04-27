@@ -389,6 +389,11 @@ function monsterRangedAttack(battle, monster, target, isCrystal) {
   })
 
   monster.atkTimer = monster.atkInterval
+  // ★ 远程攻击动画状态（之前遗漏，导致远程怪物无攻击动画）
+  monster.isAttacking = true
+  monster.attackAnimTimer = 400
+  monster.animState = 'attack'
+  monster.animFrame = 0
 }
 
 function monsterMeleeAttack(battle, monster, target, isCrystal) {
