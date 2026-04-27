@@ -296,7 +296,7 @@ function renderDroppedItems(battle, ctx) {
     if (item.blink && !item.collected) { ctx.globalAlpha=0.25+Math.sin(Date.now()/50)*0.5 }
 
     const color=QUALITY_COLORS[item.quality]
-    const pulse=Math.sin(Date.now/(item.pulseSpeed*100))*0.3+1
+    const pulse=Math.sin(Date.now()/(item.pulseSpeed*100))*0.3+1
     const glowR=(26+item.glowIntensity*pulse*1.3)
 
     if(item.quality!=='common'){

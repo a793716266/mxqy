@@ -10,11 +10,11 @@
 const { DROP_LIFETIME: DROP_LIFETIME_CFG } = require('./tower-config.js')
 
 const QUALITY_COLORS = {
-  common: '#9ca3af',
-  uncommon: '#3b82f6',
-  rare: '#a855f7',
-  epic: '#ec4899',
-  legendary: '#f59e0b'
+  legendary: '#ff8c00',
+  epic: '#a335ee',
+  rare: '#0070dd',
+  uncommon: '#1eff00',
+  common: '#9d9d9d'
 }
 
 const QUALITY_NAMES = {
