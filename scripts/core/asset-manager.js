@@ -56,11 +56,6 @@ const BATTLE_PKG = 'subpackages/battle/'
 
 // 资源路径定义
 export const ASSETS = {
-  // 野外探索地图
-  FIELD_GRASSLAND: 'images/map/grassland.png',
-  FIELD_FOREST: 'images/map/grassland.png', // 暂时使用草地地图
-  FIELD_CAVE: 'images/map/grassland.png', // 暂时使用草地地图
-  
   // 战斗背景（battle分包）
   BG_GRASSLAND: BATTLE_PKG + 'images/backgrounds/bg_grassland.png',
   BG_FOREST: BATTLE_PKG + 'images/backgrounds/bg_forest.png',

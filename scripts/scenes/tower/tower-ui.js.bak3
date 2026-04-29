@@ -629,12 +629,12 @@ function renderCharSwitchBar(ctx, panelX, panelY, panelW, charBarH, battle) {
   battle._charAvatarBtns = [];
   battle._backpackBtn = null;
 
-  var btnH = (charBarH - 8) * dpr;
+  var btnH = charBarH - 8;
   var btnW = btnH;
-  var gap = 8 * dpr;
+  var gap = 8;
   var totalW = charData.length * btnW + (charData.length - 1) * gap;
   var startX = panelX + (panelW - totalW) / 2;
-  var btnY = panelY + 4 * dpr;
+  var btnY = panelY + 4;
 
   charData.forEach(function(char, idx) {
     var bx = startX + idx * (btnW + gap);
@@ -670,13 +670,13 @@ function renderCharSwitchBar(ctx, panelX, panelY, panelW, charBarH, battle) {
     battle._charAvatarBtns.push({ x: bx, y: btnY, w: btnW, h: btnH, index: idx });
   });
 
-  var bpBtnW = 80 * dpr;
-  var bpBtnH = (charBarH - 8) * dpr;
-  var bpBtnX = panelX + panelW - bpBtnW - 12 * dpr;
+  var bpBtnW = 80;
+  var bpBtnH = charBarH - 8;
+  var bpBtnX = panelX + panelW - bpBtnW - 12;
   var bpBtnY = btnY;
 
   ctx.fillStyle = 'rgba(50, 50, 80, 0.9)';
-  roundRect(ctx, bpBtnX, bpBtnY, bpBtnW, bpBtnH, 8 * dpr);
+  roundRect(ctx, bpBtnX, bpBtnY, bpBtnW, bpBtnH, 8);
   ctx.fill();
   ctx.strokeStyle = '#888';
   ctx.lineWidth = 1.5;
@@ -695,6 +695,7 @@ function renderCharSwitchBar(ctx, panelX, panelY, panelW, charBarH, battle) {
 // renderInventoryPanel: popup inventory (char card + 4x4 grid)
 // ----------------------------------------------------------------
 function renderInventoryPanel(ctx, battle) {
+  var S = ctx.canvas ? ctx.canvas.width : (typeof W !== 'undefined' ? W : 375);
   var H = ctx.canvas ? ctx.canvas.height : (typeof gameHeight !== 'undefined' ? gameHeight : 667);
   var invData = { items: (battle.inventory || []) };
   const dpr = battle.dpr || 1;
@@ -703,8 +704,7 @@ function renderInventoryPanel(ctx, battle) {
   var invItems = invData.items || [];
   var char = charData[selectedIdx] || {};
 
-  var S = battle.width || 375;
-  var margin = 20 * dpr;
+  var margin = 20;
   var pw = S - margin * 2;
   var colCount = 4;
   var cellSize = 52 * dpr;
@@ -720,7 +720,7 @@ function renderInventoryPanel(ctx, battle) {
   var panelY = charCardY - 20;
 
   ctx.fillStyle = 'rgba(15, 15, 30, 0.95)';
-  roundRect(ctx, panelX, panelY, pw, panelH, 16 * dpr);
+  roundRect(ctx, panelX, panelY, pw, panelH, 16);
   ctx.fill();
   ctx.strokeStyle = 'rgba(255, 215, 0, 0.4)';
   ctx.lineWidth = 1.5;
@@ -733,18 +733,17 @@ function renderInventoryPanel(ctx, battle) {
   var ccH = charCardH;
 
   ctx.fillStyle = 'rgba(40, 40, 60, 0.8)';
-  roundRect(ctx, ccX, ccY, ccW, ccH, 10 * dpr);
+  roundRect(ctx, ccX, ccY, ccW, ccH, 10);
   ctx.fill();
   ctx.strokeStyle = 'rgba(255, 215, 0, 0.5)';
   ctx.lineWidth = 1;
   ctx.stroke();
 
   var avaR = 32 * dpr;
-  var avaX = ccX + avaR + 12 * dpr;
+  var avaX = ccX + avaR + 12;
   var avaY = ccY + ccH / 2;
   ctx.beginPath();
   ctx.arc(avaX, avaY, avaR, 0, Math.PI * 2);
-  ctx.lineWidth = 2 * dpr;
   var avaGrad = ctx.createRadialGradient(avaX, avaY, 0, avaX, avaY, avaR);
   avaGrad.addColorStop(0, '#FFD700');
   avaGrad.addColorStop(1, '#FF8C00');
@@ -754,29 +753,28 @@ function renderInventoryPanel(ctx, battle) {
   ctx.lineWidth = 2;
   ctx.stroke();
   ctx.fillStyle = '#fff';
-  ctx.font = 'bold ' + Math.floor(avaR * 0.8) + 'px sans-serif';
+  ctx.font = 'bold ' + avaR + 'px sans-serif';
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
   ctx.fillText(char.name ? char.name[0] : '' + (selectedIdx + 1), avaX, avaY);
 
   var infoX = avaX + avaR + 14;
   ctx.fillStyle = '#FFD700';
-  ctx.font = 'bold ' + Math.floor(15 * dpr) + 'px sans-serif';
+  ctx.font = 'bold 15px sans-serif';
   ctx.textAlign = 'left';
   ctx.textBaseline = 'top';
   ctx.fillText(char.name || ('Char' + (selectedIdx + 1)), infoX, ccY + 12);
   ctx.fillStyle = '#aaa';
-  ctx.font = Math.floor(12 * dpr) + 'px sans-serif';
+  ctx.font = '12px sans-serif';
   ctx.fillText('Lv.' + (char.level || 1) + '  ' + (char.job || 'Warrior'), infoX, ccY + 34);
 
   var hpBarW = ccW - (infoX - ccX) - 12;
-  var hpBarH = 8 * dpr;
+  var hpBarH = 8;
   var hpBarX = infoX;
   var hpBarY = ccY + ccH - 24;
   var hpPct = char.hp !== undefined ? Math.max(0, Math.min(1, char.hp / (char.maxHp || 100))) : 1;
   ctx.fillStyle = 'rgba(0,0,0,0.5)';
-  roundRect(ctx, hpBarX, hpBarY, hpBarW, hpBarH, 4 * dpr);
-  roundRect(ctx, hpBarX, hpBarY, hpBarW * hpPct, hpBarH, 4 * dpr);
+  roundRect(ctx, hpBarX, hpBarY, hpBarW, hpBarH, 4);
   ctx.fill();
   ctx.fillStyle = hpPct > 0.5 ? '#4CAF50' : hpPct > 0.25 ? '#FF9800' : '#F44336';
   roundRect(ctx, hpBarX, hpBarY, hpBarW * hpPct, hpBarH, 4);
@@ -795,7 +793,7 @@ function renderInventoryPanel(ctx, battle) {
     var item = invItems[i];
 
     ctx.fillStyle = 'rgba(60, 60, 80, 0.8)';
-    roundRect(ctx, sx, sy, cellSize, cellSize, 6 * dpr);
+    roundRect(ctx, sx, sy, cellSize, cellSize, 6);
     ctx.fill();
     ctx.strokeStyle = item ? '#666' : 'rgba(100,100,100,0.3)';
     ctx.lineWidth = 1;
@@ -820,15 +818,15 @@ function renderInventoryPanel(ctx, battle) {
   }
 
   // close btn
-  var closeW = 60 * dpr;
-  var closeH = 28 * dpr;
+  var closeW = 60;
+  var closeH = 28;
   var closeX = panelX + pw - closeW - 8;
   var closeY = panelY + 10;
   ctx.fillStyle = 'rgba(200, 50, 50, 0.8)';
-  roundRect(ctx, closeX, closeY, closeW, closeH, 6 * dpr);
+  roundRect(ctx, closeX, closeY, closeW, closeH, 6);
   ctx.fill();
   ctx.fillStyle = '#fff';
-  ctx.font = Math.floor(12 * dpr) + 'px sans-serif';
+  ctx.font = '12px sans-serif';
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
   ctx.fillText('Close', closeX + closeW / 2, closeY + closeH / 2);

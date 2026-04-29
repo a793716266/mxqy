@@ -99,7 +99,7 @@ function updateFloatingTexts(battle, dt) {
 }
 
 /** 渲染所有浮动文字 */
-function renderFloatingTexts(battle, ctx) {
+function renderFloatingTexts(ctx, battle) {
   const dpr = battle.dpr
   for (const ft of (battle.floatingTexts || [])) {
     ctx.save()
@@ -211,7 +211,7 @@ function updateParticles(battle, dt) {
   }
 }
 
-function renderParticles(battle, ctx) {
+function renderParticles(ctx, battle) {
   for (const p of (battle.particles || [])) {
     ctx.save()
     ctx.fillStyle = p.color

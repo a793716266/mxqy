@@ -4,7 +4,8 @@
 
 import { ENEMIES_CH1, ENEMIES_CH2, getEnemyByLevel } from '../data/enemies.js'
 import { HEROES } from '../data/heroes.js'
-import { getMapCollisions, getMapCollisionsSync } from '../data/map_collisions.js'
+import { getMapCollisionsSync } from '../data/map_collisions.js'
+import { isPointInObstacle as _isPointInGrasslandObstacle, generateGrasslandCollisions as _genGrassCollisions, GRASSLAND_MAP_CONFIG, GRASSLAND_MAP_OBJECTS, GLAND_OBJ_TYPE } from '../data/grassland-map-data.js'
 import { charStateManager } from '../data/character-state.js'
 import { CharacterInfoPanel } from '../ui/character-info-panel.js'
 import { equipmentManager } from '../managers/equipment-manager.js'
@@ -24,9 +25,9 @@ export class FieldScene {
     console.log(`[Field] 区域ID: ${this.areaId} (来源: ${data?.area ? 'area' : data?.nodeId ? 'nodeId' : '默认'})`)
     this.areaInfo = this._getAreaInfo()
     
-    // 地图尺寸（大地图）
-    this.mapWidth = 2000 * this.dpr // 地图宽度
-    this.mapHeight = 1500 * this.dpr // 地图高度
+    // 地图尺寸（大地图 - 扩大一倍）
+    this.mapWidth = 4000 * this.dpr // 地图宽度
+    this.mapHeight = 3000 * this.dpr // 地图高度
     
     // 相机位置（相对于地图）
     this.cameraX = 0
@@ -121,8 +122,12 @@ export class FieldScene {
     // 地图元素（宝箱、资源点）
     this.mapObjects = this._generateMapObjects()
     
-    // 地图碰撞数据（使用同步版本，避免返回Promise）
-    this.obstacles = getMapCollisionsSync(this.areaId)
+    // 地图碰撞数据（grassland 直接同步生成，其他走 map_collisions）
+    if (this.areaId === 'grassland') {
+      this.obstacles = _genGrassCollisions()
+    } else {
+      this.obstacles = getMapCollisionsSync(this.areaId)
+    }
     console.log(`[Field] 加载了 ${this.obstacles.length} 个障碍物`)
   }
   
@@ -130,18 +135,18 @@ export class FieldScene {
     const areas = {
       grassland: {
         name: '阳光草原',
-        fieldBg: 'FIELD_GRASSLAND', // 野外探索地图
+        fieldBg: null, // 程序化渲染（grassland-map-data.js）
         battleBg: 'BG_GRASSLAND', // 战斗背景
         enemies: ['wild_cat', 'slime_cat', 'shadow_mouse'],
         bossEnemy: 'lost_healer_cat',  // 添加Boss
         enemyData: ENEMIES_CH1,  // 敌人数据源
-        color: '#7bed9f',
+        color: '#5daE4a',
         minEnemies: 1,  // 最少敌人数量
         maxEnemies: 2   // 最多敌人数量
       },
       magic_tower: {
         name: '魔法塔',
-        fieldBg: 'FIELD_GRASSLAND', // 暂用草原背景，后期替换
+        fieldBg: null, // 程序化渲染
         battleBg: 'BG_GRASSLAND',
         enemies: ['magic_sprite', 'stone_golem', 'ghost_cat'],
         bossEnemy: 'crystal_mage',
@@ -153,7 +158,7 @@ export class FieldScene {
       },
       forest: {
         name: '迷雾森林',
-        fieldBg: 'FIELD_FOREST',
+        fieldBg: null, // 后续可替换为森林专用图片
         battleBg: 'BG_FOREST',
         enemies: ['slime_cat', 'shadow_mouse', 'wild_cat'],
         bossEnemy: 'stray_leader',
@@ -164,7 +169,7 @@ export class FieldScene {
       },
       cave: {
         name: '暗影洞穴',
-        fieldBg: 'FIELD_CAVE',
+        fieldBg: null, // 后续可替换为洞穴专用图片
         battleBg: 'BG_CAVE',
         enemies: ['shadow_mouse', 'slime_cat', 'wild_cat'],
         bossEnemy: 'dark_cat_king',
@@ -262,21 +267,27 @@ export class FieldScene {
     const maxMonsters = 20
     const margin = 150 * this.dpr // 边缘留空
     const minDistance = 120 * this.dpr // 怪物之间的最小距离
+    
+    // 获取碰撞数据用于避障（逻辑像素坐标）
+    let collisions = null
+    if (this.areaId === 'grassland') {
+      collisions = _genGrassCollisions()
+    }
 
     // 先生成Boss（如果该区域有Boss且未被击败）
     if (this.areaInfo.bossEnemy) {
       const bossId = this.areaInfo.bossEnemy
-      const bossData = (this.areaInfo.enemyData || ENEMIES_CH1)[bossId]  // 使用对应章节的敌人数据
+      const bossData = (this.areaInfo.enemyData || ENEMIES_CH1)[bossId]
       
       // 检查Boss是否已被击败
       const bossFlag = `${this.areaId}_${bossId}_defeated`
       if (!this.game.data.hasFlag(bossFlag) && bossData) {
-        // Boss位置：地图右上角区域
-        const bossX = this.mapWidth * 0.75
-        const bossY = this.mapHeight * 0.25
+        // Boss位置：地图右上角远处（85%, 8%）
+        const bossX = this.mapWidth * 0.85
+        const bossY = this.mapHeight * 0.08
         
         monsters.push({
-          id: `${this.areaId}_boss_${bossId}`,  // 包含区域ID前缀
+          id: `${this.areaId}_boss_${bossId}`,
           enemyId: bossId,
           x: bossX,
           y: bossY,
@@ -284,12 +295,10 @@ export class FieldScene {
           isBoss: true,
           isElite: false,
           alive: true,
-          // Boss特殊动画
           bobOffset: 0,
           bobSpeed: 1.5,
-          animTimer: 0, // 动画计时器
-          animFrame: 0, // 动画帧索引
-          // Boss不巡逻，只在原地小范围移动
+          animTimer: 0,
+          animFrame: 0,
           homeX: bossX,
           homeY: bossY,
           patrolRadius: 20 * this.dpr,
@@ -330,6 +339,15 @@ export class FieldScene {
         )
         if (distToPlayer < 200 * this.dpr) {
           validPosition = false
+        }
+
+        // ⭐ 新增：检查是否与障碍物重叠（坐标转回逻辑像素）
+        if (validPosition && collisions && collisions.length > 0) {
+          const lx = x / this.dpr
+          const ly = y / this.dpr
+          if (_isPointInGrasslandObstacle(lx, ly, 60, collisions)) {
+            validPosition = false
+          }
         }
 
         attempts++
@@ -791,6 +809,12 @@ export class FieldScene {
   _respawnMonsters(count) {
     const margin = 150 * this.dpr
     const minDistance = 120 * this.dpr
+    
+    // 获取碰撞数据
+    let collisions = null
+    if (this.areaId === 'grassland') {
+      collisions = _genGrassCollisions()
+    }
 
     for (let i = 0; i < count; i++) {
       let attempts = 0
@@ -819,6 +843,15 @@ export class FieldScene {
         )
         if (distToPlayer < 300 * this.dpr) { // 不要在玩家视野内刷新
           validPosition = false
+        }
+        
+        // 检查障碍物碰撞
+        if (validPosition && collisions && collisions.length > 0) {
+          const lx = x / this.dpr
+          const ly = y / this.dpr
+          if (_isPointInGrasslandObstacle(lx, ly, 60, collisions)) {
+            validPosition = false
+          }
         }
 
         attempts++
@@ -1240,35 +1273,215 @@ export class FieldScene {
       monsterId: monster.id
     })
   }
+
+  /**
+   * 程序化渲染地图（阳光草原等，不依赖图片素材）
+   * 参考 town-scene 的 _renderBackground + _renderMapLayer 方式
+   */
+  _renderProgrammaticMap(ctx) {
+    const camX = this.cameraX
+    const camY = this.cameraY
+    const cfg = GRASSLAND_MAP_CONFIG
+
+    // 1. 基础草地背景
+    ctx.fillStyle = cfg.bgColor
+    ctx.fillRect(0, 0, this.width, this.height)
+
+    // 2. 深色草地纹理块（伪随机分布）
+    ctx.fillStyle = cfg.bgDarkColor
+    const tileSize = 100 * this.dpr
+    for (let gx = Math.floor(camX / tileSize) * tileSize - tileSize;
+         gx < camX + this.width + tileSize * 2; gx += tileSize) {
+      for (let gy = Math.floor(camY / tileSize) * tileSize - tileSize;
+           gy < camY + this.height + tileSize * 2; gy += tileSize) {
+        const hash = Math.sin(gx * 127.1 + gy * 311.7) * 43758.5453
+        if ((hash - Math.floor(hash)) > 0.6) {
+          ctx.fillRect(gx - camX, gy - camY, tileSize * (0.7 + (hash - Math.floor(hash)) * 0.5), tileSize * 0.55)
+        }
+      }
+    }
+
+    // 3. 地图对象不再在此绘制，统一由 _renderYSortedEntities 按 Y 轴排序渲染
+  }
+
+  /**
+   * 统一Y轴排序渲染 —— 伪3D层次感核心
+   *
+   * 将树木、装饰、宝箱、怪物、队友、主角全部收集到一个数组，
+   * 按各自底部Y坐标（y + height）排序后依次绘制。
+   * 排序靠前的先画（在后面/上方），排序靠后的后画（在前面/下方），
+   * 自然产生"前遮后"的2.5D视觉效果。
+   */
+  _renderYSortedEntities(ctx) {
+    const entities = []  // { sortY, type, data, renderFn }
+
+    // 1. 收集地图障碍物（树、石块、灌木等）
+    for (const obj of GRASSLAND_MAP_OBJECTS) {
+      if (obj.type === GLAND_OBJ_TYPE.DECORATION) continue  // 装饰物始终在最前层
+      const img = this.game.assets.get(obj.assetKey)
+      if (!img) continue
+      const screenX = obj.x * this.dpr - this.cameraX
+      const screenY = obj.y * this.dpr - this.cameraY
+      const w = (obj.w || obj.width || img.width) * this.dpr
+      const h = (obj.h || obj.height || img.height) * this.dpr
+      // 视野裁剪（宽松一点，避免排序时闪烁）
+      if (screenX + w < -100 || screenX > this.width + 100 ||
+          screenY + h < -100 || screenY > this.height + 100) continue
+      entities.push({
+        sortY: obj.y + (obj.h || obj.height || 80),  // 底部Y坐标
+        type: 'obstacle',
+        img, screenX, screenY, w, h,
+      })
+    }
+
+    // 2. 收集地图装饰（草堆、花朵——始终在角色前面，给一个很大的sortY）
+    for (const obj of GRASSLAND_MAP_OBJECTS) {
+      if (obj.type !== GLAND_OBJ_TYPE.DECORATION) continue
+      const img = this.game.assets.get(obj.assetKey)
+      if (!img) continue
+      const screenX = obj.x * this.dpr - this.cameraX
+      const screenY = obj.y * this.dpr - this.cameraY
+      const w = (obj.w || obj.width || img.width) * this.dpr
+      const h = (obj.h || obj.height || img.height) * this.dpr
+      if (screenX + w < -50 || screenX > this.width + 50 ||
+          screenY + h < -50 || screenY > this.height + 50) continue
+      entities.push({
+        sortY: 999999,  // 装饰物始终最前
+        type: 'decoration',
+        img, screenX, screenY, w, h,
+      })
+    }
+
+    // 3. 收集宝箱等交互对象
+    if (this.mapObjects && Array.isArray(this.mapObjects)) {
+      for (const obj of this.mapObjects) {
+        if (obj.collected) continue
+        const screenX = obj.x - this.cameraX
+        const screenY = obj.y - this.cameraY
+        if (screenX < -50 || screenX > this.width + 50 ||
+            screenY < -50 || screenY > this.height + 50) continue
+        entities.push({ sortY: obj.y, type: 'chest', screenX, screenY })
+      }
+    }
+
+    // 4. 收集怪物 —— 坐标为物理像素
+    if (this.mapMonsters && Array.isArray(this.mapMonsters)) {
+      for (const monster of this.mapMonsters) {
+        if (!monster.alive) continue
+        const screenX = monster.x - this.cameraX
+        const screenY = monster.y - this.cameraY
+        if (screenX < -100 || screenX > this.width + 100 ||
+            screenY < -100 || screenY > this.height + 100) continue
+        // sortY 转为逻辑像素，+40 为怪物脚底偏移
+        entities.push({
+          sortY: monster.y / this.dpr + 40,
+          type: 'monster', monster, screenX, screenY,
+        })
+      }
+    }
+
+    // 5. 收集队友 —— 坐标来自 field-movement（物理像素）
+    if (this.followers && Array.isArray(this.followers)) {
+      for (let i = 0; i < this.followers.length; i++) {
+        const f = this.followers[i]
+        if (!f) continue
+        const screenX = f.x - this.cameraX
+        const screenY = f.y - this.cameraY
+        // sortY 转为逻辑像素
+        entities.push({
+          sortY: f.y / this.dpr + 50,
+          type: 'follower', index: i, f, screenX, screenY,
+        })
+      }
+    }
+
+    // 6. 收集主角 —— 使用 playerX/Y（物理像素，与移动/碰撞系统一致）
+    if (typeof this.playerX === 'number') {
+      const px = this.playerX - this.cameraX
+      const py = this.playerY - this.cameraY
+      // sortY 转为逻辑像素（与地图对象的 obj.y 同单位）
+      entities.push({
+        sortY: this.playerY / this.dpr + 50,
+        type: 'player', px, py,
+      })
+    }
+
+    // ── 按 sortY 升序排序（Y小的先画=在后，Y大的后画=在前）──
+    entities.sort((a, b) => a.sortY - b.sortY)
+
+    // ── 统一绘制 ──
+    for (const e of entities) {
+      switch (e.type) {
+        case 'obstacle':
+        case 'decoration':
+          ctx.drawImage(e.img, e.screenX, e.screenY, e.w, e.h)
+          break
+        case 'chest':
+          ctx.font = `${24 * this.dpr}px sans-serif`
+          ctx.textAlign = 'center'
+          ctx.textBaseline = 'middle'
+          ctx.fillText('📦', e.screenX, e.screenY)
+          break
+        case 'monster': {
+          const useCatAnim = !e.monster.isBoss && !e.monster.isElite
+          if (useCatAnim) {
+            this._renderCatMonster(ctx, e.monster, e.screenX, e.screenY)
+          } else {
+            this._renderEmojiMonster(ctx, e.monster, e.screenX, e.screenY)
+          }
+          break
+        }
+        case 'follower':
+          this._drawFollowerAt(ctx, e.f, e.screenX, e.screenY, e.index)
+          break
+        case 'player':
+          this._renderPlayer(ctx)
+          break
+      }
+    }
+  }
+
+  /**
+   * 绘制单个地图对象（考虑相机偏移）
+   */
+  _drawMapObject(ctx, obj) {
+    const img = this.game.assets.get(obj.assetKey)
+    if (!img) return
+    
+    const screenX = obj.x * this.dpr - this.cameraX
+    const screenY = obj.y * this.dpr - this.cameraY
+    const w = (obj.w || obj.width || img.width) * this.dpr
+    const h = (obj.h || obj.height || img.height) * this.dpr
+
+    // 视野裁剪（只绘制可见区域内的对象）
+    if (screenX + w < -50 || screenX > this.width + 50 ||
+        screenY + h < -50 || screenY > this.height + 50) return
+
+    ctx.drawImage(img, screenX, screenY, w, h)
+  }
   
   render(ctx) {
-    // 绘制地图（使用相机偏移）
-    const bgImage = this.game.assets.get(this.areaInfo.fieldBg)
-    if (bgImage) {
-      // 只绘制地图的可视部分
-      ctx.drawImage(
-        bgImage,
-        this.cameraX / this.dpr, this.cameraY / this.dpr, // 源图起始位置（逻辑像素）
-        this.width / this.dpr, this.height / this.dpr, // 源图尺寸（逻辑像素）
-        0, 0, // 目标位置
-        this.width, this.height // 目标尺寸
-      )
+    // 地图背景（程序化渲染只画草地纹理）
+    if (this.areaInfo.fieldBg) {
+      const bgImage = this.game.assets.get(this.areaInfo.fieldBg)
+      if (bgImage) {
+        ctx.drawImage(
+          bgImage,
+          this.cameraX / this.dpr, this.cameraY / this.dpr,
+          this.width / this.dpr, this.height / this.dpr,
+          0, 0, this.width, this.height
+        )
+      } else {
+        ctx.fillStyle = this.areaInfo.color
+        ctx.fillRect(0, 0, this.width, this.height)
+      }
     } else {
-      ctx.fillStyle = this.areaInfo.color
-      ctx.fillRect(0, 0, this.width, this.height)
+      this._renderProgrammaticMap(ctx)
     }
-    
-    // 地图对象（宝箱等）
-    this._renderMapObjects(ctx)
 
-    // 地图怪物
-    this._renderMonsters(ctx)
-
-    // 渲染队友（在主角后面）
-    this._renderFollowers(ctx)
-    
-    // 渲染主角
-    this._renderPlayer(ctx)
+    // ══ 统一Y轴排序渲染（伪3D层次感）══
+    // 树木/装饰/宝箱/怪物/队友/主角 全部按底部Y坐标排序后绘制
+    this._renderYSortedEntities(ctx)
     
     // 顶部UI
     this._renderTopUI(ctx)
@@ -1373,7 +1586,7 @@ export class FieldScene {
    */
   _renderFollowers(ctx) {
     if (!this.followers || !Array.isArray(this.followers)) return
-    const targetHeight = 130 * this.dpr
+    const targetHeight = 80 * this.dpr // 与小镇一致
 
     for (const follower of this.followers) {
       // 转换为屏幕坐标
@@ -1452,8 +1665,8 @@ export class FieldScene {
         ctx.save()
 
         // 根据角色素材默认朝向决定是否翻转（与主角一致）
-        if (heroId === 'zhenbao') {
-          // 臻宝：默认朝右 → facingLeft 时翻转
+        if (heroId === 'zhenbao' || heroId === 'lixiaobao') {
+          // 臻宝/李小宝：默认朝右 → facingLeft 时翻转
           if (follower.facingLeft) {
             ctx.translate(screenX, screenY)
             ctx.scale(-1, 1)
@@ -1506,9 +1719,81 @@ export class FieldScene {
       }
     }
   }
+
+  /**
+   * 在指定屏幕坐标渲染单个队友（供 Y 排序统一渲染调用）
+   */
+  _drawFollowerAt(ctx, follower, screenX, screenY) {
+    const targetHeight = 80 * this.dpr
+    let frameImg = null
+    const heroId = follower.character.id
+    const isCat = heroId.toLowerCase().includes('cat') || heroId === 'mao'
+
+    if (heroId === 'zhenbao') {
+      frameImg = follower._effectiveMoving
+        ? this.game.assets.get(`HERO_ZHENBAO_WALK_${(follower.animFrame + 1).toString().padStart(2, '0')}`)
+        : this.game.assets.get(`HERO_ZHENBAO_IDLE_${(follower.animFrame + 1).toString().padStart(2, '0')}`)
+    } else if (heroId === 'lixiaobao') {
+      frameImg = follower._effectiveMoving
+        ? this.game.assets.get(`HERO_LIXIAOBAO_WALK_${(follower.animFrame + 1).toString().padStart(2, '0')}`)
+        : this.game.assets.get(`HERO_LIXIAOBAO_IDLE_${(follower.animFrame + 1).toString().padStart(2, '0')}`)
+    } else if (heroId === 'slime_cat') {
+      frameImg = follower._effectiveMoving
+        ? this.game.assets.get(`SLIME_CAT_WALK_${(follower.animFrame + 1).toString().padStart(2, '0')}`)
+        : this.game.assets.get(`SLIME_CAT_IDLE_${follower.animFrame + 1}`)
+    } else if (heroId === 'shadow_mouse') {
+      frameImg = follower._effectiveMoving
+        ? this.game.assets.get(`SHADOW_MOUSE_WALK_${(follower.animFrame + 1).toString().padStart(2, '0')}`)
+        : this.game.assets.get(`SHADOW_MOUSE_IDLE_${String(follower.animFrame + 1).padStart(2, '0')}`)
+    } else if (isCat) {
+      frameImg = follower._effectiveMoving
+        ? this.game.assets.get(`CAT_WALK_${(follower.animFrame + 1).toString().padStart(2, '0')}`)
+        : this.game.assets.get(`CAT_IDLE_${(follower.animFrame + 1).toString().padStart(2, '0')}`)
+    } else {
+      frameImg = follower._effectiveMoving
+        ? this.game.assets.get(`HERO_${heroId.toUpperCase()}_WALK_${follower.animFrame}`)
+        : this.game.assets.get(`HERO_${heroId.toUpperCase()}_IDLE_${follower.animFrame}`)
+    }
+    if (!frameImg) {
+      frameImg = this.game.assets.get(`HERO_${heroId.toUpperCase()}`)
+    }
+    if (!frameImg) return
+
+    const imgWidth = frameImg.width
+    const imgHeight = frameImg.height
+    const scale = targetHeight / imgHeight
+    const renderWidth = imgWidth * scale
+    const renderHeight = targetHeight
+
+    ctx.save()
+    if (heroId === 'zhenbao' || heroId === 'lixiaobao') {
+      if (follower.facingLeft) {
+        ctx.translate(screenX, screenY)
+        ctx.scale(-1, 1)
+        ctx.drawImage(frameImg, -renderWidth / 2, -renderHeight / 2, renderWidth, renderHeight)
+      } else {
+        ctx.drawImage(frameImg, screenX - renderWidth / 2, screenY - renderHeight / 2, renderWidth, renderHeight)
+      }
+    } else {
+      if (!follower.facingLeft) {
+        ctx.translate(screenX, screenY)
+        ctx.scale(-1, 1)
+        ctx.drawImage(frameImg, -renderWidth / 2, -renderHeight / 2, renderWidth, renderHeight)
+      } else {
+        ctx.drawImage(frameImg, screenX - renderWidth / 2, screenY - renderHeight / 2, renderWidth, renderHeight)
+      }
+    }
+    ctx.restore()
+
+    // 底部阴影
+    ctx.beginPath()
+    ctx.ellipse(screenX, screenY + targetHeight / 2 + 5 * this.dpr, targetHeight / 2.5, 8 * this.dpr, 0, 0, Math.PI * 2)
+    ctx.fillStyle = 'rgba(0,0,0,0.3)'
+    ctx.fill()
+  }
   
   _renderPlayer(ctx) {
-    const targetHeight = 130 * this.dpr // 固定高度
+    const targetHeight = 80 * this.dpr // 与小镇一致的角色大小
 
     // 转换为屏幕坐标
     const screenX = this.playerX - this.cameraX
@@ -1585,9 +1870,9 @@ export class FieldScene {
       ctx.save()
 
       // 根据角色素材默认朝向决定是否翻转
-      // 臻宝: 默认朝右 → 向左(facingLeft)时翻转
-      // 李小宝及其他: 默认朝左 → 向右(!facingLeft)时翻转
-      if (heroId === 'zhenbao') {
+      // 臻宝/李小宝: 默认朝右 → 向左(facingLeft)时翻转
+      // 其他角色: 默认朝左 → 向右(!facingLeft)时翻转
+      if (heroId === 'zhenbao' || heroId === 'lixiaobao') {
         if (this.facingLeft) {
           ctx.translate(screenX, screenY)
           ctx.scale(-1, 1)
@@ -1635,7 +1920,7 @@ export class FieldScene {
       
       // 底部阴影（不翻转）
       ctx.beginPath()
-      ctx.ellipse(screenX, screenY + targetHeight / 2 + 5 * this.dpr, targetHeight / 2.5, 8 * this.dpr, 0, 0, Math.PI * 2)
+      ctx.ellipse(screenX, screenY + targetHeight * 0.45, targetHeight / 3, 7 * this.dpr, 0, 0, Math.PI * 2)
       ctx.fillStyle = 'rgba(0,0,0,0.3)'
       ctx.fill()
 

@@ -10,6 +10,7 @@
 
 // 动态导入小镇碰撞数据（避免循环依赖）
 let _townCollisions = null
+let _grasslandCollisions = null
 
 async function _getTownCollisions() {
   if (_townCollisions === null) {
@@ -19,20 +20,25 @@ async function _getTownCollisions() {
   return _townCollisions
 }
 
+async function _getGrasslandCollisions() {
+  if (_grasslandCollisions === null) {
+    const { generateGrasslandCollisions } = await import('./grassland-map-data.js')
+    _grasslandCollisions = generateGrasslandCollisions()
+  }
+  return _grasslandCollisions
+}
+
 export const MAP_COLLISIONS = {
   grassland: {
     name: '阳光草原',
-    obstacles: [
-      // 示例障碍物（需要玩家实际标记）
-      // { type: 'rect', x: 500, y: 300, width: 100, height: 80, name: '大树1' },
-      // { type: 'circle', x: 800, y: 600, radius: 50, name: '水池' },
-    ]
+    // 碰撞数据由 grassland-map-data.js 动态生成
+    _dynamic: true,
+    obstacles: []
   },
   
   town: {
     name: '喵星村',
     // 碰撞数据由 town-map-data.js 动态生成
-    // 通过 getMapCollisions('town') 获取时自动加载
     _dynamic: true,
     obstacles: []
   },
@@ -61,12 +67,17 @@ export async function getMapCollisions(mapId) {
     return await _getTownCollisions()
   }
   
+  // 阳光草原使用动态生成的碰撞数据
+  if (mapData._dynamic && mapId === 'grassland') {
+    return await _getGrasslandCollisions()
+  }
+  
   return mapData.obstacles || []
 }
 
 /**
  * 同步版本（用于field-scene等已存在的同步调用场景）
- * 小镇数据在首次调用时缓存
+ * 小镇/草地数据在首次调用时缓存
  */
 export function getMapCollisionsSync(mapId) {
   const mapData = MAP_COLLISIONS[mapId]
@@ -74,6 +85,10 @@ export function getMapCollisionsSync(mapId) {
   
   if (mapData._dynamic && mapId === 'town' && _townCollisions !== null) {
     return _townCollisions
+  }
+  
+  if (mapData._dynamic && mapId === 'grassland' && _grasslandCollisions !== null) {
+    return _grasslandCollisions
   }
   
   return mapData.obstacles || []

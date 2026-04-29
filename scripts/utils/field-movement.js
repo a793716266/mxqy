@@ -630,8 +630,8 @@ export class FieldMovement {
       const scale = targetHeight / img.height
       const targetWidth = img.width * scale
       
-      // 绘制脚下阴影（椭圆）
-      const shadowY = screenPos.y + targetHeight / 2 - 8 * this.dpr
+      // 绘制脚下阴影（椭圆）- 位于角色脚底附近
+      const shadowY = screenPos.y + targetHeight * 0.45
       const shadowRx = targetWidth * 0.4
       const shadowRy = targetHeight * 0.12
       ctx.save()
@@ -650,9 +650,9 @@ export class FieldMovement {
       ctx.save()
       
       // 根据角色素材默认朝向决定是否翻转：
-      // 臻宝: 默认朝右 → 向左(facingLeft)时翻转
-      // 李小宝/其他: 默认朝左 → 向右(!facingLeft)时翻转
-      if (heroId === 'zhenbao') {
+      // 臻宝/李小宝: 默认朝右 → 向左(facingLeft)时翻转
+      // 其他角色: 默认朝左 → 向右(!facingLeft)时翻转
+      if (heroId === 'zhenbao' || heroId === 'lixiaobao') {
         if (facingLeft) {
           ctx.translate(screenPos.x, screenPos.y)
           ctx.scale(-1, 1)
