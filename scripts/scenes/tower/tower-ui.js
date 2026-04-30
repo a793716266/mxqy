@@ -847,7 +847,7 @@ function renderEquipInventory(ctx, x, y, w, h, battle) {
 
   const splitX = w * 0.58
   ctx.strokeStyle = 'rgba(60,80,120,0.25)'; ctx.lineWidth = 1
-  ctx.beginPath(); ctx.moveTo(splitX, y + 6); ctx.lineTo(splitX, y + h - 6); ctx.stroke()
+  ctx.beginPath(); ctx.moveTo(splitX, y + 6 * dpr); ctx.lineTo(splitX, y + h - 6 * dpr); ctx.stroke()
 
   // 左侧：背包
   const invPadding = Math.max(8, 10 * dpr)
@@ -864,8 +864,8 @@ function renderEquipInventory(ctx, x, y, w, h, battle) {
   for (let row = 0; row < 2; row++) {
     for (let col = 0; col < 4; col++) {
       const idx = row * 4 + col
-      const sx = x + invPadding + col * (slotSize + 6)
-      const sy = gridStartY + row * (slotSize + 6)
+      const sx = x + invPadding + col * (slotSize + 6 * dpr)
+      const sy = gridStartY + row * (slotSize + 6 * dpr)
       const item = battle.inventory[idx]
 
       if (item) {
