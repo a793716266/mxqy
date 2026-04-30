@@ -524,7 +524,7 @@ class TowerBattle {
   /** 虚拟摇杆输入：将方向映射到当前选中角色的 targetX/Y（速度帧率无关） */
   onJoystickInput(dx, dy) {
     const c = this.party[this.selectedCharIndex]
-    if (!c || c.dead) return
+    if (!c || c.isDead) return
     const area = this._getBattleArea()
     const r = c.width / 2 || 20
     const BASE_SPEED = 280   // px/s
