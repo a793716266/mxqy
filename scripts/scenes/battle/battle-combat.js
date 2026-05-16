@@ -310,8 +310,9 @@ export function installBattleCombat(BattleSceneClass) {
         }
       }
 
-      // ★ 眩晕中的敌人不移动
-      const enemyEffects = this.statusEffects.enemies[i] || []
+      // ★ 眩晕中的敌人不移动（修复：使用enemy.id而不是索引）
+      const enemyId = enemy.id
+      const enemyEffects = enemyId ? (this.statusEffects.enemies[enemyId] || []) : []
       const isStunned = enemyEffects.some(e => e.type === 'stunned' && (e.duration > 0 || e.turnsRemaining > 0))
       if (isStunned) {
         estate.state = 'idle'
@@ -1182,8 +1183,9 @@ export function installBattleCombat(BattleSceneClass) {
     for (let i = 0; i < this.enemies.length; i++) {
       if (this.enemies[i].hp <= 0) continue
       
-      // ★ 检查敌人是否隐身（暗影突袭效果）
-      const enemyEffects = this.statusEffects.enemies[i] || []
+      // ★ 检查敌人是否隐身（暗影突袭效果）（修复：使用enemy.id而不是索引）
+      const enemyId = this.enemies[i].id
+      const enemyEffects = enemyId ? (this.statusEffects.enemies[enemyId] || []) : []
       const isInvisible = enemyEffects.some(e => e.type === 'invisible' && e.duration > 0)
       if (isInvisible) continue  // 隐身敌人不会被选为目标
       
@@ -1353,9 +1355,10 @@ export function installBattleCombat(BattleSceneClass) {
 
   proto._getEnemyEffectiveAtk = function(enemy) {
     let atk = enemy.atk
-    const enemyIndex = this.enemies.indexOf(enemy)
-    if (enemyIndex !== -1) {
-      const effects = this.statusEffects.enemies[enemyIndex] || []
+    // ★ 修复：使用 enemy.id 而不是索引
+    const enemyId = enemy.id
+    if (enemyId) {
+      const effects = this.statusEffects.enemies[enemyId] || []
       effects.forEach(e => {
         if (e.type === 'atk_down' && e.turnsRemaining > 0) {
           atk = Math.floor(atk * (1 - (e.value || 0.3)))
@@ -1370,9 +1373,10 @@ export function installBattleCombat(BattleSceneClass) {
 
   proto._getEnemyEffectiveDef = function(enemy) {
     let def = enemy.def || 0
-    const enemyIndex = this.enemies.indexOf(enemy)
-    if (enemyIndex !== -1) {
-      const effects = this.statusEffects.enemies[enemyIndex] || []
+    // ★ 修复：使用 enemy.id 而不是索引
+    const enemyId = enemy.id
+    if (enemyId) {
+      const effects = this.statusEffects.enemies[enemyId] || []
       effects.forEach(e => {
         if (e.type === 'def_down' && (e.turnsRemaining > 0 || e.duration > 0)) {
           def = Math.floor(def * (1 - (e.value || 0.3)))
@@ -1879,8 +1883,9 @@ export function installBattleCombat(BattleSceneClass) {
       const estate = this.unitStates['enemy_' + i]
       if (!estate) continue
 
-      // ★ 眩晕检查：被眩晕的敌人无法行动
-      const enemyEffects = this.statusEffects.enemies[i] || []
+      // ★ 眩晕检查：被眩晕的敌人无法行动（修复：使用enemy.id而不是索引）
+      const enemyId = this.enemies[i].id
+      const enemyEffects = enemyId ? (this.statusEffects.enemies[enemyId] || []) : []
       const isStunned = enemyEffects.some(e => e.type === 'stunned' && (e.duration > 0 || e.turnsRemaining > 0))
       if (isStunned) {
         estate.state = 'idle'
@@ -2319,17 +2324,24 @@ export function installBattleCombat(BattleSceneClass) {
     const value = skill.value || 0.3
     const duration = skill.duration || 3 // 默认3秒
 
-    // 初始化 statusEffects.enemies[enemyIndex]
-    if (!this.statusEffects.enemies[enemyIndex]) {
-      this.statusEffects.enemies[enemyIndex] = []
+    // ★ 修复：使用 enemy.id 而不是索引
+    const enemyId = enemy.id
+    if (!enemyId) {
+      console.error('[BUFF错误] _applyEnemyBuffEffect: 敌人没有id', enemy.name)
+      return
+    }
+
+    // 初始化 statusEffects.enemies[enemyId]
+    if (!this.statusEffects.enemies[enemyId]) {
+      this.statusEffects.enemies[enemyId] = []
     }
 
     // 移除同类型旧 buff
-    this.statusEffects.enemies[enemyIndex] = 
-      this.statusEffects.enemies[enemyIndex].filter(e => e.type !== effType)
+    this.statusEffects.enemies[enemyId] = 
+      this.statusEffects.enemies[enemyId].filter(e => e.type !== effType)
 
     // 添加新 buff
-    this.statusEffects.enemies[enemyIndex].push({
+    this.statusEffects.enemies[enemyId].push({
       type: effType,
       value: value,
       duration: duration
@@ -3223,7 +3235,9 @@ export function installBattleCombat(BattleSceneClass) {
     }
 
     // ======== P2-13: 敌人感知自身debuff → 优先解控/防御 ========
-    const enemyEffects = this.statusEffects.enemies[enemyIndex] || []
+    // ★ 修复：使用 enemy.id 而不是索引
+    const enemyId = enemy.id
+    const enemyEffects = enemyId ? (this.statusEffects.enemies[enemyId] || []) : []
     const hasDebuff = enemyEffects.some(e =>
       e.type === 'atk_down' || e.type === 'def_down' || e.type === 'stunned' ||
       e.type === 'burned' || e.type === 'frozen' || e.type === 'poisoned'
@@ -3305,8 +3319,9 @@ export function installBattleCombat(BattleSceneClass) {
         // 2. buff：有就用
         const buffSkill = specialSkills.find(s => s.type === 'buff')
         if (buffSkill) {
-          const heroIdx = this.enemies.indexOf(enemy)
-          const heroEffects2 = heroIdx >= 0 ? (this.statusEffects.enemies[heroIdx] || []) : []
+          // ★ 修复：使用 enemy.id 而不是索引
+          const enemyId = enemy.id
+          const heroEffects2 = enemyId ? (this.statusEffects.enemies[enemyId] || []) : []
           const hasBuff = heroEffects2.some(e => e.type === 'def_up' || e.type === 'atk_up')
           console.log(`[Enemy AI] ${enemy.name} 检查buff技能: ${buffSkill.name}, hasBuff=${hasBuff}, cd=${timer.skillCDs[buffSkill.id || buffSkill.name]}`)
           if (!hasBuff && Math.random() < 0.65) {

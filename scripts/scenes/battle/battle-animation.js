@@ -304,9 +304,9 @@ export function installBattleAnimation(BattleSceneClass) {
         animState.frame++
         if (animState.frame > 8) animState.frame = 1  // buff_01 到 buff_08 循环
         
-        // ★ 检查隐身效果是否结束
-        const enemyIndex = index
-        const enemyEffects = this.statusEffects.enemies[enemyIndex] || []
+        // ★ 检查隐身效果是否结束（修复：使用enemy.id而不是索引）
+        const enemyId = enemy ? enemy.id : null
+        const enemyEffects = enemyId ? (this.statusEffects.enemies[enemyId] || []) : []
         const invisEffect = enemyEffects.find(e => e.type === 'invisible')
         if (!invisEffect || (invisEffect.startTime && this.time - invisEffect.startTime >= invisEffect.duration)) {
           // 隐身结束，回到idle状态

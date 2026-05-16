@@ -312,15 +312,18 @@ export function installBattleDamage(BattleSceneClass) {
     damage = Math.max(1, damage - Math.floor(targetDef * 0.4) + Math.floor(Math.random() * 4) - 1)
 
     // 状态效果加成（灼烧等）
-    const targetIndex = this.enemies.includes(target) ? this.enemies.indexOf(target) : -1
-    if (targetIndex >= 0) {
-      const effects = this.statusEffects.enemies[targetIndex] || []
-      effects.forEach(e => {
-        if (e.type === 'burned' && e.turnsRemaining > 0) {
-          const burnDmg = Math.floor(damage * 0.05)
-          damage += burnDmg
-        }
-      })
+    // ★ 修复：使用 target.id 而不是索引
+    if (this.enemies.includes(target)) {
+      const targetId = target.id
+      if (targetId) {
+        const effects = this.statusEffects.enemies[targetId] || []
+        effects.forEach(e => {
+          if (e.type === 'burned' && e.turnsRemaining > 0) {
+            const burnDmg = Math.floor(damage * 0.05)
+            damage += burnDmg
+          }
+        })
+      }
     }
 
     target.hp = Math.max(0, target.hp - damage)
@@ -476,10 +479,20 @@ export function installBattleDamage(BattleSceneClass) {
 
   // ======== 状态效果应用 ========
   proto._applyStatusEffectToEnemy = function(effectType, enemyIndex, pos) {
-    if (!this.statusEffects.enemies[enemyIndex]) {
-      this.statusEffects.enemies[enemyIndex] = []
+    // ★ 修复：使用 enemy.id 作为键，从敌人对象获取id
+    const enemy = this.enemies[enemyIndex]
+    if (!enemy) return
+    
+    const enemyId = enemy.id
+    if (!enemyId) {
+      console.error('[BUFF错误] _applyStatusEffectToEnemy: 敌人没有id', enemy.name)
+      return
     }
-    const existing = this.statusEffects.enemies[enemyIndex].find(e => e.type === effectType)
+    
+    if (!this.statusEffects.enemies[enemyId]) {
+      this.statusEffects.enemies[enemyId] = []
+    }
+    const existing = this.statusEffects.enemies[enemyId].find(e => e.type === effectType)
     if (existing) {
       // ★ 眩晕：刷新持续时间而不是叠加
       if (effectType === 'stunned') {
@@ -493,7 +506,7 @@ export function installBattleDamage(BattleSceneClass) {
     // ★ 眩晕1秒，其他状态3回合
     const isStun = (effectType === 'stunned')
     const dur = isStun ? 1 : 3
-    this.statusEffects.enemies[enemyIndex].push({
+    this.statusEffects.enemies[enemyId].push({
       type: effectType,
       duration: dur,
       turnsRemaining: dur
@@ -623,9 +636,10 @@ export function installBattleDamage(BattleSceneClass) {
     }
 
     // ★ 隐身检查：如果敌人处于隐身状态，不可被攻击
-    const enemyIndex = this.enemies.indexOf(enemy)
-    if (enemyIndex >= 0) {
-      const enemyEffects = this.statusEffects.enemies[enemyIndex] || []
+    // ★ 修复：使用 enemy.id 而不是索引
+    const enemyId = enemy.id
+    if (enemyId) {
+      const enemyEffects = this.statusEffects.enemies[enemyId] || []
       const invisEffect = enemyEffects.find(e => e.type === 'invisible')
       if (invisEffect && invisEffect.startTime && this.time - invisEffect.startTime < invisEffect.duration) {
         this._addLog(`🌙 ${enemy.name} 处于隐身状态，无法被攻击！`)
@@ -872,17 +886,18 @@ export function installBattleDamage(BattleSceneClass) {
           this.statusEffects.heroes[targetIndex].filter(e => e.type !== 'slimed')
         this._addLog(`🟢 ${target.name} 的黏液覆盖效果被消耗`)
       }
-    } else if (skill.effect === 'defense_up') {
+      } else if (skill.effect === 'defense_up') {
       // ★ defense_up：给施法者自身加防御buff（塔楼守护者的"钢铁防御"）
-      const enemyIndex = this.enemies.indexOf(this._attackingEnemy || this.enemy)
-      if (enemyIndex >= 0) {
-        if (!this.statusEffects.enemies[enemyIndex]) {
-          this.statusEffects.enemies[enemyIndex] = []
+      const enemy = this._attackingEnemy || this.enemy
+      const enemyId = enemy ? enemy.id : null
+      if (enemyId) {
+        if (!this.statusEffects.enemies[enemyId]) {
+          this.statusEffects.enemies[enemyId] = []
         }
-        const existing = this.statusEffects.enemies[enemyIndex].find(e => e.type === 'def_up')
+        const existing = this.statusEffects.enemies[enemyId].find(e => e.type === 'def_up')
         if (existing) {
           existing.duration = 8
-          this._addLog(`🛡️ ${(this._attackingEnemy || this.enemy).name} 的防御提升已刷新！`)
+          this._addLog(`🛡️ ${enemy.name} 的防御提升已刷新！`)
         } else {
           this.statusEffects.enemies[enemyIndex].push({ type: 'def_up', duration: 8 })
           this._addLog(`🛡️ ${(this._attackingEnemy || this.enemy).name} 防御力大幅提升！持续8秒`)
@@ -958,26 +973,27 @@ export function installBattleDamage(BattleSceneClass) {
 
   // ======== 敌人增益技能 ========
   proto._applyEnemyBuff = function(enemy, skill) {
-    const enemyIndex = this.enemies.indexOf(enemy)
-    if (enemyIndex === -1) {
-      console.error('[BUFF错误] _applyEnemyBuff: 找不到敌人', enemy.name)
+    // ★ 修复：使用 enemy.id 作为键，而不是索引（避免敌人顺序变化导致状态污染）
+    const enemyId = enemy.id
+    if (!enemyId) {
+      console.error('[BUFF错误] _applyEnemyBuff: 敌人没有id', enemy.name)
       return
     }
     
     // ★ 调试日志：追踪BUFF技能执行
     console.log(`[BUFF调试] _applyEnemyBuff 被调用`)
-    console.log(`  敌人: ${enemy.name} (index=${enemyIndex})`)
+    console.log(`  敌人: ${enemy.name} (id=${enemyId})`)
     console.log(`  技能: ${skill.name} (type=${skill.type}, effect=${skill.effect})`)
     console.log(`  当前Phase: ${this.phase}, enemyAttacking: ${this.enemyAttacking}`)
 
-    if (!this.statusEffects.enemies[enemyIndex]) {
-      this.statusEffects.enemies[enemyIndex] = []
+    if (!this.statusEffects.enemies[enemyId]) {
+      this.statusEffects.enemies[enemyId] = []
     }
 
     // ★ 调试日志（BUFF 测试模式）
     if (this._buffTestMode) {
       console.log(`[BUFF测试] _applyEnemyBuff 被调用`)
-      console.log(`  敌人: ${enemy.name}`)
+      console.log(`  敌人: ${enemy.name} (id=${enemyId})`)
       console.log(`  技能: ${skill.name}`)
       console.log(`  effect: ${skill.effect}`)
       console.log(`  value: ${skill.value}`)
@@ -987,12 +1003,15 @@ export function installBattleDamage(BattleSceneClass) {
     // ★ 隐身效果（暗影突袭）
     if (skill.effect === 'invisible') {
       const duration = skill.duration || 5
-      this.statusEffects.enemies[enemyIndex].push({
+      this.statusEffects.enemies[enemyId].push({
         type: 'invisible',
         duration: duration,
         startTime: this.time
       })
       this._addLog(`🌙 ${enemy.name} 使用「${skill.name}」！进入隐身状态，持续${duration}秒！`)
+      
+      // ★ 获取敌人索引（用于播放动画）
+      const enemyIndex = this.enemies.indexOf(enemy)
       
       // ★ 播放隐身动画（buff动画帧）
       const enemyPos = this.enemyPositions[enemyIndex] || { x: this.enemyBaseX, y: this.enemyBaseY }
@@ -1006,7 +1025,7 @@ export function installBattleDamage(BattleSceneClass) {
       const duration = (skill.duration || 3) * 2  // 转换为帧数（假设1秒=2帧）
       
       // 检查是否已有同名buff（刷新持续时间）
-      const existing = this.statusEffects.enemies[enemyIndex].find(e => e.type === 'def_up')
+      const existing = this.statusEffects.enemies[enemyId].find(e => e.type === 'def_up')
       if (existing) {
         existing.duration = duration
         this._addLog(`🛡️ ${enemy.name} 的「${skill.name}」已刷新！防御力提升${value * 100}%，持续${skill.duration}秒`)
@@ -1014,7 +1033,7 @@ export function installBattleDamage(BattleSceneClass) {
           console.log(`[BUFF测试] 刷新已有 def_up buff, 新持续时间: ${duration}`)
         }
       } else {
-        this.statusEffects.enemies[enemyIndex].push({
+        this.statusEffects.enemies[enemyId].push({
           type: 'def_up',
           value: value,
           duration: duration
@@ -1029,12 +1048,12 @@ export function installBattleDamage(BattleSceneClass) {
       const value = skill.value || 0.3
       const duration = (skill.duration || 3) * 2
       
-      const existing = this.statusEffects.enemies[enemyIndex].find(e => e.type === 'atk_up')
+      const existing = this.statusEffects.enemies[enemyId].find(e => e.type === 'atk_up')
       if (existing) {
         existing.duration = duration
         this._addLog(`⚔️ ${enemy.name} 的「${skill.name}」已刷新！攻击力提升${value * 100}%，持续${skill.duration}秒`)
       } else {
-        this.statusEffects.enemies[enemyIndex].push({
+        this.statusEffects.enemies[enemyId].push({
           type: 'atk_up',
           value: value,
           duration: duration
@@ -1046,11 +1065,11 @@ export function installBattleDamage(BattleSceneClass) {
       if (this._buffTestMode) {
         console.log(`[BUFF测试] 未知 buff effect: ${skill.effect}，使用默认 atk_up`)
       }
-      const existing = this.statusEffects.enemies[enemyIndex].find(e => e.type === 'atk_up')
+      const existing = this.statusEffects.enemies[enemyId].find(e => e.type === 'atk_up')
       if (existing) {
         existing.duration = 6 * 2
       } else {
-        this.statusEffects.enemies[enemyIndex].push({
+        this.statusEffects.enemies[enemyId].push({
           type: 'atk_up',
           value: 0.3,
           duration: 6 * 2
@@ -1062,11 +1081,14 @@ export function installBattleDamage(BattleSceneClass) {
     // ★ BUFF 测试：输出当前所有 BUFF
     if (this._buffTestMode) {
       console.log(`[BUFF测试] ${enemy.name} 当前 BUFF 列表:`)
-      this.statusEffects.enemies[enemyIndex].forEach((e, i) => {
+      this.statusEffects.enemies[enemyId].forEach((e, i) => {
         console.log(`  [${i}] type=${e.type}, value=${e.value}, duration=${e.duration}`)
       })
     }
 
+    // ★ 获取敌人索引（用于播放特效）
+    const enemyIndex = this.enemies.indexOf(enemy)
+    
     // buff特效
     const enemyPos = this.enemyPositions[enemyIndex] || { x: this.enemyBaseX, y: this.enemyBaseY }
     this.codeEffects.push({
@@ -1210,19 +1232,21 @@ export function installBattleDamage(BattleSceneClass) {
 
   // ======== 敌人状态效果更新 ========
   proto._updateEnemyStatusEffects = function() {
-    Object.keys(this.statusEffects.enemies).forEach(indexStr => {
-      const index = parseInt(indexStr)
-      const effects = this.statusEffects.enemies[index]
-      if (!effects || !Array.isArray(effects)) return
-
-      const enemy = this.enemies[index]
+    // ★ 修复：遍历 this.enemies，使用 enemy.id 作为键
+    this.enemies.forEach((enemy, index) => {
       if (!enemy || enemy.hp <= 0) return
+      
+      const enemyId = enemy.id
+      if (!enemyId) return
+      
+      const effects = this.statusEffects.enemies[enemyId]
+      if (!effects || !Array.isArray(effects)) return
 
     // ★ 检查隐身效果是否结束
       const invisEffect = effects.find(e => e.type === 'invisible')
       if (invisEffect && invisEffect.startTime && this.time - invisEffect.startTime >= invisEffect.duration) {
         // 隐身效果结束，移除效果（直接更新数组，避免重新赋值参数）
-        this.statusEffects.enemies[index] = effects.filter(e => e.type !== 'invisible')
+        this.statusEffects.enemies[enemyId] = effects.filter(e => e.type !== 'invisible')
         
         // 恢复动画状态
         const animState = this.enemyAnimStates[index]
@@ -1303,6 +1327,20 @@ export function installBattleDamage(BattleSceneClass) {
       if (anim.fading && anim.alpha > 0) {
         anim.timer += dt
         anim.alpha = Math.max(0, 1.0 - anim.timer * fadeSpeed)
+        
+        // ★ 修复：死亡动画播放完毕后，清理敌人的状态效果（避免状态污染）
+        if (anim.alpha <= 0) {
+          const enemyId = enemy.id
+          if (enemyId && this.statusEffects.enemies[enemyId]) {
+            console.log(`[Enemy Death] 清理 ${enemy.name}(${enemyId}) 的状态效果`)
+            delete this.statusEffects.enemies[enemyId]
+          }
+          
+          // 同时清理动画状态
+          if (this.enemyAnimStates[i]) {
+            delete this.enemyAnimStates[i]
+          }
+        }
       }
     })
   }

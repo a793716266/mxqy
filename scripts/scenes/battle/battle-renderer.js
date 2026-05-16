@@ -981,7 +981,12 @@ export function installBattleRenderer(BattleSceneClass) {
   }
 
   proto._getEnemyStatusIcons = function(enemyIndex) {
-    const effects = this.statusEffects.enemies[enemyIndex] || []
+    // ★ 修复：使用 enemy.id 而不是索引
+    const enemy = this.enemies[enemyIndex]
+    if (!enemy) return []
+    
+    const enemyId = enemy.id
+    const effects = enemyId ? (this.statusEffects.enemies[enemyId] || []) : []
     const icons = []
     effects.forEach(e => {
       const active = (e.turnsRemaining > 0) || (e.duration > 0)
