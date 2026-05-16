@@ -194,6 +194,12 @@ export function installBattleAnimation(BattleSceneClass) {
 
   // ======== 通用敌人帧动画更新 ========
   proto._updateGenericEnemyAnimation = function(animState, dt) {
+    // ★ 保护检查：如果正在执行特殊技能（如治愈冲击），跳过动画更新
+    // 让技能自己的更新函数来控制动画状态
+    if (this._healingImpact && this._healingImpact.active) {
+      return  // 让 _updateHealingImpact 来控制动画
+    }
+
     const baseFrameDuration = animState.frameDuration || 100
     const state = animState.state || 'idle'
 

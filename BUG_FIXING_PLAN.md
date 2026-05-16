@@ -2,6 +2,24 @@
 
 ## 📅 更新日志
 
+### 2026-05-16（23:45）
+
+**fix: 治愈冲击技能防打断保护（多层级状态保护）**
+- **问题**：治愈冲击技能释放时容易被其他动画状态改变打断
+- **根因**：
+  - `_updateGenericEnemyAnimation` 会更新帧动画，可能重置状态
+  - `_updateCombatUnits` 会在敌人状态改变时重置 `animState.state`
+  - `_updateEnemyAutoAttack` 会在敌人攻击时修改状态
+- **修复方案（多层级保护）**：
+  1. **动画保护**：在 `_updateGenericEnemyAnimation` 开头添加检查，如果正在执行治愈冲击则跳过动画更新
+  2. **状态保护**：在 `_updateCombatUnits` 的敌人更新循环开头添加检查，如果正在执行治愈冲击则跳过状态修改
+  3. **AI保护**：在 `_updateEnemyAutoAttack` 开头添加检查，如果正在执行治愈冲击则跳过敌人AI更新
+  4. **强制保持**：在 `_updateHealingImpact` 开头强制设置 `estate.state = 'skill'` 和 `animState.state = 'skill'`，即使被其他逻辑改了也能立即恢复
+- **修改文件**：
+  - `battle-animation.js`：在 `_updateGenericEnemyAnimation` 中添加保护检查
+  - `battle-combat.js`：在 `_updateCombatUnits` 和 `_updateEnemyAutoAttack` 中添加保护检查，在 `_updateHealingImpact` 中添加强制状态保持
+- **测试建议**：释放治愈冲击技能时，观察是否被其他逻辑打断
+
 ### 2026-05-16（23:30）
 
 **feat: 艾米"治愈冲击"技能完整实现（多阶段特效技能）**

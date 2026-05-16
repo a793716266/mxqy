@@ -292,6 +292,12 @@ export function installBattleCombat(BattleSceneClass) {
       const estate = this.unitStates['enemy_' + i]
       if (!estate) continue
 
+      // ★ 保护检查：如果正在执行特殊技能（如治愈冲击），跳过敌人状态更新
+      // 让技能自己的更新函数来控制状态
+      if (this._healingImpact && this._healingImpact.active && this._healingImpact.enemyIndex === i) {
+        continue  // 跳过此敌人的状态更新，让 _updateHealingImpact 控制
+      }
+
       // ★ 全局目标存活检查：如果目标已死亡，立即清除并重新寻敌
       if (estate.currentTargetId) {
         const targetHero = this.party.find(h => h.id === estate.currentTargetId)
@@ -1769,6 +1775,12 @@ export function installBattleCombat(BattleSceneClass) {
       return
     }
 
+    // ★ 保护检查：如果正在执行特殊技能（如治愈冲击），跳过敌人AI更新
+    // 让技能自己的更新函数来控制
+    if (this._healingImpact && this._healingImpact.active) {
+      return // 让 _updateHealingImpact 来控制
+    }
+
     // ★ 调试日志（每3秒输出一次）
     if (!this._lastEnemyAiLog || this.time - this._lastEnemyAiLog > 3) {
       console.log(`[Enemy AI] 敌人AI正在执行，phase=${this.phase}, enemies.length=${this.enemies.length}, battleTime=${this.time.toFixed(2)}`)
@@ -2498,6 +2510,15 @@ export function installBattleCombat(BattleSceneClass) {
     if (!enemy || !estate) {
       this._healingImpact = null
       return
+    }
+
+    // ★ 强制状态保持：防止技能被其他逻辑打断
+    if (estate.state !== 'skill') {
+      estate.state = 'skill'
+    }
+    if (animState && animState.state !== 'skill') {
+      animState.state = 'skill'
+      animState.attackDamageApplied = false
     }
 
     // ★ 更新粒子特效
