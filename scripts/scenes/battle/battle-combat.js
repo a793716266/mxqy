@@ -1310,11 +1310,11 @@ export function installBattleCombat(BattleSceneClass) {
   }
 
   proto._getSkillCooldown = function(unit, skill) {
-    // ★ 测试战斗：技能无CD，方便调试动画效果
-    if (this.nodeId === 'test_battle') return 0
+    // ★ 修复：移除测试模式无CD的特殊逻辑，让技能CD正常生效
+    // if (this.nodeId === 'test_battle') return 0
 
     const isBasicAttack = !skill.effect && !skill.target && !skill.restrictChance &&
-                          !skill.id && (!skill.name || skill.name === '攻击') && (skill.power || 1) <= 1.05
+                           !skill.id && (!skill.name || skill.name === '攻击') && (skill.power || 1) <= 1.05
     if (isBasicAttack) return 0
 
     const baseCd = lookupBaseCd(skill)
@@ -2186,27 +2186,39 @@ export function installBattleCombat(BattleSceneClass) {
         animState.animCompleted = false
       }
 
-      // ★ BUFF 技能：立即应用效果 + 动画播放完后清理状态
+      // ★ BUFF 技能：立即应用效果 + 立即清理状态（不等待动画完成）
       if (isBuffSkill) {
         // ★ 立即应用BUFF效果（如暗影突袭的隐身）
         if (this._applyEnemyBuff) {
           this._applyEnemyBuff(enemy, skill)
         }
         
-        // ★ 设置动画完成回调：清理攻击状态
+        // ★ 立即清理攻击状态（BUFF技能不需要等待伤害结算）
+        this._clearAttackerFlag('enemy_' + enemyIndex)
+        this.enemyAttacking = false
+        this.enemyAttackTarget = null
+        // 还原敌人移动状态
+        if (estate && estate.state === 'attacking') estate.state = 'idle'
+        if (this.phase !== 'victory' && this.phase !== 'defeat' && this.phase !== 'purify') {
+          this.phase = 'auto_battle'
+        }
+        
+        // ★ 设置动画完成回调：确保状态被正确清理（双重保险）
         animState.onAttackComplete = () => {
-          console.log(`[Enemy AI] ${enemy.name} BUFF技能「${skill.name}」动画播放完成，清理状态`)
+          console.log(`[Enemy AI] ${enemy.name} BUFF技能「${skill.name}」动画播放完成（双重保险清理）`)
           this._clearAttackerFlag('enemy_' + enemyIndex)
           this.enemyAttacking = false
           this.enemyAttackTarget = null
-          // 还原敌人移动状态
           if (estate && estate.state === 'attacking') estate.state = 'idle'
           if (this.phase !== 'victory' && this.phase !== 'defeat' && this.phase !== 'purify') {
             this.phase = 'auto_battle'
           }
         }
         
-        console.log(`[Enemy AI] ${enemy.name} 使用BUFF技能「${skill.name}」，已应用效果，等待动画播放完成`)
+        console.log(`[Enemy AI] ${enemy.name} 使用BUFF技能「${skill.name}」，已应用效果并清理状态`)
+        
+        // ★ 重要：BUFF技能不执行伤害计算，直接返回
+        return
       } else {
         // ★ 非BUFF技能：使用延迟结算（保持原逻辑）
         // ★ 计算动画总时长：总帧数 × 帧间隔
