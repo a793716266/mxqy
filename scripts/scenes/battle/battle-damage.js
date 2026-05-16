@@ -1199,7 +1199,7 @@ export function installBattleDamage(BattleSceneClass) {
       const enemy = this.enemies[index]
       if (!enemy || enemy.hp <= 0) return
 
-      // 检查隐身效果是否结束
+    // ★ 检查隐身效果是否结束
       const invisEffect = effects.find(e => e.type === 'invisible')
       if (invisEffect && invisEffect.startTime && this.time - invisEffect.startTime >= invisEffect.duration) {
         // 隐身效果结束，移除效果（直接更新数组，避免重新赋值参数）

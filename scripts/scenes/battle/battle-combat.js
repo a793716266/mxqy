@@ -1181,6 +1181,12 @@ export function installBattleCombat(BattleSceneClass) {
     let nearestDist = Infinity
     for (let i = 0; i < this.enemies.length; i++) {
       if (this.enemies[i].hp <= 0) continue
+      
+      // ★ 检查敌人是否隐身（暗影突袭效果）
+      const enemyEffects = this.statusEffects.enemies[i] || []
+      const isInvisible = enemyEffects.some(e => e.type === 'invisible' && e.duration > 0)
+      if (isInvisible) continue  // 隐身敌人不会被选为目标
+      
       const eState = this.unitStates['enemy_' + i]
       if (!eState) continue
       const d = this._getDistance(heroState, eState)
