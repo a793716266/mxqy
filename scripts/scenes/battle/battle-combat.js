@@ -2513,12 +2513,15 @@ export function installBattleCombat(BattleSceneClass) {
     }
 
     // ★ 强制状态保持：防止技能被其他逻辑打断
-    if (estate.state !== 'skill') {
-      estate.state = 'skill'
-    }
-    if (animState && animState.state !== 'skill') {
-      animState.state = 'skill'
-      animState.attackDamageApplied = false
+    // ★ 只在技能进行中（preparing/locking/rushing）强制保持，击飞和完成阶段不强制
+    if (impact.phase === 'preparing' || impact.phase === 'locking' || impact.phase === 'rushing') {
+      if (estate.state !== 'skill') {
+        estate.state = 'skill'
+      }
+      if (animState && animState.state !== 'skill') {
+        animState.state = 'skill'
+        animState.attackDamageApplied = false
+      }
     }
 
     // ★ 更新粒子特效
@@ -2595,8 +2598,8 @@ export function installBattleCombat(BattleSceneClass) {
       estate.x = startX + (impact.redZoneX - startX) * progress
       estate.y = startY + (impact.redZoneY - startY) * progress
 
-      // 伤害判定（只判定一次）
-      if (!impact.damageApplied) {
+      // ★ 伤害判定：在帧7时判定（只判定一次），给玩家"飞过去"的冲击感
+      if (!impact.damageApplied && animState && animState.frame >= 7) {
         impact.damageApplied = true
         this._applyHealingImpactDamage(enemy, enemyIndex, impact.skill)
       }
@@ -2609,11 +2612,25 @@ export function installBattleCombat(BattleSceneClass) {
       }
 
     } else if (impact.phase === 'knockback') {
-      // ★ 阶段4：击飞（被击中的英雄在空中1秒）
+      // ★ 阶段4：击飞（敌人已进入CD，只更新目标的击飞效果）
+      
+      // ★ 立即设置敌人状态为idle（进入CD），让敌人可以开始冷却
+      if (estate.state !== 'idle') {
+        estate.state = 'idle'
+        if (animState) {
+          animState.state = 'idle'
+          animState.frame = 1
+          animState.displayFrame = 0
+        }
+        this.enemyAttacking = false
+        this._attackingEnemy = null
+        this._addLog(`${enemy.name} 技能结束，进入冷却`)
+      }
+      
+      // 更新被击飞英雄的状态
       const knockbackElapsed = now - impact.knockbackStartTime
       const progress = Math.min(knockbackElapsed / impact.knockbackDuration, 1.0)
 
-      // 更新被击飞英雄的状态
       const targetHero = this.party.find(h => h.id === impact.targetId)
       const targetState = targetHero ? this.unitStates[targetHero.id] : null
       if (targetState) {

@@ -195,9 +195,13 @@ export function installBattleAnimation(BattleSceneClass) {
   // ======== 通用敌人帧动画更新 ========
   proto._updateGenericEnemyAnimation = function(animState, dt) {
     // ★ 保护检查：如果正在执行特殊技能（如治愈冲击），跳过动画更新
-    // 让技能自己的更新函数来控制动画状态
+    // ★ 只在技能进行中（preparing/locking/rushing）跳过，击飞和完成阶段允许更新
     if (this._healingImpact && this._healingImpact.active) {
-      return  // 让 _updateHealingImpact 来控制动画
+      const phase = this._healingImpact.phase
+      if (phase === 'preparing' || phase === 'locking' || phase === 'rushing') {
+        return  // 让 _updateHealingImpact 来控制动画
+      }
+      // 击飞和完成阶段：不return，允许动画正常更新（敌人进入idle状态）
     }
 
     const baseFrameDuration = animState.frameDuration || 100
