@@ -2106,11 +2106,21 @@ export function installBattleCombat(BattleSceneClass) {
     const timer = this.enemyAttackTimers[enemy.id]
     // ★ 修复：检查 skill.id 或 skill.name，确保没有id字段的技能也能设置CD
     const isSpecialSkill = skill && (skill.id !== undefined || skill.name !== '攻击')
+    
+    // ★ 调试：输出技能CD设置详情
+    console.log(`[Enemy CD调试] ${enemy.name} 技能「${skill.name}」`)
+    console.log(`  skill.id: ${skill.id}, skill.name: ${skill.name}`)
+    console.log(`  isSpecialSkill: ${isSpecialSkill}`)
+    console.log(`  timer存在: ${!!timer}`)
+    
     if (timer && isSpecialSkill) {
       const cd = this._getSkillCooldown(enemy, skill)
       const skillId = skill.id || skill.name
       timer.skillCDs[skillId] = cd
+      console.log(`  ✅ CD已设置: ${skillId} = ${cd}秒`)
       console.log(`[Enemy AI] ${enemy.name} 技能「${skill.name}」进入CD: ${cd}秒`)
+    } else {
+      console.log(`  ❌ CD未设置！timer=${!!timer}, isSpecialSkill=${isSpecialSkill}`)
     }
 
     this._addLog(`${enemy.name} 使用「${skill.name || '攻击'}」！`)

@@ -2,6 +2,46 @@
 
 ## 📅 更新日志
 
+### 2026-05-17（00:50）
+
+**fix: 修复BUFF技能调用参数不一致 + 添加调试日志追踪圣盾之光问题**
+
+- **问题1**：`_applyEnemyBuff` 函数调用参数不一致
+  - `battle-damage.js` 定义：`_applyEnemyBuff(enemy, skill)` - 2个参数
+  - `battle-combat.js` 调用：`_applyEnemyBuff(enemy, enemyIndex, skill, target)` - 4个参数
+  - 导致 `skill` 参数错误，可能触发默认逻辑（攻击力提升）而不是正确的BUFF效果
+  - **修复方案**：
+    1. 简化 `_applyEnemyBuff` 函数签名，只接受 `(enemy, skill)` 两个参数
+    2. 修改 `battle-combat.js` 中的调用方式，从4个参数改为2个参数
+    3. `enemyIndex` 在函数内部通过 `this.enemies.indexOf(enemy)` 获取
+
+- **问题2**：用户报告"暗影鼠使用圣盾之光对英雄造成伤害，并且一直刷屏"
+  - **奇怪之处**：
+    1. 暗影鼠并没有配置"圣盾之光"技能（只有暗影咬和暗影突袭）
+    2. "圣盾之光"是艾米的技能（BUFF类型，不应该造成伤害）
+    3. BUFF技能执行后会 `return`，不应该执行伤害计算
+  - **可能的原因**：
+    1. 用户在测试**艾米Boss战**，而不是暗影鼠
+    2. 或者**技能执行逻辑有问题**，导致BUFF技能被重复执行
+    3. 或者**状态清理有问题**，`enemyAttacking` 没有正确重置
+  - **排查步骤**：
+    1. 在 `_applyEnemyBuff` 函数开头添加调试日志
+    2. 在 `_applyEnemyAttackDamage` 函数开头添加调试日志
+    3. 让用户在控制台查看日志，找出问题根源
+
+- **修改文件**：
+  - `battle-damage.js`: 
+    - 简化 `_applyEnemyBuff` 函数签名
+    - 添加调试日志（追踪BUFF技能执行流程）
+  - `battle-combat.js`:
+    - 修改 `_applyEnemyBuff` 调用方式（从4个参数改为2个参数）
+
+- **测试说明**：
+  1. 打开浏览器控制台（F12），查看调试日志
+  2. 如果看到 `[BUFF调试] _applyEnemyBuff 被调用` 重复出现，说明BUFF技能被重复执行
+  3. 如果看到 `[技能调试] 圣盾之光 被调用`，说明BUFF技能错误地触发了伤害结算
+  4. **请截图控制台日志发给开发者**，帮助定位问题根源
+
 ### 2026-05-17（00:45）
 
 **fix: 修复暗影突袭隐身效果和动画问题**
