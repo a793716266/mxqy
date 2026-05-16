@@ -2550,11 +2550,24 @@ export function installBattleCombat(BattleSceneClass) {
 
   // ======== 治愈冲击技能更新（在 battle-animation.js 的 update() 中调用）========
   proto._updateHealingImpact = function(dt) {
-    if (!this._healingImpact || !this._healingImpact.active) return
+    if (!this._healingImpact || !this._healingImpact.active) {
+      // ★ 调试：追踪 _healingImpact 状态
+      if (this._lastHealingImpactLog && Date.now() - this._lastHealingImpactLogTime < 3000) {
+        // 3秒内不重复输出
+      } else {
+        console.log(`[治愈冲击调试] _updateHealingImpact: _healingImpact=${this._healingImpact ? '存在' : 'null'}, active=${this._healingImpact ? this._healingImpact.active : 'N/A'}`)
+        this._lastHealingImpactLog = this._healingImpact
+        this._lastHealingImpactLogTime = Date.now()
+      }
+      return
+    }
 
+    // ★ 调试：追踪治愈冲击各阶段
     const impact = this._healingImpact
     const enemyIndex = impact.enemyIndex
     const enemy = this.enemies[enemyIndex]
+    console.log(`[治愈冲击调试] 阶段=${impact.phase}, 敌人=${enemy ? enemy.name : '无'}, damageApplied=${impact.damageApplied}`)
+
     const estate = this.unitStates['enemy_' + enemyIndex]
     const animState = this.enemyAnimStates[enemyIndex]
     const now = Date.now()
@@ -2802,6 +2815,13 @@ export function installBattleCombat(BattleSceneClass) {
   // ======== 治愈冲击技能实现（艾米专用）========
   // 多阶段：准备（2秒，粒子特效）→ 锁定（红色区域）→ 冲击（快速接近，击飞）
   proto._executeHealingImpact = function(enemy, enemyIndex, skill, target) {
+    // ★ 调试：追踪治愈冲击执行流程
+    console.log(`[治愈冲击调试] _executeHealingImpact 被调用`)
+    console.log(`  敌人: ${enemy.name} (index=${enemyIndex})`)
+    console.log(`  技能: ${skill.name} (type=${skill.type})`)
+    console.log(`  目标: ${target ? target.name : '无'}`)
+    console.log(`  当前 _healingImpact: ${this._healingImpact ? '存在(phase=' + this._healingImpact.phase + ')' : 'null'}`)
+    
     const estate = this.unitStates['enemy_' + enemyIndex]
     if (!estate) return
 
