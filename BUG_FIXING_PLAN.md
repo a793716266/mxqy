@@ -2,6 +2,25 @@
 
 ## 📅 更新日志
 
+### 2026-05-16（23:52）
+
+**opt: 优化治愈冲击技能帧逻辑（第7帧伤害，第8帧收尾，完后立即CD）**
+- **优化内容**：
+  1. 第7帧：造成伤害（给玩家飞过去的冲击感）
+  2. 第8帧：收尾动画，不造成伤害
+  3. 第8帧播放完后：敌人立即进入CD冷却，但目标击飞效果继续
+- **实现方式**：
+  - rushing阶段：伤害判定改为在帧7时判定（只判定一次）
+  - knockback阶段：敌人立即进入idle状态（CD），只更新目标的击飞效果
+  - 目标击飞结束后，技能才完全结束
+- **修改保护检查**：
+  - _updateHealingImpact：只在preparing/locking/rushing阶段强制保持状态
+  - _updateGenericEnemyAnimation：只在preparing/locking/rushing阶段跳过动画更新
+  - 击飞和完成阶段允许动画正常更新（敌人进入idle状态）
+- **修改文件**：
+  - `battle-combat.js`: 修改rushing阶段伤害判定时机，修改knockback阶段逻辑
+  - `battle-animation.js`: 修改保护检查时机的逻辑
+
 ### 2026-05-16（23:45）
 
 **fix: 治愈冲击技能防打断保护（多层级状态保护）**

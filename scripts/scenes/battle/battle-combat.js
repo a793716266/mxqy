@@ -1815,6 +1815,20 @@ export function installBattleCombat(BattleSceneClass) {
       this._lastEnemyAiLog = this.time
     }
 
+    // ★ 敌人技能CD倒计时（在攻击队列处理之前执行）
+    for (const enemy of this.enemies) {
+      if (enemy.hp <= 0) continue
+      const timer = this.enemyAttackTimers[enemy.id]
+      if (!timer) continue
+      
+      // CD倒计时
+      for (const skillId in timer.skillCDs) {
+        if (timer.skillCDs[skillId] > 0) {
+          timer.skillCDs[skillId] = Math.max(0, timer.skillCDs[skillId] - dt)
+        }
+      }
+    }
+
     // ★ 处理攻击队列：动画空闲时从队列中取出下一个攻击
     if (!this.enemyAttacking && this._enemyAttackQueue && this._enemyAttackQueue.length > 0) {
       const next = this._enemyAttackQueue.shift()
@@ -2086,10 +2100,13 @@ export function installBattleCombat(BattleSceneClass) {
 
     // ★ 设置技能 CD（技能实际释放时才设置，避免在选择阶段就被重置）
     const timer = this.enemyAttackTimers[enemy.id]
-    if (timer && skill.id !== undefined && skill.id !== 'attack') {
+    // ★ 修复：检查 skill.id 或 skill.name，确保没有id字段的技能也能设置CD
+    const isSpecialSkill = skill && (skill.id !== undefined || skill.name !== '攻击')
+    if (timer && isSpecialSkill) {
       const cd = this._getSkillCooldown(enemy, skill)
-      timer.skillCDs[skill.id || skill.name] = cd
-      console.log(`[Enemy AI] ${enemy.name} 技能 ${skill.name} 进入CD: ${cd}秒`)
+      const skillId = skill.id || skill.name
+      timer.skillCDs[skillId] = cd
+      console.log(`[Enemy AI] ${enemy.name} 技能「${skill.name}」进入CD: ${cd}秒`)
     }
 
     this._addLog(`${enemy.name} 使用「${skill.name || '攻击'}」！`)
@@ -3375,8 +3392,9 @@ export function installBattleCombat(BattleSceneClass) {
 
   proto._executeEnemyAutoAttack = function(enemy, enemyIndex, skill, target) {
     this._clearAttackerFlag('enemy_' + enemyIndex)
+    
     this._scheduleTimer(() => {
-      if (this.phase !== 'victory' && this.phase !== 'defeat' && this.phase !== 'purify') {
+      if (this.phase !== 'victory' && this.phase !== 'defeat' && this.phase !== 'purification') {
         this.phase = 'auto_battle'
       }
     }, 300)
