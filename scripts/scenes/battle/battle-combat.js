@@ -1815,20 +1815,6 @@ export function installBattleCombat(BattleSceneClass) {
       this._lastEnemyAiLog = this.time
     }
 
-    // ★ 敌人技能CD倒计时（在攻击队列处理之前执行）
-    for (const enemy of this.enemies) {
-      if (enemy.hp <= 0) continue
-      const timer = this.enemyAttackTimers[enemy.id]
-      if (!timer) continue
-      
-      // CD倒计时
-      for (const skillId in timer.skillCDs) {
-        if (timer.skillCDs[skillId] > 0) {
-          timer.skillCDs[skillId] = Math.max(0, timer.skillCDs[skillId] - dt)
-        }
-      }
-    }
-
     // ★ 处理攻击队列：动画空闲时从队列中取出下一个攻击
     if (!this.enemyAttacking && this._enemyAttackQueue && this._enemyAttackQueue.length > 0) {
       const next = this._enemyAttackQueue.shift()
@@ -2095,6 +2081,18 @@ export function installBattleCombat(BattleSceneClass) {
 
   // ======== 执行敌人攻击动画（从队列取出后调用） ========
   proto._executeEnemyAttackAnim = function(enemy, enemyIndex, skill, target) {
+    // ★ 检查敌人是否已死亡
+    if (!enemy || enemy.hp <= 0) {
+      console.log(`[Enemy AI] 敌人已死亡，取消攻击动画`)
+      this._clearAttackerFlag('enemy_' + enemyIndex)
+      this.enemyAttacking = false
+      this.enemyAttackTarget = null
+      if (this.phase !== 'victory' && this.phase !== 'defeat' && this.phase !== 'purify') {
+        this.phase = 'auto_battle'
+      }
+      return
+    }
+
     this._currentEnemySkill = skill
     this._attackingEnemy = enemy
 
@@ -2172,8 +2170,29 @@ export function installBattleCombat(BattleSceneClass) {
         animState.animCompleted = false
       }
 
-      // ★ 非 BUFF 技能：使用延迟结算（保持原逻辑）
-      if (!isBuffSkill) {
+      // ★ BUFF 技能：立即应用效果 + 动画播放完后清理状态
+      if (isBuffSkill) {
+        // ★ 立即应用BUFF效果（如暗影突袭的隐身）
+        if (this._applyEnemyBuff) {
+          this._applyEnemyBuff(enemy, enemyIndex, skill, target)
+        }
+        
+        // ★ 设置动画完成回调：清理攻击状态
+        animState.onAttackComplete = () => {
+          console.log(`[Enemy AI] ${enemy.name} BUFF技能「${skill.name}」动画播放完成，清理状态`)
+          this._clearAttackerFlag('enemy_' + enemyIndex)
+          this.enemyAttacking = false
+          this.enemyAttackTarget = null
+          // 还原敌人移动状态
+          if (estate && estate.state === 'attacking') estate.state = 'idle'
+          if (this.phase !== 'victory' && this.phase !== 'defeat' && this.phase !== 'purify') {
+            this.phase = 'auto_battle'
+          }
+        }
+        
+        console.log(`[Enemy AI] ${enemy.name} 使用BUFF技能「${skill.name}」，已应用效果，等待动画播放完成`)
+      } else {
+        // ★ 非BUFF技能：使用延迟结算（保持原逻辑）
         // ★ 计算动画总时长：总帧数 × 帧间隔
         // 注意：在 _updateGenericEnemyAnimation 中，不同状态的帧间隔不同：
         // - idle/walk: baseFrameDuration
@@ -3079,12 +3098,23 @@ export function installBattleCombat(BattleSceneClass) {
 
     const basicAttack = { name: '攻击', power: 1.0, type: 'attack' }
 
+    // ★ 调试：输出技能CD状态
+    if (enemy.name === '暗影鼠' && (!this._lastShadowRatLog || this.time - this._lastShadowRatLog > 3)) {
+      const cdStr = Object.entries(timer.skillCDs).map(([k, v]) => `${k}=${v.toFixed(2)}`).join(', ')
+      console.log(`[Enemy AI] ${enemy.name} 技能CD状态: ${cdStr}`)
+      this._lastShadowRatLog = this.time
+    }
+
     // 收集可用技能（非CD中的）
     const availableSkills = [basicAttack]
     if (enemy.skills && Array.isArray(enemy.skills)) {
       enemy.skills.forEach(skill => {
-        const cdRemaining = timer.skillCDs[skill.id || skill.name] || 0
-        if (cdRemaining > 0) return  // CD中
+        const skillId = skill.id || skill.name
+        const cdRemaining = timer.skillCDs[skillId] || 0
+        if (cdRemaining > 0) {
+          console.log(`[Enemy AI] ${enemy.name} 技能「${skill.name}」在CD中: ${cdRemaining.toFixed(2)}秒`)
+          return  // CD中
+        }
         availableSkills.push(skill)
       })
     }
