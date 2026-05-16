@@ -2,6 +2,47 @@
 
 ## 📅 更新日志
 
+### 2026-05-17（00:45）
+
+**fix: 修复暗影突袭隐身效果和动画问题**
+
+- **问题1**：暗影突袭动画用错了（应该用 `buff/` 而不是 `skill/`）
+  - 根本原因：可能是动画状态设置或资源加载有问题
+  - 修复方案：
+    1. 确认 `animType = 'buff'` 时使用的是 `SHADOW_MOUSE_BUFF_01~08` 资源
+    2. 在 `battle-assets.js` 中已正确配置：`animState.state === 'buff'` → `SHADOW_MOUSE_BUFF_${frameNum}`
+    3. 在 `_executeEnemyAttackAnim` 中正确设置 `animState.state = 'buff'`
+    
+- **问题2**：隐身效果没有真正生效（5秒内敌人无法攻击暗影鼠）
+  - 根本原因：
+    1. `_findNearestAliveEnemy` 没有检查敌人是否隐身
+    2. `_updateEnemyStatusEffects` 中的时间判断逻辑有问题
+    3. `_applyEnemyDamage` 中没有检查敌人是否隐身
+  - 修复方案：
+    1. 在 `_findNearestAliveEnemy` 中添加隐身检查：如果敌人有隐身效果，不会被选为目标
+    2. 修复 `_updateEnemyStatusEffects` 中的时间判断逻辑：使用 `this.time - effect.startTime >= effect.duration` 判断是否结束
+    3. 在 `_applyEnemyDamage` 中添加隐身检查：如果敌人隐身，无法被攻击
+    4. 在 `_updateShadowMouseAnimation` 中添加隐身效果检查：如果隐身效果结束，回到 `idle` 状态
+
+- **修改文件**：
+  - `battle-combat.js`: 
+    - 在 `_findNearestAliveEnemy` 中添加隐身检查
+    - 修复 `_updateEnemyStatusEffects` 中的时间判断逻辑
+  - `battle-damage.js`:
+    - 在 `_applyEnemyDamage` 中添加隐身检查（已在之前提交）
+  - `battle-animation.js`:
+    - 在 `_updateShadowMouseAnimation` 中添加隐身效果检查
+
+- **测试说明**：
+  1. 暗影鼠使用暗影突袭后，应该播放 `buff/` 动画（不是 `skill/`）
+  2. 隐身效果持续5秒，期间英雄无法锁定/攻击暗影鼠
+  3. 暗影鼠仍然可以攻击英雄（隐身是为了躲避攻击，而不是无法攻击）
+  4. 隐身结束后，英雄可以正常攻击暗影鼠
+  5. 打开浏览器控制台（F12），查看调试日志：
+     - 应该看到：`[Enemy AI] 暗影鼠 使用BUFF技能「暗影突袭」，已应用效果，等待动画播放完成`
+     - 应该看到：`🌙 暗影鼠 使用「暗影突袭」！进入隐身状态，持续5秒！`
+     - 5秒后应该看到：`🌙 暗影鼠 的隐身效果结束了！`
+
 ### 2026-05-17（00:30）
 
 **fix: 修复敌人BUFF技能无CD和状态清理问题**

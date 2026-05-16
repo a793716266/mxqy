@@ -2180,7 +2180,7 @@ export function installBattleCombat(BattleSceneClass) {
       if (isBuffSkill) {
         // ★ 立即应用BUFF效果（如暗影突袭的隐身）
         if (this._applyEnemyBuff) {
-          this._applyEnemyBuff(enemy, enemyIndex, skill, target)
+          this._applyEnemyBuff(enemy, skill)
         }
         
         // ★ 设置动画完成回调：清理攻击状态
