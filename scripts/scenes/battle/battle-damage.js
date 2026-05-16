@@ -611,6 +611,16 @@ export function installBattleDamage(BattleSceneClass) {
   proto._applyEnemyAttackDamage = function(target, attackingEnemy) {
     const enemy = attackingEnemy || this.enemy
     const skill = this._currentEnemySkill || { name: '攻击', power: 1.0, type: 'attack' }
+    
+    // ★ 调试日志：追踪技能执行流程
+    if (skill && skill.name === '圣盾之光') {
+      console.log(`[技能调试] 圣盾之光 被调用 ( _applyEnemyAttackDamage )`)
+      console.log(`  敌人: ${enemy.name}`)
+      console.log(`  技能类型: ${skill.type}`)
+      console.log(`  技能效果: ${skill.effect}`)
+      console.log(`  当前Phase: ${this.phase}`)
+      console.log(`  ⚠️ 警告：BUFF技能不应该执行伤害结算！`)
+    }
 
     // ★ 隐身检查：如果敌人处于隐身状态，不可被攻击
     const enemyIndex = this.enemies.indexOf(enemy)
@@ -949,7 +959,16 @@ export function installBattleDamage(BattleSceneClass) {
   // ======== 敌人增益技能 ========
   proto._applyEnemyBuff = function(enemy, skill) {
     const enemyIndex = this.enemies.indexOf(enemy)
-    if (enemyIndex === -1) return
+    if (enemyIndex === -1) {
+      console.error('[BUFF错误] _applyEnemyBuff: 找不到敌人', enemy.name)
+      return
+    }
+    
+    // ★ 调试日志：追踪BUFF技能执行
+    console.log(`[BUFF调试] _applyEnemyBuff 被调用`)
+    console.log(`  敌人: ${enemy.name} (index=${enemyIndex})`)
+    console.log(`  技能: ${skill.name} (type=${skill.type}, effect=${skill.effect})`)
+    console.log(`  当前Phase: ${this.phase}, enemyAttacking: ${this.enemyAttacking}`)
 
     if (!this.statusEffects.enemies[enemyIndex]) {
       this.statusEffects.enemies[enemyIndex] = []
