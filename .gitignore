@@ -32,6 +32,9 @@ _source_backup/
 *.log
 *.swp
 *~
+*.bak
+*.bak2
+*.bak3
 
 # 操作系统
 Thumbs.db

@@ -12,6 +12,16 @@
  */
 
 export class DataManager {
+  // ======== 单例模式 ========
+  static _instance = null
+
+  static getInstance() {
+    if (!DataManager._instance) {
+      DataManager._instance = new DataManager()
+    }
+    return DataManager._instance
+  }
+
   constructor() {
     this.saveKey = 'meow_star_save'
     this.data = this._defaultData()
@@ -467,3 +477,6 @@ export class DataManager {
     }
   }
 }
+
+// 模块级单例
+export const dataManager = DataManager.getInstance()

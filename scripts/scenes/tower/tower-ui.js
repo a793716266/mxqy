@@ -1110,7 +1110,7 @@ function renderOneCharacter(ctx, c, battle) {
 
   // 攻击动画位移
   if (c.attackAnimTimer > 0 && c.animState === 'attack') { const progress = c.attackAnimTimer / 350; ctx.translate(16 * progress, -4 * Math.sin((1 - progress) * Math.PI)); const s = 1 + (1 - progress) * 0.15; ctx.scale(s, s) }
-  // ★ 施法动画位移（包含 cast_attack/cast_ice/cast_lightning/cast_fireball 等所有 cast_ 前缀状态）
+  // ★ 施法动画位移（已统一为 cast_universal，所有 cast_ 前缀状态共用）
   else if (c.castSkillId && c.attackAnimTimer > 0) { const progress = c.attackAnimTimer / 600; ctx.translate(0, -6 * Math.sin(progress * Math.PI * 3)); ctx.scale(1 + Math.sin(progress * Math.PI * 2) * 0.08, 1 + Math.sin(progress * Math.PI * 2) * 0.08) }
   // ★ 法师自动攻击位移（cast_ 前缀但无 castSkillId 的普攻场景）
   else if (c.attackAnimTimer > 0 && c.animState && c.animState.startsWith('cast_')) { const progress = c.attackAnimTimer / 500; ctx.translate(8 * (c.facingRight ? -1 : 1) * (1 - progress), -4 * Math.sin(progress * Math.PI)); ctx.scale(1 + (1 - progress) * 0.06, 1 + (1 - progress) * 0.06) }

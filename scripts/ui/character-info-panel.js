@@ -2,6 +2,8 @@
  * character-info-panel.js - 角色信息面板UI组件
  */
 
+import { roundRect } from './canvas-utils.js'
+
 export class CharacterInfoPanel {
   constructor(game, character) {
     this.game = game
@@ -305,17 +307,6 @@ export class CharacterInfoPanel {
   /**
    * 绘制圆角矩形
    */
-  _roundRect(x, y, w, h, r) {
-    this.ctx.beginPath()
-    this.ctx.moveTo(x + r, y)
-    this.ctx.lineTo(x + w - r, y)
-    this.ctx.arcTo(x + w, y, x + w, y + r, r)
-    this.ctx.lineTo(x + w, y + h - r)
-    this.ctx.arcTo(x + w, y + h, x + w - r, y + h, r)
-    this.ctx.lineTo(x + r, y + h)
-    this.ctx.arcTo(x, y + h, x, y + h - r, r)
-    this.ctx.lineTo(x, y + r)
-    this.ctx.arcTo(x, y, x + r, y, r)
-    this.ctx.closePath()
-  }
+  /** @deprecated 使用 canvas-utils.roundRect() */
+  _roundRect(x, y, w, h, r) { roundRect(this.ctx, x, y, w, h, r) }
 }

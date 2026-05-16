@@ -140,6 +140,47 @@ export class CharacterState {
   }
   
   /**
+   * 设置测试等级（仅用于测试场景！）
+   * 直接设置等级并重新计算属性，不影响经验值系统
+   * @param {number} targetLevel - 目标等级
+   */
+  setTestLevel(targetLevel) {
+    if (targetLevel < 1) targetLevel = 1
+    
+    const oldLevel = this.level
+    this.level = targetLevel
+    this.exp = 0
+    
+    // 计算 maxExp
+    if (EXP_TABLE[targetLevel]) {
+      this.maxExp = EXP_TABLE[targetLevel]
+    } else {
+      // 超出表格范围，使用公式估算
+      this.maxExp = Math.floor(EXP_TABLE[10] * Math.pow(1.3, targetLevel - 10))
+    }
+    
+    // 重新计算属性
+    const growth = GROWTH_RATE[this.role] || GROWTH_RATE.warrior
+    this.maxHp = Math.floor(this.baseMaxHp * (1 + growth.hp * (this.level - 1)))
+    this.maxMp = Math.floor(this.baseMaxMp * (1 + growth.mp * (this.level - 1)))
+    this.atk = Math.floor(this.baseAtk * (1 + growth.atk * (this.level - 1)))
+    this.def = Math.floor(this.baseDef * (1 + growth.def * (this.level - 1)))
+    this.spd = Math.floor(this.baseSpd * (1 + growth.spd * (this.level - 1)))
+    
+    // 恢复满状态
+    this.hp = this.maxHp
+    this.mp = this.maxMp
+    
+    console.log(`[CharacterState] ${this.name} 测试等级: Lv.${oldLevel} -> Lv.${this.level}`)
+    console.log(`  属性: HP=${this.maxHp}, MP=${this.maxMp}, ATK=${this.atk}, DEF=${this.def}, SPD=${this.spd}`)
+    
+    // 重新应用装备属性
+    if (this.equipment) {
+      equipmentManager.recalculateEquipmentStats(this)
+    }
+  }
+  
+  /**
    * 序列化（保存用）
    */
   serialize() {
@@ -203,6 +244,16 @@ export class CharacterState {
  * 角色状态管理器
  */
 export class CharacterStateManager {
+  // ======== 单例模式 ========
+  static _instance = null
+
+  static getInstance() {
+    if (!CharacterStateManager._instance) {
+      CharacterStateManager._instance = new CharacterStateManager()
+    }
+    return CharacterStateManager._instance
+  }
+
   constructor() {
     this.characters = new Map()
     this._initialized = false
@@ -230,22 +281,20 @@ export class CharacterStateManager {
         const state = new CharacterState(heroData)
         this.characters.set(heroData.id, state)
         
-        // ========== 测试用：给臻宝添加最佳装备（上线前删除）==========
+        // ========== 初始背包：给臻宝放入起始装备（未穿戴）==========
         if (heroData.id === 'zhenbao') {
-          // 添加传说级别装备
-          const bestEquipments = [
+          const startEquipments = [
             EQUIPMENT_CH1.sunlight_blade,   // 阳光之刃（武器）
             EQUIPMENT_CH1.sunlight_armor,   // 阳光圣甲（防具）
             EQUIPMENT_CH1.sunlight_pendant  // 阳光吊坠（饰品）
           ]
-          
-          // 先添加到背包，再穿戴
-          for (const equip of bestEquipments) {
+
+          // 只添加到背包，不穿戴
+          for (const equip of startEquipments) {
             equipmentManager.addItem(equip.id)
-            equipmentManager.equip(state, equip)
           }
-          
-          console.log(`[CharacterState][测试] ${state.name} 已装备最佳装备`)
+
+          console.log(`[CharacterState] ${state.name} 背包已获得起始装备`)
         }
         // ============================================================
       }

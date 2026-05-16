@@ -9,6 +9,12 @@ export class SkillEffectManager {
     this.effects = [] // 活动特效列表
   }
 
+  // ★ 包含完整角色图像的 cast 特效类型——这些特效不能由 effects.render() 独立绘制
+  // （因为尺寸/位置与角色精灵不匹配），只能通过角色渲染管线（getCurrentFrame）绘制
+  static CAST_BODY_TYPES = new Set([
+    'fireball_cast', 'ice_shard_cast', 'lightning_cast', 'cast_atk'
+  ])
+
   /**
    * 创建技能特效
    * @param {Object} config - 特效配置
@@ -24,6 +30,9 @@ export class SkillEffectManager {
    */
   createEffect(config) {
     const images = this._getEffectImages(config.type)
+    // ★ cast 类型特效：直接标记 _consumedByChar，阻止 effects.render() 独立绘制
+    // 这些特效包含完整角色图像，只能通过角色渲染管线绘制（getCurrentFrame）
+    const isCastBody = SkillEffectManager.CAST_BODY_TYPES.has(config.type)
     const effect = {
       id: `effect_${Date.now()}_${Math.random()}`,
       type: config.type,
@@ -40,12 +49,13 @@ export class SkillEffectManager {
       isPlaying: true,
       onComplete: config.onComplete,
       onFrameChange: config.onFrameChange,
-      images: images
+      images: images,
+      _consumedByChar: isCastBody  // ★ cast 类型直接标记，避免 effects.render() 绘制
     }
 
     this.effects.push(effect)
     
-    console.log(`[SkillEffect] 创建特效: ${config.type}, 帧数: ${config.frameCount}`)
+    console.log(`[SkillEffect] 创建特效: ${config.type}, 帧数: ${effect.frameCount}, cast绑定: ${isCastBody}`)
     
     return effect.id
   }
@@ -88,6 +98,7 @@ export class SkillEffectManager {
    * 获取特效资源前缀
    */
   _getEffectPrefix(type) {
+    if (!type) return 'EFFECT_SLASH'   // ★ null/undefined防御
     const typeMap = {
       'fireball_cast': 'EFFECT_FIREBALL_CAST',
       'fireball_hit': 'EFFECT_FIREBALL_HIT',
@@ -96,6 +107,8 @@ export class SkillEffectManager {
       'lightning_cast': 'EFFECT_LIGHTNING_CAST',
       'lightning_hit': 'EFFECT_LIGHTNING_HIT',
       'thunder': 'EFFECT_THUNDER',
+      // 李小宝法杖普攻施法（已统一为 cast_universal 精灵表）
+      'cast_atk': null,
       // 物理攻击命中特效（复用闪电击中帧作为通用打击效果）
       'slash_hit': 'EFFECT_LIGHTNING_HIT',
       'staff_strike_hit': 'EFFECT_LIGHTNING_HIT'
@@ -103,7 +116,7 @@ export class SkillEffectManager {
     if (typeMap[type] === undefined) {
       console.warn(`[SkillEffect] _getEffectPrefix: 未知特效类型 '${type}'，将使用 type.toUpperCase() 作为前缀`)
     }
-    return typeMap[type] || type.toUpperCase()
+    return typeMap[type] || (type ? type.toUpperCase() : 'EFFECT_SLASH')
   }
 
   /**
@@ -262,14 +275,76 @@ export class SkillEffectManager {
   }
 
   /**
+   * ★ 播放施法特效（便捷方法，供战斗系统调用）
+   * 创建一个 cast 类型特效，播放完毕后自动回调 onComplete
+   * @param {string} effectType - 特效类型（如 'fireball', 'ice_shard', 'thunder'）
+   * @param {number} x - X坐标
+   * @param {number} y - Y坐标
+   * @param {number} dpr - 设备像素比（用于计算缩放）
+   * @param {Function} onComplete - 播放完成回调
+   * @returns {string} effectId
+   */
+  playCastEffect(effectType, x, y, dpr, onComplete) {
+    const castType = effectType + '_cast'
+    // 如果没有对应的前缀映射，尝试直接用 effectType
+    const testPrefix = this._getEffectPrefix(castType)
+    const hasImages = this._getEffectImages(testPrefix).length > 0
+    const actualType = hasImages ? castType : effectType
+
+    console.log(`[SkillEffect] playCastEffect: type=${effectType}, castType=${castType}, 实际使用=${actualType}`)
+
+    const effectId = this.createEffect({
+      type: actualType,
+      x, y,
+      scale: dpr > 1 ? 1.5 : 1,
+      frameDuration: 250,   // 250ms/帧 × 8帧 = 2秒完整施法动画
+      onComplete: () => {
+        if (onComplete) onComplete()
+      }
+    })
+    return effectId
+  }
+
+  /**
+   * ★ 播放命中特效（便捷方法，供战斗系统调用）
+   * 创建一个 hit 类型特效，用于攻击命中时的视觉反馈
+   * @param {string} effectType - 特效类型（如 'fireball_impact', 'physical_impact'）
+   * @param {number} x - X坐标
+   * @param {number} y - Y坐标
+   * @param {number} dpr - 设备像素比
+   * @param {Function} onComplete - 可选完成回调
+   */
+  playHitEffect(effectType, x, y, dpr, onComplete) {
+    // 命中特效类型映射
+    const hitTypeMap = {
+      'magic_impact': 'lightning_hit',
+      'heal_impact': 'lightning_hit',
+      'fire_impact': 'fireball_hit',
+      'ice_impact': 'ice_shard_hit',
+      'physical_impact': 'slash_hit'
+    }
+    const mappedType = hitTypeMap[effectType] || effectType || 'slash_hit'
+
+    const effectId = this.createEffect({
+      type: mappedType,
+      x, y,
+      scale: dpr > 1 ? 1.2 : 1,
+      frameDuration: 40,
+      loop: false,
+      onComplete
+    })
+    return effectId
+  }
+
+  /**
    * ★ 获取指定类型特效的当前帧图片（用于绑定到角色渲染）
    * 返回 null 表示没有匹配的活跃特效
-   * ⚠️ 发现特效后立即标记消耗，确保每帧只返回一次，避免旧帧被重复引用
+   * 注意：不检查 _consumedByChar 标记——consumed 只影响 effects.render() 是否绘制，
+   *       不影响 getCurrentFrame 的查找（角色渲染管线需要每帧都获取当前帧）
    */
   getCurrentFrame(type) {
-    const effect = this.effects.find(e => e.isPlaying && e.type === type && !e._consumedByChar)
+    const effect = this.effects.find(e => e.isPlaying && e.type === type)
     if (!effect || !effect.images || effect.images.length === 0) return null
-    // ★ 只读取当前帧，不标记消耗（由 consumeByCharacter 统一管理）
     const idx = Math.min(effect.currentFrame, effect.images.length - 1)
     return {
       image: effect.images[idx],

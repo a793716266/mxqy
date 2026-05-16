@@ -385,24 +385,24 @@ export function generateGrasslandCollisions() {
     let collY = obj.y + pad
 
     if (obj.assetKey === 'TOWN_TREE') {
-      // 树：碰撞只覆盖树干部位（底部30%高度×55%宽度）
-      // 树冠不参与碰撞，层次感靠Y排序渲染实现
-      collH = Math.max(28, obj.h * 0.30)
-      collW = Math.max(30, obj.w * 0.55)
+      // 树：碰撞覆盖树干部位（从70%高度开始到底部，即下部30%×50%宽度）
+      // 这样碰撞框和视觉树干对齐，不会悬空到树冠区域
+      collH = Math.max(20, obj.h * 0.30)
+      collW = Math.max(28, obj.w * 0.50)
       collX = obj.x + (obj.w - collW) / 2   // 水平居中
-      collY = obj.y + obj.h - collH          // 锚定在树根部
+      collY = obj.y + obj.h * 0.70           // 从70%处开始（树干部位）
     } else if (obj.assetKey === 'TOWN_FOREST') {
-      // 灌木：碰撞 = 底部 40%
-      collH = Math.max(30, obj.h * 0.40)
-      collW = Math.max(35, obj.w * 0.58)
+      // 森林/灌木：碰撞 = 下部35%（65%高度处开始）
+      collH = Math.max(28, obj.h * 0.35)
+      collW = Math.max(32, obj.w * 0.50)
       collX = obj.x + (obj.w - collW) / 2
-      collY = obj.y + obj.h - collH
+      collY = obj.y + obj.h * 0.65
     } else if (obj.assetKey === 'TOWN_ROCK') {
-      // 石块：碰撞 = 底部 65%（石头大部分不可通过）
-      collH = Math.max(18, obj.h * 0.65)
-      collW = Math.max(20, obj.w * 0.70)
+      // 石块：碰撞 = 下部60%（整体偏下但对齐石头主体）
+      collH = Math.max(18, obj.h * 0.60)
+      collW = Math.max(20, obj.w * 0.65)
       collX = obj.x + (obj.w - collW) / 2
-      collY = obj.y + obj.h - collH
+      collY = obj.y + obj.h * 0.40
     }
     // 草堆/花/草：保持全高全宽（贴地小物件）
 

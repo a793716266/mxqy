@@ -228,19 +228,19 @@ export const TOWN_MAP_OBJECTS = [
   //       底1[300~500,1050~1220] 底2[1500~1720,1020~1220] 底中[850~1050,1080~1230] 底左[50~220,1020~1220]
   //       中北1[420~580,180~320] 中北2[1250~1420,150~280]
 
-  // ── 草堆 ──
-  { type: MAP_OBJ_TYPE.DECORATION, x: 200, y: 350,   width: 50, height: 45, assetKey: 'TOWN_GRASS_PILE', name: '草堆1', layer: 'fg' },
-  { type: MAP_OBJ_TYPE.DECORATION, x: 1480, y: 320, width: 50, height: 45, assetKey: 'TOWN_GRASS_PILE', name: '草堆2', layer: 'fg' },
-  { type: MAP_OBJ_TYPE.DECORATION, x: 700, y: 720, width: 50, height: 45, assetKey: 'TOWN_GRASS_PILE', name: '草堆3', layer: 'fg' },
-  { type: MAP_OBJ_TYPE.DECORATION, x: 1250, y: 880, width: 50, height: 45, assetKey: 'TOWN_GRASS_PILE', name: '草堆4', layer: 'fg' },
-  { type: MAP_OBJ_TYPE.DECORATION, x: 290, y: 135, width: 50, height: 45, assetKey: 'TOWN_GRASS_PILE', name: '草堆5', layer: 'fg' },
-  { type: MAP_OBJ_TYPE.DECORATION, x: 880, y: 180, width: 50, height: 45, assetKey: 'TOWN_GRASS_PILE', name: '草堆6', layer: 'fg' },
-  { type: MAP_OBJ_TYPE.DECORATION, x: 1150, y: 160, width: 50, height: 45, assetKey: 'TOWN_GRASS_PILE', name: '草堆7', layer: 'fg' },
-  { type: MAP_OBJ_TYPE.DECORATION, x: 1730, y: 140, width: 50, height: 45, assetKey: 'TOWN_GRASS_PILE', name: '草堆8', layer: 'fg' },
-  { type: MAP_OBJ_TYPE.DECORATION, x: 330, y: 620, width: 50, height: 45, assetKey: 'TOWN_GRASS_PILE', name: '草堆9', layer: 'fg' },
-  { type: MAP_OBJ_TYPE.DECORATION, x: 1050, y: 800, width: 50, height: 45, assetKey: 'TOWN_GRASS_PILE', name: '草堆10', layer: 'fg' },
-  { type: MAP_OBJ_TYPE.DECORATION, x: 1380, y: 650, width: 50, height: 45, assetKey: 'TOWN_GRASS_PILE', name: '草堆11', layer: 'fg' },
-  { type: MAP_OBJ_TYPE.DECORATION, x: 550, y: 1000, width: 50, height: 45, assetKey: 'TOWN_GRASS_PILE', name: '草堆12', layer: 'fg' },
+  // ── 草堆（有碰撞）──
+  { type: MAP_OBJ_TYPE.OBSTACLE, x: 200, y: 350,   width: 50, height: 45, assetKey: 'TOWN_GRASS_PILE', name: '草堆1', collisionPadding: 8, layer: 'fg' },
+  { type: MAP_OBJ_TYPE.OBSTACLE, x: 1480, y: 320, width: 50, height: 45, assetKey: 'TOWN_GRASS_PILE', name: '草堆2', collisionPadding: 8, layer: 'fg' },
+  { type: MAP_OBJ_TYPE.OBSTACLE, x: 700, y: 720, width: 50, height: 45, assetKey: 'TOWN_GRASS_PILE', name: '草堆3', collisionPadding: 8, layer: 'fg' },
+  { type: MAP_OBJ_TYPE.OBSTACLE, x: 1250, y: 880, width: 50, height: 45, assetKey: 'TOWN_GRASS_PILE', name: '草堆4', collisionPadding: 8, layer: 'fg' },
+  { type: MAP_OBJ_TYPE.OBSTACLE, x: 290, y: 135, width: 50, height: 45, assetKey: 'TOWN_GRASS_PILE', name: '草堆5', collisionPadding: 8, layer: 'fg' },
+  { type: MAP_OBJ_TYPE.OBSTACLE, x: 880, y: 180, width: 50, height: 45, assetKey: 'TOWN_GRASS_PILE', name: '草堆6', collisionPadding: 8, layer: 'fg' },
+  { type: MAP_OBJ_TYPE.OBSTACLE, x: 1150, y: 160, width: 50, height: 45, assetKey: 'TOWN_GRASS_PILE', name: '草堆7', collisionPadding: 8, layer: 'fg' },
+  { type: MAP_OBJ_TYPE.OBSTACLE, x: 1730, y: 140, width: 50, height: 45, assetKey: 'TOWN_GRASS_PILE', name: '草堆8', collisionPadding: 8, layer: 'fg' },
+  { type: MAP_OBJ_TYPE.OBSTACLE, x: 330, y: 620, width: 50, height: 45, assetKey: 'TOWN_GRASS_PILE', name: '草堆9', collisionPadding: 8, layer: 'fg' },
+  { type: MAP_OBJ_TYPE.OBSTACLE, x: 1050, y: 800, width: 50, height: 45, assetKey: 'TOWN_GRASS_PILE', name: '草堆10', collisionPadding: 8, layer: 'fg' },
+  { type: MAP_OBJ_TYPE.OBSTACLE, x: 1380, y: 650, width: 50, height: 45, assetKey: 'TOWN_GRASS_PILE', name: '草堆11', collisionPadding: 8, layer: 'fg' },
+  { type: MAP_OBJ_TYPE.OBSTACLE, x: 550, y: 1000, width: 50, height: 45, assetKey: 'TOWN_GRASS_PILE', name: '草堆12', collisionPadding: 8, layer: 'fg' },
 
   // ── 单片草 ──
   { type: MAP_OBJ_TYPE.DECORATION, x: 295, y: 165, width: 35, height: 32, assetKey: 'TOWN_GRASS', name: '草1', layer: 'fg' },
@@ -356,14 +356,45 @@ export function generateTownCollisions() {
     // 只有建筑物和障碍物才有碰撞
     if (obj.type !== MAP_OBJ_TYPE.BUILDING && obj.type !== MAP_OBJ_TYPE.OBSTACLE) continue
     
-    const padding = obj.collisionPadding || 0
-    
+    const pad = obj.collisionPadding || 0
+
+    // ── 层次感碰撞逻辑（与 grassland 一致）──
+    // 高大物体（树/森林）的视觉高度 >> 实际碰撞区。
+    // 碰撞只覆盖物体底部占地范围。
+    // 渲染时靠 Y 轴排序产生伪3D层次感（前遮后）。
+    let collW = obj.width - pad * 2
+    let collH = obj.height - pad * 2
+    let collX = obj.x + pad
+    let collY = obj.y + pad
+
+    if (obj.assetKey === 'TOWN_TREE') {
+      // 树：碰撞只覆盖树干部位（底部18%高度×42%宽度）
+      collH = Math.max(14, obj.height * 0.18)
+      collW = Math.max(23, obj.width * 0.42)
+      collX = obj.x + (obj.width - collW) / 2   // 水平居中
+      collY = obj.y + obj.height - collH          // 锚定在树根部
+    } else if (obj.assetKey === 'TOWN_FOREST') {
+      // 森林/灌木：碰撞 = 最底部树根区（20%高度×45%宽度）
+      // 视觉上森林很高大，实际可通行区域应更大
+      collH = Math.max(22, obj.height * 0.20)
+      collW = Math.max(28, obj.width * 0.45)
+      collX = obj.x + (obj.width - collW) / 2
+      collY = obj.y + obj.height - collH
+    } else if (obj.assetKey === 'TOWN_ROCK') {
+      // 石块：碰撞 = 底部 55%
+      collH = Math.max(15, obj.height * 0.55)
+      collW = Math.max(18, obj.width * 0.60)
+      collX = obj.x + (obj.width - collW) / 2
+      collY = obj.y + obj.height - collH
+    }
+    // 建筑物保持全高全宽（玩家不能走进建筑）
+
     collisions.push({
       type: 'rect',
-      x: obj.x + padding,
-      y: obj.y + padding,
-      width: obj.width - padding * 2,
-      height: obj.height - padding * 2,
+      x: collX,
+      y: collY,
+      width: collW,
+      height: collH,
       name: obj.name,
     })
   }

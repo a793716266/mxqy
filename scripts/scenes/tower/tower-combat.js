@@ -420,16 +420,16 @@ function castSkill(battle, char, skillIdx) {
     war_cry: 'buff',
     berserk: 'buff',
   }
-  // ★ 魔法技能动画映射（根据技能 effect/id 匹配施法动画）
+  // ★ 魔法技能动画映射：所有施法统一使用 cast_universal 精灵表（由 battle-scene 直接处理）
   const MAGIC_ANIM_MAP = {
-    fireball: 'cast_attack',
-    ice: 'cast_ice',
-    ice_shard: 'cast_ice',
-    lightning: 'cast_lightning',
-    meteor: 'cast_attack',
+    fireball: 'cast_universal',
+    ice: 'cast_universal',
+    ice_shard: 'cast_universal',
+    lightning: 'cast_universal',
+    meteor: 'cast_universal',
   }
   const skillAnim = SKILL_ANIM_MAP[sk.id]
-  const magicAnim = (sk.type === 'magic' || sk.type === 'attack') ? (MAGIC_ANIM_MAP[sk.effect || sk.id] || 'cast_attack') : null
+  const magicAnim = (sk.type === 'magic' || sk.type === 'attack') ? (MAGIC_ANIM_MAP[sk.effect || sk.id] || 'cast_universal') : null
   const effectiveAnim = skillAnim || magicAnim
 
   if (effectiveAnim) {

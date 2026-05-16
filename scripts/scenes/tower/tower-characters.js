@@ -239,8 +239,8 @@ function runMageKitingAI(battle, c, enemy, dt, isMoving) {
     c.attackTimer = c.atkInterval || 900
     c.isAttacking = true
     c.attackAnimTimer = 500
-    // ★ 法师应显示施法动画帧（cast_attack 是 lixiaobao 在 HERO_SPRITES 中的实际 key）
-    c.animState = 'cast_attack'
+    // ★ 法师施法动画统一为 cast_universal（由 battle-animation 通过精灵表绘制）
+    c.animState = 'cast_universal'
     c.animFrame = 0
     c._animStartTime = Date.now()
   }

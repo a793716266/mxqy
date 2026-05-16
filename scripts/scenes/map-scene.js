@@ -3,16 +3,14 @@
  */
 
 import { HEROES } from '../data/heroes.js'
-import { MAP_NODES, ENEMIES_CH1 } from '../data/enemies.js'
+import { MAP_NODES } from '../data/map-nodes.js'
+import { ENEMIES_CH1 } from '../data/enemies.js'
+import { roundRect, drawButton, drawBar, isInRect } from '../ui/canvas-utils.js'
+import { SceneBase } from '../core/scene-base.js'
 
-export class MapScene {
+export class MapScene extends SceneBase {
   constructor(game, data) {
-    this.game = game
-    this.ctx = game.ctx
-    this.width = game.width
-    this.height = game.height
-    this.dpr = game.dpr
-    this.time = 0
+    super(game)
 
     // 当前所在节点
     this.currentNodeId = data?.nodeId || 'ch1_town'
@@ -131,9 +129,8 @@ export class MapScene {
     }
   }
 
-  _isInRect(x, y, rx, ry, rw, rh) {
-    return x >= rx && x <= rx + rw && y >= ry && y <= ry + rh
-  }
+  /** @deprecated 使用 canvas-utils.isInRect() */
+  _isInRect(x, y, rx, ry, rw, rh) { return isInRect(x, y, rx, ry, rw, rh) }
 
   render(ctx) {
     const w = this.width
@@ -335,56 +332,12 @@ export class MapScene {
     ctx.fillText('点击继续 ▶', w - 40 * dpr, boxY + boxH - 15 * dpr)
   }
 
-  _drawButton(ctx, x, y, w, h, text, color) {
-    ctx.fillStyle = color
-    ctx.beginPath()
-    this._roundRect(ctx, x, y, w, h, 8 * this.dpr)
-    ctx.fill()
+  /** @deprecated 使用 canvas-utils.drawButton() */
+  _drawButton(ctx, x, y, w, h, text, color) { drawButton(ctx, x + w/2, y + h/2, w, h, text, color, this.dpr) }
 
-    ctx.font = `bold ${18 * this.dpr}px sans-serif`
-    ctx.fillStyle = '#ffffff'
-    ctx.textAlign = 'center'
-    ctx.textBaseline = 'middle'
-    ctx.fillText(text, x + w / 2, y + h / 2)
-    ctx.textBaseline = 'alphabetic'
-  }
+  /** @deprecated 使用 canvas-utils.drawBar() */
+  _drawBar(ctx, x, y, w, h, ratio, color, text) { drawBar(ctx, x, y, w, h, ratio, color, text, this.dpr) }
 
-  _drawBar(ctx, x, y, w, h, ratio, color, text) {
-    ratio = Math.max(0, Math.min(1, ratio))
-
-    // 背景
-    ctx.fillStyle = 'rgba(0, 0, 0, 0.5)'
-    ctx.beginPath()
-    this._roundRect(ctx, x, y, w, h, h / 2)
-    ctx.fill()
-
-    // 填充
-    if (ratio > 0) {
-      ctx.fillStyle = color
-      ctx.beginPath()
-      this._roundRect(ctx, x, y, w * ratio, h, h / 2)
-      ctx.fill()
-    }
-
-    // 文字
-    ctx.font = `bold ${h * 0.8}px sans-serif`
-    ctx.fillStyle = '#ffffff'
-    ctx.textAlign = 'center'
-    ctx.textBaseline = 'middle'
-    ctx.fillText(text, x + w / 2, y + h / 2)
-    ctx.textBaseline = 'alphabetic'
-  }
-
-  _roundRect(ctx, x, y, w, h, r) {
-    ctx.moveTo(x + r, y)
-    ctx.lineTo(x + w - r, y)
-    ctx.arcTo(x + w, y, x + w, y + r, r)
-    ctx.lineTo(x + w, y + h - r)
-    ctx.arcTo(x + w, y + h, x + w - r, y + h, r)
-    ctx.lineTo(x + r, y + h)
-    ctx.arcTo(x, y + h, x, y + h - r, r)
-    ctx.lineTo(x, y + r)
-    ctx.arcTo(x, y, x + r, y, r)
-    ctx.closePath()
-  }
+  /** @deprecated 使用 canvas-utils.roundRect() */
+  _roundRect(ctx, x, y, w, h, r) { roundRect(ctx, x, y, w, h, r) }
 }

@@ -7,6 +7,8 @@
  * - 静音开关
  */
 
+import { roundRect, darkenColor } from './canvas-utils.js'
+
 export class SettingsPanel {
   constructor(game) {
     this.game = game
@@ -311,28 +313,9 @@ export class SettingsPanel {
     ctx.restore()
   }
 
-  _roundRect(ctx, x, y, w, h, r) {
-    ctx.beginPath()
-    ctx.moveTo(x + r, y)
-    ctx.lineTo(x + w - r, y)
-    ctx.arcTo(x + w, y, x + w, y + r, r)
-    ctx.lineTo(x + w, y + h - r)
-    ctx.arcTo(x + w, y + h, x + w - r, y + h, r)
-    ctx.lineTo(x + r, y + h)
-    ctx.arcTo(x, y + h, x, y + h - r, r)
-    ctx.lineTo(x, y + r)
-    ctx.arcTo(x, y, x + r, y, r)
-    ctx.closePath()
-  }
+  /** @deprecated 使用 canvas-utils.roundRect() */
+  _roundRect(ctx, x, y, w, h, r) { roundRect(ctx, x, y, w, h, r) }
 
-  _darkenColor(hex, amount) {
-    const num = parseInt(hex.slice(1), 16)
-    let r = (num >> 16) & 255
-    let g = (num >> 8) & 255
-    let b = num & 255
-    r = Math.floor(r * (1 - amount))
-    g = Math.floor(g * (1 - amount))
-    b = Math.floor(b * (1 - amount))
-    return `rgb(${r},${g},${b})`
-  }
+  /** @deprecated 使用 canvas-utils.darkenColor() */
+  _darkenColor(hex, amount) { return darkenColor(hex, -Math.floor(amount * 255)) }
 }

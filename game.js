@@ -37,13 +37,12 @@ function preloadSoundPackage() {
   })
 }
 
-// 启动游戏循环
-game.start()
-
-// 异步加载 sound 分包
-preloadSoundPackage()
-
-console.log('[喵星奇缘] 游戏启动完成')
+// 异步加载 sound 分包，加载完成后再启动游戏
+console.log('[喵星奇缘] 开始加载 sound 分包...')
+preloadSoundPackage().then(() => {
+  console.log('[喵星奇缘] 游戏启动完成')
+  game.start()
+})
 
 // 提供全局方法清除存档（用于测试）
 if (typeof wx !== 'undefined') {

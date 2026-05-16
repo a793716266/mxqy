@@ -6,19 +6,20 @@ import { ENEMIES_CH1, ENEMIES_CH2, getEnemyByLevel } from '../data/enemies.js'
 import { HEROES } from '../data/heroes.js'
 import { getMapCollisionsSync } from '../data/map_collisions.js'
 import { isPointInObstacle as _isPointInGrasslandObstacle, generateGrasslandCollisions as _genGrassCollisions, GRASSLAND_MAP_CONFIG, GRASSLAND_MAP_OBJECTS, GLAND_OBJ_TYPE } from '../data/grassland-map-data.js'
+import { RENDER_LAYER, getRenderLayer, isSortableLayer } from '../data/render-layer-config.js'
 import { charStateManager } from '../data/character-state.js'
 import { CharacterInfoPanel } from '../ui/character-info-panel.js'
 import { equipmentManager } from '../managers/equipment-manager.js'
 import { getBossDrop, getRandomEquipment } from '../data/equipment.js'
+import { Renderer2D5 } from '../engine/renderer-2.5d.js'
+import { CollisionEngine } from '../engine/collision-engine.js'
+import { roundRect, drawButton, darkenColor } from '../ui/canvas-utils.js'
+import { SceneBase } from '../core/scene-base.js'
+import { CharacterSprite } from '../core/character-sprite.js'
 
-export class FieldScene {
+export class FieldScene extends SceneBase {
   constructor(game, data) {
-    this.game = game
-    this.ctx = game.ctx
-    this.width = game.width
-    this.height = game.height
-    this.dpr = game.dpr
-    this.time = 0
+    super(game)
     
     // 区域信息（兼容 nodeId 和 area 两种参数名）
     this.areaId = data?.area || data?.nodeId || 'grassland'
@@ -65,6 +66,18 @@ export class FieldScene {
     
     // 获取第一个角色（主角）
     this.mainCharacter = charStateManager.getAllCharacters()[0]
+
+    // 为主要角色创建 CharacterSprite（包含渲染逻辑和阴影）
+    this.mainCharacterSprite = null
+    if (this.mainCharacter) {
+      // 从 HEROES 中找到对应的角色数据（包含 renderConfig）
+      const heroData = HEROES.find(h => h.id === this.mainCharacter.id)
+      if (heroData) {
+        // 合并状态数据和配置数据
+        const spriteData = { ...heroData, ...this.mainCharacter }
+        this.mainCharacterSprite = new CharacterSprite(game, spriteData)
+      }
+    }
 
     // 队友跟随系统
     this.followers = [] // 跟随的队友列表
@@ -129,6 +142,13 @@ export class FieldScene {
       this.obstacles = getMapCollisionsSync(this.areaId)
     }
     console.log(`[Field] 加载了 ${this.obstacles.length} 个障碍物`)
+
+    // ── 2.5D 引擎（所有地图场景共用）─
+    this._renderer2d5 = new Renderer2D5({ dpr: this.dpr, width: this.width, height: this.height })
+    this._renderer2d5.setAssets(this.game.assets)
+    // 碰撞检测引擎（替代原来散落在各场景的 _checkObstacleCollision）
+    this._collisionEngine = new CollisionEngine({ dpr: this.dpr })
+    this._collisionEngine.setObstacles(this.obstacles)
   }
   
   _getAreaInfo() {
@@ -231,8 +251,21 @@ export class FieldScene {
     
     // 从第二个角色开始，都是跟随队友
     for (let i = 1; i < allChars.length; i++) {
+      const charData = allChars[i]
+      
+      // 从 HEROES 中找到对应的角色数据（包含 renderConfig）
+      const heroData = HEROES.find(h => h.id === charData.id)
+      let followerSprite = null
+      
+      if (heroData) {
+        // 合并状态数据和配置数据
+        const spriteData = { ...heroData, ...charData }
+        followerSprite = new CharacterSprite(this.game, spriteData)
+      }
+      
       this.followers.push({
-        character: allChars[i],
+        character: charData,
+        sprite: followerSprite, // 存储 CharacterSprite 实例
         x: this.playerX - i * this.followerDistance, // 初始位置在主角后面
         y: this.playerY,
         animFrame: 0,
@@ -623,79 +656,9 @@ export class FieldScene {
     // 更新队友跟随
     this._updateFollowers(dt)
 
-    // 检测从移动切换到idle，重置动画帧（避免使用walk_7等无效帧）
-    // 使用带滞后的有效移动状态，防止摇杆在死区边缘抖动导致 walk/idle 闪烁
-    if (this.isMoving) {
-      this._effectiveMoving = true
-      this._movingHoldFrames = 0
-    } else {
-      this._movingHoldFrames++
-      if (this._movingHoldFrames > this._MOVING_HOLD) {
-        if (this._effectiveMoving) {
-          // 真正停止移动了，重置动画到idle起始
-          this.animFrame = 0
-          this.animTimer = 0
-        }
-        this._effectiveMoving = false
-        this._movingHoldFrames = 0
-      }
-    }
-
-    // 动画帧更新
-    this.animTimer += dt
-
-    // 根据主角类型确定帧率和帧数（1秒循环）
-    const heroId = this.mainCharacter?.id || 'zhenbao'
-    const isCat = heroId.toLowerCase().includes('cat') || heroId === 'mao' // 猫咪角色
-
-    let frameDuration, totalFrames
-    if (this._effectiveMoving) {
-      // 走路动画
-      if (heroId === 'zhenbao') {
-        frameDuration = 0.100 // 臻宝8帧（walk_01~08），100ms/帧 ≈ 0.8秒循环
-        totalFrames = 8
-      } else if (heroId === 'lixiaobao') {
-        frameDuration = 0.100 // 李小宝8帧（walk_01~08），100ms/帧 ≈ 0.8秒循环
-        totalFrames = 8
-      } else if (heroId === 'slime_cat') {
-        frameDuration = 0.083 // 史莱姆猫12帧walk，83ms/帧 ≈ 1秒循环
-        totalFrames = 12
-      } else if (heroId === 'shadow_mouse') {
-        frameDuration = 0.083 // 暗影鼠12帧walk
-        totalFrames = 12
-      } else if (isCat) {
-        frameDuration = 0.083 // 猫咪12帧（减帧版），83ms/帧 ≈ 1秒循环
-        totalFrames = 12
-      } else {
-        frameDuration = 0.125 // 其他8帧，125ms/帧 = 1秒循环
-        totalFrames = 8
-      }
-    } else {
-      // 待机动画（1秒循环）
-      if (heroId === 'zhenbao') {
-        frameDuration = 0.200 // 臻宝5帧（减帧版），200ms/帧 = 1秒循环
-        totalFrames = 5
-      } else if (heroId === 'lixiaobao') {
-        frameDuration = 0.125 // 李小宝8帧idle（idle_01~08），125ms/帧 = 1秒循环
-        totalFrames = 8
-      } else if (heroId === 'slime_cat') {
-        frameDuration = 0.143 // 史莱姆猫7帧idle，143ms/帧 ≈ 1秒循环
-        totalFrames = 7
-      } else if (heroId === 'shadow_mouse') {
-        frameDuration = 0.167 // 暗影鼠6帧idle
-        totalFrames = 6
-      } else if (isCat) {
-        frameDuration = 0.125 // 猫咪8帧（减帧版），125ms/帧 ≈ 1秒循环
-        totalFrames = 8
-      } else {
-        frameDuration = 0.500 // 其他2帧，500ms/帧 = 1秒循环
-        totalFrames = 2
-      }
-    }
-
-    if (this.animTimer >= frameDuration) {
-      this.animTimer = 0
-      this.animFrame = (this.animFrame + 1) % totalFrames
+    // 使用 CharacterSprite 更新主角动画
+    if (this.mainCharacterSprite) {
+      this.mainCharacterSprite.update(dt, this.isMoving, this.facingLeft)
     }
 
     // 点击处理
@@ -981,61 +944,9 @@ export class FieldScene {
         }
       }
       
-      // 更新队友动画
-      follower.animTimer += dt
-
-      // 根据角色类型确定帧率和帧数（1秒循环）
-      const heroId = follower.character.id
-      const isCat = heroId.toLowerCase().includes('cat') || heroId === 'mao'
-
-      let frameDuration, totalFrames
-      if (follower._effectiveMoving) {
-        // 走路动画
-        if (heroId === 'zhenbao') {
-          frameDuration = 0.100
-          totalFrames = 8
-        } else if (heroId === 'lixiaobao') {
-          frameDuration = 0.100 // 李小宝8帧walk
-          totalFrames = 8
-        } else if (heroId === 'slime_cat') {
-          frameDuration = 0.083  // 史莱姆猫12帧walk
-          totalFrames = 12
-        } else if (heroId === 'shadow_mouse') {
-          frameDuration = 0.083  // 暗影鼠12帧walk
-          totalFrames = 12
-        } else if (isCat) {
-          frameDuration = 0.083
-          totalFrames = 12
-        } else {
-          frameDuration = 0.125
-          totalFrames = 8
-        }
-      } else {
-        // 待机动画
-        if (heroId === 'zhenbao') {
-          frameDuration = 0.200
-          totalFrames = 5
-        } else if (heroId === 'lixiaobao') {
-          frameDuration = 0.125 // 李小宝8帧idle
-          totalFrames = 8
-        } else if (heroId === 'slime_cat') {
-          frameDuration = 0.143  // 史莱姆猫7帧idle
-          totalFrames = 7
-        } else if (heroId === 'shadow_mouse') {
-          frameDuration = 0.167  // 暗影鼠6帧idle
-          totalFrames = 6
-        } else if (isCat) {
-          frameDuration = 0.125
-          totalFrames = 8
-        } else {
-          frameDuration = 0.500
-          totalFrames = 2
-        }
-      }
-
-      if (follower.animTimer >= frameDuration) {
-        follower.animTimer = 0
-        follower.animFrame = (follower.animFrame + 1) % totalFrames
+      // 使用 CharacterSprite 更新队友动画
+      if (follower.sprite) {
+        follower.sprite.update(dt, follower.isMoving, follower.facingLeft)
       }
     }
   }
@@ -1117,52 +1028,12 @@ export class FieldScene {
     console.log(`[Field] 收集宝箱获得 ${gold} 金币`)
   }
 
+  /**
+   * 碰撞检测 — 使用 CollisionEngine（统一脚底碰撞）
+   * 所有地图场景共用同一套碰撞参数，不再各自实现
+   */
   _checkObstacleCollision() {
-    if (!this.obstacles || this.obstacles.length === 0) return false
-
-    const playerRadius = 25 * this.dpr // 玩家碰撞半径
-
-    for (const obstacle of this.obstacles) {
-      if (obstacle.type === 'rect') {
-        // 矩形碰撞检测
-        const rect = {
-          x: obstacle.x * this.dpr,
-          y: obstacle.y * this.dpr,
-          width: obstacle.width * this.dpr,
-          height: obstacle.height * this.dpr
-        }
-
-        // 找到矩形上离玩家最近的点
-        const closestX = Math.max(rect.x, Math.min(this.playerX, rect.x + rect.width))
-        const closestY = Math.max(rect.y, Math.min(this.playerY, rect.y + rect.height))
-
-        // 计算距离
-        const distX = this.playerX - closestX
-        const distY = this.playerY - closestY
-        const distance = Math.sqrt(distX * distX + distY * distY)
-
-        if (distance < playerRadius) {
-          return true // 碰撞了
-        }
-      } else if (obstacle.type === 'circle') {
-        // 圆形碰撞检测
-        const circle = {
-          x: obstacle.x * this.dpr,
-          y: obstacle.y * this.dpr,
-          radius: obstacle.radius * this.dpr
-        }
-
-        const dist = Math.sqrt(
-          (this.playerX - circle.x) ** 2 + (this.playerY - circle.y) ** 2
-        )
-
-        if (dist < playerRadius + circle.radius) {
-          return true // 碰撞了
-        }
-      }
-    }
-
-    return false // 没有碰撞
+    return this._collisionEngine.checkStaticCollision(this.playerX, this.playerY)
   }
 
   _checkMonsterCollision() {
@@ -1305,140 +1176,94 @@ export class FieldScene {
   }
 
   /**
-   * 统一Y轴排序渲染 —— 伪3D层次感核心
+   * 统一Y轴排序渲染 — 使用 Renderer2D5 引擎
    *
-   * 将树木、装饰、宝箱、怪物、队友、主角全部收集到一个数组，
-   * 按各自底部Y坐标（y + height）排序后依次绘制。
-   * 排序靠前的先画（在后面/上方），排序靠后的后画（在前面/下方），
-   * 自然产生"前遮后"的2.5D视觉效果。
+   * 渲染流程由引擎统一管理，scene 只负责提供实体数据。
+   * 怪物等特殊类型的渲染通过 hooks 回调传给引擎。
    */
   _renderYSortedEntities(ctx) {
-    const entities = []  // { sortY, type, data, renderFn }
+    const engine = this._renderer2d5
+    const self = this
+    engine.setCamera(this.cameraX, this.cameraY)
+    engine.clear()
 
-    // 1. 收集地图障碍物（树、石块、灌木等）
-    for (const obj of GRASSLAND_MAP_OBJECTS) {
-      if (obj.type === GLAND_OBJ_TYPE.DECORATION) continue  // 装饰物始终在最前层
-      const img = this.game.assets.get(obj.assetKey)
-      if (!img) continue
-      const screenX = obj.x * this.dpr - this.cameraX
-      const screenY = obj.y * this.dpr - this.cameraY
-      const w = (obj.w || obj.width || img.width) * this.dpr
-      const h = (obj.h || obj.height || img.height) * this.dpr
-      // 视野裁剪（宽松一点，避免排序时闪烁）
-      if (screenX + w < -100 || screenX > this.width + 100 ||
-          screenY + h < -100 || screenY > this.height + 100) continue
-      entities.push({
-        sortY: obj.y + (obj.h || obj.height || 80),  // 底部Y坐标
-        type: 'obstacle',
-        img, screenX, screenY, w, h,
-      })
-    }
-
-    // 2. 收集地图装饰（草堆、花朵——始终在角色前面，给一个很大的sortY）
+    // ── layer=0：装饰物（草/花）─
     for (const obj of GRASSLAND_MAP_OBJECTS) {
       if (obj.type !== GLAND_OBJ_TYPE.DECORATION) continue
-      const img = this.game.assets.get(obj.assetKey)
-      if (!img) continue
-      const screenX = obj.x * this.dpr - this.cameraX
-      const screenY = obj.y * this.dpr - this.cameraY
-      const w = (obj.w || obj.width || img.width) * this.dpr
-      const h = (obj.h || obj.height || img.height) * this.dpr
-      if (screenX + w < -50 || screenX > this.width + 50 ||
-          screenY + h < -50 || screenY > this.height + 50) continue
-      entities.push({
-        sortY: 999999,  // 装饰物始终最前
-        type: 'decoration',
-        img, screenX, screenY, w, h,
-      })
+      engine.addDecoration(obj)
     }
 
-    // 3. 收集宝箱等交互对象
+    // ── layer=2：障碍物（树/石块/灌木）─
+    for (const obj of GRASSLAND_MAP_OBJECTS) {
+      if (obj.type === GLAND_OBJ_TYPE.DECORATION) continue
+      engine.addObstacle(obj)
+    }
+
+    // ── layer=2：宝箱等交互对象─
     if (this.mapObjects && Array.isArray(this.mapObjects)) {
       for (const obj of this.mapObjects) {
-        if (obj.collected) continue
-        const screenX = obj.x - this.cameraX
-        const screenY = obj.y - this.cameraY
-        if (screenX < -50 || screenX > this.width + 50 ||
-            screenY < -50 || screenY > this.height + 50) continue
-        entities.push({ sortY: obj.y, type: 'chest', screenX, screenY })
+        const sx = obj.x - this.cameraX
+        const sy = obj.y - this.cameraY
+        engine.addChest(obj, sx, sy)
       }
     }
 
-    // 4. 收集怪物 —— 坐标为物理像素
+    // ── layer=2：怪物─
     if (this.mapMonsters && Array.isArray(this.mapMonsters)) {
       for (const monster of this.mapMonsters) {
         if (!monster.alive) continue
-        const screenX = monster.x - this.cameraX
-        const screenY = monster.y - this.cameraY
-        if (screenX < -100 || screenX > this.width + 100 ||
-            screenY < -100 || screenY > this.height + 100) continue
-        // sortY 转为逻辑像素，+40 为怪物脚底偏移
-        entities.push({
-          sortY: monster.y / this.dpr + 40,
-          type: 'monster', monster, screenX, screenY,
-        })
+        const sx = monster.x - this.cameraX
+        const sy = monster.y - this.cameraY
+        engine.addMonster(monster, sx, sy)
       }
     }
 
-    // 5. 收集队友 —— 坐标来自 field-movement（物理像素）
-    if (this.followers && Array.isArray(this.followers)) {
-      for (let i = 0; i < this.followers.length; i++) {
-        const f = this.followers[i]
-        if (!f) continue
-        const screenX = f.x - this.cameraX
-        const screenY = f.y - this.cameraY
-        // sortY 转为逻辑像素
-        entities.push({
-          sortY: f.y / this.dpr + 50,
-          type: 'follower', index: i, f, screenX, screenY,
-        })
-      }
-    }
-
-    // 6. 收集主角 —— 使用 playerX/Y（物理像素，与移动/碰撞系统一致）
+    // ── layer=2：主角+队友（作为整体参与Y排序）─
     if (typeof this.playerX === 'number') {
-      const px = this.playerX - this.cameraX
-      const py = this.playerY - this.cameraY
-      // sortY 转为逻辑像素（与地图对象的 obj.y 同单位）
-      entities.push({
-        sortY: this.playerY / this.dpr + 50,
-        type: 'player', px, py,
+      engine.addPlayer(this.playerY / this.dpr + 50, function renderFn(ctx) {
+        // 优先使用 FieldMovement 的 renderCharacters（如果存在）
+        if (self.renderCharacters) {
+          self.renderCharacters(ctx)
+        } else if (self.mainCharacterSprite) {
+          // 使用 CharacterSprite 渲染主角（自动处理动画、翻转、阴影）
+          const screenX = self.playerX - self.cameraX
+          const screenY = self.playerY - self.cameraY
+          self.mainCharacterSprite.render(ctx, screenX, screenY)
+
+          // 移动时添加轻微的方向指示器
+          if (self.mainCharacterSprite._effectiveMoving) {
+            const targetHeight = 80 * self.dpr
+            ctx.beginPath()
+            const arrowDist = targetHeight / 2 + 10 * self.dpr
+            let arrowX = screenX
+            let arrowY = screenY
+            
+            switch (self.playerDirection) {
+              case 'up': arrowY -= arrowDist; break
+              case 'down': arrowY += arrowDist; break
+              case 'left': arrowX -= arrowDist; break
+              case 'right': arrowX += arrowDist; break
+            }
+            
+            ctx.arc(arrowX, arrowY, 5 * self.dpr, 0, Math.PI * 2)
+            ctx.fillStyle = 'rgba(255,255,255,0.5)'
+            ctx.fill()
+          }
+        }
       })
     }
 
-    // ── 按 sortY 升序排序（Y小的先画=在后，Y大的后画=在前）──
-    entities.sort((a, b) => a.sortY - b.sortY)
-
-    // ── 统一绘制 ──
-    for (const e of entities) {
-      switch (e.type) {
-        case 'obstacle':
-        case 'decoration':
-          ctx.drawImage(e.img, e.screenX, e.screenY, e.w, e.h)
-          break
-        case 'chest':
-          ctx.font = `${24 * this.dpr}px sans-serif`
-          ctx.textAlign = 'center'
-          ctx.textBaseline = 'middle'
-          ctx.fillText('📦', e.screenX, e.screenY)
-          break
-        case 'monster': {
-          const useCatAnim = !e.monster.isBoss && !e.monster.isElite
-          if (useCatAnim) {
-            this._renderCatMonster(ctx, e.monster, e.screenX, e.screenY)
-          } else {
-            this._renderEmojiMonster(ctx, e.monster, e.screenX, e.screenY)
-          }
-          break
+    // 排序 + 统一绘制（通过 hooks 处理特殊类型）
+    engine.render(ctx, {
+      renderMonster: (ctx, monster, sx, sy) => {
+        const useCatAnim = !monster.isBoss && !monster.isElite
+        if (useCatAnim) {
+          self._renderCatMonster(ctx, monster, sx, sy)
+        } else {
+          self._renderEmojiMonster(ctx, monster, sx, sy)
         }
-        case 'follower':
-          this._drawFollowerAt(ctx, e.f, e.screenX, e.screenY, e.index)
-          break
-        case 'player':
-          this._renderPlayer(ctx)
-          break
-      }
-    }
+      },
+    })
   }
 
   /**
@@ -1576,9 +1401,8 @@ export class FieldScene {
       this._renderMinimap(ctx)
     }
 
-    // 调试：显示碰撞区域（可选）
-    // 取消注释下面这行可以显示碰撞区域
-    // this._renderObstacles(ctx)
+    // 调试：显示碰撞区域（临时开启用于排查问题）
+    this._renderObstacles(ctx)
   }
 
   /**
@@ -1650,9 +1474,22 @@ export class FieldScene {
         }
       }
 
-      // 如果动画帧不存在，尝试使用静态立绘
+      // 如果动画帧不存在，fallback 到同类型第一帧（避免走路时闪到idle帧）
       if (!frameImg) {
-        frameImg = this.game.assets.get(`HERO_${heroId.toUpperCase()}`)
+        const fallbackType = follower._effectiveMoving ? 'WALK' : 'IDLE'
+        if (heroId === 'zhenbao') {
+          frameImg = this.game.assets.get(`HERO_ZHENBAO_${fallbackType}_01`)
+        } else if (heroId === 'lixiaobao') {
+          frameImg = this.game.assets.get(`HERO_LIXIAOBAO_${fallbackType}_01`)
+        } else if (heroId === 'slime_cat') {
+          frameImg = this.game.assets.get(follower._effectiveMoving ? 'SLIME_CAT_WALK_01' : 'SLIME_CAT_IDLE_1')
+        } else if (heroId === 'shadow_mouse') {
+          frameImg = this.game.assets.get(`SHADOW_MOUSE_${fallbackType}_01`)
+        } else if (isCat) {
+          frameImg = this.game.assets.get(`CAT_${fallbackType}_01`)
+        } else {
+          frameImg = this.game.assets.get(`HERO_${heroId.toUpperCase()}_${fallbackType}_0`)
+        }
       }
 
       if (frameImg) {
@@ -1722,74 +1559,13 @@ export class FieldScene {
 
   /**
    * 在指定屏幕坐标渲染单个队友（供 Y 排序统一渲染调用）
+   * 使用 CharacterSprite 渲染（自动处理动画、翻转、阴影）
    */
   _drawFollowerAt(ctx, follower, screenX, screenY) {
-    const targetHeight = 80 * this.dpr
-    let frameImg = null
-    const heroId = follower.character.id
-    const isCat = heroId.toLowerCase().includes('cat') || heroId === 'mao'
+    if (!follower.sprite) return
 
-    if (heroId === 'zhenbao') {
-      frameImg = follower._effectiveMoving
-        ? this.game.assets.get(`HERO_ZHENBAO_WALK_${(follower.animFrame + 1).toString().padStart(2, '0')}`)
-        : this.game.assets.get(`HERO_ZHENBAO_IDLE_${(follower.animFrame + 1).toString().padStart(2, '0')}`)
-    } else if (heroId === 'lixiaobao') {
-      frameImg = follower._effectiveMoving
-        ? this.game.assets.get(`HERO_LIXIAOBAO_WALK_${(follower.animFrame + 1).toString().padStart(2, '0')}`)
-        : this.game.assets.get(`HERO_LIXIAOBAO_IDLE_${(follower.animFrame + 1).toString().padStart(2, '0')}`)
-    } else if (heroId === 'slime_cat') {
-      frameImg = follower._effectiveMoving
-        ? this.game.assets.get(`SLIME_CAT_WALK_${(follower.animFrame + 1).toString().padStart(2, '0')}`)
-        : this.game.assets.get(`SLIME_CAT_IDLE_${follower.animFrame + 1}`)
-    } else if (heroId === 'shadow_mouse') {
-      frameImg = follower._effectiveMoving
-        ? this.game.assets.get(`SHADOW_MOUSE_WALK_${(follower.animFrame + 1).toString().padStart(2, '0')}`)
-        : this.game.assets.get(`SHADOW_MOUSE_IDLE_${String(follower.animFrame + 1).padStart(2, '0')}`)
-    } else if (isCat) {
-      frameImg = follower._effectiveMoving
-        ? this.game.assets.get(`CAT_WALK_${(follower.animFrame + 1).toString().padStart(2, '0')}`)
-        : this.game.assets.get(`CAT_IDLE_${(follower.animFrame + 1).toString().padStart(2, '0')}`)
-    } else {
-      frameImg = follower._effectiveMoving
-        ? this.game.assets.get(`HERO_${heroId.toUpperCase()}_WALK_${follower.animFrame}`)
-        : this.game.assets.get(`HERO_${heroId.toUpperCase()}_IDLE_${follower.animFrame}`)
-    }
-    if (!frameImg) {
-      frameImg = this.game.assets.get(`HERO_${heroId.toUpperCase()}`)
-    }
-    if (!frameImg) return
-
-    const imgWidth = frameImg.width
-    const imgHeight = frameImg.height
-    const scale = targetHeight / imgHeight
-    const renderWidth = imgWidth * scale
-    const renderHeight = targetHeight
-
-    ctx.save()
-    if (heroId === 'zhenbao' || heroId === 'lixiaobao') {
-      if (follower.facingLeft) {
-        ctx.translate(screenX, screenY)
-        ctx.scale(-1, 1)
-        ctx.drawImage(frameImg, -renderWidth / 2, -renderHeight / 2, renderWidth, renderHeight)
-      } else {
-        ctx.drawImage(frameImg, screenX - renderWidth / 2, screenY - renderHeight / 2, renderWidth, renderHeight)
-      }
-    } else {
-      if (!follower.facingLeft) {
-        ctx.translate(screenX, screenY)
-        ctx.scale(-1, 1)
-        ctx.drawImage(frameImg, -renderWidth / 2, -renderHeight / 2, renderWidth, renderHeight)
-      } else {
-        ctx.drawImage(frameImg, screenX - renderWidth / 2, screenY - renderHeight / 2, renderWidth, renderHeight)
-      }
-    }
-    ctx.restore()
-
-    // 底部阴影
-    ctx.beginPath()
-    ctx.ellipse(screenX, screenY + targetHeight / 2 + 5 * this.dpr, targetHeight / 2.5, 8 * this.dpr, 0, 0, Math.PI * 2)
-    ctx.fillStyle = 'rgba(0,0,0,0.3)'
-    ctx.fill()
+    // 使用 CharacterSprite 渲染队友（自动处理动画、翻转、阴影）
+    follower.sprite.render(ctx, screenX, screenY)
   }
   
   _renderPlayer(ctx) {
@@ -1851,9 +1627,22 @@ export class FieldScene {
       }
     }
 
-    // 如果动画帧不存在，尝试使用静态立绘
+    // 如果动画帧不存在，fallback 到同类型第一帧（避免走路时闪到idle帧）
     if (!frameImg) {
-      frameImg = this.game.assets.get(`HERO_${heroId.toUpperCase()}`)
+      const fallbackType = this._effectiveMoving ? 'WALK' : 'IDLE'
+      if (heroId === 'zhenbao') {
+        frameImg = this.game.assets.get(`HERO_ZHENBAO_${fallbackType}_01`)
+      } else if (heroId === 'lixiaobao') {
+        frameImg = this.game.assets.get(`HERO_LIXIAOBAO_${fallbackType}_01`)
+      } else if (heroId === 'slime_cat') {
+        frameImg = this.game.assets.get(this._effectiveMoving ? 'SLIME_CAT_WALK_01' : 'SLIME_CAT_IDLE_1')
+      } else if (heroId === 'shadow_mouse') {
+        frameImg = this.game.assets.get(`SHADOW_MOUSE_${fallbackType}_01`)
+      } else if (isCat) {
+        frameImg = this.game.assets.get(`CAT_${fallbackType}_01`)
+      } else {
+        frameImg = this.game.assets.get(`HERO_${heroId.toUpperCase()}_${fallbackType}_0`)
+      }
     }
 
     if (frameImg) {
@@ -2313,50 +2102,109 @@ export class FieldScene {
     ctx.fill()
   }
   
-  _roundRect(ctx, x, y, w, h, r) {
-    ctx.moveTo(x + r, y)
-    ctx.lineTo(x + w - r, y)
-    ctx.arcTo(x + w, y, x + w, y + r, r)
-    ctx.lineTo(x + w, y + h - r)
-    ctx.arcTo(x + w, y + h, x + w - r, y + h, r)
-    ctx.lineTo(x + r, y + h)
-    ctx.arcTo(x, y + h, x, y + h - r, r)
-    ctx.lineTo(x, y + r)
-    ctx.arcTo(x, y, x + r, y, r)
-    ctx.closePath()
-  }
+  /** @deprecated 使用 canvas-utils.roundRect() */
+  _roundRect(ctx, x, y, w, h, r) { roundRect(ctx, x, y, w, h, r) }
 
   _renderObstacles(ctx) {
     // 绘制碰撞区域的可视化（用于调试）
     if (!this.obstacles || this.obstacles.length === 0) return
+
+    // 调试：输出第一个障碍物的坐标信息
+    if (!this._obstacleRenderDebugLogged && this.obstacles.length > 0) {
+      this._obstacleRenderDebugLogged = true
+      const obs = this.obstacles[0]
+      console.log(`[障碍物渲染调试] 第一个障碍物: 逻辑坐标(${obs.x}, ${obs.y}) 尺寸${obs.width}x${obs.height}`)
+      console.log(`[障碍物渲染调试] dpr=${this.dpr}, camera(物理px)=(${this.cameraX}, ${this.cameraY})`)
+    }
 
     for (const obstacle of this.obstacles) {
       // 转换为屏幕坐标
       const screenX = obstacle.x * this.dpr - this.cameraX
       const screenY = obstacle.y * this.dpr - this.cameraY
 
-      ctx.strokeStyle = 'rgba(255, 0, 0, 0.8)'
-      ctx.fillStyle = 'rgba(255, 0, 0, 0.2)'
-      ctx.lineWidth = 2
+      // 跳过屏幕外的障碍物（优化性能）
+      const w = obstacle.width * this.dpr
+      const h = obstacle.height * this.dpr
+      if (screenX + w < 0 || screenX > this.width || screenY + h < 0 || screenY > this.height) {
+        continue
+      }
 
       if (obstacle.type === 'rect') {
-        // 绘制矩形
-        const w = obstacle.width * this.dpr
-        const h = obstacle.height * this.dpr
+        // ── 1. 绘制半透明红色填充 ──
+        ctx.fillStyle = 'rgba(255, 0, 0, 0.25)'
         ctx.fillRect(screenX, screenY, w, h)
+
+        // ── 2. 绘制红色边框 ──
+        ctx.strokeStyle = 'rgba(255, 0, 0, 0.9)'
+        ctx.lineWidth = 2
         ctx.strokeRect(screenX, screenY, w, h)
 
-        // 显示名称
-        ctx.font = `${12 * this.dpr}px sans-serif`
+        // ── 3. 绘制四个角落的标记（小方块）──
+        const cornerSize = 6 * this.dpr
+        ctx.fillStyle = '#ff0000'
+        // 左上
+        ctx.fillRect(screenX - cornerSize / 2, screenY - cornerSize / 2, cornerSize, cornerSize)
+        // 右上
+        ctx.fillRect(screenX + w - cornerSize / 2, screenY - cornerSize / 2, cornerSize, cornerSize)
+        // 左下
+        ctx.fillRect(screenX - cornerSize / 2, screenY + h - cornerSize / 2, cornerSize, cornerSize)
+        // 右下
+        ctx.fillRect(screenX + w - cornerSize / 2, screenY + h - cornerSize / 2, cornerSize, cornerSize)
+
+        // ── 4. 绘制中心十字准星 ──
+        ctx.strokeStyle = 'rgba(255, 0, 0, 0.6)'
+        ctx.lineWidth = 1
+        const cx = screenX + w / 2
+        const cy = screenY + h / 2
+        // 水平线
+        ctx.beginPath()
+        ctx.moveTo(cx - 10 * this.dpr, cy)
+        ctx.lineTo(cx + 10 * this.dpr, cy)
+        ctx.stroke()
+        // 垂直线
+        ctx.beginPath()
+        ctx.moveTo(cx, cy - 10 * this.dpr)
+        ctx.lineTo(cx, cy + 10 * this.dpr)
+        ctx.stroke()
+
+        // ── 5. 显示名称和坐标信息 ──
+        ctx.font = `bold ${11 * this.dpr}px monospace`
         ctx.fillStyle = '#ff0000'
         ctx.textAlign = 'center'
-        ctx.fillText(obstacle.name || '障碍', screenX + w / 2, screenY + h / 2)
+        ctx.textBaseline = 'bottom'
+        const labelY = screenY - 5 * this.dpr  // 在矩形上方显示
+        ctx.fillText(`${obstacle.name || '障碍'}`, cx, labelY)
+        ctx.font = `${9 * this.dpr}px monospace`
+        ctx.fillStyle = 'rgba(255, 0, 0, 0.7)'
+        ctx.fillText(`(${obstacle.x},${obstacle.y})`, cx, labelY - 12 * this.dpr)
+
+        // ── 6. 绘制从障碍物中心到玩家位置的连线（如果距离较近）──
+        if (typeof this.playerX === 'number') {
+          const obsCenterX = obstacle.x * this.dpr + w / 2
+          const obsCenterY = obstacle.y * this.dpr + h / 2
+          const playerScreenX = this.playerX - this.cameraX
+          const playerScreenY = this.playerY - this.cameraY
+          const dist = Math.sqrt((obsCenterX - playerScreenX) ** 2 + (obsCenterY - playerScreenY) ** 2)
+          if (dist < 300 * this.dpr) {  // 只绘制近距离的连线
+            ctx.strokeStyle = 'rgba(255, 0, 0, 0.3)'
+            ctx.lineWidth = 1
+            ctx.setLineDash([5, 5])
+            ctx.beginPath()
+            ctx.moveTo(obsCenterX, obsCenterY)
+            ctx.lineTo(playerScreenX, playerScreenY)
+            ctx.stroke()
+            ctx.setLineDash([])  // 恢复实线
+          }
+        }
       } else if (obstacle.type === 'circle') {
         // 绘制圆形
         const r = obstacle.radius * this.dpr
         ctx.beginPath()
         ctx.arc(screenX, screenY, r, 0, Math.PI * 2)
+        ctx.fillStyle = 'rgba(255, 0, 0, 0.25)'
         ctx.fill()
+        ctx.strokeStyle = 'rgba(255, 0, 0, 0.9)'
+        ctx.lineWidth = 2
         ctx.stroke()
 
         // 显示名称

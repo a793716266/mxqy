@@ -4,6 +4,8 @@
  */
 
 import { charStateManager } from '../data/character-state.js'
+import { CollisionEngine } from '../engine/collision-engine.js'
+import { getAnimParams } from '../data/animation-config.js'
 
 /**
  * 野外移动控制器
@@ -55,9 +57,10 @@ export class FieldMovement {
     // 主角（将在init()中初始化）
     this.mainCharacter = null
     
-    // 碰撞检测系统
-    this.obstacles = []           // 障碍物数组（逻辑像素坐标）
-    this.playerRadius = 25 * this.dpr  // 玩家碰撞半径
+    // 碰撞检测系统（统一使用 CollisionEngine，不再自行实现）
+    this._collisionEngine = new CollisionEngine({ dpr: this.dpr })
+    this.playerRadius = 16 * this.dpr  // 玩家碰撞半径（脚底小圆）
+    this.collisionFootOffsetY = 36 * this.dpr  // 碰撞检测点Y偏移（从角色中心→脚底）
     
     // 触摸事件回调
     this._onTouchMove = null
@@ -140,64 +143,23 @@ export class FieldMovement {
   }
 
   /**
-   * 设置障碍物数据（碰撞检测）
+   * 设置障碍物数据（委托给统一碰撞引擎）
    * @param {Array} obstacles - 障碍物数组，每个元素格式：{ type: 'rect', x, y, width, height, name }
    */
   setObstacles(obstacles) {
-    // 转换为物理像素坐标（乘以dpr）
-    this.obstacles = (obstacles || []).map(obs => {
-      if (obs.type === 'rect') {
-        return {
-          type: 'rect',
-          x: obs.x * this.dpr,
-          y: obs.y * this.dpr,
-          width: obs.width * this.dpr,
-          height: obs.height * this.dpr,
-          name: obs.name || '障碍'
-        }
-      } else if (obs.type === 'circle') {
-        return {
-          type: 'circle',
-          x: obs.x * this.dpr,
-          y: obs.y * this.dpr,
-          radius: obs.radius * this.dpr,
-          name: obs.name || '圆形障碍'
-        }
-      }
-      return null
-    }).filter(Boolean)
-    
-    console.log(`[FieldMovement] 设置了 ${this.obstacles.length} 个碰撞障碍物`)
+    this._collisionEngine.setObstacles(obstacles)
+    console.log(`[FieldMovement] 通过 CollisionEngine 设置了障碍物`)
   }
 
   /**
    * 检查玩家当前位置是否与障碍物碰撞
+   * 委托给统一碰撞引擎（脚底碰撞检测）
    */
   _checkCollision(x, y) {
-    if (!this.obstacles || this.obstacles.length === 0) return false
-    
-    for (const obs of this.obstacles) {
-      if (obs.type === 'rect') {
-        // 矩形碰撞：找矩形上离玩家最近的点，计算距离
-        const closestX = Math.max(obs.x, Math.min(x, obs.x + obs.width))
-        const closestY = Math.max(obs.y, Math.min(y, obs.y + obs.height))
-        const distX = x - closestX
-        const distY = y - closestY
-        const distance = Math.sqrt(distX * distX + distY * distY)
-        
-        if (distance < this.playerRadius) {
-          return true
-        }
-      } else if (obs.type === 'circle') {
-        // 圆形碰撞
-        const dist = Math.sqrt((x - obs.x) ** 2 + (y - obs.y) ** 2)
-        if (dist < this.playerRadius + obs.radius) {
-          return true
-        }
-      }
-    }
-    
-    return false
+    return this._collisionEngine.checkStaticCollision(x, y, {
+      radius: this.playerRadius / this.dpr,
+      footOffsetY: this.collisionFootOffsetY / this.dpr
+    })
   }
   
   /**
@@ -258,22 +220,13 @@ export class FieldMovement {
         this.playerX = Math.max(boundaryMargin, Math.min(this.mapWidth - boundaryMargin, this.playerX))
         this.playerY = Math.max(boundaryMargin, Math.min(this.mapHeight - boundaryMargin, this.playerY))
 
-        // 碰撞检测 - 碰撞则回退（支持分轴滑动：尝试单轴移动）
-        if (this._checkCollision(this.playerX, this.playerY)) {
-          // 先尝试只走X轴
-          this.playerX = oldX + moveX
-          this.playerY = oldY
-          if (this._checkCollision(this.playerX, this.playerY)) {
-            // X也不行，尝试只走Y轴
-            this.playerX = oldX
-            this.playerY = oldY + moveY
-            if (this._checkCollision(this.playerX, this.playerY)) {
-              // 都不行，完全回退
-              this.playerX = oldX
-              this.playerY = oldY
-            }
-          }
-        }
+        // 碰撞检测 - 碰撞则回退（支持分轴滑动：委托给统一引擎）
+        const corrected = this._collisionEngine.moveWithSlide(
+          oldX, oldY, this.playerX, this.playerY,
+          { radius: this.playerRadius / this.dpr, footOffsetY: this.collisionFootOffsetY / this.dpr }
+        )
+        this.playerX = corrected.x
+        this.playerY = corrected.y
 
         // 更新相机位置（跟随玩家）
         this._updateCamera()
@@ -307,50 +260,9 @@ export class FieldMovement {
     const heroId = this.mainCharacter?.id || 'zhenbao'
     const isCat = heroId.toLowerCase().includes('cat') || heroId === 'mao'
 
-    let frameDuration, totalFrames
-    if (this._effectiveMoving) {
-      // 走路动画
-      if (heroId === 'zhenbao') {
-        frameDuration = 0.100 // 臻宝8帧（walk_01~08），100ms/帧 ≈ 0.8秒循环
-        totalFrames = 8
-      } else if (heroId === 'lixiaobao') {
-        frameDuration = 0.100 // 李小宝8帧（walk_01~08），100ms/帧 ≈ 0.8秒循环
-        totalFrames = 8
-      } else if (heroId === 'slime_cat') {
-        frameDuration = 0.083 // 史莱姆猫12帧walk，83ms/帧 ≈ 1秒循环
-        totalFrames = 12
-      } else if (heroId === 'shadow_mouse') {
-        frameDuration = 0.083 // 暗影鼠12帧walk
-        totalFrames = 12
-      } else if (isCat) {
-        frameDuration = 0.083 // 猫咪12帧（减帧版），83ms/帧 ≈ 1秒循环
-        totalFrames = 12
-      } else {
-        frameDuration = 0.125 // 其他8帧，125ms/帧 = 1秒循环
-        totalFrames = 8
-      }
-    } else {
-      // 待机动画（1秒循环）
-      if (heroId === 'zhenbao') {
-        frameDuration = 0.200 // 臻宝5帧（减帧版），200ms/帧 = 1秒循环
-        totalFrames = 5
-      } else if (heroId === 'lixiaobao') {
-        frameDuration = 0.125 // 李小宝8帧（idle_01~08），125ms/帧 = 1秒循环
-        totalFrames = 8
-      } else if (heroId === 'slime_cat') {
-        frameDuration = 0.143 // 史莱姆猫7帧idle，143ms/帧 ≈ 1秒循环
-        totalFrames = 7
-      } else if (heroId === 'shadow_mouse') {
-        frameDuration = 0.167 // 暗影鼠6帧idle
-        totalFrames = 6
-      } else if (isCat) {
-        frameDuration = 0.125 // 猫咪8帧（减帧版），125ms/帧 ≈ 1秒循环
-        totalFrames = 8
-      } else {
-        frameDuration = 0.500 // 其他2帧，500ms/帧 = 1秒循环
-        totalFrames = 2
-      }
-    }
+    const anim = getAnimParams(heroId, this._effectiveMoving)
+    let frameDuration = anim.dur
+    let totalFrames = anim.frames
 
     if (this.animTimer >= frameDuration) {
       this.animTimer = 0
@@ -478,50 +390,9 @@ export class FieldMovement {
       const heroId = follower.character.id
       const isCat = heroId.toLowerCase().includes('cat') || heroId === 'mao'
 
-      let frameDuration, totalFrames
-      if (follower._effectiveMoving) {
-        // 走路动画
-        if (heroId === 'zhenbao') {
-          frameDuration = 0.100 // 臻宝8帧
-          totalFrames = 8
-        } else if (heroId === 'lixiaobao') {
-          frameDuration = 0.100 // 李小宝8帧
-          totalFrames = 8
-        } else if (heroId === 'slime_cat') {
-          frameDuration = 0.083 // 史莱姆猫12帧walk
-          totalFrames = 12
-        } else if (heroId === 'shadow_mouse') {
-          frameDuration = 0.083 // 暗影鼠12帧walk
-          totalFrames = 12
-        } else if (isCat) {
-          frameDuration = 0.083
-          totalFrames = 12
-        } else {
-          frameDuration = 0.125
-          totalFrames = 8
-        }
-      } else {
-        // 待机动画
-        if (heroId === 'zhenbao') {
-          frameDuration = 0.200
-          totalFrames = 5
-        } else if (heroId === 'lixiaobao') {
-          frameDuration = 0.125 // 李小宝8帧idle
-          totalFrames = 8
-        } else if (heroId === 'slime_cat') {
-          frameDuration = 0.143 // 史莱姆猫7帧idle
-          totalFrames = 7
-        } else if (heroId === 'shadow_mouse') {
-          frameDuration = 0.167 // 暗影鼠6帧idle
-          totalFrames = 6
-        } else if (isCat) {
-          frameDuration = 0.125
-          totalFrames = 8
-        } else {
-          frameDuration = 0.500
-          totalFrames = 2
-        }
-      }
+      const anim = getAnimParams(heroId, follower._effectiveMoving)
+      let frameDuration = anim.dur
+      let totalFrames = anim.frames
 
       if (follower.animTimer >= frameDuration) {
         follower.animTimer = 0
@@ -612,16 +483,21 @@ export class FieldMovement {
     
     let img = this.game.assets.get(frameKey)
     
-    // 如果没有动画帧，使用静态立绘
+    // 如果没有动画帧，fallback 到同类型第一帧（避免走路时闪到idle帧）
     if (!img) {
+      const fallbackType = isMoving ? 'WALK' : 'IDLE'
       if (heroId === 'slime_cat') {
-        img = this.game.assets.get('SLIME_CAT_IDLE_1')
+        img = this.game.assets.get(isMoving ? 'SLIME_CAT_WALK_01' : 'SLIME_CAT_IDLE_1')
       } else if (heroId === 'shadow_mouse') {
-        img = this.game.assets.get('SHADOW_MOUSE_IDLE_01')
+        img = this.game.assets.get(`SHADOW_MOUSE_${fallbackType}_01`)
+      } else if (heroId === 'zhenbao') {
+        img = this.game.assets.get(`HERO_ZHENBAO_${fallbackType}_01`)
+      } else if (heroId === 'lixiaobao') {
+        img = this.game.assets.get(`HERO_LIXIAOBAO_${fallbackType}_01`)
       } else if (isCat) {
-        img = this.game.assets.get(`CAT_${heroId.toUpperCase()}`)
+        img = this.game.assets.get(`CAT_${fallbackType}_01`)
       } else {
-        img = this.game.assets.get(`HERO_${heroId.toUpperCase()}`)
+        img = this.game.assets.get(`HERO_${heroId.toUpperCase()}_${fallbackType}_0`)
       }
     }
     

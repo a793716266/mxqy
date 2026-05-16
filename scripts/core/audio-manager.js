@@ -233,4 +233,20 @@ export class AudioManager {
     })
     this._sfxPool = []
   }
+
+  // ==================== 单例模式 ====================
+  
+  // 静态属性：保存唯一实例
+  static _instance = null
+  
+  /**
+   * 获取单例实例
+   * @returns {AudioManager} 全局唯一的 AudioManager 实例
+   */
+  static getInstance() {
+    if (!AudioManager._instance) {
+      AudioManager._instance = new AudioManager()
+    }
+    return AudioManager._instance
+  }
 }

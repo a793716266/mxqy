@@ -13,6 +13,10 @@
       "root": "subpackages/battle/"
     },
     {
+      "name": "map",
+      "root": "subpackages/map/"
+    },
+    {
       "name": "sound",
       "root": "subpackages/sound/"
     }

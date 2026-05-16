@@ -81,6 +81,25 @@ export class MainMenuScene {
         action: () => {
           this.game.changeScene('collection')
         }
+      },
+      // ⚔️ 战斗测试（BUFF测试）- 仅开发测试用
+      {
+        text: '⚔️ 战斗测试 (BUFF测试)',
+        x: cx - btnW / 2,
+        y: cy + 280 * this.dpr,
+        w: btnW,
+        h: btnH,
+        color: '#ee5a24',
+        action: () => {
+          console.log('[MainMenu] 进入战斗测试模式（李小宝1000级 vs BOSS艾米）')
+          this.game.changeScene('battle', {
+            _testMode: true,
+            enemies: [
+              { id: 'lost_healer_cat', level: 10 }  // BOSS艾米
+            ],
+            party: ['lixiaobao', 'zhenbao']
+          })
+        }
       }
     ]
   }

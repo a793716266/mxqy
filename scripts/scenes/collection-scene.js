@@ -3,15 +3,12 @@
  */
 
 import { CAT_COLLECTION } from '../data/cats.js'
+import { roundRect, darkenColor } from '../ui/canvas-utils.js'
+import { SceneBase } from '../core/scene-base.js'
 
-export class CollectionScene {
+export class CollectionScene extends SceneBase {
   constructor(game) {
-    this.game = game
-    this.ctx = game.ctx
-    this.width = game.width
-    this.height = game.height
-    this.dpr = game.dpr
-    this.time = 0
+    super(game)
     
     // 滚动偏移
     this.scrollY = 0
@@ -179,44 +176,11 @@ export class CollectionScene {
     }
   }
   
+  /** @deprecated 使用 canvas-utils.drawSmallButton() */
   _drawButton(ctx, btn, text, color) {
-    const { x, y, w, h } = btn
-    const r = 8 * this.dpr
+    drawSmallButton(ctx, btn.x + btn.w/2, btn.y + btn.h/2, btn.w, btn.h, text, color, this.dpr)
+  }
 
-    // 手动画圆角矩形
-    ctx.beginPath()
-    ctx.moveTo(x + r, y)
-    ctx.lineTo(x + w - r, y)
-    ctx.arcTo(x + w, y, x + w, y + r, r)
-    ctx.lineTo(x + w, y + h - r)
-    ctx.arcTo(x + w, y + h, x + w - r, y + h, r)
-    ctx.lineTo(x + r, y + h)
-    ctx.arcTo(x, y + h, x, y + h - r, r)
-    ctx.lineTo(x, y + r)
-    ctx.arcTo(x, y, x + r, y, r)
-    ctx.closePath()
-    
-    const grad = ctx.createLinearGradient(x, y, x, y + h)
-    grad.addColorStop(0, color)
-    grad.addColorStop(1, this._darkenColor(color, 0.3))
-    ctx.fillStyle = grad
-    ctx.fill()
-    
-    ctx.font = `bold ${20 * this.dpr}px sans-serif`
-    ctx.fillStyle = '#ffffff'
-    ctx.textAlign = 'center'
-    ctx.textBaseline = 'middle'
-    ctx.fillText(text, x + w / 2, y + h / 2)
-  }
-  
-  _darkenColor(hex, amount) {
-    const num = parseInt(hex.slice(1), 16)
-    let r = (num >> 16) & 255
-    let g = (num >> 8) & 255
-    let b = num & 255
-    r = Math.floor(r * (1 - amount))
-    g = Math.floor(g * (1 - amount))
-    b = Math.floor(b * (1 - amount))
-    return `rgb(${r},${g},${b})`
-  }
+  /** @deprecated 使用 canvas-utils.darkenColor() */
+  _darkenColor(hex, amount) { return darkenColor(hex, -Math.floor(amount * 255)) }
 }

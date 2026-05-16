@@ -61,6 +61,7 @@ export function getEnemyByLevel(enemyData, level = 1) {
   finalEnemy.mp = finalEnemy.maxMp
 
   console.log(`[Enemy] ${enemyData.name} Lv.${level} - HP:${finalEnemy.maxHp}, ATK:${finalEnemy.atk}, DEF:${finalEnemy.def}, CRIT:${(finalEnemy.crit * 100).toFixed(1)}%, MP:${finalEnemy.maxMp}`)
+  console.log(`[Enemy] renderConfig:`, finalEnemy.renderConfig)
 
   return finalEnemy
 }
@@ -76,11 +77,27 @@ export const ENEMIES_CH1 = {
     def: 5,          // 3 → 5 (+67%)
     spd: 9,
     crit: 0.05,      // 基础暴击率 5%
+    aiPattern: 'aggressive',  // 激进：猛扑不退
+    // 渲染配置（用于 CharacterSprite）
+    renderConfig: {
+      assetPrefix: 'WILD_CAT',
+      spriteType: 'enemy',
+      totalWalkFrames: 8,
+      totalIdleFrames: 8,
+      walkFrameOffset: 1,
+      idleFrameOffset: 1,
+      walkFramePad: 2,
+      idleFramePad: 2,
+      flipRule: 'opposite', // 敌人默认 facingLeft=false 时翻转
+      shadow: true,
+      targetHeight: 80,
+      frameDuration: 0.15
+    },
     exp: 15,         // 奖励提升
     gold: 8,
     skills: [
-      { name: '抓挠', power: 1.2, type: 'attack', mpCost: 0 },          // 1.0 → 1.2
-      { name: '狂抓', power: 1.5, type: 'attack', mpCost: 5 }           // 新增技能
+      { name: '抓挠', power: 1.2, type: 'attack' },          // 1.0 → 1.2
+      { name: '狂抓', power: 1.5, type: 'attack' }           // 新增技能
     ],
     drop: [{ id: 'fish', name: '小鱼干', chance: 0.3 }]
   },
@@ -92,8 +109,24 @@ export const ENEMIES_CH1 = {
     maxHp: 110,       // 70 → 110 (精英加强)
     atk: 12,
     def: 14,          // 8 → 14 (防御加强)
-    spd: 6,
+    spd: 10,  // 6 → 10 (提高移动速度，让怪物能快速接近目标)
     crit: 0.08,       // 0.05 → 0.08 (精英暴击)
+    aiPattern: 'defensive',  // 防御：黏液护体、不主动冲锋
+    // 渲染配置（用于 CharacterSprite）
+    renderConfig: {
+      assetPrefix: 'SLIME_CAT',
+      spriteType: 'slime_cat',
+      totalWalkFrames: 12,
+      totalIdleFrames: 6,
+      walkFrameOffset: 1,
+      idleFrameOffset: 1,
+      walkFramePad: 2,    // walk帧补零（01,02,...）
+      idleFramePad: 1,     // idle帧不补零（1,2,3...）
+      flipRule: 'opposite', // 敌人默认 facingLeft=false 时翻转
+      shadow: true,
+      targetHeight: 80,
+      frameDuration: 0.15
+    },
     exp: 30,          // 经验提升
     gold: 18,
     isElite: true,    // 升级为精英怪
@@ -103,8 +136,18 @@ export const ENEMIES_CH1 = {
       stats: { def: 6, maxHp: 20 }
     },
     skills: [
-      { name: '黏液喷射', power: 1.2, type: 'attack', effect: 'slime_spray', mpCost: 8 },
-      { name: '黏液包裹', power: 1.4, type: 'attack', effect: 'slime_wrap', restrictChance: 0.35, mpCost: 15 }
+      { name: '黏液喷射', power: 1.2, type: 'attack', effect: 'slime_spray' },
+      { name: '黏液包裹', power: 1.4, type: 'attack', effect: 'slime_wrap', restrictChance: 0.35 },
+      { 
+        name: '跳跃攻击', 
+        power: 1.5, 
+        type: 'jump_attack', 
+        effect: 'jump_attack',
+        range: 300,  // ★ 跳跃距离（像素）
+        cooldown: 3,  // ★ 冷却时间改为3秒（方便测试）
+        warnDuration: 1.5,  // 预警时间（秒）
+        damageRadius: 200  // ★ 伤害范围（像素）
+      }
     ],
     drop: [{ id: 'gel', name: '黏液', chance: 0.25 }]
   },
@@ -117,6 +160,22 @@ export const ENEMIES_CH1 = {
     def: 10,         // 4 → 10 (防御大幅加强)
     spd: 17,         // 速度微提
     crit: 0.12,      // 0.08 → 0.12 (精英暴击)
+    aiPattern: 'aggressive',  // 激进：高速突袭
+    // 渲染配置（用于 CharacterSprite）
+    renderConfig: {
+      assetPrefix: 'SHADOW_MOUSE',
+      spriteType: 'shadow_mouse',
+      totalWalkFrames: 8,
+      totalIdleFrames: 8,
+      walkFrameOffset: 1,
+      idleFrameOffset: 1,
+      walkFramePad: 2,
+      idleFramePad: 2,
+      flipRule: 'opposite', // 敌人默认 facingLeft=false 时翻转
+      shadow: true,
+      targetHeight: 80,
+      frameDuration: 0.15
+    },
     exp: 25,         // 经验提升
     gold: 12,
     isElite: true,   // 升级为精英怪
@@ -126,8 +185,20 @@ export const ENEMIES_CH1 = {
       stats: { atk: 4, crit: 0.04 }
     },
     skills: [
-      { name: '暗影咬', power: 1.4, type: 'attack', mpCost: 6 },        // 1.3 → 1.4
-      { name: '暗影突袭', power: 2.0, type: 'attack', mpCost: 18 }       // 保持高伤
+      // 暗影咬：跳跃攻击，单体伤害，100%生命偷取，CD 15秒
+      { 
+        name: '暗影咬', 
+        power: 1.4, 
+        type: 'jump_attack',
+        range: 500,           // 跳跃距离500像素
+        cooldown: 15,         // CD 15秒
+        effect: 'drain',      // 生命偷取效果
+        drainPercent: 1.0,     // 偷取100%伤害
+        target: 'single',      // 单体目标
+        warnDuration: 1.0,     // 预警时间1秒
+        damageRadius: 50        // 很小的范围（实际上是单体）
+      },
+      { name: '暗影突袭', type: 'buff', effect: 'invisible', duration: 5, power: 0 }  // 隐身5秒
     ],
     drop: [{ id: 'cheese', name: '奶酪', chance: 0.45 }]
   },
@@ -141,6 +212,22 @@ export const ENEMIES_CH1 = {
     def: 14,         // 8 → 14 (+75%)
     spd: 12,         // 10 → 12
     crit: 0.10,      // 精英基础暴击率 10%
+    aiPattern: 'support',  // 辅助：召唤小弟+群体控制
+    // 渲染配置（用于 CharacterSprite）
+    renderConfig: {
+      assetPrefix: 'CAT',  // 使用猫咪通用资源
+      spriteType: 'enemy',
+      totalWalkFrames: 8,
+      totalIdleFrames: 8,
+      walkFrameOffset: 1,
+      idleFrameOffset: 1,
+      walkFramePad: 2,
+      idleFramePad: 2,
+      flipRule: 'opposite', // 敌人默认 facingLeft=false 时翻转
+      shadow: true,
+      targetHeight: 80,
+      frameDuration: 0.15
+    },
     exp: 50,         // 奖励提升
     gold: 35,
     isElite: true,
@@ -150,38 +237,130 @@ export const ENEMIES_CH1 = {
       stats: { atk: 8, crit: 0.05 }
     },
     skills: [
-      { name: '利爪连击', power: 1.5, type: 'attack', mpCost: 8 },      // 1.2 → 1.5
-      { name: '召唤小弟', power: 0, type: 'summon', summonId: 'wild_cat', mpCost: 20 },
-      { name: '怒吼', power: 1.0, type: 'attack', target: 'all', effect: 'stun', mpCost: 12 },  // 0.5 → 1.0
-      { name: '撕裂', power: 2.0, type: 'attack', mpCost: 22 }           // 新增强力技能
+      { name: '利爪连击', power: 1.5, type: 'attack' },      // 1.2 → 1.5
+      { name: '召唤小弟', power: 0, type: 'summon', summonId: 'wild_cat' },
+      { name: '怒吼', power: 1.0, type: 'attack', target: 'all', effect: 'stun' },  // 0.5 → 1.0
+      { name: '撕裂', power: 2.0, type: 'attack' }           // 新增强力技能
     ],
     drop: [{ id: 'cat_collar', name: '猫项圈', chance: 0.5 }]
   },
-  // Boss - 阳光草原
+  // Boss - 阳光草原（艾米的Boss形态）
   lost_healer_cat: {
     id: 'lost_healer_cat',
+    type: 'aimi',  // ★ 添加 type 字段，用于动画系统识别
     name: '迷途的治愈猫',
     level: 8,
     maxHp: 350,
     atk: 22,
+    matk: 28,       // 法术攻击力
     def: 16,
     spd: 11,
+    isRanged: false,  // ★ 修复：艾米是近战BOSS
+    aiPattern: 'aggressive',  // ★ 修复：近战BOSS应该是激进模式
     crit: 0.15,      // Boss基础暴击率 15%
+    // 渲染配置（用于 CharacterSprite）- 使用艾米动画资源
+    renderConfig: {
+      assetPrefix: 'AIMI',
+      spriteType: 'aimi',
+      totalWalkFrames: 8,
+      totalIdleFrames: 8,
+      walkFrameOffset: 1,
+      idleFrameOffset: 1,
+      walkFramePad: 2,
+      idleFramePad: 2,
+      flipRule: 'same', // 与英雄一致：facingLeft=true 时翻转
+      shadow: true,
+      targetHeight: 80,
+      frameDuration: 0.15
+    },
     exp: 150,
     gold: 80,
     isBoss: true,
     isAmy: true,  // 特殊标记：这是艾米的Boss形态
+    noMpCost: true,  // ★ Boss形态不消耗蓝量
     equipment: {     // Boss自带强力装备
       name: '治愈之冠',
       type: 'accessory',
-      stats: { maxHp: 50, def: 6, crit: 0.05 }
+      stats: { maxHp: 50, def: 6, matk: 10, crit: 0.05 }
+    },
+    // ★ 重新设计技能：近战蓄力+冲锋
+    skills: [
+      // 普通攻击
+      { name: '治愈之爪', power: 1.3, type: 'attack' },
+      // ★ 新技能：蓄力冲锋（skill_01-08动画）
+      { 
+        name: '光明冲锋', 
+        power: 2.5, 
+        type: 'charge',  // 新类型：冲锋
+        chargeTime: 2.0,  // 蓄力2秒
+        dashDistance: 200,  // 冲锋距离200像素
+        dashSpeed: 800,  // 冲锋速度（像素/秒）
+        effect: 'knockback',  // 击飞效果
+        critBonus: 1.0,  // 必定暴击（100%暴击加成）
+        drainPercent: 0.3,  // 回复伤害30%生命值
+        cooldown: 8,  // CD 8秒
+        noMpCost: true 
+      },
+      // 防御技能
+      { name: '圣盾之光', power: 0, type: 'buff', effect: 'def_up', value: 0.3, duration: 3, noMpCost: true },
+      // 召唤技能
+      { 
+        name: '召唤暗影鼠', 
+        power: 0, 
+        type: 'summon', 
+        summonId: 'shadow_mouse',
+        cooldown: 20,  // 20秒冷却
+        noMpCost: true,
+        desc: '召唤暗影鼠协助战斗'
+      }
+    ],
+    crit: 0.15,      // Boss基础暴击率 15%
+    // 渲染配置（用于 CharacterSprite）- 使用艾米动画资源
+    renderConfig: {
+      assetPrefix: 'AIMI',
+      spriteType: 'aimi',
+      totalWalkFrames: 8,
+      totalIdleFrames: 8,
+      walkFrameOffset: 1,
+      idleFrameOffset: 1,
+      walkFramePad: 2,
+      idleFramePad: 2,
+      flipRule: 'same', // 与英雄一致：facingLeft=true 时翻转
+      shadow: true,
+      targetHeight: 80,
+      frameDuration: 0.15
+    },
+    exp: 150,
+    gold: 80,
+    isBoss: true,
+    isAmy: true,  // 特殊标记：这是艾米的Boss形态
+    noMpCost: true,  // ★ Boss形态不消耗蓝量
+    equipment: {     // Boss自带强力装备
+      name: '治愈之冠',
+      type: 'accessory',
+      stats: { maxHp: 50, def: 6, matk: 10, crit: 0.05 }
     },
     skills: [
-      { name: '治愈之爪', power: 1.3, type: 'attack', mpCost: 5 },
-      { name: '生命波纹', power: 0.8, type: 'attack', target: 'all', mpCost: 15 },
-      { name: '自我治愈', power: 0, type: 'heal_self', healAmount: 40, mpCost: 25 },
-      { name: '净化之光', power: 1.6, type: 'magic', mpCost: 18 },
-      { name: '治愈冲击', power: 2.2, type: 'magic', mpCost: 30 }
+      // 普通攻击
+      { name: '治愈之爪', power: 1.3, type: 'attack' },
+      // 群体攻击
+      { name: '生命波纹', power: 0.8, type: 'attack', target: 'all' },
+      // 自愈（不消耗蓝量）
+      { name: '治愈之光', power: 0, type: 'heal_self', healAmount: 40, noMpCost: true },
+      // Buff技能：提升防御力30%（不消耗蓝量）
+      { name: '圣盾之光', power: 0, type: 'buff', effect: 'def_up', value: 0.3, duration: 3, noMpCost: true },
+      // 强力攻击（不消耗蓝量）
+      { name: '治愈冲击', power: 2.2, type: 'magic', noMpCost: true },
+      // ★ 召唤暗影鼠（Boss特殊技能）
+      { 
+        name: '召唤暗影鼠', 
+        power: 0, 
+        type: 'summon', 
+        summonId: 'shadow_mouse',
+        cooldown: 20,  // 20秒冷却
+        noMpCost: true,  // 不消耗蓝量
+        desc: '召唤暗影鼠协助战斗'
+      }
     ],
     drop: [{ id: 'healing_herb', name: '治愈草药', chance: 1.0 }],
     dialogue: [
@@ -204,7 +383,24 @@ export const ENEMIES_CH1 = {
     atk: 32,         // 18 → 32 (+78%)
     def: 22,         // 12 → 22 (+83%)
     spd: 13,         // 11 → 13
+    isRanged: true,  // Boss远程：暗影法术从远处发动
+    aiPattern: 'aggressive',  // 激进：高伤暗影法术
     crit: 0.20,      // 最终Boss暴击率 20%
+    // 渲染配置（用于 CharacterSprite）
+    renderConfig: {
+      assetPrefix: 'CAT',  // Boss使用猫咪通用资源
+      spriteType: 'enemy',
+      totalWalkFrames: 8,
+      totalIdleFrames: 8,
+      walkFrameOffset: 1,
+      idleFrameOffset: 1,
+      walkFramePad: 2,
+      idleFramePad: 2,
+      flipRule: 'opposite', // 敌人默认 facingLeft=false 时翻转
+      shadow: true,
+      targetHeight: 80,
+      frameDuration: 0.15
+    },
     exp: 200,        // 奖励提升
     gold: 120,
     isBoss: true,
@@ -214,11 +410,11 @@ export const ENEMIES_CH1 = {
       stats: { atk: 15, def: 10, maxHp: 80, crit: 0.05 }
     },
     skills: [
-      { name: '暗影爪击', power: 1.8, type: 'attack', mpCost: 10 },      // 1.3 → 1.8
-      { name: '暗影领域', power: 1.2, type: 'attack', target: 'all', mpCost: 20 },  // 0.8 → 1.2
-      { name: '生命吸取', power: 1.5, type: 'attack', effect: 'drain', mpCost: 15 }, // 1.0 → 1.5
-      { name: '暗影爆发', power: 2.5, type: 'attack', mpCost: 28 },      // 2.0 → 2.5
-      { name: '暗影之怒', power: 3.0, type: 'attack', mpCost: 40 }       // 新增大招
+      { name: '暗影爪击', power: 1.8, type: 'attack' },      // 1.3 → 1.8
+      { name: '暗影领域', power: 1.2, type: 'attack', target: 'all' },  // 0.8 → 1.2
+      { name: '生命吸取', power: 1.5, type: 'attack', effect: 'drain' }, // 1.0 → 1.5
+      { name: '暗影爆发', power: 2.5, type: 'attack' },      // 2.0 → 2.5
+      { name: '暗影之怒', power: 3.0, type: 'attack' }       // 新增大招
     ],
     drop: [{ id: 'dark_gem', name: '暗影宝石', chance: 1.0 }],
     dialogue: [
@@ -241,11 +437,28 @@ export const ENEMIES_CH2 = {
     def: 8,
     spd: 14,
     crit: 0.08,
+    // 渲染配置（用于 CharacterSprite）
+    renderConfig: {
+      assetPrefix: 'MAGIC_SPRITE',
+      spriteType: 'enemy',
+      totalWalkFrames: 8,
+      totalIdleFrames: 8,
+      walkFrameOffset: 1,
+      idleFrameOffset: 1,
+      walkFramePad: 2,
+      idleFramePad: 2,
+      flipRule: 'opposite', // 敌人默认 facingLeft=false 时翻转
+      shadow: true,
+      targetHeight: 80,
+      frameDuration: 0.15
+    },
     exp: 25,
     gold: 15,
+    isRanged: true,  // 远程：保持距离施法
+    aiPattern: 'aggressive',  // 激进：魔法轰炸
     skills: [
-      { name: '魔法弹', power: 1.4, type: 'magic', mpCost: 8 },
-      { name: '魔力风暴', power: 1.8, type: 'magic', mpCost: 18 }
+      { name: '魔法弹', power: 1.4, type: 'magic' },
+      { name: '魔力风暴', power: 1.8, type: 'magic' }
     ],
     drop: [{ id: 'magic_dust', name: '魔法粉尘', chance: 0.3 }]
   },
@@ -256,8 +469,24 @@ export const ENEMIES_CH2 = {
     maxHp: 120,
     atk: 20,
     def: 15,
-    spd: 6,
+    spd: 8,  // 6 → 8 (适当提高移动速度，保持防御型特性)
     crit: 0.05,
+    aiPattern: 'defensive',  // 防御：岩石护体、坚守阵地
+    // 渲染配置（用于 CharacterSprite）
+    renderConfig: {
+      assetPrefix: 'STONE_GOLEM',
+      spriteType: 'enemy',
+      totalWalkFrames: 8,
+      totalIdleFrames: 8,
+      walkFrameOffset: 1,
+      idleFrameOffset: 1,
+      walkFramePad: 2,
+      idleFramePad: 2,
+      flipRule: 'opposite', // 敌人默认 facingLeft=false 时翻转
+      shadow: true,
+      targetHeight: 80,
+      frameDuration: 0.15
+    },
     exp: 30,
     gold: 20,
     skills: [
@@ -275,11 +504,28 @@ export const ENEMIES_CH2 = {
     def: 6,
     spd: 18,
     crit: 0.12,
+    // 渲染配置（用于 CharacterSprite）
+    renderConfig: {
+      assetPrefix: 'GHOST_CAT',
+      spriteType: 'enemy',
+      totalWalkFrames: 8,
+      totalIdleFrames: 8,
+      walkFrameOffset: 1,
+      idleFrameOffset: 1,
+      walkFramePad: 2,
+      idleFramePad: 2,
+      flipRule: 'opposite', // 敌人默认 facingLeft=false 时翻转
+      shadow: true,
+      targetHeight: 80,
+      frameDuration: 0.15
+    },
     exp: 28,
     gold: 18,
+    isRanged: true,  // 远程：穿墙袭击从远处发动
+    aiPattern: 'aggressive',  // 激进：高速穿刺
     skills: [
-      { name: '幽灵爪', power: 1.6, type: 'attack', mpCost: 8 },
-      { name: '穿墙袭击', power: 2.0, type: 'attack', mpCost: 20 }
+      { name: '幽灵爪', power: 1.6, type: 'attack' },
+      { name: '穿墙袭击', power: 2.0, type: 'attack' }
     ],
     drop: [{ id: 'ghost_essence', name: '幽灵精华', chance: 0.3 }]
   },
@@ -294,18 +540,34 @@ export const ENEMIES_CH2 = {
     def: 20,
     spd: 10,
     crit: 0.10,
+    // 渲染配置（用于 CharacterSprite）
+    renderConfig: {
+      assetPrefix: 'TOWER_GUARDIAN',
+      spriteType: 'enemy',
+      totalWalkFrames: 8,
+      totalIdleFrames: 8,
+      walkFrameOffset: 1,
+      idleFrameOffset: 1,
+      walkFramePad: 2,
+      idleFramePad: 2,
+      flipRule: 'opposite', // 敌人默认 facingLeft=false 时翻转
+      shadow: true,
+      targetHeight: 80,
+      frameDuration: 0.15
+    },
     exp: 70,
     gold: 50,
     isElite: true,
+    aiPattern: 'defensive',  // 防御：守护+嘲讽
     equipment: {
       name: '守护铠甲',
       type: 'armor',
       stats: { def: 12, maxHp: 40 }
     },
     skills: [
-      { name: '守护一击', power: 1.8, type: 'attack', mpCost: 8 },
-      { name: '嘲讽怒吼', power: 0.8, type: 'attack', target: 'all', mpCost: 12 },
-      { name: '钢铁防御', power: 0, type: 'buff', effect: 'defense_up', mpCost: 15 }
+      { name: '守护一击', power: 1.8, type: 'attack' },
+      { name: '嘲讽怒吼', power: 0.8, type: 'attack', target: 'all' },
+      { name: '钢铁防御', power: 0, type: 'buff', effect: 'defense_up' }
     ],
     drop: [{ id: 'guardian_shield', name: '守护者盾牌', chance: 0.5 }]
   },
@@ -319,7 +581,24 @@ export const ENEMIES_CH2 = {
     atk: 35,
     def: 18,
     spd: 14,
+    isRanged: true,  // Boss远程：水晶法术从远处发动
+    aiPattern: 'aggressive',  // 激进：强力魔法轰炸
     crit: 0.18,
+    // 渲染配置（用于 CharacterSprite）
+    renderConfig: {
+      assetPrefix: 'CRYSTAL_MAGE',
+      spriteType: 'enemy',
+      totalWalkFrames: 8,
+      totalIdleFrames: 8,
+      walkFrameOffset: 1,
+      idleFrameOffset: 1,
+      walkFramePad: 2,
+      idleFramePad: 2,
+      flipRule: 'opposite', // 敌人默认 facingLeft=false 时翻转
+      shadow: true,
+      targetHeight: 80,
+      frameDuration: 0.15
+    },
     exp: 180,
     gold: 100,
     isBoss: true,
@@ -330,10 +609,10 @@ export const ENEMIES_CH2 = {
       stats: { atk: 20, crit: 0.08 }
     },
     skills: [
-      { name: '水晶碎片', power: 1.6, type: 'magic', mpCost: 12 },
-      { name: '水晶风暴', power: 1.4, type: 'magic', target: 'all', mpCost: 22 },
-      { name: '魔力汲取', power: 2.0, type: 'magic', effect: 'drain', mpCost: 18 },
-      { name: '水晶封印', power: 2.8, type: 'magic', mpCost: 35 }
+      { name: '水晶碎片', power: 1.6, type: 'magic' },
+      { name: '水晶风暴', power: 1.4, type: 'magic', target: 'all' },
+      { name: '魔力汲取', power: 2.0, type: 'magic', effect: 'drain' },
+      { name: '水晶封印', power: 2.8, type: 'magic' }
     ],
     drop: [{ id: 'crystal_heart', name: '水晶之心', chance: 1.0 }],
     dialogue: [
@@ -349,65 +628,3 @@ export const ENEMIES_CH2 = {
   }
 }
 
-// 地图节点配置
-export const MAP_NODES = {
-  // 第一章
-  'ch1_town': {
-    id: 'ch1_town',
-    name: '喵星小镇',
-    type: 'town',
-    bg: 'images/backgrounds/bg_town.png',
-    x: 100, y: 400,
-    connections: ['ch1_road1'],
-    npc: [
-      { name: '猫村长', dialogue: '臻宝，草原上有危险的野猫出没，请帮忙处理！' },
-      { name: '商人猫', type: 'shop' }
-    ]
-  },
-  'ch1_road1': {
-    id: 'ch1_road1',
-    name: '小镇外围',
-    type: 'road',
-    bg: 'images/backgrounds/bg_grassland.png',
-    x: 250, y: 350,
-    connections: ['ch1_town', 'ch1_road2'],
-    encounters: [
-      { enemy: 'wild_cat', chance: 0.3 },
-      { enemy: 'shadow_mouse', chance: 0.2 }
-    ]
-  },
-  'ch1_road2': {
-    id: 'ch1_road2',
-    name: '草原深处',
-    type: 'road',
-    bg: 'images/backgrounds/bg_grassland.png',
-    x: 400, y: 300,
-    connections: ['ch1_road1', 'ch1_road3'],
-    encounters: [
-      { enemy: 'wild_cat', chance: 0.3 },
-      { enemy: 'slime_cat', chance: 0.3 }
-    ]
-  },
-  'ch1_road3': {
-    id: 'ch1_road3',
-    name: '森林入口',
-    type: 'road',
-    bg: 'images/backgrounds/bg_forest.png',
-    x: 550, y: 280,
-    connections: ['ch1_road2', 'ch1_boss'],
-    encounters: [
-      { enemy: 'slime_cat', chance: 0.3 },
-      { enemy: 'shadow_mouse', chance: 0.3 }
-    ]
-  },
-  'ch1_boss': {
-    id: 'ch1_boss',
-    name: '暗影巢穴',
-    type: 'boss',
-    bg: 'images/backgrounds/bg_boss.png',
-    x: 650, y: 250,
-    connections: ['ch1_road3'],
-    boss: 'dark_cat_king',
-    defeated: false
-  }
-}

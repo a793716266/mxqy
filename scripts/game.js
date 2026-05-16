@@ -47,10 +47,10 @@ export class Game {
     this._frameCount = 0
     this._fpsTime = 0
 
-    // 管理器
-    this.data = new DataManager()
+    // 管理器（统一使用单例模式）
+    this.data = DataManager.getInstance()
     this.input = new InputManager(this.dpr)
-    this.audio = new AudioManager()
+    this.audio = AudioManager.getInstance()
     this.assets = new AssetManager()
     this.effects = new SkillEffectManager(this)
     this.settings = new SettingsPanel(this)  // 设置面板
@@ -84,6 +84,7 @@ export class Game {
     // 先加载分包，再加载资源（分包资源路径在ASSETS中引用）
     console.log('[Game] 加载分包...')
     await this._loadSubpackage('battle')
+    await this._loadSubpackage('sound')
 
     // 加载资源
     console.log('[Game] 开始加载资源...')

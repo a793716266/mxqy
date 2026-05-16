@@ -6,6 +6,7 @@
 import { equipmentManager } from '../managers/equipment-manager.js'
 import { RARITY_CONFIG, EQUIP_TYPE_CONFIG } from '../data/equipment.js'
 import { charStateManager } from '../data/character-state.js'
+import { roundRect, isInRect } from './canvas-utils.js'
 
 export class EquipmentPanel {
   constructor(game, character) {
@@ -87,7 +88,6 @@ export class EquipmentPanel {
       
       if (this._isInRect(tx, ty, slotX, slotYPos, slotSize, slotSize)) {
         this.selectedSlot = slots[i]
-        this.selectedInventoryItem = null
         return true
       }
     }
@@ -109,7 +109,6 @@ export class EquipmentPanel {
       
       if (this._isInRect(tx, ty, itemX, itemY, itemSize, itemSize)) {
         this.selectedInventoryItem = inventory[i]
-        this.selectedSlot = null
         return true
       }
     }
@@ -542,22 +541,9 @@ export class EquipmentPanel {
     }
   }
   
-  // 辅助方法：圆角矩形
-  _roundRect(ctx, x, y, w, h, r) {
-    ctx.moveTo(x + r, y)
-    ctx.lineTo(x + w - r, y)
-    ctx.quadraticCurveTo(x + w, y, x + w, y + r)
-    ctx.lineTo(x + w, y + h - r)
-    ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h)
-    ctx.lineTo(x + r, y + h)
-    ctx.quadraticCurveTo(x, y + h, x, y + h - r)
-    ctx.lineTo(x, y + r)
-    ctx.quadraticCurveTo(x, y, x + r, y)
-    ctx.closePath()
-  }
-  
-  // 辅助方法：检测点是否在矩形内
-  _isInRect(px, py, rx, ry, rw, rh) {
-    return px >= rx && px <= rx + rw && py >= ry && py <= ry + rh
-  }
+  /** @deprecated 使用 canvas-utils.roundRect() */
+  _roundRect(ctx, x, y, w, h, r) { roundRect(ctx, x, y, w, h, r) }
+
+  /** @deprecated use canvas-utils.isInRect() */
+  _isInRect(px, py, rx, ry, rw, rh) { return isInRect(px, py, rx, ry, rw, rh) }
 }

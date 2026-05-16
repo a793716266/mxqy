@@ -1,5 +1,18 @@
 /**
  * heroes.js - 角色数据
+ * 
+ * renderConfig 渲染配置说明：
+ * - assetPrefix: 资源key前缀（如 'HERO_ZHENBAO'）
+ * - spriteType: 角色类型（'zhenbao'|'lixiaobao'|'cat'|'hero'）
+ * - totalWalkFrames: 行走动画总帧数
+ * - totalIdleFrames: 空闲动画总帧数
+ * - walkFrameOffset: 行走帧起始偏移（臻宝/李小宝从1开始）
+ * - idleFrameOffset: 空闲帧起始偏移
+ * - walkFramePad: 行走帧补零位数（2表示01,02...）
+ * - idleFramePad: 空闲帧补零位数（史莱姆猫用1，即1,2,3...）
+ * - flipRule: 翻转规则（'same'=facingLeft=true时翻转，'opposite'=facingLeft=false时翻转）
+ * - shadow: 是否显示阴影
+ * - targetHeight: 角色目标高度（逻辑像素）
  */
 
 export const HEROES = [
@@ -13,10 +26,25 @@ export const HEROES = [
     atk: 18,
     def: 12,
     spd: 10,
-    avatar: 'images/characters/hero_zhenbao.png',
+    avatar: 'HERO_ZHENBAO', // 引用 asset-manager 注册的 key（transparent/zhenbao/idle_01）
+    // 渲染配置（用于 CharacterSprite）
+    renderConfig: {
+      assetPrefix: 'HERO_ZHENBAO',
+      spriteType: 'zhenbao',
+      totalWalkFrames: 8,
+      totalIdleFrames: 8,
+      walkFrameOffset: 1, // 帧从01开始
+      idleFrameOffset: 1,
+      walkFramePad: 2,
+      idleFramePad: 2,
+      flipRule: 'same', // facingLeft=true 时翻转
+      shadow: true,
+      targetHeight: 80,
+      frameDuration: 0.15
+    },
     skills: [
       { id: 'slash', name: '斩击', type: 'attack', power: 1.2, mpCost: 0, desc: '基础物理攻击' },
-      { id: 'shield_bash', name: '盾击', type: 'attack', power: 0.8, mpCost: 5, desc: '附带眩晕效果', effect: 'stun' },
+      { id: 'shield_bash', name: '盾击', type: 'attack', power: 0.8, mpCost: 5, desc: '附带眩晕效果，使敌人1秒无法行动', effect: 'stun', statusEffect: 'stunned' },
       { id: 'war_cry', name: '战吼', type: 'buff', mpCost: 8, desc: '提升全体攻击力', effect: 'atk_up', turns: 3, value: 0.3 },
       { id: 'berserk', name: '狂暴', type: 'buff', mpCost: 15, desc: '大幅提升自身攻击', effect: 'atk_up_self', turns: 3, value: 0.5 }
     ]
@@ -32,7 +60,22 @@ export const HEROES = [
     matk: 38,
     def: 6,
     spd: 11,
-    avatar: 'images/characters/hero_lixiaobao.png',
+    avatar: 'HERO_LIXIAOBAO', // 引用 asset-manager 注册的 key（transparent/lixiaobao/idle_01）
+    // 渲染配置（用于 CharacterSprite）
+    renderConfig: {
+      assetPrefix: 'HERO_LIXIAOBAO',
+      spriteType: 'lixiaobao',
+      totalWalkFrames: 8,
+      totalIdleFrames: 8,
+      walkFrameOffset: 1, // 帧从01开始
+      idleFrameOffset: 1,
+      walkFramePad: 2,
+      idleFramePad: 2,
+      flipRule: 'same', // facingLeft=true 时翻转
+      shadow: true,
+      targetHeight: 80,
+      frameDuration: 0.15
+    },
     skills: [
       { id: 'staff_strike', name: '法杖敲击', type: 'attack', power: 0.8, mpCost: 0, desc: '用魔法杖敲击敌人' },
       {
@@ -75,14 +118,28 @@ export const HEROES = [
     matk: 18,
     def: 8,
     spd: 13,
-    avatar: 'images/cats/team/cat_amy.png',
+    avatar: 'AIMI', // 引用 asset-manager 注册的 key（transparent/aimi/idle_01）
+    // 渲染配置（用于 CharacterSprite）
+    renderConfig: {
+      assetPrefix: 'AIMI',
+      spriteType: 'aimi',
+      totalWalkFrames: 8,
+      totalIdleFrames: 8,
+      walkFrameOffset: 1,
+      idleFrameOffset: 1,
+      walkFramePad: 2,
+      idleFramePad: 2,
+      flipRule: 'same', // facingLeft=true 时翻转（与臻宝、李小宝一致）
+      shadow: true,
+      targetHeight: 80,
+      frameDuration: 0.15
+    },
     unlockChapter: 1,
     skills: [
-      { id: 'cat_paw', name: '猫爪击', type: 'attack', power: 0.9, mpCost: 0, desc: '用猫爪挠敌人' },
-      { id: 'heal', name: '治疗', type: 'heal', power: 30, mpCost: 8, desc: '恢复单体生命值', target: 'single_ally' },
-      { id: 'group_heal', name: '群疗', type: 'heal', power: 20, mpCost: 15, desc: '恢复全体生命值', target: 'all_ally' },
-      { id: 'purify', name: '净化', type: 'heal', power: 10, mpCost: 10, desc: '治愈异常状态', target: 'single_ally', effect: 'cleanse' },
-      { id: 'smite', name: '圣光击', type: 'magic', power: 1.0, mpCost: 5, desc: '用圣光攻击敌人' }
+      { id: 'cat_paw', name: '猫爪击', type: 'attack', power: 1.0, mpCost: 0, desc: '用猫爪挠敌人' },
+      { id: 'holy_shield', name: '圣盾之光', type: 'buff', mpCost: 10, cooldown: 15, desc: '提升全体30%防御力，持续3秒', effect: 'def_up', value: 0.3, duration: 3 },
+      { id: 'heal_strike', name: '治愈冲击', type: 'attack_heal', power: 1.2, mpCost: 12, cooldown: 10, desc: '向前突进300距离，对沿途敌人必定暴击，并回复30%伤害的生命值', crit: true, healPercent: 0.3, dashDistance: 300 },
+      { id: 'heal_light', name: '治愈之光', type: 'heal', power: 30, mpCost: 10, desc: '回复全队生命值', target: 'all_ally', formula: 'base + matk * 1.0' }
     ]
   },
   {
@@ -97,6 +154,21 @@ export const HEROES = [
     def: 5,
     spd: 12,
     avatar: 'images/cats/team/cat_annie.png',
+    // 渲染配置（用于 CharacterSprite）
+    renderConfig: {
+      assetPrefix: 'CAT',
+      spriteType: 'cat',
+      totalWalkFrames: 8,
+      totalIdleFrames: 8,
+      walkFrameOffset: 1,
+      idleFrameOffset: 1,
+      walkFramePad: 2,
+      idleFramePad: 2,
+      flipRule: 'opposite', // facingLeft=false 时翻转（猫咪默认朝右）
+      shadow: true,
+      targetHeight: 80,
+      frameDuration: 0.15
+    },
     unlockChapter: 2,
     skills: [
       { id: 'shadow_touch', name: '暗影触碰', type: 'attack', power: 0.8, mpCost: 0, desc: '用暗影之力触碰敌人' },
@@ -117,6 +189,21 @@ export const HEROES = [
     def: 15,
     spd: 8,
     avatar: 'images/cats/team/cat_qianduoduo.png',
+    // 渲染配置（用于 CharacterSprite）
+    renderConfig: {
+      assetPrefix: 'CAT',
+      spriteType: 'cat',
+      totalWalkFrames: 8,
+      totalIdleFrames: 8,
+      walkFrameOffset: 1,
+      idleFrameOffset: 1,
+      walkFramePad: 2,
+      idleFramePad: 2,
+      flipRule: 'opposite', // facingLeft=false 时翻转（猫咪默认朝右）
+      shadow: true,
+      targetHeight: 80,
+      frameDuration: 0.15
+    },
     unlockChapter: 3,
     skills: [
       { id: 'punch', name: '拳击', type: 'attack', power: 1.0, mpCost: 0, desc: '用拳头攻击' },
@@ -137,6 +224,21 @@ export const HEROES = [
     def: 18,
     spd: 7,
     avatar: 'images/cats/team/cat_xiaobei.png',
+    // 渲染配置（用于 CharacterSprite）
+    renderConfig: {
+      assetPrefix: 'CAT',
+      spriteType: 'cat',
+      totalWalkFrames: 8,
+      totalIdleFrames: 8,
+      walkFrameOffset: 1,
+      idleFrameOffset: 1,
+      walkFramePad: 2,
+      idleFramePad: 2,
+      flipRule: 'opposite', // facingLeft=false 时翻转（猫咪默认朝右）
+      shadow: true,
+      targetHeight: 80,
+      frameDuration: 0.15
+    },
     unlockChapter: 4,
     skills: [
       { id: 'shield_bash_xb', name: '盾击', type: 'attack', power: 0.9, mpCost: 0, desc: '用盾牌敲击敌人' },

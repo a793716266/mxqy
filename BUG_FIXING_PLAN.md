@@ -2,6 +2,22 @@
 
 ## 📅 更新日志
 
+### 2026-05-16（23:30）
+
+**feat: 艾米"治愈冲击"技能完整实现（多阶段特效技能）**
+- **技能流程**：准备（2秒粒子特效）→ 锁定（红色区域）→ 冲击（快速接近）→ 击飞（空中1秒）
+- **阶段1-准备**：慢速播放skill_01→skill_03帧，金色粒子螺旋上升特效（类似赛亚人变身）
+- **阶段2-锁定**：锁定最近英雄，敌人脚下出现红色脉动区域（0.5秒预警）
+- **阶段3-冲击**：2000像素/秒极速接近，skill_04→skill_08帧快速播放
+- **阶段4-击飞**：命中目标后被击飞空中1秒（抛物线Y轴偏移），受击动画
+- **粒子系统**：30个金色/白色粒子螺旋上升，2秒持续时间，透明度渐变
+- **伤害判定**：只在红色区域内目标受伤害，成功躲开则显示"成功躲开"
+- **修改文件**：
+  - `battle-combat.js`：添加`_executeHealingImpact`、`_updateHealingImpact`、`_updateHealingImpactParticles`、`_applyHealingImpactDamage`函数
+  - `battle-animation.js`：在更新循环中调用`_updateHealingImpact`
+  - `battle-renderer.js`：添加`_renderHealingImpactParticles`函数，渲染粒子和红色区域
+- **技能配置**：`healing_impact`类型，power: 2.2, rushSpeed: 2000, knockbackDuration: 1.0
+
 ### 2026-04-13（23:11）
 
 **feat: 闯关模式(塔防)完整实现**

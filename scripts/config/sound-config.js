@@ -13,9 +13,9 @@
 export const SOUNDS = {
   // ==================== 背景音乐 ====================
   bgm_title:    null,                         // 标题画面（待制作）
-  bgm_town:      'subpackages/sound/game_bgm/town_village.mp3',       // 小镇/主城
+  bgm_town:      'subpackages/sound/game_bgm/town_village.mp3',   // 小镇/主城
   bgm_explore:   'subpackages/sound/game_bgm/fantasy_explore.mp3',    // 野外/探索
-  bgm_tower:     'subpackages/sound/game_bgm/brainiac_maniac_bar.mp3',// 塔防战斗
+  bgm_tower:     'subpackages/sound/game_bgm/brainiac_maniac.mp3',// 塔防战斗
   bgm_battle:    'subpackages/sound/game_bgm/fantasy_battle.mp3',     // 普通战斗
   bgm_boss:      'subpackages/sound/game_bgm/fantasy_boss.mp3',        // BOSS战
   bgm_victory:   'subpackages/sound/game_bgm/fantasy_victory.mp3',    // 胜利
@@ -67,7 +67,7 @@ export const SOUNDS = {
   // ==================== 战场环境 ====================
   wave_start:    null,    // 波次开始（待制作）
   wave_complete: null,    // 波次完成（待制作）
-  game_victory:  'subpackages/sound/game_bgm/fantasy_victory.mp3', // 胜利（复用BGM）
+  game_victory:  'subpackages/sound/game_bgm/fantasy_victory.mp3', // 胜利
   game_defeat:   null,    // 失败（待制作）
 
   // ==================== 伤害飘字（可选）====================
