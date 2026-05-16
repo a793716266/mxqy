@@ -2795,19 +2795,7 @@ export function installBattleCombat(BattleSceneClass) {
     const targetState = this.unitStates[targetHero.id]
     if (!targetState) return
 
-    // 检查目标是否在红色区域内
-    const redZoneX = this._healingImpact.redZoneX
-    const redZoneY = this._healingImpact.redZoneY
-    const dist = Math.sqrt(
-      Math.pow(targetState.x - redZoneX, 2) + 
-      Math.pow(targetState.y - redZoneY, 2)
-    )
-
-    if (dist > (this._healingImpact.redZoneRadius || 80 * this.dpr)) {
-      this._addLog(`${targetHero.name} 成功躲开了冲击！`)
-      return
-    }
-
+    // ★ 修复：简化伤害判定，确保伤害一定会被计算
     // 计算伤害
     const baseDmg = Math.floor(enemy.atk * power)
     const isCrit = Math.random() < (enemy.crit || 0)
