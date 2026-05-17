@@ -2,6 +2,22 @@
 
 ## 📅 更新日志
 
+### 2026-05-17（22:50）
+
+**fix: 修复敌人AI的effectiveDt计算，使用dt * battleSpeed**
+
+- **问题**：敌人AI使用 `dt` 而不是 `dt * battleSpeed`，导致加速模式对敌人无效
+- **根本原因**：在 `_updateEnemyAutoAttack` 函数中，`effectiveDt` 被设置为 `dt`，而不是 `dt * this.battleSpeed`
+- **修复方案**：修改 `_updateEnemyAutoAttack` 函数，使用 `dt * this.battleSpeed` 作为 `effectiveDt`
+- **修改文件**：
+  - `battle-combat.js`:
+    - 修改 `_updateEnemyAutoAttack`，使用 `dt * this.battleSpeed` 作为 `effectiveDt`
+
+- **测试说明**：
+  1. 进入战斗，点击加速按钮（battleSpeed=2）
+  2. 观察敌人攻击速度是否变为2倍
+  3. 打开浏览器控制台（F12），查看调试日志，确认 effectiveDt 正确
+
 ### 2026-05-17（22:30）
 
 **fix: 修复暗影鼠攻击速度过快和技能CD计算问题**
