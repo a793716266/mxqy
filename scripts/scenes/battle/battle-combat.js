@@ -35,6 +35,10 @@ const SKILL_CD_TABLE = [
   { type: 'jump_attack', thresholds: [
     { maxPower: 1.5, cd: 8 }, { maxPower: 2.0, cd: 12 }, { maxPower: Infinity, cd: 15 }
   ]},
+  // ★ 新增：buff 类型技能（如暗影突袭）
+  { type: 'buff', thresholds: [
+    { maxPower: 0, cd: 12 }, { maxPower: 1.0, cd: 15 }, { maxPower: Infinity, cd: 20 }
+  ]},
 ]
 
 function lookupBaseCd(skill) {
@@ -2226,26 +2230,17 @@ export function installBattleCombat(BattleSceneClass) {
         animState.animCompleted = false
       }
 
-      // ★ BUFF 技能：立即应用效果 + 立即清理状态（不等待动画完成）
+      // ★ BUFF 技能：立即应用效果，但不立即清理状态（等待动画完成）
       if (isBuffSkill) {
         // ★ 立即应用BUFF效果（如暗影突袭的隐身）
         if (this._applyEnemyBuff) {
           this._applyEnemyBuff(enemy, skill)
         }
         
-        // ★ 立即清理攻击状态（BUFF技能不需要等待伤害结算）
-        this._clearAttackerFlag('enemy_' + enemyIndex)
-        this.enemyAttacking = false
-        this.enemyAttackTarget = null
-        // 还原敌人移动状态
-        if (estate && estate.state === 'attacking') estate.state = 'idle'
-        if (this.phase !== 'victory' && this.phase !== 'defeat' && this.phase !== 'purify') {
-          this.phase = 'auto_battle'
-        }
-        
-        // ★ 设置动画完成回调：确保状态被正确清理（双重保险）
+        // ★ 不立即清理攻击状态，等待动画完成后再清理
+        // 设置动画完成回调：在动画完成后清理状态
         animState.onAttackComplete = () => {
-          console.log(`[Enemy AI] ${enemy.name} BUFF技能「${skill.name}」动画播放完成（双重保险清理）`)
+          console.log(`[Enemy AI] ${enemy.name} BUFF技能「${skill.name}」动画播放完成，清理状态`)
           this._clearAttackerFlag('enemy_' + enemyIndex)
           this.enemyAttacking = false
           this.enemyAttackTarget = null
@@ -2255,7 +2250,7 @@ export function installBattleCombat(BattleSceneClass) {
           }
         }
         
-        console.log(`[Enemy AI] ${enemy.name} 使用BUFF技能「${skill.name}」，已应用效果并清理状态`)
+        console.log(`[Enemy AI] ${enemy.name} 使用BUFF技能「${skill.name}」，已应用效果，等待动画完成`)
         
         // ★ 重要：BUFF技能不执行伤害计算，直接返回
         return
@@ -2366,6 +2361,38 @@ export function installBattleCombat(BattleSceneClass) {
       return
     }
 
+    // ★ 特殊处理：invisible（隐身）效果
+    if (effType === 'invisible') {
+      // 设置隐身状态
+      if (!this.statusEffects.enemies[enemyId]) {
+        this.statusEffects.enemies[enemyId] = []
+      }
+
+      // 移除旧的隐身效果
+      this.statusEffects.enemies[enemyId] = 
+        this.statusEffects.enemies[enemyId].filter(e => e.type !== 'invisible')
+
+      // 添加新隐身效果
+      this.statusEffects.enemies[enemyId].push({
+        type: 'invisible',
+        duration: duration,
+        startTime: this.time
+      })
+
+      this._addLog(`${enemy.name} 使用「${skill.name}」，进入隐身状态！（${duration}秒）`)
+
+      // 隐身视觉特效（半透明）
+      const enemyState = this.unitStates['enemy_' + enemyIndex]
+      if (enemyState) {
+        // 设置敌人半透明
+        enemyState.alpha = 0.3
+      }
+
+      console.log(`[Enemy AI] ${enemy.name} 进入隐身状态，持续时间: ${duration}秒`)
+      return
+    }
+
+    // 普通BUFF效果（atk_up, def_up等）
     // 初始化 statusEffects.enemies[enemyId]
     if (!this.statusEffects.enemies[enemyId]) {
       this.statusEffects.enemies[enemyId] = []
