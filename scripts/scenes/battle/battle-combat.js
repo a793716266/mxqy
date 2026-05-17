@@ -2072,9 +2072,9 @@ export function installBattleCombat(BattleSceneClass) {
           timer.attackTimer += effectiveDt
           const attackInt = this._getEnemyAttackInterval(enemy) * (estate.isRanged ? 1.3 : 1.0)
           
-          // ★ 调试：每2秒显示一次攻击计时器进度
+          // ★ 调试：每2秒显示一次攻击计时器进度（显示enemy.id，方便区分多只暗影鼠）
           if (!estate._lastTimerLog || this.time - estate._lastTimerLog > 2) {
-            console.log(`[Enemy AI] ${enemy.name} attackTimer: ${timer.attackTimer.toFixed(3)}/${attackInt.toFixed(3)} (effectiveDt=${effectiveDt.toFixed(4)})`)
+            console.log(`[Enemy AI] ${enemy.name}(id=${enemy.id}) attackTimer: ${timer.attackTimer.toFixed(3)}/${attackInt.toFixed(3)} (effectiveDt=${effectiveDt.toFixed(4)}, battleSpeed=${this.battleSpeed})`)
             estate._lastTimerLog = this.time
           }
           
