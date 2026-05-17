@@ -381,12 +381,21 @@ export function installBattleCombat(BattleSceneClass) {
             eAnim.frameTimer = 0
             eAnim.attackDamageApplied = false
           } else if (isSkillAttack) {
-            // ★ 艾米BOSS的技能攻击（如治愈冲击）
-            eAnim.state = 'skill'
-            eAnim.frame = 1
-            eAnim.displayFrame = 0
-            eAnim.frameTimer = 0
-            eAnim.attackDamageApplied = false
+            // ★ 艾米特殊处理：只有"治愈冲击"才使用 'skill' 动画
+            if (eAnim.type === 'aimi' && currentSkill.name !== '治愈冲击') {
+              eAnim.state = 'attack'  // 艾米的非治愈冲击技能使用 attack 动画
+              eAnim.frame = 1
+              eAnim.displayFrame = 0
+              eAnim.frameTimer = 0
+              eAnim.attackDamageApplied = false
+            } else {
+              // ★ 艾米BOSS的技能攻击（如治愈冲击）
+              eAnim.state = 'skill'
+              eAnim.frame = 1
+              eAnim.displayFrame = 0
+              eAnim.frameTimer = 0
+              eAnim.attackDamageApplied = false
+            }
           } else {
             eAnim.state = 'attack'
             eAnim.frame = 1
