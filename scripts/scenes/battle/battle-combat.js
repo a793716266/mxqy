@@ -294,8 +294,15 @@ export function installBattleCombat(BattleSceneClass) {
 
       // ★ 保护检查：如果正在执行特殊技能（如治愈冲击），跳过敌人状态更新
       // 让技能自己的更新函数来控制状态
-      if (this._healingImpact && this._healingImpact.active && this._healingImpact.enemyIndex === i) {
-        continue  // 跳过此敌人的状态更新，让 _updateHealingImpact 控制
+      // ★ 修复：优先使用 enemyId 检查，防止敌人死亡后索引错位
+      if (this._healingImpact && this._healingImpact.active) {
+        const healingEnemyId = this._healingImpact.enemyId
+        const healingEnemyIndex = this._healingImpact.enemyIndex
+        // 如果存储了 enemyId，使用 enemy.id 匹配；否则降级使用 enemyIndex
+        if ((healingEnemyId && enemy.id === healingEnemyId) || 
+            (!healingEnemyId && healingEnemyIndex === i)) {
+          continue  // 跳过此敌人的状态更新，让 _updateHealingImpact 控制
+        }
       }
 
       // ★ 全局目标存活检查：如果目标已死亡，立即清除并重新寻敌
@@ -2608,16 +2615,22 @@ export function installBattleCombat(BattleSceneClass) {
 
     // ★ 调试：追踪治愈冲击各阶段
     const impact = this._healingImpact
+    const enemyId = impact.enemyId  // ★ 使用 enemyId 精确匹配
     const enemyIndex = impact.enemyIndex
-    const enemy = this.enemies[enemyIndex]
+    
+    // ★ 修复：使用 enemyId 找到正确的敌人，防止索引错位
+    const enemy = enemyId ? this.enemies.find(e => e && e.id === enemyId) : 
+                     (enemyIndex >= 0 ? this.enemies[enemyIndex] : null)
+    
     console.log(`[治愈冲击调试] 阶段=${impact.phase}, 敌人=${enemy ? enemy.name : '无'}, damageApplied=${impact.damageApplied}`)
 
-    const estate = this.unitStates['enemy_' + enemyIndex]
+    // ★ 修复：使用正确的 enemyIndex（可能已变化）来访问 unitStates
+    const currentIndex = enemy ? this.enemies.indexOf(enemy) : enemyIndex
+    const estate = currentIndex >= 0 ? this.unitStates['enemy_' + currentIndex] : null
     
-    // ★ 修复：优先使用 enemyId 访问 enemyAnimStates，防止敌人死亡后索引错位
-    const animState = (enemy && enemy.id && this.enemyAnimStates[enemy.id]) 
-      ? this.enemyAnimStates[enemy.id] 
-      : (enemyIndex >= 0 ? this.enemyAnimStates[enemyIndex] : null)
+    // ★ 使用 enemyId 访问 enemyAnimStates，防止索引错位
+    const animState = enemyId ? this.enemyAnimStates[enemyId] : 
+                     (enemyIndex >= 0 ? this.enemyAnimStates[enemyIndex] : null)
     
     const now = Date.now()
 
@@ -2715,7 +2728,7 @@ export function installBattleCombat(BattleSceneClass) {
       // ★ 伤害判定：在帧7时判定（只判定一次），给玩家"飞过去"的冲击感
       if (!impact.damageApplied && animState && animState.frame >= 7) {
         impact.damageApplied = true
-        this._applyHealingImpactDamage(enemy, enemyIndex, impact.skill)
+        this._applyHealingImpactDamage(enemy, impact.skill)  // ★ 移除 enemyIndex 参数
       }
 
       if (progress >= 1.0) {
@@ -2785,7 +2798,11 @@ export function installBattleCombat(BattleSceneClass) {
     if (!this._healingImpact) return
 
     const impact = this._healingImpact
-    const estate = this.unitStates['enemy_' + impact.enemyIndex]
+    // ★ 修复：使用 enemyId 找到正确的敌人索引
+    const enemyId = impact.enemyId
+    const enemy = enemyId ? this.enemies.find(e => e && e.id === enemyId) : null
+    const currentIndex = enemy ? this.enemies.indexOf(enemy) : impact.enemyIndex
+    const estate = currentIndex >= 0 ? this.unitStates['enemy_' + currentIndex] : null
     if (!estate) return
 
     // 更新现有粒子
@@ -2821,7 +2838,7 @@ export function installBattleCombat(BattleSceneClass) {
   }
 
   // ======== 治愈冲击伤害判定 ========
-  proto._applyHealingImpactDamage = function(enemy, enemyIndex, skill) {
+  proto._applyHealingImpactDamage = function(enemy, skill) {
     const power = skill.power || 2.2
     const targetId = this._healingImpact ? this._healingImpact.targetId : null
     if (!targetId) return
@@ -2883,6 +2900,7 @@ export function installBattleCombat(BattleSceneClass) {
       active: true,
       phase: 'preparing',  // preparing -> locking -> rushing -> done
       enemyIndex: enemyIndex,
+      enemyId: enemy.id,  // ★ 新增：存储敌人唯一ID，用于精确匹配
       targetId: targetHero.id,
       targetX: targetState.x,
       targetY: targetState.y,
@@ -2916,15 +2934,18 @@ export function installBattleCombat(BattleSceneClass) {
     this._attackingEnemy = enemy
 
     // 初始化粒子特效
-    this._initHealingImpactParticles(enemyIndex)
+    this._initHealingImpactParticles(enemy.id)  // ★ 传入 enemyId 而不是 enemyIndex
 
     this._addLog(`${enemy.name} 开始聚集能量...`)
   }
 
   // ======== 初始化治愈冲击粒子特效 ========
-  proto._initHealingImpactParticles = function(enemyIndex) {
+  proto._initHealingImpactParticles = function(enemyId) {
     if (!this._healingImpact) return
-    const estate = this.unitStates['enemy_' + enemyIndex]
+    // ★ 修复：使用 enemyId 找到正确的敌人
+    const enemy = enemyId ? this.enemies.find(e => e && e.id === enemyId) : null
+    const currentIndex = enemy ? this.enemies.indexOf(enemy) : -1
+    const estate = currentIndex >= 0 ? this.unitStates['enemy_' + currentIndex] : null
     if (!estate) return
 
     const dpr = this.dpr
