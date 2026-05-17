@@ -2348,6 +2348,18 @@ export function installBattleCombat(BattleSceneClass) {
     }, 4000)
   }
 
+  // ======== 应用敌人BUFF效果（入口函数）========
+  proto._applyEnemyBuff = function(enemy, skill) {
+    // 找到敌人索引
+    const enemyIndex = this.enemies.indexOf(enemy)
+    if (enemyIndex === -1) {
+      console.error('[BUFF错误] _applyEnemyBuff: 找不到敌人索引', enemy.name)
+      return
+    }
+    
+    this._applyEnemyBuffEffect(enemy, enemyIndex, skill)
+  }
+
   // ======== 应用敌人BUFF效果（动画完成后调用）========
   proto._applyEnemyBuffEffect = function(enemy, enemyIndex, skill) {
     const effType = skill.effect || 'atk_up'
