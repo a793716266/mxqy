@@ -329,7 +329,8 @@ export function installBattleCombat(BattleSceneClass) {
         estate._justArrivedTimer = Math.max(0, estate._justArrivedTimer - effectiveDt)
       }
 
-      const eAnim = this.enemyAnimStates[i]
+      // ★ 修复：使用 enemy.id 而不是 i，防止敌人死亡后索引错位
+      const eAnim = enemy && enemy.id ? this.enemyAnimStates[enemy.id] : null
       if (eAnim) {
         const isMoving = (estate.state === 'moving_to_attack' || estate.state === 'returning' || estate.state === 'fleeing')
         const isAttacking = (estate.state === 'attacking')
@@ -2149,13 +2150,20 @@ export function installBattleCombat(BattleSceneClass) {
     }
 
     // ★ 原地攻击（不跳跃），播放动画帧 + 延迟伤害结算
-    const animState = this.enemyAnimStates[enemyIndex]
+    // ★ 修复：使用 enemy.id 而不是 enemyIndex，防止敌人死亡后索引错位
+    const animState = enemy && enemy.id ? this.enemyAnimStates[enemy.id] : null
     const hasFrameAnim = animState && (animState.type === 'aimi' || animState.type === 'slime_cat' || animState.type === 'shadow_mouse')
     
     // ★ 判断是否是技能（需要根据动画类型确定总帧数）
     const isBuffSkill = skill.type === 'buff'
-    // ★ 修复：type为'attack'的技能（如治愈之爪）应视为普通攻击，即使power>1.25
-    const isSkill = skill && skill.type !== 'attack' && (skill.target === 'all' || skill.aoe || (skill.power || 1) > 1.25 || skill.effect || skill.type === 'magic' || skill.type === 'heal_self')
+    
+    // ★ 修复：只有"治愈冲击"才使用 'skill' 动画（艾米专用）
+    // 其他技能（如治愈之爪、生命波纹）使用 'attack' 动画
+    const isSkill = skill && (
+      skill.name === '治愈冲击' || 
+      skill.name === 'Healing Impact' ||
+      (skill.type !== 'attack' && (skill.target === 'all' || skill.aoe || skill.effect))
+    )
 
     if (hasFrameAnim || animState) {
       // ★ 设置攻击状态（estate.state 告诉 _updateCombatUnits 保持攻击动画）
@@ -2170,7 +2178,12 @@ export function installBattleCombat(BattleSceneClass) {
         animType = 'buff'
         totalFrames = 8 // BUFF动画8帧
       } else if (isSkill) {
-        animType = 'skill'
+        // ★ 艾米特殊处理：只有"治愈冲击"才使用 'skill' 动画
+        if (animState && animState.type === 'aimi' && skill.name !== '治愈冲击') {
+          animType = 'attack'  // 艾米的非治愈冲击技能使用 attack 动画
+        } else {
+          animType = 'skill'
+        }
         totalFrames = 8 // 技能动画8帧
       } else {
         animType = 'attack'
@@ -2372,7 +2385,8 @@ export function installBattleCombat(BattleSceneClass) {
     const estate = this.unitStates['enemy_' + enemyIndex]
     if (!estate) return
 
-    const animState = this.enemyAnimStates[enemyIndex]
+    // ★ 修复：使用 enemy.id 而不是 enemyIndex，防止敌人死亡后索引错位
+    const animState = enemy && enemy.id ? this.enemyAnimStates[enemy.id] : null
     const dpr = this.dpr
 
     // ★ 冲锋参数
@@ -2393,10 +2407,12 @@ export function installBattleCombat(BattleSceneClass) {
     const endX = Math.max(30 * dpr, Math.min(this.width - 30 * dpr, estate.x + chargeDir * dashDistance))  // 限制在战场内
 
     // ★ 设置冲锋状态（由 _updateChargeAttackAnimation 更新）
+    // ★ 修复：同时存储 enemy.id 和 enemyIndex，优先使用 enemy.id
     this._chargeAttack = {
       active: true,
       phase: 'charging',  // charging -> dashing -> done
-      enemyIndex: enemyIndex,
+      enemyIndex: enemyIndex,  // 保留索引（用于 unitStates 访问）
+      enemyId: enemy && enemy.id ? enemy.id : null,  // 新增：存储 enemy.id（用于 enemyAnimStates 访问）
       startX: startX,
       endX: endX,
       chargeDir: chargeDir,
@@ -2505,7 +2521,11 @@ export function installBattleCombat(BattleSceneClass) {
     const enemyIndex = charge.enemyIndex
     const enemy = this.enemies[enemyIndex]
     const estate = this.unitStates['enemy_' + enemyIndex]
-    const animState = this.enemyAnimStates[enemyIndex]
+    
+    // ★ 修复：优先使用 enemyId 访问 enemyAnimStates，防止敌人死亡后索引错位
+    const animState = (enemy && enemy.id && this.enemyAnimStates[enemy.id]) 
+      ? this.enemyAnimStates[enemy.id] 
+      : (enemyIndex >= 0 ? this.enemyAnimStates[enemyIndex] : null)
 
     if (!enemy || !estate) {
       this._chargeAttack = null
@@ -2593,7 +2613,12 @@ export function installBattleCombat(BattleSceneClass) {
     console.log(`[治愈冲击调试] 阶段=${impact.phase}, 敌人=${enemy ? enemy.name : '无'}, damageApplied=${impact.damageApplied}`)
 
     const estate = this.unitStates['enemy_' + enemyIndex]
-    const animState = this.enemyAnimStates[enemyIndex]
+    
+    // ★ 修复：优先使用 enemyId 访问 enemyAnimStates，防止敌人死亡后索引错位
+    const animState = (enemy && enemy.id && this.enemyAnimStates[enemy.id]) 
+      ? this.enemyAnimStates[enemy.id] 
+      : (enemyIndex >= 0 ? this.enemyAnimStates[enemyIndex] : null)
+    
     const now = Date.now()
 
     if (!enemy || !estate) {
@@ -2837,7 +2862,8 @@ export function installBattleCombat(BattleSceneClass) {
     const estate = this.unitStates['enemy_' + enemyIndex]
     if (!estate) return
 
-    const animState = this.enemyAnimStates[enemyIndex]
+    // ★ 修复：使用 enemy.id 而不是 enemyIndex，防止敌人死亡后索引错位
+    const animState = enemy && enemy.id ? this.enemyAnimStates[enemy.id] : null
     const dpr = this.dpr
 
     // ★ 技能参数
@@ -2928,8 +2954,8 @@ export function installBattleCombat(BattleSceneClass) {
     const estate = this.unitStates['enemy_' + enemyIndex]
     if (!estate) return
 
-    // ★ 获取动画状态
-    const animState = this.enemyAnimStates[enemyIndex]
+    // ★ 修复：使用 enemy.id 而不是 enemyIndex，防止敌人死亡后索引错位
+    const animState = enemy && enemy.id ? this.enemyAnimStates[enemy.id] : null
     
     // 获取目标位置（最近的英雄）
     const { hero: targetHero, state: targetState } = this._findNearestAliveHero(estate)

@@ -17,6 +17,8 @@ export function installBattleAnimation(BattleSceneClass) {
   // ======== 动画状态初始化 ========
   proto._initEnemyAnimations = function() {
     this.enemies.forEach((enemy, index) => {
+      if (!enemy || !enemy.id) return
+      
       // ★ 强制检查：如果是 lost_healer_cat，强制使用 'aimi' 类型
       let spriteType = 'default'
       if (enemy.id === 'lost_healer_cat' || enemy.name === '迷途的治愈猫') {
@@ -34,7 +36,8 @@ export function installBattleAnimation(BattleSceneClass) {
       // 注意：技能动画会在 _updateGenericEnemyAnimation 中再乘以2倍
       if (spriteType === 'aimi') frameDuration = 120
       
-      this.enemyAnimStates[index] = {
+      // ★ 修复：使用 enemy.id 而不是 index，防止敌人死亡后索引错位
+      this.enemyAnimStates[enemy.id] = {
         type: spriteType,
         state: 'idle',
         frame: 1,
@@ -171,25 +174,26 @@ export function installBattleAnimation(BattleSceneClass) {
 
   // ======== 敌人帧动画更新 ========
   proto._updateEnemyAnimations = function(dt) {
-    for (let i = 0; i < this.enemies.length; i++) {
-      const animState = this.enemyAnimStates[i]
-      if (!animState) continue
+    this.enemies.forEach((enemy, index) => {
+      if (!enemy || !enemy.id) return
+      
+      // ★ 修复：使用 enemy.id 而不是 index，防止敌人死亡后索引错位
+      const animState = this.enemyAnimStates[enemy.id]
+      if (!animState) return
 
       animState.frameTimer = (animState.frameTimer || 0) + dt * 1000
 
-      const enemy = this.enemies[i]
-
       if (animState.type === 'slime_cat') {
-        this._updateSlimeCatAnimation(animState, i, enemy, dt)
+        this._updateSlimeCatAnimation(animState, index, enemy, dt)
       } else if (animState.type === 'shadow_mouse') {
-        this._updateShadowMouseAnimation(animState, i, enemy, dt)
+        this._updateShadowMouseAnimation(animState, index, enemy, dt)
       } else if (animState.type === 'wild_cat') {
         this._updateWildCatAnimation(animState, dt)
       } else {
         // ★ 通用帧动画更新（支持 aimi 等类型）
         this._updateGenericEnemyAnimation(animState, dt)
       }
-    }
+    })
   }
 
   // ======== 通用敌人帧动画更新 ========
@@ -689,13 +693,17 @@ export function installBattleAnimation(BattleSceneClass) {
   }
   proto._startEnemyAttackAnimation = function(target, attackingEnemy) {
     const enemy = attackingEnemy || this.enemy
+    if (!enemy || !enemy.id) return
+    
     const targetIndex = this.party.indexOf(target)
     if (targetIndex === -1 || !this.heroBasePositions[targetIndex]) return
 
     const targetPos = this.heroBasePositions[targetIndex]
     const enemyIndex = this.enemies.indexOf(enemy)
     const enemyPos = this.enemyPositions[enemyIndex] || { x: this.enemyBaseX, y: this.enemyBaseY }
-    const animState = this.enemyAnimStates[enemyIndex]
+    
+    // ★ 修复：使用 enemy.id 而不是 enemyIndex，防止敌人死亡后索引错位
+    const animState = this.enemyAnimStates[enemy.id]
     const currentSkill = this._currentEnemySkill
     const isAoeSkill = currentSkill && (currentSkill.target === 'all' || currentSkill.aoe === true)
     const hasAttackFrames = animState && (animState.type === 'slime_cat' || animState.type === 'shadow_mouse')
@@ -759,7 +767,9 @@ export function installBattleAnimation(BattleSceneClass) {
     // ★ 关键修复：使用anim.enemy而非this.enemy（后者始终是enemies[0]）
     const attackingEnemy = anim.enemy || this.enemy
     const enemyIndex = this.enemies.indexOf(attackingEnemy)
-    const animState = (enemyIndex >= 0) ? this.enemyAnimStates[enemyIndex] : null
+    
+    // ★ 修复：使用 attackingEnemy.id 而不是 enemyIndex，防止敌人死亡后索引错位
+    const animState = attackingEnemy && attackingEnemy.id ? this.enemyAnimStates[attackingEnemy.id] : null
 
     if (anim.phase === 'jump') {
       anim.progress += dt * speed
@@ -1008,8 +1018,8 @@ export function installBattleAnimation(BattleSceneClass) {
     ctx.fill()
 
     // 敌人精灵或占位符
-    const enemyIndex = this.enemies.indexOf(enemy)
-    const animState = (enemyIndex >= 0) ? this.enemyAnimStates[enemyIndex] : null
+    // ★ 修复：使用 enemy.id 而不是 enemyIndex，防止敌人死亡后索引错位
+    const animState = enemy && enemy.id ? this.enemyAnimStates[enemy.id] : null
     if (animState) {
       const frameKey = this._getEnemyFrameKey(animState)
       const frameImg = this.game.assets.get(frameKey)

@@ -1003,7 +1003,9 @@ export function installBattleRenderer(BattleSceneClass) {
   proto._drawEnemySprite = function(ctx, x, y, enemy) {
     const dpr = this.dpr
     const isBoss = enemy.isBoss
-    const animType = this.enemyAnimStates[this.enemies.indexOf(enemy)]?.type
+    
+    // ★ 修复：使用 enemy.id 而不是 indexOf(enemy)，防止敌人死亡后索引错位
+    const animType = enemy && enemy.id && this.enemyAnimStates[enemy.id]?.type
     let size
     if (isBoss) size = 65 * dpr
     else if (animType === 'slime_cat') size = 40 * dpr
@@ -1012,7 +1014,9 @@ export function installBattleRenderer(BattleSceneClass) {
     else size = 36 * dpr
 
     const enemyIndex = this.enemies.indexOf(enemy)
-    const animState = this.enemyAnimStates[enemyIndex]
+    
+    // ★ 修复：使用 enemy.id 而不是 enemyIndex，防止敌人死亡后索引错位
+    const animState = enemy && enemy.id && this.enemyAnimStates[enemy.id] ? this.enemyAnimStates[enemy.id] : null
     const isWalking = animState && animState.state === 'walk'
     const bounce = 0
 

@@ -1106,8 +1106,11 @@ export function installBattleDamage(BattleSceneClass) {
 
   // ======== 播放隐身动画 ========
   proto._playInvisibleAnimation = function(enemy, enemyIndex, enemyPos) {
+    if (!enemy || !enemy.id) return
+    
     // 创建隐身特效（使用buff动画帧）
-    const animState = this.enemyAnimStates[enemyIndex]
+    // ★ 修复：使用 enemy.id 而不是 enemyIndex，防止敌人死亡后索引错位
+    const animState = this.enemyAnimStates[enemy.id]
     if (animState) {
       animState.state = 'buff'  // 使用buff动画状态
       animState.frame = 1
@@ -1190,14 +1193,18 @@ export function installBattleDamage(BattleSceneClass) {
     this.enemyDeathAnim.push({ alpha: 1.0, fading: false, timer: 0 })
 
     // 动画状态（默认idle）
-    this.enemyAnimStates[idx] = {
+    // ★ 修复：使用 enemyData.id 而不是 idx，防止敌人死亡后索引错位
+    this.enemyAnimStates[enemyData.id] = {
       type: enemyData.type || enemyData.id || 'default',
       state: 'idle', frame: 1, frameTimer: 0,
       frameDuration: 100, attackDamageApplied: false, onAttackComplete: null
     }
 
     // 状态效果
-    this.statusEffects.enemies[idx] = []
+    // ★ 注意：statusEffects.enemies 已经使用 enemy.id 作为键（之前的修复）
+    if (!this.statusEffects.enemies[enemyData.id]) {
+      this.statusEffects.enemies[enemyData.id] = []
+    }
   }
 
   // ======== 状态效果查询/更新 ========
@@ -1249,7 +1256,8 @@ export function installBattleDamage(BattleSceneClass) {
         this.statusEffects.enemies[enemyId] = effects.filter(e => e.type !== 'invisible')
         
         // 恢复动画状态
-        const animState = this.enemyAnimStates[index]
+        // ★ 修复：使用 enemyId 而不是 index，防止敌人死亡后索引错位
+        const animState = this.enemyAnimStates[enemyId]
         if (animState) {
           animState.isInvisible = false
           if (animState.state === 'buff') {
@@ -1337,8 +1345,9 @@ export function installBattleDamage(BattleSceneClass) {
           }
           
           // 同时清理动画状态
-          if (this.enemyAnimStates[i]) {
-            delete this.enemyAnimStates[i]
+          // ★ 修复：使用 enemyId 而不是 i，防止敌人死亡后索引错位
+          if (enemyId && this.enemyAnimStates[enemyId]) {
+            delete this.enemyAnimStates[enemyId]
           }
         }
       }
@@ -1360,6 +1369,9 @@ export function installBattleDamage(BattleSceneClass) {
     }
     // 避免无限分裂
     clone._isClone = true
+    
+    // ★ 为 clone 生成唯一 ID
+    clone.id = enemy.id + '_clone_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5)
 
     const idx = this.enemies.length
     this.enemies.push(clone)
@@ -1404,7 +1416,8 @@ export function installBattleDamage(BattleSceneClass) {
     this.enemyDeathAnim.push({ alpha: 1.0, fading: false, timer: 0 })
 
     // 动画状态
-    this.enemyAnimStates[idx] = {
+    // ★ 修复：使用 clone.id 而不是 idx，防止敌人死亡后索引错位
+    this.enemyAnimStates[clone.id] = {
       type: 'slime_cat', state: 'idle', frame: 1, frameTimer: 0,
       frameDuration: 100, attackDamageApplied: false, onAttackComplete: null
     }
