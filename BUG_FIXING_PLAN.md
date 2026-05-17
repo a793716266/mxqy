@@ -2,6 +2,87 @@
 
 ## 📅 更新日志
 
+### 2026-05-17（21:00）
+
+**fix: 修复治愈冲击蓄力效果丢失问题（使用enemy.id防止索引错位）**
+
+- **问题**：治愈冲击技能在执行过程中，如果有其他敌人死亡，数组索引会变化，导致保护检查失效，蓄力效果丢失
+- **根本原因**：
+  1. `_updateCombatUnits` 中的保护检查使用 `enemyIndex` 匹配，敌人死亡后索引错位导致保护失效
+  2. `_updateHealingImpact` 函数中使用 `enemyIndex` 访问 `enemyAnimStates`，索引错位后获取到错误的敌人
+  3. `_healingImpact` 对象中没有存储 `enemyId`，无法精确匹配敌人
+
+- **修复方案**：
+  1. 在 `_healingImpact` 状态中添加 `enemyId` 字段，存储敌人唯一ID
+  2. 修改 `_updateCombatUnits` 中的保护检查逻辑，优先使用 `enemyId` 进行匹配
+  3. 修改 `_updateHealingImpact` 函数，使用 `enemyId` 精确匹配敌人
+  4. 修改 `_updateHealingImpactParticles` 函数，使用 `enemyId` 而不是 `enemyIndex`
+  5. 修改 `_initHealingImpactParticles` 函数，接收 `enemyId` 参数
+  6. 修改 `_applyHealingImpactDamage` 函数，移除 `enemyIndex` 参数
+
+- **修改文件**：
+  - `battle-combat.js`:
+    - 修改 `_updateCombatUnits`，保护检查优先使用 `enemyId`
+    - 修改 `_executeHealingImpact`，添加 `enemyId` 字段
+    - 修改 `_updateHealingImpact`，使用 `enemyId` 精确匹配敌人
+    - 修改 `_updateHealingImpactParticles`，使用 `enemyId` 而不是 `enemyIndex`
+    - 修改 `_initHealingImpactParticles`，接收 `enemyId` 参数
+    - 修改 `_applyHealingImpactDamage`，移除 `enemyIndex` 参数
+
+- **测试说明**：
+  1. 进入战斗，确保治愈冲击技能可以正常释放
+  2. 在治愈冲击释放过程中，击杀其他敌人，观察治愈冲击是否继续正常执行
+  3. 确保治愈冲击的蓄力效果不会丢失
+  4. 打开浏览器控制台（F12），查看调试日志，确认没有索引错位的问题
+
+### 2026-05-17（17:30）
+
+**fix: 修复敌人状态污染和动画资源错误**
+
+- **问题1**：敌人状态污染（暗影鼠的暗影突袭效果错误作用于艾米）
+  - 根本原因：`enemyAnimStates` 采用数组索引存储，敌人死亡后索引错位导致状态串接
+  - 修复方案：将 `enemyAnimStates` 从数组索引存储改为基于 `enemy.id` 的对象存储
+
+- **问题2**：暗影鼠的暗影突袭动画没有正确播放
+  - 根本原因：`_playInvisibleAnimation` 使用 `enemyIndex` 而不是 `enemy.id`
+  - 修复方案：修改所有 `enemyAnimStates` 访问，统一使用 `enemy.id`
+
+- **问题3**：艾米的动画资源错误（非治愈冲击技能使用了 `aimi/skill/` 动画）
+  - 根本原因：`isSkill` 判断逻辑错误，将所有 `type: 'magic'` 的技能都视为 `skill` 动画
+  - 修复方案：修改 `isSkill` 判断逻辑，只有"治愈冲击"才使用 `skill` 动画
+
+- **修改文件**：
+  - `battle-animation.js`: 
+    - 修改 `_initEnemyAnimations`，使用 `enemy.id` 初始化动画状态
+    - 修改 `_updateEnemyAnimations`，使用 `enemy.id` 访问动画状态
+    - 修改 `_startEnemyAttackAnimation`，使用 `enemy.id` 访问动画状态
+    - 修改 `_updateEnemyAttackAnimation`，使用 `enemy.id` 访问动画状态
+    - 修改 `_renderAttackingEnemy`，使用 `enemy.id` 访问动画状态
+  - `battle-damage.js`:
+    - 修改 `_playInvisibleAnimation`，使用 `enemy.id` 访问动画状态
+    - 修改 `_spawnEnemyAt`，使用 `enemy.id` 初始化动画状态
+    - 修改 `_updateEnemyStatusEffects`，使用 `enemy.id` 访问动画状态
+    - 修改 `_updateEnemyDeathAnim`，使用 `enemy.id` 清理动画状态
+    - 修改 `_trySplitSlimeCat`，为 clone 生成唯一 ID，并使用 `clone.id` 初始化动画状态
+  - `battle-combat.js`:
+    - 修改 `_updateCombatUnits`，使用 `enemy.id` 访问动画状态
+    - 修改 `_executeEnemySkill`，使用 `enemy.id` 访问动画状态
+    - 修改 `_executeChargeAttack`，使用 `enemy.id` 访问动画状态，并存储 `enemyId`
+    - 修改 `_updateChargeAttackAnimation`，优先使用 `enemy.id` 访问动画状态
+    - 修改 `_updateHealingImpact`，优先使用 `enemy.id` 访问动画状态
+    - 修改 `_executeHealingImpact`，使用 `enemy.id` 访问动画状态
+    - 修改 `_executeJumpAttack`，使用 `enemy.id` 访问动画状态
+    - 修改 `isSkill` 判断逻辑，只有"治愈冲击"才使用 `skill` 动画
+  - `battle-renderer.js`:
+    - 修改 `_drawEnemySprite`，使用 `enemy.id` 访问动画状态
+
+- **测试说明**：
+  1. 进入战斗，确保暗影鼠使用暗影突袭时，正确播放 `shadow_mouse/buff/` 动画
+  2. 确保艾米使用非治愈冲击技能时，不会错误使用 `aimi/skill/` 动画
+  3. 测试场上怪物死亡后，剩余怪物的动画和状态是否正常
+  4. 测试召唤物（如暗影鼠）的动画是否正常
+  5. 打开浏览器控制台（F12），查看调试日志，确认没有索引错位的问题
+
 ### 2026-05-17（01:00）
 
 **fix: 添加技能CD设置调试日志，追踪BUFF技能无CD问题**
