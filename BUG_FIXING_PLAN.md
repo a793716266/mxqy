@@ -2,6 +2,33 @@
 
 ## 📅 更新日志
 
+### 2026-05-17（23:30）
+
+**fix: 修复暗影突袭技能导致敌人攻击速度飞快和无CD的问题**
+
+- **问题**：暗影鼠释放技能"暗影突袭"后，攻击速度飞快，而且技能后面就无CD了
+- **根本原因**：
+  1. `_applyEnemyBuffEffect` 函数没有正确处理 `invisible` 效果，错误地应用了 `atk_up` 或 `def_up` 效果
+  2. `_applyEnemyBuff` 函数可能不存在，导致BUFF效果没有被正确应用
+  3. BUFF技能立即清理攻击状态，导致敌人在下一个更新循环中立即再次攻击
+
+- **修复方案**：
+  1. 修改 `_applyEnemyBuffEffect` 函数，添加 `invisible` 效果的处理逻辑
+  2. 添加 `_applyEnemyBuff` 函数作为入口，调用 `_applyEnemyBuffEffect`
+  3. 注释掉BUFF技能立即清理状态的代码，让动画完成回调来处理状态清理
+
+- **修改文件**：
+  - `battle-combat.js`:
+    - 修改 `_applyEnemyBuffEffect`，正确处理 `invisible` 效果
+    - 添加 `_applyEnemyBuff` 函数
+    - 修改 `_executeEnemyAttackAnim`，不立即清理BUFF技能状态
+
+- **测试说明**：
+  1. 进入战斗，让暗影鼠释放暗影突袭技能
+  2. 观察敌人是否进入隐身状态（半透明）
+  3. 观察敌人攻击速度是否恢复正常
+  4. 打开浏览器控制台（F12），查看调试日志，确认技能CD被正确设置
+
 ### 2026-05-17（23:00）
 
 **fix: 添加更详细的调试日志，显示每只暗影鼠的enemy.id**
