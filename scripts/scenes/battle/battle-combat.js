@@ -31,6 +31,10 @@ const SKILL_CD_TABLE = [
   { type: 'attack', thresholds: [
     { maxPower: 1.3, cd: 4 }, { maxPower: 1.6, cd: 6 }, { maxPower: 2.2, cd: 9 }, { maxPower: Infinity, cd: 13 }
   ]},
+  // ★ 新增：jump_attack 类型技能（如暗影咬）
+  { type: 'jump_attack', thresholds: [
+    { maxPower: 1.5, cd: 8 }, { maxPower: 2.0, cd: 12 }, { maxPower: Infinity, cd: 15 }
+  ]},
 ]
 
 function lookupBaseCd(skill) {
@@ -1324,8 +1328,9 @@ export function installBattleCombat(BattleSceneClass) {
 
   proto._getEnemyAttackInterval = function(enemy) {
     const spd = enemy.spd || 8
-    // 更短的攻击间隔：0.8-2.5秒（原来1.5-4.5秒）
-    return Math.max(0.8, Math.min(2.5, 2.5 - spd * 0.15))
+    // 攻击间隔：1.2-3.0秒（根据速度调整）
+    // 公式：基础3.0秒 - 速度*0.1，最低1.2秒
+    return Math.max(1.2, Math.min(3.0, 3.0 - spd * 0.1))
   }
 
   proto._getSkillCooldown = function(unit, skill) {
