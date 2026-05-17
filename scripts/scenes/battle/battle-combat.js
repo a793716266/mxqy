@@ -1999,8 +1999,9 @@ export function installBattleCombat(BattleSceneClass) {
           const dist2 = this._getDistance(estate, targetState2)
           const contactDist2 = estate.isRanged ? estate.attackRange : this.MELEE_RANGE * 0.9
 
-          // ★ 调试：输出移动状态
-          console.log(`[Enemy AI] ${enemy.name} moving_to_attack 中，dist=${dist2.toFixed(1)}, contactDist=${contactDist2.toFixed(1)}`)
+          // ★ 调试：输出移动状态（显示敌人位置、目标位置、移动速度）
+          const eSpeed2 = this._getMoveSpeed(enemy) * effectiveDt
+          console.log(`[Enemy AI] ${enemy.name} moving_to_attack: enemyPos=(${estate.x.toFixed(1)}, ${estate.y.toFixed(1)}), targetPos=(${targetState2.x.toFixed(1)}, ${targetState2.y.toFixed(1)}), dist=${dist2.toFixed(1)}, contactDist=${contactDist2.toFixed(1)}, eSpeed2=${eSpeed2.toFixed(1)}, effectiveDt=${effectiveDt.toFixed(4)}`)
 
           if (dist2 <= contactDist2) {
             console.log(`[Enemy AI] ${enemy.name} 到达攻击范围，进入 in_range！`)
