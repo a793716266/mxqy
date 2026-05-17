@@ -1838,8 +1838,9 @@ export function installBattleCombat(BattleSceneClass) {
         this._lastEnemyDetailLog = this.time
       }
 
-    // ★ 修复：直接用 dt（秒），不要用 battleSpeed（会导致计时器变慢）
-    const effectiveDt = dt
+    // ★ 修复：使用 dt * battleSpeed，保持与英雄一致的行为
+    // 这样加速模式对敌人也有效
+    const effectiveDt = dt * this.battleSpeed
 
     // ★ 调试：输出敌人AI执行状态（每3秒一次）
     if (!this._lastEnemyAiLog || this.time - this._lastEnemyAiLog > 3) {
