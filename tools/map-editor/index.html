@@ -92,6 +92,8 @@ body{font-family:'Microsoft YaHei','PingFang SC',sans-serif;background:#1a1a2e;c
   <button class="tool-btn" onclick="Editor.redo()">重做</button>
   <div class="tool-sep"></div>
   <button class="tool-btn" onclick="Editor.rescanAssets()" title="重新扫描素材目录">🔄 重新扫描素材</button>
+  <div class="tool-sep"></div>
+  <button class="tool-btn" onclick="Editor.fillBackgroundDialog()" title="用选定素材填充整个地图背景" style="background:#2d8a4e;border-color:#3ea56a;">🌾 填充背景</button>
 </div>
 
 <!-- 画笔设置面板 -->
@@ -630,7 +632,7 @@ function paintTileAt(tileX, tileY, dirX, dirY) {
     currentMap.objects[existingIndex].w = tileSize || def.w;
     currentMap.objects[existingIndex].h = tileSize || def.h;
     currentMap.objects[existingIndex].type = getTypeFromCat(def.cat);
-  } else {
+   } else {
     currentMap.objects.push({
       id: 'tile_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5),
       assetKey: finalAssetKey,
@@ -639,7 +641,8 @@ function paintTileAt(tileX, tileY, dirX, dirY) {
       w: tileSize || def.w,
       h: tileSize || def.h,
       type: getTypeFromCat(def.cat),
-      rotation: rotation || 0
+      rotation: rotation || 0,
+      layer: 'main'  // 默认图层
     });
   }
   
@@ -1071,8 +1074,12 @@ function hitTest(x, y) {
   if (!currentMap) return null;
   // 按图层从上到下检测（fg先命中）
   const layerOrder = { fg: 3, main: 2, road: 1, bg: 0 };
-  const byLayer = [...currentMap.objects].sort((a, b) => 
-    (layerOrder[b.layer || 'main'] || 2) - (layerOrder[a.layer || 'main'] || 2)
+  const getLayerVal = (obj) => {
+    const l = (obj.layer || 'main');
+    return layerOrder[l] !== undefined ? layerOrder[l] : 2;
+  };
+  const byLayer = [...currentMap.objects].sort((a, b) =>
+    getLayerVal(b) - getLayerVal(a)
   );
   for (const obj of byLayer) {
     const w = obj.w || 0;
@@ -1208,16 +1215,16 @@ function render() {
   if (showGrid) drawGrid();
   
   // 绘制对象（按图层顺序：bg → road → main → fg）
+  // 碰撞区域跟随对应对象绘制，而不是统一盖在最上层
   const layerOrder = { bg: 0, road: 1, main: 2, fg: 3 };
-  const sorted = [...currentMap.objects].sort((a, b) => {
-    return (layerOrder[a.layer || 'main'] || 2) - (layerOrder[b.layer || 'main'] || 2);
-  });
+  const getLayerVal = (obj) => {
+    const l = (obj.layer || 'main');
+    return layerOrder[l] !== undefined ? layerOrder[l] : 2;
+  };
+  const sorted = [...currentMap.objects].sort((a, b) => getLayerVal(a) - getLayerVal(b));
   sorted.forEach(obj => {
     drawObject(obj);
-  });
-  
-  // 绘制碰撞区域（在图片上方，选中框下方）
-  currentMap.objects.forEach(obj => {
+    // 碰撞区域紧跟在对应对象之后绘制，不会盖住上层对象的图片
     drawCollisionZone(obj);
   });
   
@@ -1877,7 +1884,7 @@ function exportJS() {
     code += '    x: ' + (obj.x || 0) + ', y: ' + (obj.y || 0) + ',\n';
     code += '    width: ' + w + ', height: ' + h + ',\n';
     code += '    assetKey: \'' + (obj.assetKey || '') + '\',\n';
-    
+
     // 可选字段
     if (obj.collisionPadding) {
       code += '    collisionPadding: ' + obj.collisionPadding + ',\n';
@@ -1885,10 +1892,13 @@ function exportJS() {
     if (obj.npcId) {
       code += '    npcId: \'' + obj.npcId + '\',\n';
     }
-    if (obj.layer) {
+    if (obj.rotation) {
+      code += '    rotation: ' + obj.rotation + ',\n';
+    }
+    if (obj.layer && obj.layer !== 'main') {
       code += '    layer: \'' + obj.layer + '\',\n';
     }
-    
+
     code += '  },\n';
   });
   
@@ -1947,21 +1957,14 @@ Editor.onPropChange = function(prop, value) {
   if (selected.length === 0) return;
   
   selected.forEach(obj => {
-    // 根据属性类型转换值
-    const numericProps = ['x', 'y', 'w', 'h', 'rotation', 'collisionPadding'];
-    if (numericProps.includes(prop)) {
+    if (prop === 'x' || prop === 'y' || prop === 'w' || prop === 'h' || prop === 'rotation' || prop === 'collisionPadding') {
       obj[prop] = parseInt(value) || 0;
     } else {
       obj[prop] = value;
     }
   });
   
-  // 重新渲染画布
   render();
-  
-  // 更新属性面板以反映更改（防止显示旧值）
-  const panel = document.getElementById('right-panel');
-  if (panel) showProperties(panel);
 };
 
 // 地图属性变更处理
@@ -2034,6 +2037,134 @@ function confirmNewMap() {
   clearSelection();
   render();
 }
+
+// ===== 填充背景功能 =====
+Editor.fillBackgroundDialog = function() {
+  if (!currentMap) {
+    alert('请先新建或打开一个地图！');
+    return;
+  }
+
+  // 创建对话框
+  const overlay = document.createElement('div');
+  overlay.className = 'dialog-overlay';
+  overlay.id = 'fill-bg-dialog';
+
+  let html = '<div class="dialog-box">';
+  html += '<h2>🌾 填充地图背景</h2>';
+
+  // 选择素材
+  html += '<div class="dialog-row">';
+  html += '<label>选择素材:</label>';
+  html += '<select id="fill-bg-asset" style="flex:1;padding:6px 10px;background:#2a2a4a;border:1px solid #444;border-radius:4px;color:#e0e0e0;font-size:13px;">';
+
+  // 获取所有town类别的素材（根据 key 前缀判断，排除特殊对象）
+  const excludeKeys = ['TOWN_ROAD', 'TOWN_SHOP', 'TOWN_WEAPON_SHOP'];
+  const townAssets = Object.entries(ASSETS).filter(([key, asset]) => {
+    return key.startsWith('TOWN_') && !excludeKeys.includes(key);
+  });
+
+  if (townAssets.length === 0) {
+    html += '<option value="">无可用素材</option>';
+  } else {
+    townAssets.forEach(([key, asset]) => {
+      const selected = key === 'TOWN_BACKGROUNDGRASS' ? ' selected' : '';
+      html += '<option value="' + key + '"' + selected + '>' + (asset.name || key) + '</option>';
+    });
+  }
+
+  html += '</select>';
+  html += '</div>';
+
+  // 瓦片大小
+  html += '<div class="dialog-row">';
+  html += '<label>瓦片大小:</label>';
+  html += '<input type="number" id="fill-bg-tile-size" value="64" min="32" max="256" style="flex:1;">';
+  html += '</div>';
+
+  // 图层
+  html += '<div class="dialog-row">';
+  html += '<label>图层:</label>';
+  html += '<select id="fill-bg-layer" style="flex:1;padding:6px 10px;background:#2a2a4a;border:1px solid #444;border-radius:4px;color:#e0e0e0;font-size:13px;">';
+  html += '<option value="bg" selected>🏔️ 背景层 (最底)</option>';
+  html += '<option value="road">🛤️ 道路层</option>';
+  html += '<option value="main">🏠 主层</option>';
+  html += '<option value="fg">🌿 前景层 (最顶)</option>';
+  html += '</select>';
+  html += '</div>';
+
+  // 提示
+  html += '<div style="font-size:11px;color:#aaa;margin:10px 0;padding:8px;background:#1a1a2e;border-radius:4px;">';
+  html += '💡 这将会：<br>';
+  html += '1. 删除该图层的所有现有对象<br>';
+  html += '2. 用选定素材铺满整个地图';
+  html += '</div>';
+
+  html += '<div class="dialog-btns">';
+  html += '<button class="dialog-ok" onclick="Editor.doFillBackground()">填充</button>';
+  html += '<button class="dialog-cancel" onclick="document.getElementById(\'fill-bg-dialog\').remove()">取消</button>';
+  html += '</div>';
+
+  html += '</div>';
+  overlay.innerHTML = html;
+
+  document.body.appendChild(overlay);
+};
+
+Editor.doFillBackground = function() {
+  const assetKey = document.getElementById('fill-bg-asset').value;
+  const tileSize = parseInt(document.getElementById('fill-bg-tile-size').value) || 64;
+  const layer = document.getElementById('fill-bg-layer').value;
+
+  if (!assetKey) {
+    alert('请选择素材！');
+    return;
+  }
+
+  const mapW = currentMap.config.width;
+  const mapH = currentMap.config.height;
+
+  // 1. 删除该图层的所有现有对象
+  currentMap.objects = currentMap.objects.filter(obj => obj.layer !== layer);
+
+  // 2. 计算需要铺多少瓦片
+  const cols = Math.ceil(mapW / tileSize);
+  const rows = Math.ceil(mapH / tileSize);
+
+  // 3. 铺满地图
+  for (let row = 0; row < rows; row++) {
+    for (let col = 0; col < cols; col++) {
+      const x = col * tileSize;
+      const y = row * tileSize;
+
+      // 确保不超出地图边界
+      if (x < mapW && y < mapH) {
+        currentMap.objects.push({
+          id: 'bg_' + Date.now() + '_' + col + '_' + row,
+          assetKey: assetKey,
+          x: x,
+          y: y,
+          w: tileSize,
+          h: tileSize,
+          type: 'decoration',
+          rotation: 0,
+          collisionPadding: 0,
+          layer: layer
+        });
+      }
+    }
+  }
+
+  // 4. 保存撤销状态并重新渲染
+  saveUndo();
+  render();
+
+  // 5. 关闭对话框
+  const dialog = document.getElementById('fill-bg-dialog');
+  if (dialog) dialog.remove();
+
+  alert('✅ 已填充背景！\n共放置 ' + (cols * rows) + ' 个瓦片');
+};
 
 // 启动
 window.addEventListener('DOMContentLoaded', init);

@@ -204,7 +204,7 @@ export function installBattleCombat(BattleSceneClass) {
             if (state._moveStartTime && this.time - state._moveStartTime > 3.0) {
               // ★ P3-18: 渐进接近 — 不再瞬移到in_range，而是将目标点缩短到当前距离的70%
               // 每次卡住3秒就重置计时器，继续接近，直到自然到达
-              console.log(`[Battle] ${hero.name} 移动卡住，渐进接近`)
+              this._addDebugLog(`[Battle] ${hero.name} 移动卡住，渐进接近`)
               const dx2 = state.targetX - state.x
               const dy2 = state.targetY - state.y
               const dist2 = Math.sqrt(dx2 * dx2 + dy2 * dy2)
@@ -325,7 +325,7 @@ export function installBattleCombat(BattleSceneClass) {
       if (estate.currentTargetId) {
         const targetHero = this.party.find(h => h.id === estate.currentTargetId)
         if (!targetHero || targetHero.hp <= 0) {
-          console.log(`[Enemy AI] ${enemy.name} 全局检测：目标已死亡，清除目标ID`)
+          this._addDebugLog(`[Enemy AI] ${enemy.name} 全局检测：目标已死亡，清除目标ID`)
           estate.currentTargetId = null
           estate.targetX = null
           estate.targetY = null
@@ -438,7 +438,7 @@ export function installBattleCombat(BattleSceneClass) {
           if (estate.currentTargetId) {
             const targetHero = this.party.find(h => h.id === estate.currentTargetId)
             if (!targetHero || targetHero.hp <= 0) {
-              console.log(`[Enemy AI] ${enemy.name} 移动中目标死亡，重新找目标`)
+              this._addDebugLog(`[Enemy AI] ${enemy.name} 移动中目标死亡，重新找目标`)
               estate.currentTargetId = null
               estate.targetX = null
               estate.targetY = null
@@ -455,7 +455,7 @@ export function installBattleCombat(BattleSceneClass) {
 
             if (estate._moveStartTime && this.time - estate._moveStartTime > 3.0) {
               // ★ P3-18: 渐进接近 — 敌人也不再瞬移
-              console.log(`[Battle] enemy_${i} 移动卡住，渐进接近`)
+              this._addDebugLog(`[Battle] enemy_${i} 移动卡住，渐进接近`)
               const edx = estate.targetX - estate.x
               const edy = estate.targetY - estate.y
               const edist = Math.sqrt(edx * edx + edy * edy)
@@ -514,7 +514,7 @@ export function installBattleCombat(BattleSceneClass) {
         case 'fleeing': {
           // ★ 如果逃跑目标位置为空，回到 idle
           if (estate.targetX === null || estate.targetY === null) {
-            console.log(`[Enemy AI] ${enemy.name} fleeing 状态目标位置为空，回到 idle`)
+            this._addDebugLog(`[Enemy AI] ${enemy.name} fleeing 状态目标位置为空，回到 idle`)
             estate.state = 'idle'
             estate.currentTargetId = null
             break
@@ -1305,7 +1305,7 @@ export function installBattleCombat(BattleSceneClass) {
           this.enemyAttackTimers[enemy.id].skillCDs[skill.id || skill.name] = 0
         })
       }
-      console.log(`[Battle] 敌人 ${enemy.name}(${enemy.id}) 攻击计时器已初始化，首次攻击=${initialOffset.toFixed(2)}秒`)
+      this._addDebugLog(`[Battle] 敌人 ${enemy.name}(${enemy.id}) 攻击计时器已初始化，首次攻击=${initialOffset.toFixed(2)}秒`)
     })
 
     // ★ 初始化敌人攻击队列
@@ -1328,7 +1328,7 @@ export function installBattleCombat(BattleSceneClass) {
           this.enemyAttackTimers[enemy.id].skillCDs[skill.id || skill.name] = 0
         })
       }
-      console.log(`[Battle] 敌人 ${enemy.name}(${enemy.id}) 攻击计时器已初始化，首次攻击=${initialOffset.toFixed(2)}秒`)
+      this._addDebugLog(`[Battle] 敌人 ${enemy.name}(${enemy.id}) 攻击计时器已初始化，首次攻击=${initialOffset.toFixed(2)}秒`)
     })
     
     // ★ 初始化敌人攻击队列
@@ -1640,7 +1640,7 @@ export function installBattleCombat(BattleSceneClass) {
         case 'attacking': {
           const targetEnemyIdx = state.currentTargetId
           if (targetEnemyIdx === null || !this.enemies[targetEnemyIdx] || this.enemies[targetEnemyIdx].hp <= 0) {
-            console.log(`[Battle] ${hero.name} 目标死亡，返回`)
+            this._addDebugLog(`[Battle] ${hero.name} 目标死亡，返回`)
             state.state = 'returning'
             break
           }
@@ -1657,7 +1657,7 @@ export function installBattleCombat(BattleSceneClass) {
           if (actualDist > contactDist * 1.8) {
             if (this.activeAttackers.has(hero.id)) break
             if (state._justArrivedTimer && state._justArrivedTimer > 0) break
-            console.log(`[Battle] ${hero.name} 目标跑远了，追击 dist=${actualDist.toFixed(1)} range=${contactDist.toFixed(1)}`)
+            this._addDebugLog(`[Battle] ${hero.name} 目标跑远了，追击 dist=${actualDist.toFixed(1)} range=${contactDist.toFixed(1)}`)
             if (tState) {
               const angle = Math.atan2(tState.y - state.y, tState.x - state.x)
               const chaserId = Object.keys(this.unitStates).find(k => this.unitStates[k] === state) || 'h0'
@@ -1674,7 +1674,7 @@ export function installBattleCombat(BattleSceneClass) {
           const attackInterval = this._getAttackInterval(hero)
 
           if (timer._needsFirstStrike && !this.activeAttackers.has(hero.id)) {
-            console.log(`[Battle] ${hero.name} 首攻! 零延迟出刀`)
+            this._addDebugLog(`[Battle] ${hero.name} 首攻! 零延迟出刀`)
             timer._needsFirstStrike = false
             timer._hasFirstAttacked = true
             const skill = this._aiChooseSkill(hero)
@@ -1739,9 +1739,9 @@ export function installBattleCombat(BattleSceneClass) {
 
     // ★ 调试：输出调用栈，追踪攻击触发来源
     const stack = new Error().stack
-    console.log(`[Battle] ${hero.name} 使用「${skill.name}」${target ? `攻击 ${target.name}` : ''}`)
-    console.log(`[Battle] 调用栈:`, stack)
-    console.log(`[Battle] 当前状态: _testMode=${this._testMode}, _captainMode=${this._captainMode}, attackingHero=${this.attackingHero ? this.attackingHero.name : 'null'}`)
+    this._addDebugLog(`[Battle] ${hero.name} 使用「${skill.name}」${target ? `攻击 ${target.name}` : ''}`)
+    this._addDebugLog(`[Battle] 调用栈:`, stack)
+    this._addDebugLog(`[Battle] 当前状态: _testMode=${this._testMode}, _captainMode=${this._captainMode}, attackingHero=${this.attackingHero ? this.attackingHero.name : 'null'}`)
 
     try {
       // 扣除MP
@@ -1823,7 +1823,7 @@ export function installBattleCombat(BattleSceneClass) {
   proto._updateEnemyAutoAttack = function(dt) {
     if (this.isPaused) return
     if (this.phase !== 'auto_battle' && this.phase !== 'animating') {
-      console.log(`[Enemy AI] 敌人AI未执行，phase=${this.phase}`)
+      this._addDebugLog(`[Enemy AI] 敌人AI未执行，phase=${this.phase}`)
       return
     }
 
@@ -1835,7 +1835,7 @@ export function installBattleCombat(BattleSceneClass) {
 
     // ★ 调试日志（每3秒输出一次）
     if (!this._lastEnemyAiLog || this.time - this._lastEnemyAiLog > 3) {
-      console.log(`[Enemy AI] 敌人AI正在执行，phase=${this.phase}, enemies.length=${this.enemies.length}, battleTime=${this.time.toFixed(2)}`)
+      this._addDebugLog(`[Enemy AI] 敌人AI正在执行，phase=${this.phase}, enemies.length=${this.enemies.length}, battleTime=${this.time.toFixed(2)}`)
       this._lastEnemyAiLog = this.time
     }
 
@@ -1844,7 +1844,7 @@ export function installBattleCombat(BattleSceneClass) {
       const enemy = this.enemies[0]
       const timer = this.enemyAttackTimers[enemy.id]
       const estate = this.unitStates['enemy_0']
-      console.log(`[Enemy AI] 立即调试: ${enemy.name}, HP=${enemy.hp}, timer=${timer ? '存在' : '不存在'}, estate=${estate ? '存在, state=' + estate.state : '不存在'}`)
+      this._addDebugLog(`[Enemy AI] 立即调试: ${enemy.name}, HP=${enemy.hp}, timer=${timer ? '存在' : '不存在'}, estate=${estate ? '存在, state=' + estate.state : '不存在'}`)
     }
 
       // ★ 详细调试：检查每个敌人的状态
@@ -1853,7 +1853,7 @@ export function installBattleCombat(BattleSceneClass) {
           const timer = this.enemyAttackTimers[enemy.id]
           const estate = this.unitStates['enemy_' + idx]
           const state = estate ? estate.state : 'unknown'
-          console.log(`[Enemy AI] 敌人${idx}: ${enemy.name}, HP=${enemy.hp}, state=${state}, attackTimer=${timer ? timer.attackTimer.toFixed(2) : 'N/A'}, isAttacking=${timer ? timer.isAttacking : 'N/A'}`)
+          this._addDebugLog(`[Enemy AI] 敌人${idx}: ${enemy.name}, HP=${enemy.hp}, state=${state}, attackTimer=${timer ? timer.attackTimer.toFixed(2) : 'N/A'}, isAttacking=${timer ? timer.isAttacking : 'N/A'}`)
         })
         this._lastEnemyDetailLog = this.time
       }
@@ -1864,7 +1864,7 @@ export function installBattleCombat(BattleSceneClass) {
 
     // ★ 调试：输出敌人AI执行状态（每3秒一次）
     if (!this._lastEnemyAiLog || this.time - this._lastEnemyAiLog > 3) {
-      console.log(`[Enemy AI] 敌人AI正在执行，phase=${this.phase}, time=${this.time.toFixed(2)}, dt=${dt.toFixed(4)}`)
+      this._addDebugLog(`[Enemy AI] 敌人AI正在执行，phase=${this.phase}, time=${this.time.toFixed(2)}, dt=${dt.toFixed(4)}`)
       this._lastEnemyAiLog = this.time
     }
 
@@ -1891,7 +1891,7 @@ export function installBattleCombat(BattleSceneClass) {
         
         // ★ 修复：如果 estate 不存在，强制重置
         if (!estate) {
-          console.log(`[Enemy AI] ${enemy.name} estate 不存在，强制重置 isAttacking`)
+          this._addDebugLog(`[Enemy AI] ${enemy.name} estate 不存在，强制重置 isAttacking`)
           timer.isAttacking = false
           timer._attackStartTime = null
           continue
@@ -1899,7 +1899,7 @@ export function installBattleCombat(BattleSceneClass) {
         
         // ★ 状态一致性检查：如果 isAttacking=true 但状态不是 'attacking'，说明状态不一致
         if (estate.state !== 'attacking') {
-          console.log(`[Enemy AI] ${enemy.name} 状态不一致: isAttacking=true 但 state=${estate.state}，强制重置`)
+          this._addDebugLog(`[Enemy AI] ${enemy.name} 状态不一致: isAttacking=true 但 state=${estate.state}，强制重置`)
           timer.isAttacking = false
           timer._attackStartTime = null
           estate.state = 'idle'
@@ -1910,13 +1910,13 @@ export function installBattleCombat(BattleSceneClass) {
         if (!timer._attackStartTime) {
           timer._attackStartTime = this.time
         } else if (this.time - timer._attackStartTime > 5.0) {
-          console.log(`[Enemy AI] ${enemy.name} 攻击卡住超过5秒，强制重置 isAttacking`)
+          this._addDebugLog(`[Enemy AI] ${enemy.name} 攻击卡住超过5秒，强制重置 isAttacking`)
           timer.isAttacking = false
           timer._attackStartTime = null
           estate.state = 'idle'
           estate.currentTargetId = null
         } else {
-          console.log(`[Enemy AI] ${enemy.name} 正在攻击中，跳过AI更新`)
+          this._addDebugLog(`[Enemy AI] ${enemy.name} 正在攻击中，跳过AI更新`)
           continue  // per-enemy锁：该敌人正在攻击中
         }
       } else {
@@ -1954,7 +1954,7 @@ export function installBattleCombat(BattleSceneClass) {
       // ★ 调试：输出CD状态
       if (hasCD && (!estate._lastCDLog || this.time - estate._lastCDLog > 2)) {
         const cdStr = Object.entries(timer.skillCDs).map(([k, v]) => `${k}=${v.toFixed(2)}`).join(', ')
-        console.log(`[Enemy AI] ${enemy.name} CD状态: ${cdStr}, effectiveDt=${effectiveDt.toFixed(4)}`)
+        this._addDebugLog(`[Enemy AI] ${enemy.name} CD状态: ${cdStr}, effectiveDt=${effectiveDt.toFixed(4)}`)
         estate._lastCDLog = this.time
       }
 
@@ -1985,7 +1985,7 @@ export function installBattleCombat(BattleSceneClass) {
           // ★ 分散目标：每个敌人优先找还没被打的敌方角色
           const { hero: targetHero, state: targetState } = this._findNearestAliveHero(estate)
           if (!targetHero || !targetState) {
-            console.log(`[Enemy AI] ${enemy.name} idle状态：未找到目标！`)
+            this._addDebugLog(`[Enemy AI] ${enemy.name} idle状态：未找到目标！`)
             break
           }
 
@@ -2003,7 +2003,7 @@ export function installBattleCombat(BattleSceneClass) {
           // ★ 简化：直接追踪目标当前位置
           const { hero: targetHero2, state: targetState2 } = this._findNearestAliveHero(estate)
           if (!targetHero2 || !targetState2) {
-            console.log(`[Enemy AI] ${enemy.name} moving_to_attack 中失去目标，回到 idle`)
+            this._addDebugLog(`[Enemy AI] ${enemy.name} moving_to_attack 中失去目标，回到 idle`)
             estate.state = 'idle'
             break
           }
@@ -2020,7 +2020,7 @@ export function installBattleCombat(BattleSceneClass) {
           this._addDebugLog(`[Enemy AI] ${enemy.name} moving_to_attack: enemyPos=(${estate.x.toFixed(1)}, ${estate.y.toFixed(1)}), targetPos=(${targetState2.x.toFixed(1)}, ${targetState2.y.toFixed(1)}), dist=${dist2.toFixed(1)}, contactDist=${contactDist2.toFixed(1)}, eSpeed2=${eSpeed2.toFixed(1)}, effectiveDt=${effectiveDt.toFixed(4)}`)
 
           if (dist2 <= contactDist2) {
-            console.log(`[Enemy AI] ${enemy.name} 到达攻击范围，进入 in_range！`)
+            this._addDebugLog(`[Enemy AI] ${enemy.name} 到达攻击范围，进入 in_range！`)
             estate.currentTargetId = targetHero2.id
             estate.state = 'in_range'
             timer.attackTimer = 0
@@ -2047,7 +2047,7 @@ export function installBattleCombat(BattleSceneClass) {
             estate.targetX = null
             estate.targetY = null
             estate.state = 'idle'
-            console.log(`[Enemy AI] ${enemy.name} 目标死亡，重新找目标`)
+            this._addDebugLog(`[Enemy AI] ${enemy.name} 目标死亡，重新找目标`)
             break
           }
 
@@ -2065,7 +2065,7 @@ export function installBattleCombat(BattleSceneClass) {
 
           // ★ 调试：每2秒输出一次状态
           if (!estate._lastRangeLog || this.time - estate._lastRangeLog > 2) {
-            console.log(`[Enemy AI] ${enemy.name} 状态: ${estate.state}, 距离: ${actualDist.toFixed(1)}, contactDist: ${contactDist.toFixed(1)}, attackTimer: ${timer.attackTimer.toFixed(2)}, effectiveDt: ${effectiveDt.toFixed(4)}`)
+            this._addDebugLog(`[Enemy AI] ${enemy.name} 状态: ${estate.state}, 距离: ${actualDist.toFixed(1)}, contactDist: ${contactDist.toFixed(1)}, attackTimer: ${timer.attackTimer.toFixed(2)}, effectiveDt: ${effectiveDt.toFixed(4)}`)
             estate._lastRangeLog = this.time
           }
 
@@ -2077,7 +2077,7 @@ export function installBattleCombat(BattleSceneClass) {
             estate.targetX = estate.x + Math.cos(angle) * retreatDist
             estate.targetY = estate.y + Math.sin(angle) * retreatDist
             estate.state = 'fleeing'
-            console.log(`[Enemy AI] ${enemy.name} 远程后退`)
+            this._addDebugLog(`[Enemy AI] ${enemy.name} 远程后退`)
             break
           }
 
@@ -2095,12 +2095,12 @@ export function installBattleCombat(BattleSceneClass) {
           
           // ★ 调试：每2秒显示一次攻击计时器进度（显示enemy.id，方便区分多只暗影鼠）
           if (!estate._lastTimerLog || this.time - estate._lastTimerLog > 2) {
-            console.log(`[Enemy AI] ${enemy.name}(id=${enemy.id}) attackTimer: ${timer.attackTimer.toFixed(3)}/${attackInt.toFixed(3)} (effectiveDt=${effectiveDt.toFixed(4)}, battleSpeed=${this.battleSpeed})`)
+            this._addDebugLog(`[Enemy AI] ${enemy.name}(id=${enemy.id}) attackTimer: ${timer.attackTimer.toFixed(3)}/${attackInt.toFixed(3)} (effectiveDt=${effectiveDt.toFixed(4)}, battleSpeed=${this.battleSpeed})`)
             estate._lastTimerLog = this.time
           }
           
           if (timer.attackTimer >= attackInt) {
-            console.log(`[Enemy AI] ${enemy.name} 发动攻击！attackTimer=${timer.attackTimer.toFixed(3)} >= attackInt=${attackInt.toFixed(3)}, 设置 isAttacking=true`)
+            this._addDebugLog(`[Enemy AI] ${enemy.name} 发动攻击！attackTimer=${timer.attackTimer.toFixed(3)} >= attackInt=${attackInt.toFixed(3)}, 设置 isAttacking=true`)
             timer.attackTimer = 0
             timer.isAttacking = true
             timer._attackStartTime = this.time
@@ -2138,7 +2138,7 @@ export function installBattleCombat(BattleSceneClass) {
   proto._executeEnemyAttackAnim = function(enemy, enemyIndex, skill, target) {
     // ★ 检查敌人是否已死亡
     if (!enemy || enemy.hp <= 0) {
-      console.log(`[Enemy AI] 敌人已死亡，取消攻击动画`)
+      this._addDebugLog(`[Enemy AI] 敌人已死亡，取消攻击动画`)
       this._clearAttackerFlag('enemy_' + enemyIndex)
       this.enemyAttacking = false
       this.enemyAttackTarget = null
@@ -2167,7 +2167,7 @@ export function installBattleCombat(BattleSceneClass) {
       const skillId = skill.id || skill.name
       timer.skillCDs[skillId] = cd
       console.log(`  ✅ CD已设置: ${skillId} = ${cd}秒`)
-      console.log(`[Enemy AI] ${enemy.name} 技能「${skill.name}」进入CD: ${cd}秒`)
+      this._addDebugLog(`[Enemy AI] ${enemy.name} 技能「${skill.name}」进入CD: ${cd}秒`)
     } else {
       console.log(`  ❌ CD未设置！timer=${!!timer}, isSpecialSkill=${isSpecialSkill}`)
     }
@@ -2257,7 +2257,7 @@ export function installBattleCombat(BattleSceneClass) {
         // ★ 不立即清理攻击状态，等待动画完成后再清理
         // 设置动画完成回调：在动画完成后清理状态
         animState.onAttackComplete = () => {
-          console.log(`[Enemy AI] ${enemy.name} BUFF技能「${skill.name}」动画播放完成，清理状态`)
+          this._addDebugLog(`[Enemy AI] ${enemy.name} BUFF技能「${skill.name}」动画播放完成，清理状态`)
           this._clearAttackerFlag('enemy_' + enemyIndex)
           this.enemyAttacking = false
           this.enemyAttackTarget = null
@@ -2267,7 +2267,7 @@ export function installBattleCombat(BattleSceneClass) {
           }
         }
         
-        console.log(`[Enemy AI] ${enemy.name} 使用BUFF技能「${skill.name}」，已应用效果，等待动画完成`)
+        this._addDebugLog(`[Enemy AI] ${enemy.name} 使用BUFF技能「${skill.name}」，已应用效果，等待动画完成`)
         
         // ★ 重要：BUFF技能不执行伤害计算，直接返回
         return
@@ -2287,7 +2287,7 @@ export function installBattleCombat(BattleSceneClass) {
         }
         const animDelay = totalFrames * frameDuration
 
-        console.log(`[Enemy AI] ${enemy.name} ${animType}动画总时长: ${animDelay}ms (${totalFrames}帧 × ${frameDuration}ms)`)
+        this._addDebugLog(`[Enemy AI] ${enemy.name} ${animType}动画总时长: ${animDelay}ms (${totalFrames}帧 × ${frameDuration}ms)`)
 
         // 动画播完后结算伤害
         this._scheduleTimer(() => {
@@ -2302,13 +2302,13 @@ export function installBattleCombat(BattleSceneClass) {
             const dist = this._getDistance(estateNow, tgtState)
             const contactDist = this.MELEE_RANGE * 1.3  // 近战攻击范围
             canDamage = dist <= contactDist
-            console.log(`[Enemy AI] ${enemy.name} 攻击距离判定: dist=${dist.toFixed(1)}, contactDist=${contactDist.toFixed(1)}, canDamage=${canDamage}`)
+            this._addDebugLog(`[Enemy AI] ${enemy.name} 攻击距离判定: dist=${dist.toFixed(1)}, contactDist=${contactDist.toFixed(1)}, canDamage=${canDamage}`)
           }
           
           if (canDamage) {
             this._applyEnemyAttackDamage(tgt, enemy)
           } else {
-            console.log(`[Enemy AI] ${enemy.name} 距离目标太远，攻击未命中！`)
+            this._addDebugLog(`[Enemy AI] ${enemy.name} 距离目标太远，攻击未命中！`)
           }
           
           this._clearAttackerFlag('enemy_' + enemyIndex)
@@ -2417,7 +2417,7 @@ export function installBattleCombat(BattleSceneClass) {
         enemyState.alpha = 0.3
       }
 
-      console.log(`[Enemy AI] ${enemy.name} 进入隐身状态，持续时间: ${duration}秒`)
+      this._addDebugLog(`[Enemy AI] ${enemy.name} 进入隐身状态，持续时间: ${duration}秒`)
       return
     }
 
@@ -2677,7 +2677,7 @@ export function installBattleCombat(BattleSceneClass) {
       if (this._lastHealingImpactLog && Date.now() - this._lastHealingImpactLogTime < 3000) {
         // 3秒内不重复输出
       } else {
-        console.log(`[治愈冲击调试] _updateHealingImpact: _healingImpact=${this._healingImpact ? '存在' : 'null'}, active=${this._healingImpact ? this._healingImpact.active : 'N/A'}`)
+        this._addDebugLog(`[治愈冲击调试] _updateHealingImpact: _healingImpact=${this._healingImpact ? '存在' : 'null'}, active=${this._healingImpact ? this._healingImpact.active : 'N/A'}`)
         this._lastHealingImpactLog = this._healingImpact
         this._lastHealingImpactLogTime = Date.now()
       }
@@ -2693,7 +2693,7 @@ export function installBattleCombat(BattleSceneClass) {
     const enemy = enemyId ? this.enemies.find(e => e && e.id === enemyId) : 
                      (enemyIndex >= 0 ? this.enemies[enemyIndex] : null)
     
-    console.log(`[治愈冲击调试] 阶段=${impact.phase}, 敌人=${enemy ? enemy.name : '无'}, damageApplied=${impact.damageApplied}`)
+    this._addDebugLog(`[治愈冲击调试] 阶段=${impact.phase}, 敌人=${enemy ? enemy.name : '无'}, damageApplied=${impact.damageApplied}`)
 
     // ★ 修复：使用正确的 enemyIndex（可能已变化）来访问 unitStates
     const currentIndex = enemy ? this.enemies.indexOf(enemy) : enemyIndex
@@ -2941,7 +2941,7 @@ export function installBattleCombat(BattleSceneClass) {
   // 多阶段：准备（2秒，粒子特效）→ 锁定（红色区域）→ 冲击（快速接近，击飞）
   proto._executeHealingImpact = function(enemy, enemyIndex, skill, target) {
     // ★ 调试：追踪治愈冲击执行流程
-    console.log(`[治愈冲击调试] _executeHealingImpact 被调用`)
+    this._addDebugLog(`[治愈冲击调试] _executeHealingImpact 被调用`)
     console.log(`  敌人: ${enemy.name} (index=${enemyIndex})`)
     console.log(`  技能: ${skill.name} (type=${skill.type})`)
     console.log(`  目标: ${target ? target.name : '无'}`)
@@ -3267,7 +3267,7 @@ export function installBattleCombat(BattleSceneClass) {
     // ★ 调试：输出技能CD状态
     if (enemy.name === '暗影鼠' && (!this._lastShadowRatLog || this.time - this._lastShadowRatLog > 3)) {
       const cdStr = Object.entries(timer.skillCDs).map(([k, v]) => `${k}=${v.toFixed(2)}`).join(', ')
-      console.log(`[Enemy AI] ${enemy.name} 技能CD状态: ${cdStr}`)
+      this._addDebugLog(`[Enemy AI] ${enemy.name} 技能CD状态: ${cdStr}`)
       this._lastShadowRatLog = this.time
     }
 
@@ -3278,7 +3278,7 @@ export function installBattleCombat(BattleSceneClass) {
         const skillId = skill.id || skill.name
         const cdRemaining = timer.skillCDs[skillId] || 0
         if (cdRemaining > 0) {
-          console.log(`[Enemy AI] ${enemy.name} 技能「${skill.name}」在CD中: ${cdRemaining.toFixed(2)}秒`)
+          this._addDebugLog(`[Enemy AI] ${enemy.name} 技能「${skill.name}」在CD中: ${cdRemaining.toFixed(2)}秒`)
           return  // CD中
         }
         availableSkills.push(skill)
@@ -3328,14 +3328,14 @@ export function installBattleCombat(BattleSceneClass) {
     const meleeRange = this.MELEE_RANGE * 1.3  // 近战范围
     const canUseMelee = distToTarget <= meleeRange  // 是否在近战范围内
     
-    console.log(`[Enemy AI] ${enemy.name} 技能选择: dist=${distToTarget.toFixed(1)}, meleeRange=${meleeRange.toFixed(1)}, canUseMelee=${canUseMelee}`)
+    this._addDebugLog(`[Enemy AI] ${enemy.name} 技能选择: dist=${distToTarget.toFixed(1)}, meleeRange=${meleeRange.toFixed(1)}, canUseMelee=${canUseMelee}`)
     
     // 如果不在近战范围内，优先用远程技能
     if (!canUseMelee && !enemy.isRanged) {
       const rangedSkills = specialSkills.filter(s => isRangedSkill(s))
       if (rangedSkills.length > 0 && Math.random() < 0.7) {  // 70%概率用远程技能
         const chosen = rangedSkills[Math.floor(Math.random() * rangedSkills.length)]
-        console.log(`[Enemy AI] ${enemy.name} 距离远，优先用远程技能: ${chosen.name}`)
+        this._addDebugLog(`[Enemy AI] ${enemy.name} 距离远，优先用远程技能: ${chosen.name}`)
         return chosen
       }
     }
@@ -3347,7 +3347,7 @@ export function installBattleCombat(BattleSceneClass) {
         // 选择伤害最高的近战技能
         meleeSkills.sort((a, b) => (b.power || 1) - (a.power || 1))
         const chosen = meleeSkills[0]
-        console.log(`[Enemy AI] ${enemy.name} 近战范围，用近战技能: ${chosen.name}`)
+        this._addDebugLog(`[Enemy AI] ${enemy.name} 近战范围，用近战技能: ${chosen.name}`)
         return chosen
       }
     }
@@ -3365,12 +3365,12 @@ export function installBattleCombat(BattleSceneClass) {
       if (pattern !== 'aggressive') {
         const cleanseSkill = specialSkills.find(s => s.type === 'heal_self')
         if (cleanseSkill) {
-          console.log(`[Enemy AI] ${enemy.name} 有debuff，使用治疗技能: ${cleanseSkill.name}`)
+          this._addDebugLog(`[Enemy AI] ${enemy.name} 有debuff，使用治疗技能: ${cleanseSkill.name}`)
           return cleanseSkill
         }
         const defBuffSkill = specialSkills.find(s => s.type === 'buff' && s.effect === 'defense_up')
         if (defBuffSkill && Math.random() < 0.6) {
-          console.log(`[Enemy AI] ${enemy.name} 有debuff，使用防御buff: ${defBuffSkill.name}`)
+          this._addDebugLog(`[Enemy AI] ${enemy.name} 有debuff，使用防御buff: ${defBuffSkill.name}`)
           return defBuffSkill
         }
       }
@@ -3385,7 +3385,7 @@ export function installBattleCombat(BattleSceneClass) {
         if (aliveHeroes.length >= 2) {
           const aoeSkill = specialSkills.find(s => s.target === 'all' || s.aoe)
           if (aoeSkill && Math.random() < 0.5) {
-            console.log(`[Enemy AI] ${enemy.name} [aggressive] 使用AOE技能: ${aoeSkill.name}`)
+            this._addDebugLog(`[Enemy AI] ${enemy.name} [aggressive] 使用AOE技能: ${aoeSkill.name}`)
             return aoeSkill
           }
         }
@@ -3393,7 +3393,7 @@ export function installBattleCombat(BattleSceneClass) {
         const summonSkill = specialSkills.find(s => s.type === 'summon')
         const aliveEnemies = this.enemies.filter(e => e.hp > 0)
         if (summonSkill && aliveEnemies.length < 4 && Math.random() < 0.4) {
-          console.log(`[Enemy AI] ${enemy.name} [aggressive] 使用召唤技能: ${summonSkill.name}`)
+          this._addDebugLog(`[Enemy AI] ${enemy.name} [aggressive] 使用召唤技能: ${summonSkill.name}`)
           return summonSkill
         }
         // 3. 最高伤害技能
@@ -3402,14 +3402,14 @@ export function installBattleCombat(BattleSceneClass) {
           damageSkills.sort((a, b) => (b.power || 1) - (a.power || 1))
           if (Math.random() < 0.75) {  // 75%用高伤（比balanced更激进）
             const chosen = damageSkills[0]
-            console.log(`[Enemy AI] ${enemy.name} [aggressive] 使用高伤技能: ${chosen.name}`)
+            this._addDebugLog(`[Enemy AI] ${enemy.name} [aggressive] 使用高伤技能: ${chosen.name}`)
             return chosen
           }
         }
         // 4. 兜底：40%用技能（比balanced更爱用技能）
         if (Math.random() < 0.4 && specialSkills.length > 0) {
           const chosen = specialSkills[Math.floor(Math.random() * specialSkills.length)]
-          console.log(`[Enemy AI] ${enemy.name} [aggressive] 随机使用技能: ${chosen.name}`)
+          this._addDebugLog(`[Enemy AI] ${enemy.name} [aggressive] 随机使用技能: ${chosen.name}`)
           return chosen
         }
         return basicAttack
@@ -3420,7 +3420,7 @@ export function installBattleCombat(BattleSceneClass) {
         // 0. ★ 优先使用跳跃攻击（特殊机制技能）
         const jumpAttackSkill = specialSkills.find(s => s.type === 'jump_attack')
         if (jumpAttackSkill && Math.random() < 0.6) {  // ★ 60%概率优先用跳跃攻击
-          console.log(`[Enemy AI] ${enemy.name} [defensive] 使用跳跃攻击: ${jumpAttackSkill.name}`)
+          this._addDebugLog(`[Enemy AI] ${enemy.name} [defensive] 使用跳跃攻击: ${jumpAttackSkill.name}`)
           return jumpAttackSkill
         }
         
@@ -3430,7 +3430,7 @@ export function installBattleCombat(BattleSceneClass) {
             s.type === 'heal_self' || (s.type === 'buff' && s.effect === 'defense_up')
           )
           if (emergencySkill) {
-            console.log(`[Enemy AI] ${enemy.name} [defensive] 紧急自保: ${emergencySkill.name}`)
+            this._addDebugLog(`[Enemy AI] ${enemy.name} [defensive] 紧急自保: ${emergencySkill.name}`)
             return emergencySkill
           }
         }
@@ -3441,9 +3441,9 @@ export function installBattleCombat(BattleSceneClass) {
           const enemyId = enemy.id
           const heroEffects2 = enemyId ? (this.statusEffects.enemies[enemyId] || []) : []
           const hasBuff = heroEffects2.some(e => e.type === 'def_up' || e.type === 'atk_up')
-          console.log(`[Enemy AI] ${enemy.name} 检查buff技能: ${buffSkill.name}, hasBuff=${hasBuff}, cd=${timer.skillCDs[buffSkill.id || buffSkill.name]}`)
+          this._addDebugLog(`[Enemy AI] ${enemy.name} 检查buff技能: ${buffSkill.name}, hasBuff=${hasBuff}, cd=${timer.skillCDs[buffSkill.id || buffSkill.name]}`)
           if (!hasBuff && Math.random() < 0.65) {
-            console.log(`[Enemy AI] ${enemy.name} [defensive] 使用buff技能: ${buffSkill.name}`)
+            this._addDebugLog(`[Enemy AI] ${enemy.name} [defensive] 使用buff技能: ${buffSkill.name}`)
             return buffSkill
           }
         }
@@ -3452,7 +3452,7 @@ export function installBattleCombat(BattleSceneClass) {
           s.effect === 'stun' || s.effect === 'slime_wrap' || s.effect === 'slime_spray'
         )
         if (ccSkill && Math.random() < 0.45) {
-          console.log(`[Enemy AI] ${enemy.name} [defensive] 使用控制技能: ${ccSkill.name}`)
+          this._addDebugLog(`[Enemy AI] ${enemy.name} [defensive] 使用控制技能: ${ccSkill.name}`)
           return ccSkill
         }
         // 4. AOE（概率较低）
@@ -3460,7 +3460,7 @@ export function installBattleCombat(BattleSceneClass) {
         if (aliveHeroes2.length >= 2) {
           const aoeSkill = specialSkills.find(s => s.target === 'all' || s.aoe)
           if (aoeSkill && Math.random() < 0.3) {
-            console.log(`[Enemy AI] ${enemy.name} [defensive] 使用AOE技能: ${aoeSkill.name}`)
+            this._addDebugLog(`[Enemy AI] ${enemy.name} [defensive] 使用AOE技能: ${aoeSkill.name}`)
             return aoeSkill
           }
         }
@@ -3468,7 +3468,7 @@ export function installBattleCombat(BattleSceneClass) {
         const dmgSkills = specialSkills.filter(s => s.type !== 'heal_self' && s.type !== 'buff')
         if (dmgSkills.length > 0 && Math.random() < 0.35) {
           const chosen = dmgSkills[Math.floor(Math.random() * dmgSkills.length)]
-          console.log(`[Enemy AI] ${enemy.name} [defensive] 使用伤害技能: ${chosen.name}`)
+          this._addDebugLog(`[Enemy AI] ${enemy.name} [defensive] 使用伤害技能: ${chosen.name}`)
           return chosen
         }
         return basicAttack
@@ -3482,7 +3482,7 @@ export function installBattleCombat(BattleSceneClass) {
             s.type === 'heal_self' || (s.type === 'buff' && s.effect === 'defense_up')
           )
           if (emergencySkill) {
-            console.log(`[Enemy AI] ${enemy.name} [support] 紧急自保: ${emergencySkill.name}`)
+            this._addDebugLog(`[Enemy AI] ${enemy.name} [support] 紧急自保: ${emergencySkill.name}`)
             return emergencySkill
           }
         }
@@ -3490,7 +3490,7 @@ export function installBattleCombat(BattleSceneClass) {
         const summonSkill2 = specialSkills.find(s => s.type === 'summon')
         const aliveEnemies2 = this.enemies.filter(e => e.hp > 0)
         if (summonSkill2 && aliveEnemies2.length < 4 && Math.random() < 0.6) {
-          console.log(`[Enemy AI] ${enemy.name} [support] 使用召唤技能: ${summonSkill2.name}`)
+          this._addDebugLog(`[Enemy AI] ${enemy.name} [support] 使用召唤技能: ${summonSkill2.name}`)
           return summonSkill2
         }
         // 3. AOE控制
@@ -3498,7 +3498,7 @@ export function installBattleCombat(BattleSceneClass) {
         if (aliveHeroes3.length >= 2) {
           const aoeSkill = specialSkills.find(s => s.target === 'all' || s.aoe)
           if (aoeSkill && Math.random() < 0.5) {
-            console.log(`[Enemy AI] ${enemy.name} [support] 使用AOE技能: ${aoeSkill.name}`)
+            this._addDebugLog(`[Enemy AI] ${enemy.name} [support] 使用AOE技能: ${aoeSkill.name}`)
             return aoeSkill
           }
         }
@@ -3507,20 +3507,20 @@ export function installBattleCombat(BattleSceneClass) {
           s.effect === 'stun' || s.effect === 'slime_wrap' || s.effect === 'slime_spray'
         )
         if (ccSkill2 && Math.random() < 0.5) {
-          console.log(`[Enemy AI] ${enemy.name} [support] 使用控制技能: ${ccSkill2.name}`)
+          this._addDebugLog(`[Enemy AI] ${enemy.name} [support] 使用控制技能: ${ccSkill2.name}`)
           return ccSkill2
         }
         // 5. buff
         const buffSkill2 = specialSkills.find(s => s.type === 'buff')
         if (buffSkill2 && Math.random() < 0.5) {
-          console.log(`[Enemy AI] ${enemy.name} [support] 使用buff技能: ${buffSkill2.name}`)
+          this._addDebugLog(`[Enemy AI] ${enemy.name} [support] 使用buff技能: ${buffSkill2.name}`)
           return buffSkill2
         }
         // 6. 伤害
         const dmgSkills2 = specialSkills.filter(s => s.type !== 'heal_self' && s.type !== 'buff' && s.type !== 'summon')
         if (dmgSkills2.length > 0 && Math.random() < 0.4) {
           const chosen = dmgSkills2[Math.floor(Math.random() * dmgSkills2.length)]
-          console.log(`[Enemy AI] ${enemy.name} [support] 使用伤害技能: ${chosen.name}`)
+          this._addDebugLog(`[Enemy AI] ${enemy.name} [support] 使用伤害技能: ${chosen.name}`)
           return chosen
         }
         return basicAttack
@@ -3534,7 +3534,7 @@ export function installBattleCombat(BattleSceneClass) {
             s.type === 'heal_self' || (s.type === 'buff' && s.effect === 'defense_up')
           )
           if (emergencySkill) {
-            console.log(`[Enemy AI] ${enemy.name} [balanced] 紧急自保: ${emergencySkill.name}`)
+            this._addDebugLog(`[Enemy AI] ${enemy.name} [balanced] 紧急自保: ${emergencySkill.name}`)
             return emergencySkill
           }
         }
@@ -3543,7 +3543,7 @@ export function installBattleCombat(BattleSceneClass) {
             s.type === 'heal_self' || (s.type === 'buff' && s.effect === 'defense_up')
           )
           if (supportSkill && Math.random() < 0.5) {
-            console.log(`[Enemy AI] ${enemy.name} [balanced] 使用辅助技能: ${supportSkill.name}`)
+            this._addDebugLog(`[Enemy AI] ${enemy.name} [balanced] 使用辅助技能: ${supportSkill.name}`)
             return supportSkill
           }
         }
@@ -3552,7 +3552,7 @@ export function installBattleCombat(BattleSceneClass) {
         if (aliveHeroes4.length >= 2) {
           const aoeSkill = specialSkills.find(s => s.target === 'all' || s.aoe)
           if (aoeSkill && Math.random() < 0.4) {
-            console.log(`[Enemy AI] ${enemy.name} [balanced] 使用AOE技能: ${aoeSkill.name}`)
+            this._addDebugLog(`[Enemy AI] ${enemy.name} [balanced] 使用AOE技能: ${aoeSkill.name}`)
             return aoeSkill
           }
         }
@@ -3561,27 +3561,27 @@ export function installBattleCombat(BattleSceneClass) {
           s.effect === 'stun' || s.effect === 'slime_wrap' || s.effect === 'slime_spray'
         )
         if (ccSkill3 && Math.random() < 0.35) {
-          console.log(`[Enemy AI] ${enemy.name} [balanced] 使用控制技能: ${ccSkill3.name}`)
+          this._addDebugLog(`[Enemy AI] ${enemy.name} [balanced] 使用控制技能: ${ccSkill3.name}`)
           return ccSkill3
         }
         // 4. 召唤
         const summonSkill3 = specialSkills.find(s => s.type === 'summon')
         const aliveEnemies3 = this.enemies.filter(e => e.hp > 0)
         if (summonSkill3 && aliveEnemies3.length < 4 && Math.random() < 0.5) {
-          console.log(`[Enemy AI] ${enemy.name} [balanced] 使用召唤技能: ${summonSkill3.name}`)
+          this._addDebugLog(`[Enemy AI] ${enemy.name} [balanced] 使用召唤技能: ${summonSkill3.name}`)
           return summonSkill3
         }
         // 5. 高伤害
         const heavySkill = specialSkills.filter(s => (s.power || 1) > 1.5 && s.type !== 'heal_self' && s.type !== 'buff')
         if (heavySkill.length > 0 && Math.random() < 0.6) {
           const chosen = heavySkill[Math.floor(Math.random() * heavySkill.length)]
-          console.log(`[Enemy AI] ${enemy.name} [balanced] 使用高伤技能: ${chosen.name}`)
+          this._addDebugLog(`[Enemy AI] ${enemy.name} [balanced] 使用高伤技能: ${chosen.name}`)
           return chosen
         }
         // 6. 兜底
         if (Math.random() < 0.3 && specialSkills.length > 0) {
           const chosen = specialSkills[Math.floor(Math.random() * specialSkills.length)]
-          console.log(`[Enemy AI] ${enemy.name} [balanced] 随机使用技能: ${chosen.name}`)
+          this._addDebugLog(`[Enemy AI] ${enemy.name} [balanced] 随机使用技能: ${chosen.name}`)
           return chosen
         }
         return basicAttack

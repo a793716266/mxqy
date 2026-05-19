@@ -507,56 +507,31 @@ export class BattleScene extends SceneBase {
     this.RANGED_RANGE = this.height * 0.22
   }
 
-  // ========== 调试日志系统 ==========
+  // ========== 调试日志系统（微信小游戏版） ==========
   /**
    * 初始化调试日志系统
-   * 包装 console.log，自动收集所有日志到 _debugLogs 数组
    */
   _initDebugLogSystem() {
     if (this._debugLogInitialized) return
     
-    const originalConsoleLog = console.log
-    const self = this  // 保持对 BattleScene 实例的引用
-    
-    console.log = function(...args) {
-      // 调用原始的 console.log
-      originalConsoleLog.apply(console, args)
-      
-      // 保存到数组
-      if (self._debugLogEnabled) {
-        const timestamp = new Date().toLocaleTimeString()
-        const message = args.map(arg => 
-          typeof arg === 'object' ? JSON.stringify(arg) : String(arg)
-        ).join(' ')
-        const logMessage = `[${timestamp}] ${message}`
-        
-        self._debugLogs.push(logMessage)
-        
-        // 限制日志数量
-        if (self._debugLogs.length > self._maxDebugLogs) {
-          self._debugLogs.shift()
-        }
-      }
-    }
-    
+    // 微信小游戏环境：只初始化标记，不包装 console.log
     this._debugLogInitialized = true
-    console.log('[Debug] 日志系统已初始化，所有 console.log 将被收集')
+    console.log('[Debug] 日志系统已初始化，调试日志将保存到 scene._debugLogs 数组')
   }
 
   /**
-   * 添加调试日志（同时输出到控制台和内存）
+   * 添加调试日志（输出到控制台 + 保存到内存）
    * @param {string} message - 日志消息
    */
   _addDebugLog(message) {
     if (!this._debugLogEnabled) return
     
-    const timestamp = new Date().toLocaleTimeString()
-    const logMessage = `[${timestamp}] ${message}`
-    
-    // 输出到控制台
+    // 输出到控制台（微信开发者工具可以看到）
     console.log(message)
     
     // 保存到数组
+    const timestamp = new Date().toLocaleTimeString()
+    const logMessage = `[${timestamp}] ${message}`
     this._debugLogs.push(logMessage)
     
     // 限制日志数量（最多保存1000条）
@@ -566,26 +541,14 @@ export class BattleScene extends SceneBase {
   }
 
   /**
-   * 导出调试日志为文本文件
+   * 获取调试日志（用于复制到剪贴板或发送到服务器）
+   * @returns {string} 所有日志的文本内容
    */
-  exportDebugLogs() {
+  getDebugLogs() {
     if (this._debugLogs.length === 0) {
-      console.log('[Debug] 没有调试日志可导出')
-      return
+      return '[Debug] 没有调试日志'
     }
-    
-    const content = this._debugLogs.join('\n')
-    const blob = new Blob([content], { type: 'text/plain' })
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = `battle-debug-${Date.now()}.txt`
-    document.body.appendChild(a)
-    a.click()
-    document.body.removeChild(a)
-    URL.revokeObjectURL(url)
-    
-    console.log(`[Debug] 已导出 ${this._debugLogs.length} 条调试日志`)
+    return this._debugLogs.join('\n')
   }
 
   /**
@@ -594,6 +557,41 @@ export class BattleScene extends SceneBase {
   clearDebugLogs() {
     this._debugLogs = []
     console.log('[Debug] 调试日志已清空')
+  }
+  
+  /**
+   * 将调试日志发送到服务器（通过微信小游戏的 wx.request）
+   * @param {string} serverUrl - 服务器URL
+   */
+  uploadDebugLogs(serverUrl) {
+    if (this._debugLogs.length === 0) {
+      console.log('[Debug] 没有调试日志可上传')
+      return
+    }
+    
+    const content = this._debugLogs.join('\n')
+    
+    // 微信小游戏环境使用 wx.request
+    if (typeof wx !== 'undefined' && wx.request) {
+      wx.request({
+        url: serverUrl,
+        method: 'POST',
+        data: {
+          logs: content,
+          timestamp: Date.now()
+        },
+        success: () => console.log('[Debug] 日志上传成功'),
+        fail: (err) => console.error('[Debug] 日志上传失败', err)
+      })
+    } else {
+      // 浏览器环境使用 fetch
+      fetch(serverUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain' },
+        body: content
+      }).then(() => console.log('[Debug] 日志上传成功'))
+        .catch(err => console.error('[Debug] 日志上传失败', err))
+    }
   }
 }
 
