@@ -1267,22 +1267,31 @@ export class FieldScene extends SceneBase {
   }
 
   /**
-   * 绘制单个地图对象（考虑相机偏移）
+   * 绘制单个地图对象（考虑相机偏移和旋转）
    */
   _drawMapObject(ctx, obj) {
     const img = this.game.assets.get(obj.assetKey)
     if (!img) return
-    
+
     const screenX = obj.x * this.dpr - this.cameraX
     const screenY = obj.y * this.dpr - this.cameraY
     const w = (obj.w || obj.width || img.width) * this.dpr
     const h = (obj.h || obj.height || img.height) * this.dpr
+    const rotation = obj.rotation || 0
 
     // 视野裁剪（只绘制可见区域内的对象）
     if (screenX + w < -50 || screenX > this.width + 50 ||
         screenY + h < -50 || screenY > this.height + 50) return
 
-    ctx.drawImage(img, screenX, screenY, w, h)
+    if (rotation !== 0) {
+      ctx.save()
+      ctx.translate(screenX + w / 2, screenY + h / 2)
+      ctx.rotate(rotation * Math.PI / 180)
+      ctx.drawImage(img, -w / 2, -h / 2, w, h)
+      ctx.restore()
+    } else {
+      ctx.drawImage(img, screenX, screenY, w, h)
+    }
   }
   
   render(ctx) {
