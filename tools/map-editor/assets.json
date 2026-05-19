@@ -1,0 +1,958 @@
+{
+  "assets": {
+    "GRASSLAND": {
+      "name": "grassland",
+      "path": "/images/map/grassland.png",
+      "category": "other"
+    },
+    "NPC_冒险指引者": {
+      "name": "冒险指引者",
+      "path": "/images/map/npc/冒险指引者.png",
+      "category": "npc"
+    },
+    "NPC_村长": {
+      "name": "村长",
+      "path": "/images/map/npc/村长.png",
+      "category": "npc"
+    },
+    "NPC_睡着的猫咪1": {
+      "name": "睡着的猫咪1",
+      "path": "/images/map/npc/睡着的猫咪1.png",
+      "category": "npc"
+    },
+    "NPC_睡着的猫咪2": {
+      "name": "睡着的猫咪2",
+      "path": "/images/map/npc/睡着的猫咪2.png",
+      "category": "npc"
+    },
+    "NPC_睡着的猫咪3": {
+      "name": "睡着的猫咪3",
+      "path": "/images/map/npc/睡着的猫咪3.png",
+      "category": "npc"
+    },
+    "NPC_睡着的猫咪4": {
+      "name": "睡着的猫咪4",
+      "path": "/images/map/npc/睡着的猫咪4.png",
+      "category": "npc"
+    },
+    "NPC_行走的猫咪1": {
+      "name": "行走的猫咪1",
+      "path": "/images/map/npc/行走的猫咪1.png",
+      "category": "npc"
+    },
+    "NPC_行走的猫咪2": {
+      "name": "行走的猫咪2",
+      "path": "/images/map/npc/行走的猫咪2.png",
+      "category": "npc"
+    },
+    "NPC_行走的猫咪3": {
+      "name": "行走的猫咪3",
+      "path": "/images/map/npc/行走的猫咪3.png",
+      "category": "npc"
+    },
+    "NPC_行走的猫咪4": {
+      "name": "行走的猫咪4",
+      "path": "/images/map/npc/行走的猫咪4.png",
+      "category": "npc"
+    },
+    "TOWN_BACKGROUNDGRASS": {
+      "name": "backgroundgrass",
+      "path": "/images/map/town/backgroundgrass.png",
+      "category": "town"
+    },
+    "TOWN_BUILDINGS_001_85X84": {
+      "name": "buildings_001_85x84",
+      "path": "/images/map/town/buildings_001_85x84.png",
+      "category": "town"
+    },
+    "TOWN_BUILDINGS_002_86X85": {
+      "name": "buildings_002_86x85",
+      "path": "/images/map/town/buildings_002_86x85.png",
+      "category": "town"
+    },
+    "TOWN_BUILDINGS_003_84X84": {
+      "name": "buildings_003_84x84",
+      "path": "/images/map/town/buildings_003_84x84.png",
+      "category": "town"
+    },
+    "TOWN_BUILDINGS_004_80X82": {
+      "name": "buildings_004_80x82",
+      "path": "/images/map/town/buildings_004_80x82.png",
+      "category": "town"
+    },
+    "TOWN_BUILDINGS_005_80X83": {
+      "name": "buildings_005_80x83",
+      "path": "/images/map/town/buildings_005_80x83.png",
+      "category": "town"
+    },
+    "TOWN_BUILDINGS_006_80X81": {
+      "name": "buildings_006_80x81",
+      "path": "/images/map/town/buildings_006_80x81.png",
+      "category": "town"
+    },
+    "TOWN_BUILDINGS_007_80X82": {
+      "name": "buildings_007_80x82",
+      "path": "/images/map/town/buildings_007_80x82.png",
+      "category": "town"
+    },
+    "TOWN_BUILDINGS_008_85X69": {
+      "name": "buildings_008_85x69",
+      "path": "/images/map/town/buildings_008_85x69.png",
+      "category": "town"
+    },
+    "TOWN_BUILDINGS_009_75X74": {
+      "name": "buildings_009_75x74",
+      "path": "/images/map/town/buildings_009_75x74.png",
+      "category": "town"
+    },
+    "TOWN_BUILDINGS_010_93X140": {
+      "name": "buildings_010_93x140",
+      "path": "/images/map/town/buildings_010_93x140.png",
+      "category": "town"
+    },
+    "TOWN_BUILDINGS_011_72X68": {
+      "name": "buildings_011_72x68",
+      "path": "/images/map/town/buildings_011_72x68.png",
+      "category": "town"
+    },
+    "TOWN_BUILDINGS_012_85X57": {
+      "name": "buildings_012_85x57",
+      "path": "/images/map/town/buildings_012_85x57.png",
+      "category": "town"
+    },
+    "TOWN_BUILDINGS_013_63X60": {
+      "name": "buildings_013_63x60",
+      "path": "/images/map/town/buildings_013_63x60.png",
+      "category": "town"
+    },
+    "TOWN_BUILDINGS_014_131X43": {
+      "name": "buildings_014_131x43",
+      "path": "/images/map/town/buildings_014_131x43.png",
+      "category": "town"
+    },
+    "TOWN_BUILDINGS_015_51X117": {
+      "name": "buildings_015_51x117",
+      "path": "/images/map/town/buildings_015_51x117.png",
+      "category": "town"
+    },
+    "TOWN_BUILDINGS_016_64X56": {
+      "name": "buildings_016_64x56",
+      "path": "/images/map/town/buildings_016_64x56.png",
+      "category": "town"
+    },
+    "TOWN_BUILDINGS_017_67X56": {
+      "name": "buildings_017_67x56",
+      "path": "/images/map/town/buildings_017_67x56.png",
+      "category": "town"
+    },
+    "TOWN_BUILDINGS_019_65X55": {
+      "name": "buildings_019_65x55",
+      "path": "/images/map/town/buildings_019_65x55.png",
+      "category": "town"
+    },
+    "TOWN_BUILDINGS_020_71X55": {
+      "name": "buildings_020_71x55",
+      "path": "/images/map/town/buildings_020_71x55.png",
+      "category": "town"
+    },
+    "TOWN_BUILDINGS_021_99X43": {
+      "name": "buildings_021_99x43",
+      "path": "/images/map/town/buildings_021_99x43.png",
+      "category": "town"
+    },
+    "TOWN_BUILDINGS_022_46X63": {
+      "name": "buildings_022_46x63",
+      "path": "/images/map/town/buildings_022_46x63.png",
+      "category": "town"
+    },
+    "TOWN_BUILDINGS_023_57X56": {
+      "name": "buildings_023_57x56",
+      "path": "/images/map/town/buildings_023_57x56.png",
+      "category": "town"
+    },
+    "TOWN_BUILDINGS_024_54X57": {
+      "name": "buildings_024_54x57",
+      "path": "/images/map/town/buildings_024_54x57.png",
+      "category": "town"
+    },
+    "TOWN_BUILDINGS_025_62X43": {
+      "name": "buildings_025_62x43",
+      "path": "/images/map/town/buildings_025_62x43.png",
+      "category": "town"
+    },
+    "TOWN_BUILDINGS_026_60X48": {
+      "name": "buildings_026_60x48",
+      "path": "/images/map/town/buildings_026_60x48.png",
+      "category": "town"
+    },
+    "TOWN_BUILDINGS_027_64X34": {
+      "name": "buildings_027_64x34",
+      "path": "/images/map/town/buildings_027_64x34.png",
+      "category": "town"
+    },
+    "TOWN_BUILDINGS_028_47X51": {
+      "name": "buildings_028_47x51",
+      "path": "/images/map/town/buildings_028_47x51.png",
+      "category": "town"
+    },
+    "TOWN_BUILDINGS_029_69X54": {
+      "name": "buildings_029_69x54",
+      "path": "/images/map/town/buildings_029_69x54.png",
+      "category": "town"
+    },
+    "TOWN_BUILDINGS_030_57X43": {
+      "name": "buildings_030_57x43",
+      "path": "/images/map/town/buildings_030_57x43.png",
+      "category": "town"
+    },
+    "TOWN_BUILDINGS_031_61X39": {
+      "name": "buildings_031_61x39",
+      "path": "/images/map/town/buildings_031_61x39.png",
+      "category": "town"
+    },
+    "TOWN_BUILDINGS_032_30X50": {
+      "name": "buildings_032_30x50",
+      "path": "/images/map/town/buildings_032_30x50.png",
+      "category": "town"
+    },
+    "TOWN_FLOWER1": {
+      "name": "flower1",
+      "path": "/images/map/town/flower1.png",
+      "category": "town"
+    },
+    "TOWN_FLOWER2": {
+      "name": "flower2",
+      "path": "/images/map/town/flower2.png",
+      "category": "town"
+    },
+    "TOWN_FLOWER3": {
+      "name": "flower3",
+      "path": "/images/map/town/flower3.png",
+      "category": "town"
+    },
+    "TOWN_FOREST": {
+      "name": "forest",
+      "path": "/images/map/town/forest.png",
+      "category": "town"
+    },
+    "TOWN_GRASS": {
+      "name": "grass",
+      "path": "/images/map/town/grass.png",
+      "category": "town"
+    },
+    "TOWN_GRASS2": {
+      "name": "grass2",
+      "path": "/images/map/town/grass2.png",
+      "category": "town"
+    },
+    "TOWN_GRASS3": {
+      "name": "grass3",
+      "path": "/images/map/town/grass3.png",
+      "category": "town"
+    },
+    "TOWN_GRASS_PILE": {
+      "name": "grass_pile",
+      "path": "/images/map/town/grass_pile.png",
+      "category": "town"
+    },
+    "TOWN_MAPS_002_142X278": {
+      "name": "maps_002_142x278",
+      "path": "/images/map/town/maps_002_142x278.png",
+      "category": "town"
+    },
+    "TOWN_MAPS_003_158X278": {
+      "name": "maps_003_158x278",
+      "path": "/images/map/town/maps_003_158x278.png",
+      "category": "town"
+    },
+    "TOWN_MAPS_004_138X133": {
+      "name": "maps_004_138x133",
+      "path": "/images/map/town/maps_004_138x133.png",
+      "category": "town"
+    },
+    "TOWN_MAPS_005_87X103": {
+      "name": "maps_005_87x103",
+      "path": "/images/map/town/maps_005_87x103.png",
+      "category": "town"
+    },
+    "TOWN_MOUNTAIN": {
+      "name": "mountain",
+      "path": "/images/map/town/mountain.png",
+      "category": "town"
+    },
+    "TOWN_POTION_SHOP": {
+      "name": "potion_shop",
+      "path": "/images/map/town/potion_shop.png",
+      "category": "town"
+    },
+    "TOWN_QUEST_BOARD": {
+      "name": "quest_board",
+      "path": "/images/map/town/quest_board.png",
+      "category": "town"
+    },
+    "TOWN_ROAD": {
+      "name": "road",
+      "path": "/images/map/town/road.png",
+      "category": "town"
+    },
+    "TOWN_ROAD_CROSS": {
+      "name": "road_cross",
+      "path": "/images/map/town/road_cross.png",
+      "category": "town"
+    },
+    "TOWN_ROAD_CURVE": {
+      "name": "road_curve",
+      "path": "/images/map/town/road_curve.png",
+      "category": "town"
+    },
+    "TOWN_ROAD_H": {
+      "name": "road_h",
+      "path": "/images/map/town/road_h.png",
+      "category": "town"
+    },
+    "TOWN_ROAD_T": {
+      "name": "road_t",
+      "path": "/images/map/town/road_t.png",
+      "category": "town"
+    },
+    "TOWN_ROCK": {
+      "name": "rock",
+      "path": "/images/map/town/rock.png",
+      "category": "town"
+    },
+    "TOWN_SHOP": {
+      "name": "shop",
+      "path": "/images/map/town/shop.png",
+      "category": "town"
+    },
+    "TOWN_TREE": {
+      "name": "tree",
+      "path": "/images/map/town/tree.png",
+      "category": "town"
+    },
+    "TOWN_TREES_001_46X41": {
+      "name": "trees_001_46x41",
+      "path": "/images/map/town/trees_001_46x41.png",
+      "category": "town"
+    },
+    "TOWN_TREES_002_51X38": {
+      "name": "trees_002_51x38",
+      "path": "/images/map/town/trees_002_51x38.png",
+      "category": "town"
+    },
+    "TOWN_TREES_003_48X43": {
+      "name": "trees_003_48x43",
+      "path": "/images/map/town/trees_003_48x43.png",
+      "category": "town"
+    },
+    "TOWN_TREES_004_45X38": {
+      "name": "trees_004_45x38",
+      "path": "/images/map/town/trees_004_45x38.png",
+      "category": "town"
+    },
+    "TOWN_TREES_005_42X34": {
+      "name": "trees_005_42x34",
+      "path": "/images/map/town/trees_005_42x34.png",
+      "category": "town"
+    },
+    "TOWN_TREES_006_40X31": {
+      "name": "trees_006_40x31",
+      "path": "/images/map/town/trees_006_40x31.png",
+      "category": "town"
+    },
+    "TOWN_TREES_007_47X33": {
+      "name": "trees_007_47x33",
+      "path": "/images/map/town/trees_007_47x33.png",
+      "category": "town"
+    },
+    "TOWN_TREES_008_45X37": {
+      "name": "trees_008_45x37",
+      "path": "/images/map/town/trees_008_45x37.png",
+      "category": "town"
+    },
+    "TOWN_TREES_009_41X42": {
+      "name": "trees_009_41x42",
+      "path": "/images/map/town/trees_009_41x42.png",
+      "category": "town"
+    },
+    "TOWN_TREES_010_47X32": {
+      "name": "trees_010_47x32",
+      "path": "/images/map/town/trees_010_47x32.png",
+      "category": "town"
+    },
+    "TOWN_TREES_011_49X32": {
+      "name": "trees_011_49x32",
+      "path": "/images/map/town/trees_011_49x32.png",
+      "category": "town"
+    },
+    "TOWN_TREES_012_43X36": {
+      "name": "trees_012_43x36",
+      "path": "/images/map/town/trees_012_43x36.png",
+      "category": "town"
+    },
+    "TOWN_TREES_013_40X38": {
+      "name": "trees_013_40x38",
+      "path": "/images/map/town/trees_013_40x38.png",
+      "category": "town"
+    },
+    "TOWN_TREES_014_41X40": {
+      "name": "trees_014_41x40",
+      "path": "/images/map/town/trees_014_41x40.png",
+      "category": "town"
+    },
+    "TOWN_TREES_015_38X35": {
+      "name": "trees_015_38x35",
+      "path": "/images/map/town/trees_015_38x35.png",
+      "category": "town"
+    },
+    "TOWN_TREES_016_39X36": {
+      "name": "trees_016_39x36",
+      "path": "/images/map/town/trees_016_39x36.png",
+      "category": "town"
+    },
+    "TOWN_TREES_017_32X32": {
+      "name": "trees_017_32x32",
+      "path": "/images/map/town/trees_017_32x32.png",
+      "category": "town"
+    },
+    "TOWN_WEAPON_SHOP": {
+      "name": "weapon_shop",
+      "path": "/images/map/town/weapon_shop.png",
+      "category": "town"
+    },
+    "VILLAGE": {
+      "name": "village",
+      "path": "/images/map/village.jpeg",
+      "category": "other"
+    },
+    "VILLAGE1": {
+      "name": "village1",
+      "path": "/images/map/village1.jpeg",
+      "category": "other"
+    }
+  },
+  "categories": {
+    "other": [
+      {
+        "key": "GRASSLAND",
+        "name": "grassland",
+        "path": "/images/map/grassland.png",
+        "category": "other"
+      },
+      {
+        "key": "VILLAGE",
+        "name": "village",
+        "path": "/images/map/village.jpeg",
+        "category": "other"
+      },
+      {
+        "key": "VILLAGE1",
+        "name": "village1",
+        "path": "/images/map/village1.jpeg",
+        "category": "other"
+      }
+    ],
+    "npc": [
+      {
+        "key": "NPC_冒险指引者",
+        "name": "冒险指引者",
+        "path": "/images/map/npc/冒险指引者.png",
+        "category": "npc"
+      },
+      {
+        "key": "NPC_村长",
+        "name": "村长",
+        "path": "/images/map/npc/村长.png",
+        "category": "npc"
+      },
+      {
+        "key": "NPC_睡着的猫咪1",
+        "name": "睡着的猫咪1",
+        "path": "/images/map/npc/睡着的猫咪1.png",
+        "category": "npc"
+      },
+      {
+        "key": "NPC_睡着的猫咪2",
+        "name": "睡着的猫咪2",
+        "path": "/images/map/npc/睡着的猫咪2.png",
+        "category": "npc"
+      },
+      {
+        "key": "NPC_睡着的猫咪3",
+        "name": "睡着的猫咪3",
+        "path": "/images/map/npc/睡着的猫咪3.png",
+        "category": "npc"
+      },
+      {
+        "key": "NPC_睡着的猫咪4",
+        "name": "睡着的猫咪4",
+        "path": "/images/map/npc/睡着的猫咪4.png",
+        "category": "npc"
+      },
+      {
+        "key": "NPC_行走的猫咪1",
+        "name": "行走的猫咪1",
+        "path": "/images/map/npc/行走的猫咪1.png",
+        "category": "npc"
+      },
+      {
+        "key": "NPC_行走的猫咪2",
+        "name": "行走的猫咪2",
+        "path": "/images/map/npc/行走的猫咪2.png",
+        "category": "npc"
+      },
+      {
+        "key": "NPC_行走的猫咪3",
+        "name": "行走的猫咪3",
+        "path": "/images/map/npc/行走的猫咪3.png",
+        "category": "npc"
+      },
+      {
+        "key": "NPC_行走的猫咪4",
+        "name": "行走的猫咪4",
+        "path": "/images/map/npc/行走的猫咪4.png",
+        "category": "npc"
+      }
+    ],
+    "town": [
+      {
+        "key": "TOWN_BACKGROUNDGRASS",
+        "name": "backgroundgrass",
+        "path": "/images/map/town/backgroundgrass.png",
+        "category": "town"
+      },
+      {
+        "key": "TOWN_BUILDINGS_001_85X84",
+        "name": "buildings_001_85x84",
+        "path": "/images/map/town/buildings_001_85x84.png",
+        "category": "town"
+      },
+      {
+        "key": "TOWN_BUILDINGS_002_86X85",
+        "name": "buildings_002_86x85",
+        "path": "/images/map/town/buildings_002_86x85.png",
+        "category": "town"
+      },
+      {
+        "key": "TOWN_BUILDINGS_003_84X84",
+        "name": "buildings_003_84x84",
+        "path": "/images/map/town/buildings_003_84x84.png",
+        "category": "town"
+      },
+      {
+        "key": "TOWN_BUILDINGS_004_80X82",
+        "name": "buildings_004_80x82",
+        "path": "/images/map/town/buildings_004_80x82.png",
+        "category": "town"
+      },
+      {
+        "key": "TOWN_BUILDINGS_005_80X83",
+        "name": "buildings_005_80x83",
+        "path": "/images/map/town/buildings_005_80x83.png",
+        "category": "town"
+      },
+      {
+        "key": "TOWN_BUILDINGS_006_80X81",
+        "name": "buildings_006_80x81",
+        "path": "/images/map/town/buildings_006_80x81.png",
+        "category": "town"
+      },
+      {
+        "key": "TOWN_BUILDINGS_007_80X82",
+        "name": "buildings_007_80x82",
+        "path": "/images/map/town/buildings_007_80x82.png",
+        "category": "town"
+      },
+      {
+        "key": "TOWN_BUILDINGS_008_85X69",
+        "name": "buildings_008_85x69",
+        "path": "/images/map/town/buildings_008_85x69.png",
+        "category": "town"
+      },
+      {
+        "key": "TOWN_BUILDINGS_009_75X74",
+        "name": "buildings_009_75x74",
+        "path": "/images/map/town/buildings_009_75x74.png",
+        "category": "town"
+      },
+      {
+        "key": "TOWN_BUILDINGS_010_93X140",
+        "name": "buildings_010_93x140",
+        "path": "/images/map/town/buildings_010_93x140.png",
+        "category": "town"
+      },
+      {
+        "key": "TOWN_BUILDINGS_011_72X68",
+        "name": "buildings_011_72x68",
+        "path": "/images/map/town/buildings_011_72x68.png",
+        "category": "town"
+      },
+      {
+        "key": "TOWN_BUILDINGS_012_85X57",
+        "name": "buildings_012_85x57",
+        "path": "/images/map/town/buildings_012_85x57.png",
+        "category": "town"
+      },
+      {
+        "key": "TOWN_BUILDINGS_013_63X60",
+        "name": "buildings_013_63x60",
+        "path": "/images/map/town/buildings_013_63x60.png",
+        "category": "town"
+      },
+      {
+        "key": "TOWN_BUILDINGS_014_131X43",
+        "name": "buildings_014_131x43",
+        "path": "/images/map/town/buildings_014_131x43.png",
+        "category": "town"
+      },
+      {
+        "key": "TOWN_BUILDINGS_015_51X117",
+        "name": "buildings_015_51x117",
+        "path": "/images/map/town/buildings_015_51x117.png",
+        "category": "town"
+      },
+      {
+        "key": "TOWN_BUILDINGS_016_64X56",
+        "name": "buildings_016_64x56",
+        "path": "/images/map/town/buildings_016_64x56.png",
+        "category": "town"
+      },
+      {
+        "key": "TOWN_BUILDINGS_017_67X56",
+        "name": "buildings_017_67x56",
+        "path": "/images/map/town/buildings_017_67x56.png",
+        "category": "town"
+      },
+      {
+        "key": "TOWN_BUILDINGS_019_65X55",
+        "name": "buildings_019_65x55",
+        "path": "/images/map/town/buildings_019_65x55.png",
+        "category": "town"
+      },
+      {
+        "key": "TOWN_BUILDINGS_020_71X55",
+        "name": "buildings_020_71x55",
+        "path": "/images/map/town/buildings_020_71x55.png",
+        "category": "town"
+      },
+      {
+        "key": "TOWN_BUILDINGS_021_99X43",
+        "name": "buildings_021_99x43",
+        "path": "/images/map/town/buildings_021_99x43.png",
+        "category": "town"
+      },
+      {
+        "key": "TOWN_BUILDINGS_022_46X63",
+        "name": "buildings_022_46x63",
+        "path": "/images/map/town/buildings_022_46x63.png",
+        "category": "town"
+      },
+      {
+        "key": "TOWN_BUILDINGS_023_57X56",
+        "name": "buildings_023_57x56",
+        "path": "/images/map/town/buildings_023_57x56.png",
+        "category": "town"
+      },
+      {
+        "key": "TOWN_BUILDINGS_024_54X57",
+        "name": "buildings_024_54x57",
+        "path": "/images/map/town/buildings_024_54x57.png",
+        "category": "town"
+      },
+      {
+        "key": "TOWN_BUILDINGS_025_62X43",
+        "name": "buildings_025_62x43",
+        "path": "/images/map/town/buildings_025_62x43.png",
+        "category": "town"
+      },
+      {
+        "key": "TOWN_BUILDINGS_026_60X48",
+        "name": "buildings_026_60x48",
+        "path": "/images/map/town/buildings_026_60x48.png",
+        "category": "town"
+      },
+      {
+        "key": "TOWN_BUILDINGS_027_64X34",
+        "name": "buildings_027_64x34",
+        "path": "/images/map/town/buildings_027_64x34.png",
+        "category": "town"
+      },
+      {
+        "key": "TOWN_BUILDINGS_028_47X51",
+        "name": "buildings_028_47x51",
+        "path": "/images/map/town/buildings_028_47x51.png",
+        "category": "town"
+      },
+      {
+        "key": "TOWN_BUILDINGS_029_69X54",
+        "name": "buildings_029_69x54",
+        "path": "/images/map/town/buildings_029_69x54.png",
+        "category": "town"
+      },
+      {
+        "key": "TOWN_BUILDINGS_030_57X43",
+        "name": "buildings_030_57x43",
+        "path": "/images/map/town/buildings_030_57x43.png",
+        "category": "town"
+      },
+      {
+        "key": "TOWN_BUILDINGS_031_61X39",
+        "name": "buildings_031_61x39",
+        "path": "/images/map/town/buildings_031_61x39.png",
+        "category": "town"
+      },
+      {
+        "key": "TOWN_BUILDINGS_032_30X50",
+        "name": "buildings_032_30x50",
+        "path": "/images/map/town/buildings_032_30x50.png",
+        "category": "town"
+      },
+      {
+        "key": "TOWN_FLOWER1",
+        "name": "flower1",
+        "path": "/images/map/town/flower1.png",
+        "category": "town"
+      },
+      {
+        "key": "TOWN_FLOWER2",
+        "name": "flower2",
+        "path": "/images/map/town/flower2.png",
+        "category": "town"
+      },
+      {
+        "key": "TOWN_FLOWER3",
+        "name": "flower3",
+        "path": "/images/map/town/flower3.png",
+        "category": "town"
+      },
+      {
+        "key": "TOWN_FOREST",
+        "name": "forest",
+        "path": "/images/map/town/forest.png",
+        "category": "town"
+      },
+      {
+        "key": "TOWN_GRASS",
+        "name": "grass",
+        "path": "/images/map/town/grass.png",
+        "category": "town"
+      },
+      {
+        "key": "TOWN_GRASS2",
+        "name": "grass2",
+        "path": "/images/map/town/grass2.png",
+        "category": "town"
+      },
+      {
+        "key": "TOWN_GRASS3",
+        "name": "grass3",
+        "path": "/images/map/town/grass3.png",
+        "category": "town"
+      },
+      {
+        "key": "TOWN_GRASS_PILE",
+        "name": "grass_pile",
+        "path": "/images/map/town/grass_pile.png",
+        "category": "town"
+      },
+      {
+        "key": "TOWN_MAPS_002_142X278",
+        "name": "maps_002_142x278",
+        "path": "/images/map/town/maps_002_142x278.png",
+        "category": "town"
+      },
+      {
+        "key": "TOWN_MAPS_003_158X278",
+        "name": "maps_003_158x278",
+        "path": "/images/map/town/maps_003_158x278.png",
+        "category": "town"
+      },
+      {
+        "key": "TOWN_MAPS_004_138X133",
+        "name": "maps_004_138x133",
+        "path": "/images/map/town/maps_004_138x133.png",
+        "category": "town"
+      },
+      {
+        "key": "TOWN_MAPS_005_87X103",
+        "name": "maps_005_87x103",
+        "path": "/images/map/town/maps_005_87x103.png",
+        "category": "town"
+      },
+      {
+        "key": "TOWN_MOUNTAIN",
+        "name": "mountain",
+        "path": "/images/map/town/mountain.png",
+        "category": "town"
+      },
+      {
+        "key": "TOWN_POTION_SHOP",
+        "name": "potion_shop",
+        "path": "/images/map/town/potion_shop.png",
+        "category": "town"
+      },
+      {
+        "key": "TOWN_QUEST_BOARD",
+        "name": "quest_board",
+        "path": "/images/map/town/quest_board.png",
+        "category": "town"
+      },
+      {
+        "key": "TOWN_ROAD",
+        "name": "road",
+        "path": "/images/map/town/road.png",
+        "category": "town"
+      },
+      {
+        "key": "TOWN_ROAD_CROSS",
+        "name": "road_cross",
+        "path": "/images/map/town/road_cross.png",
+        "category": "town"
+      },
+      {
+        "key": "TOWN_ROAD_CURVE",
+        "name": "road_curve",
+        "path": "/images/map/town/road_curve.png",
+        "category": "town"
+      },
+      {
+        "key": "TOWN_ROAD_H",
+        "name": "road_h",
+        "path": "/images/map/town/road_h.png",
+        "category": "town"
+      },
+      {
+        "key": "TOWN_ROAD_T",
+        "name": "road_t",
+        "path": "/images/map/town/road_t.png",
+        "category": "town"
+      },
+      {
+        "key": "TOWN_ROCK",
+        "name": "rock",
+        "path": "/images/map/town/rock.png",
+        "category": "town"
+      },
+      {
+        "key": "TOWN_SHOP",
+        "name": "shop",
+        "path": "/images/map/town/shop.png",
+        "category": "town"
+      },
+      {
+        "key": "TOWN_TREE",
+        "name": "tree",
+        "path": "/images/map/town/tree.png",
+        "category": "town"
+      },
+      {
+        "key": "TOWN_TREES_001_46X41",
+        "name": "trees_001_46x41",
+        "path": "/images/map/town/trees_001_46x41.png",
+        "category": "town"
+      },
+      {
+        "key": "TOWN_TREES_002_51X38",
+        "name": "trees_002_51x38",
+        "path": "/images/map/town/trees_002_51x38.png",
+        "category": "town"
+      },
+      {
+        "key": "TOWN_TREES_003_48X43",
+        "name": "trees_003_48x43",
+        "path": "/images/map/town/trees_003_48x43.png",
+        "category": "town"
+      },
+      {
+        "key": "TOWN_TREES_004_45X38",
+        "name": "trees_004_45x38",
+        "path": "/images/map/town/trees_004_45x38.png",
+        "category": "town"
+      },
+      {
+        "key": "TOWN_TREES_005_42X34",
+        "name": "trees_005_42x34",
+        "path": "/images/map/town/trees_005_42x34.png",
+        "category": "town"
+      },
+      {
+        "key": "TOWN_TREES_006_40X31",
+        "name": "trees_006_40x31",
+        "path": "/images/map/town/trees_006_40x31.png",
+        "category": "town"
+      },
+      {
+        "key": "TOWN_TREES_007_47X33",
+        "name": "trees_007_47x33",
+        "path": "/images/map/town/trees_007_47x33.png",
+        "category": "town"
+      },
+      {
+        "key": "TOWN_TREES_008_45X37",
+        "name": "trees_008_45x37",
+        "path": "/images/map/town/trees_008_45x37.png",
+        "category": "town"
+      },
+      {
+        "key": "TOWN_TREES_009_41X42",
+        "name": "trees_009_41x42",
+        "path": "/images/map/town/trees_009_41x42.png",
+        "category": "town"
+      },
+      {
+        "key": "TOWN_TREES_010_47X32",
+        "name": "trees_010_47x32",
+        "path": "/images/map/town/trees_010_47x32.png",
+        "category": "town"
+      },
+      {
+        "key": "TOWN_TREES_011_49X32",
+        "name": "trees_011_49x32",
+        "path": "/images/map/town/trees_011_49x32.png",
+        "category": "town"
+      },
+      {
+        "key": "TOWN_TREES_012_43X36",
+        "name": "trees_012_43x36",
+        "path": "/images/map/town/trees_012_43x36.png",
+        "category": "town"
+      },
+      {
+        "key": "TOWN_TREES_013_40X38",
+        "name": "trees_013_40x38",
+        "path": "/images/map/town/trees_013_40x38.png",
+        "category": "town"
+      },
+      {
+        "key": "TOWN_TREES_014_41X40",
+        "name": "trees_014_41x40",
+        "path": "/images/map/town/trees_014_41x40.png",
+        "category": "town"
+      },
+      {
+        "key": "TOWN_TREES_015_38X35",
+        "name": "trees_015_38x35",
+        "path": "/images/map/town/trees_015_38x35.png",
+        "category": "town"
+      },
+      {
+        "key": "TOWN_TREES_016_39X36",
+        "name": "trees_016_39x36",
+        "path": "/images/map/town/trees_016_39x36.png",
+        "category": "town"
+      },
+      {
+        "key": "TOWN_TREES_017_32X32",
+        "name": "trees_017_32x32",
+        "path": "/images/map/town/trees_017_32x32.png",
+        "category": "town"
+      },
+      {
+        "key": "TOWN_WEAPON_SHOP",
+        "name": "weapon_shop",
+        "path": "/images/map/town/weapon_shop.png",
+        "category": "town"
+      }
+    ]
+  }
+}

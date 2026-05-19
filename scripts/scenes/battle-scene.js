@@ -88,6 +88,11 @@ export class BattleScene extends SceneBase {
     this.log = []
     this.logScroll = 0
 
+    // ====== 调试日志系统 ======
+    this._debugLogs = []           // 存储调试日志
+    this._debugLogEnabled = true   // 是否启用日志收集
+    this._maxDebugLogs = 1000      // 最多保存1000条日志
+
     // ====== 敌人动画位置 ======
     this.enemyBaseX = this.width * 0.7
     this.enemyBaseY = this.height * 0.28
@@ -187,6 +192,9 @@ export class BattleScene extends SceneBase {
     console.log('[Battle] 构造函数接收的 data.party:', this.party)
     console.log('[Battle] 构造函数接收的 data.enemies:', this.enemies)
     console.log('[Battle] 构造函数接收的 data._testMode:', this._testMode)
+    
+    // 初始化调试日志系统
+    this._initDebugLogSystem()
     
     // ★ 强制测试模式：如果敌人是 dark_cat_king，自动替换为 lost_healer_cat
     if (this.enemies && this.enemies.length > 0 && this.enemies[0].id === 'dark_cat_king') {
@@ -405,6 +413,7 @@ export class BattleScene extends SceneBase {
     const hero = this._controlledHero
     if (!hero) return
     const timer = this.heroAttackTimers[hero.id]
+    console.log(`[CD-DEBUG] _refreshSkillButtonCDs: hero=${hero?.name}, timer=${!!timer}, skillCDs=${timer ? JSON.stringify(timer.skillCDs) : 'N/A'}`)
     for (const btn of this._skillBtns) {
       const cdRemaining = timer ? timer.skillCDs[btn.skill.id] || 0 : 0
       btn.disabled = cdRemaining > 0 || hero.mp < (btn.skill.mpCost || 0)
@@ -415,7 +424,10 @@ export class BattleScene extends SceneBase {
   _refreshSkillButtons() {
     const hero = this._controlledHero
     this._skillBtns = []
-    if (!hero || !hero.skills) return
+    if (!hero || !hero.skills) {
+      console.log(`[CD-DEBUG] _refreshSkillButtons: hero=${hero?.name}, skills=${hero?.skills?.length || 0}`)
+      return
+    }
 
     const dpr = this.dpr
     const h = this.height
@@ -493,6 +505,95 @@ export class BattleScene extends SceneBase {
     this.width = w
     this.height = h
     this.RANGED_RANGE = this.height * 0.22
+  }
+
+  // ========== 调试日志系统 ==========
+  /**
+   * 初始化调试日志系统
+   * 包装 console.log，自动收集所有日志到 _debugLogs 数组
+   */
+  _initDebugLogSystem() {
+    if (this._debugLogInitialized) return
+    
+    const originalConsoleLog = console.log
+    const self = this  // 保持对 BattleScene 实例的引用
+    
+    console.log = function(...args) {
+      // 调用原始的 console.log
+      originalConsoleLog.apply(console, args)
+      
+      // 保存到数组
+      if (self._debugLogEnabled) {
+        const timestamp = new Date().toLocaleTimeString()
+        const message = args.map(arg => 
+          typeof arg === 'object' ? JSON.stringify(arg) : String(arg)
+        ).join(' ')
+        const logMessage = `[${timestamp}] ${message}`
+        
+        self._debugLogs.push(logMessage)
+        
+        // 限制日志数量
+        if (self._debugLogs.length > self._maxDebugLogs) {
+          self._debugLogs.shift()
+        }
+      }
+    }
+    
+    this._debugLogInitialized = true
+    console.log('[Debug] 日志系统已初始化，所有 console.log 将被收集')
+  }
+
+  /**
+   * 添加调试日志（同时输出到控制台和内存）
+   * @param {string} message - 日志消息
+   */
+  _addDebugLog(message) {
+    if (!this._debugLogEnabled) return
+    
+    const timestamp = new Date().toLocaleTimeString()
+    const logMessage = `[${timestamp}] ${message}`
+    
+    // 输出到控制台
+    console.log(message)
+    
+    // 保存到数组
+    this._debugLogs.push(logMessage)
+    
+    // 限制日志数量（最多保存1000条）
+    if (this._debugLogs.length > this._maxDebugLogs) {
+      this._debugLogs.shift()
+    }
+  }
+
+  /**
+   * 导出调试日志为文本文件
+   */
+  exportDebugLogs() {
+    if (this._debugLogs.length === 0) {
+      console.log('[Debug] 没有调试日志可导出')
+      return
+    }
+    
+    const content = this._debugLogs.join('\n')
+    const blob = new Blob([content], { type: 'text/plain' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `battle-debug-${Date.now()}.txt`
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    URL.revokeObjectURL(url)
+    
+    console.log(`[Debug] 已导出 ${this._debugLogs.length} 条调试日志`)
+  }
+
+  /**
+   * 清空调试日志
+   */
+  clearDebugLogs() {
+    this._debugLogs = []
+    console.log('[Debug] 调试日志已清空')
   }
 }
 

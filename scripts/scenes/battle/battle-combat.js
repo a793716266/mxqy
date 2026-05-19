@@ -39,6 +39,14 @@ const SKILL_CD_TABLE = [
   { type: 'buff', thresholds: [
     { maxPower: 0, cd: 12 }, { maxPower: 1.0, cd: 15 }, { maxPower: Infinity, cd: 20 }
   ]},
+  // ★ 修复：heal 类型技能（如艾米治愈之光）
+  { type: 'heal', thresholds: [
+    { maxPower: 20, cd: 6 }, { maxPower: 50, cd: 10 }, { maxPower: Infinity, cd: 15 }
+  ]},
+  // ★ 修复：attack_heal 类型技能（如艾米治愈冲击）
+  { type: 'attack_heal', thresholds: [
+    { maxPower: 1.5, cd: 8 }, { maxPower: 2.0, cd: 12 }, { maxPower: Infinity, cd: 15 }
+  ]},
 ]
 
 function lookupBaseCd(skill) {
@@ -747,12 +755,17 @@ export function installBattleCombat(BattleSceneClass) {
     // ★ 技能 CD 倒计时（无论移动/静止都跑）
     const timer = this.heroAttackTimers[hero.id]
     if (timer) {
+      const cdSnapshot = { ...timer.skillCDs }
       for (const skillId in timer.skillCDs) {
         if (timer.skillCDs[skillId] > 0) {
           timer.skillCDs[skillId] = Math.max(0, timer.skillCDs[skillId] - effectiveDt)
         }
       }
       this._refreshSkillButtonCDs()
+      // 仅在 CD 实际变化时打印
+      if (JSON.stringify(cdSnapshot) !== JSON.stringify(timer.skillCDs)) {
+        console.log(`[CD-DEBUG] _updateCaptainMovement CD倒计时: hero=${hero.name}, before=${JSON.stringify(cdSnapshot)}, after=${JSON.stringify(timer.skillCDs)}, dt=${effectiveDt.toFixed(3)}`)
+      }
     }
 
     // 检查是否被限制行动
@@ -1023,6 +1036,9 @@ export function installBattleCombat(BattleSceneClass) {
       if (skill.id === 'berserk') timer.skillCDs[skill.id] = 10
       else if (skill.id === 'war_cry') timer.skillCDs[skill.id] = 8
       else timer.skillCDs[skill.id] = this._getSkillCooldown(hero, skill)
+      console.log(`[CD-DEBUG] 设置CD: hero=${hero.name}, skill=${skill.id}, cd=${timer.skillCDs[skill.id]}, nodeId=${this.nodeId}`)
+    } else {
+      console.log(`[CD-DEBUG] 未设置CD: hero=${hero.name}, skill=${skill.id}, timer=${timer}, nodeId=${this.nodeId}`)
     }
     this._refreshSkillButtons()
 
@@ -1979,7 +1995,7 @@ export function installBattleCombat(BattleSceneClass) {
           estate.targetY = targetState.y
           estate.state = 'moving_to_attack'
           estate._moveStartTime = this.time || Date.now() / 1000
-          console.log(`[Enemy AI] ${enemy.name} 进入 moving_to_attack，追踪目标 ${targetHero.name}`)
+          this._addDebugLog(`[Enemy AI] ${enemy.name} 进入 moving_to_attack，追踪目标 ${targetHero.name}`)
           break
         }
 
@@ -2001,7 +2017,7 @@ export function installBattleCombat(BattleSceneClass) {
 
           // ★ 调试：输出移动状态（显示敌人位置、目标位置、移动速度）
           const eSpeed2 = this._getMoveSpeed(enemy) * effectiveDt
-          console.log(`[Enemy AI] ${enemy.name} moving_to_attack: enemyPos=(${estate.x.toFixed(1)}, ${estate.y.toFixed(1)}), targetPos=(${targetState2.x.toFixed(1)}, ${targetState2.y.toFixed(1)}), dist=${dist2.toFixed(1)}, contactDist=${contactDist2.toFixed(1)}, eSpeed2=${eSpeed2.toFixed(1)}, effectiveDt=${effectiveDt.toFixed(4)}`)
+          this._addDebugLog(`[Enemy AI] ${enemy.name} moving_to_attack: enemyPos=(${estate.x.toFixed(1)}, ${estate.y.toFixed(1)}), targetPos=(${targetState2.x.toFixed(1)}, ${targetState2.y.toFixed(1)}), dist=${dist2.toFixed(1)}, contactDist=${contactDist2.toFixed(1)}, eSpeed2=${eSpeed2.toFixed(1)}, effectiveDt=${effectiveDt.toFixed(4)}`)
 
           if (dist2 <= contactDist2) {
             console.log(`[Enemy AI] ${enemy.name} 到达攻击范围，进入 in_range！`)
@@ -2114,7 +2130,7 @@ export function installBattleCombat(BattleSceneClass) {
   proto._enqueueEnemyAttack = function(enemy, enemyIndex, skill, target) {
     if (!this._enemyAttackQueue) this._enemyAttackQueue = []
     // 防止同一敌人重复入队
-    if (this._enemyAttackQueue.some(q => q.enemyIndex === enemyIndex)) return
+    if (this._enemyAttackQueue.some(q => q.enemy.id === enemy.id)) return
     this._enemyAttackQueue.push({ enemy, enemyIndex, skill, target })
   }
 

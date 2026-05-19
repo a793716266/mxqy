@@ -104,8 +104,9 @@ export class CollisionEngine {
   checkStaticCollision(cx, cy, opts = {}) {
     if (!this.obstacles || this.obstacles.length === 0) return false
 
-    const radius = (opts.radius || 16) * this.dpr
-    const footOffsetY = (opts.footOffsetY || 36) * this.dpr
+    // ★ 修复：opts中的值已经是物理像素，不要再乘以dpr
+    const radius = opts.radius || 16 * this.dpr
+    const footOffsetY = opts.footOffsetY || 36 * this.dpr
     const footX = cx
     const footY = cy + footOffsetY
 

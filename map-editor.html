@@ -1,0 +1,704 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>喵星奇缘 - 2D地图编辑器</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:'Microsoft YaHei','PingFang SC',sans-serif;background:#1a1a2e;color:#e0e0e0;overflow:hidden;height:100vh;user-select:none}
+#toolbar{height:48px;background:linear-gradient(135deg,#16213e,#0f3460);display:flex;align-items:center;padding:0 12px;gap:8px;border-bottom:2px solid #e94560;z-index:100}
+#toolbar h1{font-size:16px;color:#e94560;margin-right:15px;white-space:nowrap;text-shadow:0 0 10px rgba(233,69,96,0.5)}
+.tool-sep{width:1px;height:30px;background:#333;margin:0 5px}
+.tool-btn{padding:5px 10px;background:#2a2a4a;border:1px solid #444;color:#ccc;border-radius:4px;cursor:pointer;font-size:12px;transition:all 0.2s;white-space:nowrap}
+.tool-btn:hover{background:#3a3a5a;color:#fff;border-color:#666}
+.tool-btn.active{background:#e94560;color:#fff;border-color:#e94560}
+.tool-btn.primary{border-color:#e94560;color:#e94560}
+.tool-btn.primary:hover{background:#e94560;color:#fff}
+.tool-btn.danger{border-color:#ff4444;color:#ff4444}
+.tool-btn.danger:hover{background:#ff4444;color:#fff}
+.tool-label{color:#888;font-size:11px;margin:0 5px}
+#main-container{display:flex;height:calc(100vh - 48px)}
+#left-panel{width:240px;background:#16213e;border-right:2px solid #333;display:flex;flex-direction:column;overflow:hidden}
+.panel-header{padding:8px 10px;background:#0f3460;font-size:13px;color:#e94560;font-weight:bold;display:flex;justify-content:space-between;align-items:center}
+#asset-tabs{display:flex;padding:5px;gap:3px;background:#1a1a2e}
+.asset-tab{flex:1;padding:4px 2px;background:#2a2a4a;border:none;color:#999;cursor:pointer;border-radius:3px;font-size:11px;transition:all 0.2s}
+.asset-tab:hover{background:#3a3a5a;color:#ccc}
+.asset-tab.active{background:#e94560;color:#fff}
+#asset-list{flex:1;overflow-y:auto;padding:6px;display:grid;grid-template-columns:repeat(2,1fr);gap:6px;align-content:start}
+.asset-item{background:#2a2a4a;border:2px solid transparent;border-radius:6px;padding:6px;cursor:grab;text-align:center;transition:all 0.2s}
+.asset-item:hover{border-color:#e94560;background:#3a3a5a;transform:scale(1.02)}
+.asset-item.selected{border-color:#e94560;background:#e94560}
+.asset-item .thumb{width:80px;height:80px;object-fit:contain;image-rendering:pixelated;display:block;margin:0 auto}
+.asset-item .placeholder{width:80px;height:80px;display:flex;align-items:center;justify-content:center;background:#1a1a2e;border-radius:4px;font-size:10px;color:#666;margin:0 auto}
+.asset-item .asset-name{font-size:10px;margin-top:4px;color:#aaa;word-break:break-all}
+.asset-item.selected .asset-name{color:#fff}
+#canvas-area{flex:1;position:relative;overflow:hidden;background:#0a0a1a}
+#canvas-wrapper{position:absolute;transform-origin:0 0}
+.editor-canvas{position:absolute;top:0;left:0}
+#main-canvas{z-index:1}
+#grid-canvas{z-index:2;pointer-events:none}
+#overlay-canvas{z-index:3;pointer-events:none}
+#coord-display{position:absolute;bottom:10px;left:10px;background:rgba(0,0,0,0.8);padding:6px 12px;border-radius:4px;font-size:12px;color:#0f0;z-index:10;font-family:'Courier New',monospace}
+#zoom-display{position:absolute;bottom:10px;right:10px;display:flex;gap:4px;z-index:10}
+.zoom-btn{width:32px;height:32px;background:rgba(0,0,0,0.8);border:1px solid #444;color:#fff;border-radius:4px;cursor:pointer;font-size:16px;display:flex;align-items:center;justify-content:center}
+.zoom-btn:hover{background:#e94560;border-color:#e94560}
+#right-panel{width:280px;background:#16213e;border-left:2px solid #333;overflow-y:auto}
+.prop-group{padding:10px;border-bottom:1px solid #2a2a4a}
+.prop-group-title{font-size:12px;color:#e94560;margin-bottom:8px;font-weight:bold}
+.prop-row{display:flex;align-items:center;margin-bottom:5px;gap:6px}
+.prop-row label{width:70px;font-size:11px;color:#aaa;flex-shrink:0;text-align:right}
+.prop-row input,.prop-row select{flex:1;padding:3px 6px;background:#2a2a4a;border:1px solid #444;border-radius:3px;color:#e0e0e0;font-size:12px;min-width:0}
+.prop-row input:focus,.prop-row select:focus{outline:none;border-color:#e94560}
+.prop-row .prop-checkbox{width:auto;flex:none}
+.prop-btn{padding:4px 8px;background:#2a2a4a;border:1px solid #444;color:#ccc;border-radius:3px;cursor:pointer;font-size:11px;flex:1}
+.prop-btn:hover{background:#e94560;color:#fff;border-color:#e94560}
+#map-list{max-height:200px;overflow-y:auto}
+.map-item{padding:6px 10px;background:#2a2a4a;border:1px solid #444;border-radius:4px;margin:5px;cursor:pointer;font-size:12px;transition:all 0.2s}
+.map-item:hover{border-color:#e94560}
+.map-item.active{background:#e94560;color:#fff;border-color:#e94560}
+.map-item .map-info{font-size:10px;color:#888;margin-top:2px}
+.map-item.active .map-info{color:#fcc}
+#context-menu{display:none;position:fixed;background:#2a2a4a;border:1px solid #e94560;border-radius:6px;padding:4px 0;z-index:10000;min-width:160px;box-shadow:0 4px 12px rgba(0,0,0,0.5)}
+.ctx-item{padding:6px 12px;cursor:pointer;font-size:12px;color:#ccc;transition:all 0.1s}
+.ctx-item:hover{background:#e94560;color:#fff}
+.ctx-sep{height:1px;background:#444;margin:4px 0}
+.ctx-item.danger{color:#ff6666}
+.ctx-item.danger:hover{background:#ff4444;color:#fff}
+.modal-overlay{display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.7);z-index:20000;justify-content:center;align-items:center}
+.modal-overlay.active{display:flex}
+.modal{background:#16213e;border:2px solid #e94560;border-radius:8px;padding:20px;min-width:500px;max-width:80vw;max-height:80vh;display:flex;flex-direction:column}
+.modal h3{color:#e94560;margin-bottom:15px;font-size:16px}
+.modal textarea{width:100%;flex:1;min-height:300px;background:#2a2a4a;border:1px solid #444;color:#e0e0e0;padding:10px;font-family:'Courier New',monospace;font-size:12px;border-radius:4px;resize:vertical;white-space:pre;overflow-wrap:normal;overflow-x:auto}
+.modal-buttons{display:flex;gap:8px;justify-content:flex-end;margin-top:15px}
+#minimap{position:absolute;top:10px;right:10px;width:180px;height:135px;background:rgba(0,0,0,0.8);border:1px solid #444;border-radius:4px;z-index:10;image-rendering:pixelated}
+#selection-rect{position:absolute;border:1px dashed #e94560;background:rgba(233,69,96,0.1);z-index:5;pointer-events:none;display:none}
+::-webkit-scrollbar{width:6px;height:6px}
+::-webkit-scrollbar-track{background:#1a1a2e}
+::-webkit-scrollbar-thumb{background:#444;border-radius:3px}
+::-webkit-scrollbar-thumb:hover{background:#e94560}
+</style>
+</head>
+<body>
+
+<div id="toolbar">
+  <h1>地图编辑器</h1>
+  <button class="tool-btn primary" onclick="Editor.newMap()">新建</button>
+  <button class="tool-btn primary" onclick="Editor.importJS()">导入JS</button>
+  <button class="tool-btn primary" onclick="Editor.exportJS()">导出JS</button>
+  <div class="tool-sep"></div>
+  <button class="tool-btn" data-tool="select" onclick="Editor.setTool('select')">选择</button>
+  <button class="tool-btn" data-tool="place" onclick="Editor.setTool('place')">放置</button>
+  <button class="tool-btn" data-tool="move" onclick="Editor.setTool('move')">移动</button>
+  <button class="tool-btn" data-tool="delete" onclick="Editor.setTool('delete')">删除</button>
+  <div class="tool-sep"></div>
+  <label class="tool-label">网格:</label>
+  <input type="checkbox" id="grid-toggle" checked onchange="Editor.toggleGrid()" style="width:14px;height:14px;">
+  <label class="tool-label">碰撞:</label>
+  <input type="checkbox" id="collision-toggle" onchange="Editor.toggleCollision()" style="width:14px;height:14px;">
+  <div class="tool-sep"></div>
+  <label class="tool-label">对齐:</label>
+  <select id="snap-size" onchange="Editor.setSnapSize(this.value)" style="padding:2px 5px;background:#2a2a4a;color:#ccc;border:1px solid #444;border-radius:3px;font-size:12px;">
+    <option value="1">1px</option>
+    <option value="8" selected>8px</option>
+    <option value="16">16px</option>
+    <option value="32">32px</option>
+  </select>
+  <div class="tool-sep"></div>
+  <button class="tool-btn" onclick="Editor.undo()">撤销</button>
+  <button class="tool-btn" onclick="Editor.redo()">重做</button>
+</div>
+
+<div id="main-container">
+  <div id="left-panel">
+    <div class="panel-header">素材库</div>
+    <div id="asset-tabs">
+      <button class="asset-tab active" data-cat="all">全部</button>
+      <button class="asset-tab" data-cat="obstacle">障碍</button>
+      <button class="asset-tab" data-cat="decoration">装饰</button>
+      <button class="asset-tab" data-cat="building">建筑</button>
+    </div>
+    <div id="asset-list"></div>
+  </div>
+
+  <div id="canvas-area">
+    <div id="canvas-wrapper">
+      <canvas id="main-canvas" class="editor-canvas"></canvas>
+      <canvas id="grid-canvas" class="editor-canvas"></canvas>
+      <canvas id="overlay-canvas" class="editor-canvas"></canvas>
+    </div>
+    <div id="coord-display">X: 0, Y: 0 | 缩放: 100% | 对象: 0</div>
+    <div id="zoom-display">
+      <button class="zoom-btn" onclick="Editor.zoomOut()">-</button>
+      <button class="zoom-btn" onclick="Editor.resetView()" style="font-size:11px;">reset</button>
+      <button class="zoom-btn" onclick="Editor.zoomIn()">+</button>
+    </div>
+    <canvas id="minimap"></canvas>
+    <div id="selection-rect"></div>
+  </div>
+
+  <div id="right-panel">
+    <div class="panel-header">属性面板</div>
+    <div id="map-list"></div>
+    <div id="property-content" style="padding:10px;color:#666;text-align:center;font-size:12px;">
+      选择一个对象以编辑属性
+    </div>
+  </div>
+</div>
+
+<div id="context-menu">
+  <div class="ctx-item" onclick="Editor.copyObj()">复制 Ctrl+C</div>
+  <div class="ctx-item" onclick="Editor.pasteObj()">粘贴 Ctrl+V</div>
+  <div class="ctx-sep"></div>
+  <div class="ctx-item" onclick="Editor.dupObj()">复写 Ctrl+D</div>
+  <div class="ctx-sep"></div>
+  <div class="ctx-item" onclick="Editor.moveToTop()">置顶</div>
+  <div class="ctx-item" onclick="Editor.moveToBottom()">置底</div>
+  <div class="ctx-sep"></div>
+  <div class="ctx-item danger" onclick="Editor.deleteObj()">删除 Del</div>
+</div>
+
+<div id="export-modal" class="modal-overlay">
+  <div class="modal">
+    <h3>导出地图数据</h3>
+    <textarea id="export-textarea" placeholder="导出的JS代码将显示在这里..."></textarea>
+    <div class="modal-buttons">
+      <button class="tool-btn" onclick="Editor.closeModal('export-modal')">取消</button>
+      <button class="tool-btn primary" onclick="Editor.copyExport()">复制</button>
+      <button class="tool-btn primary" onclick="Editor.downloadExport()">下载</button>
+    </div>
+  </div>
+</div>
+
+<div id="import-modal" class="modal-overlay">
+  <div class="modal">
+    <h3>导入JS地图数据</h3>
+    <textarea id="import-textarea" placeholder="粘贴JS地图数据到这里..."></textarea>
+    <div class="modal-buttons">
+      <button class="tool-btn" onclick="Editor.closeModal('import-modal')">取消</button>
+      <button class="tool-btn primary" onclick="Editor.doImport()">导入</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const Editor = (() => {
+  let currentTool = 'select';
+  let currentMap = null;
+  let maps = {};
+  let selectedIds = new Set();
+  let clipboard = null;
+  let undoStack = [];
+  let redoStack = [];
+  let zoom = 1;
+  let panX = 0, panY = 0;
+  let isPanning = false;
+  let lastMX = 0, lastMY = 0;
+  let showGrid = true;
+  let showCollision = false;
+  let snapSize = 8;
+  let isDragging = false;
+  let dragOffX = 0, dragOffY = 0;
+  let currentCat = 'all';
+  let pendingAsset = null;
+
+  let mainCanvas, mainCtx;
+  let gridCanvas, gridCtx;
+  let overlayCanvas, overlayCtx;
+  let minimapCanvas, minimapCtx;
+  let canvasW = 4000, canvasH = 3000;
+
+  const ASSETS = {
+    'TOWN_TREE':       { name: '树木',     cat: 'obstacle', w: 55,  h: 78,  colPad: 12 },
+    'TOWN_FOREST':     { name: '森林',     cat: 'obstacle', w: 160, h: 190, colPad: 10 },
+    'TOWN_ROCK':       { name: '岩石',     cat: 'obstacle', w: 44,  h: 37,  colPad: 5  },
+    'TOWN_FENCE_H':    { name: '篱笆横',   cat: 'obstacle', w: 160, h: 40,  colPad: 4  },
+    'TOWN_FENCE_V':    { name: '篱笆竖',   cat: 'obstacle', w: 40,  h: 160, colPad: 4  },
+    'TOWN_GRASS_PILE': { name: '草堆',     cat: 'decoration', w: 50,  h: 45,  colPad: 0  },
+    'TOWN_GRASS':      { name: '草A',      cat: 'decoration', w: 35,  h: 32,  colPad: 0  },
+    'TOWN_GRASS2':     { name: '草B',      cat: 'decoration', w: 35,  h: 32,  colPad: 0  },
+    'TOWN_GRASS3':     { name: '草C',      cat: 'decoration', w: 35,  h: 32,  colPad: 0  },
+    'TOWN_FLOWER1':    { name: '花A',      cat: 'decoration', w: 28,  h: 28,  colPad: 0  },
+    'TOWN_FLOWER2':    { name: '花B',      cat: 'decoration', w: 26,  h: 26,  colPad: 0  },
+    'TOWN_FLOWER3':    { name: '花C',      cat: 'decoration', w: 27,  h: 27,  colPad: 0  },
+    'TOWN_SHOP':         { name: '商店',     cat: 'building', w: 160, h: 140, colPad: 8  },
+    'TOWN_WEAPON_SHOP': { name: '武器库',   cat: 'building', w: 170, h: 150, colPad: 8  },
+    'TOWN_POTION_SHOP': { name: '药品店',   cat: 'building', w: 165, h: 145, colPad: 8  },
+    'TOWN_QUEST_BOARD': { name: '冒险者公会', cat: 'building', w: 175, h: 130, colPad: 8  },
+    'TOWN_INN':         { name: '旅馆',     cat: 'building', w: 180, h: 150, colPad: 10 },
+  };
+
+  function init() {
+    mainCanvas = document.getElementById('main-canvas');
+    mainCtx = mainCanvas.getContext('2d');
+    gridCanvas = document.getElementById('grid-canvas');
+    gridCtx = gridCanvas.getContext('2d');
+    overlayCanvas = document.getElementById('overlay-canvas');
+    overlayCtx = overlayCanvas.getContext('2d');
+    minimapCanvas = document.getElementById('minimap');
+    minimapCtx = minimapCanvas.getContext('2d');
+    createDefaultMap();
+    loadAssets();
+    bindEvents();
+    render();
+    setTool('select');
+  }
+
+  function createDefaultMap() {
+    const id = 'map_' + Date.now();
+    currentMap = {
+      id: id,
+      name: '新地图',
+      config: { width: 4000, height: 3000, bgColor: '#5dae4a', bgDarkColor: '#4d9e3c' },
+      objects: [],
+      roadZones: [],
+    };
+    maps[id] = currentMap;
+    updateMapList();
+    selectMap(id);
+  }
+
+  function loadAssets() {
+    const list = document.getElementById('asset-list');
+    list.innerHTML = '';
+    const entries = currentCat === 'all'
+      ? Object.entries(ASSETS)
+      : Object.entries(ASSETS).filter(([, v]) => v.cat === currentCat);
+    for (const [key, def] of entries) {
+      const item = document.createElement('div');
+      item.className = 'asset-item';
+      item.dataset.key = key;
+      item.draggable = true;
+      const thumb = document.createElement('img');
+      thumb.className = 'thumb';
+      thumb.src = findAssetPath(key);
+      thumb.draggable = false;
+      const placeholder = document.createElement('div');
+      placeholder.className = 'placeholder';
+      placeholder.textContent = def.name;
+      placeholder.style.display = 'none';
+      thumb.onload = () => { thumb.style.display = 'block'; placeholder.style.display = 'none'; };
+      thumb.onerror = () => { thumb.style.display = 'none'; placeholder.style.display = 'flex'; };
+      item.appendChild(thumb);
+      item.appendChild(placeholder);
+      const nameEl = document.createElement('div');
+      nameEl.className = 'asset-name';
+      nameEl.textContent = def.name;
+      item.appendChild(nameEl);
+      item.addEventListener('dragstart', (e) => {
+        e.dataTransfer.setData('text/plain', key);
+        item.classList.add('dragging');
+      });
+      item.addEventListener('dragend', () => item.classList.remove('dragging'));
+      item.addEventListener('click', () => {
+        document.querySelectorAll('.asset-item').forEach(el => el.classList.remove('selected'));
+        item.classList.add('selected');
+        setTool('place');
+        pendingAsset = key;
+      });
+      list.appendChild(item);
+    }
+  }
+
+  function findAssetPath(key) {
+    return `images/map/town/${key.toLowerCase()}.png`;
+  }
+
+  function bindEvents() {
+    const area = document.getElementById('canvas-area');
+    overlayCanvas.addEventListener('mousedown', onMouseDown);
+    overlayCanvas.addEventListener('mousemove', onMouseMove);
+    overlayCanvas.addEventListener('mouseup', onMouseUp);
+    overlayCanvas.addEventListener('wheel', onWheel, { passive: false });
+    area.addEventListener('dragover', (e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'copy'; });
+    area.addEventListener('drop', (e) => {
+      e.preventDefault();
+      const key = e.dataTransfer.getData('text/plain');
+      if (key) { const c = getCanvasCoords(e); placeObj(key, snap(c.x), snap(c.y)); }
+    });
+    area.addEventListener('contextmenu', (e) => { e.preventDefault(); if (currentTool === 'select') showContextMenu(e.clientX, e.clientY); });
+    document.addEventListener('click', (e) => { if (!e.target.closest('#context-menu')) hideContextMenu(); });
+    document.addEventListener('keydown', onKeyDown);
+    document.querySelectorAll('.asset-tab').forEach(tab => {
+      tab.addEventListener('click', () => {
+        document.querySelectorAll('.asset-tab').forEach(t => t.classList.remove('active'));
+        tab.classList.add('active');
+        currentCat = tab.dataset.cat;
+        loadAssets();
+      });
+    });
+  }
+
+  function getCanvasCoords(e) {
+    const rect = document.getElementById('canvas-area').getBoundingClientRect();
+    return { x: (e.clientX - rect.left - panX) / zoom, y: (e.clientY - rect.top - panY) / zoom };
+  }
+
+  function onMouseDown(e) {
+    const c = getCanvasCoords(e);
+    if (e.button === 1 || (e.button === 0 && e.altKey)) {
+      isPanning = true; lastMX = e.clientX; lastMY = e.clientY; e.preventDefault(); return;
+    }
+    if (e.button === 0) {
+      if (currentTool === 'select') {
+        const obj = hitTest(c.x, c.y);
+        if (obj) { selectObj(obj, e.shiftKey); isDragging = true; const b = getObjBounds(obj); dragOffX = c.x - b.x; dragOffY = c.y - b.y; }
+        else { if (!e.shiftKey) deselectAll(); }
+      } else if (currentTool === 'place') {
+        if (pendingAsset) placeObj(pendingAsset, snap(c.x), snap(c.y));
+      } else if (currentTool === 'delete') {
+        const obj = hitTest(c.x, c.y); if (obj) deleteObj(obj);
+      }
+    }
+  }
+
+  function onMouseMove(e) {
+    const c = getCanvasCoords(e);
+    document.getElementById('coord-display').textContent =
+      'X: ' + Math.round(c.x) + ', Y: ' + Math.round(c.y) + ' | 缩放: ' + Math.round(zoom*100) + '% | 对象: ' + currentMap.objects.length;
+    if (isPanning) {
+      panX += e.clientX - lastMX; panY += e.clientY - lastMY;
+      lastMX = e.clientX; lastMY = e.clientY; updateTransform(); render(); return;
+    }
+    if (isDragging && selectedIds.size > 0) {
+      const selected = getSelectedObjs();
+      for (const obj of selected) { obj.x = snap(c.x - dragOffX); obj.y = snap(c.y - dragOffY); }
+      updatePropertyPanel(); render();
+    }
+  }
+
+  function onMouseUp(e) {
+    if (isPanning) isPanning = false;
+    if (isDragging) { isDragging = false; saveUndo(); }
+  }
+
+  function onWheel(e) {
+    e.preventDefault();
+    const delta = e.deltaY > 0 ? 0.92 : 1.08;
+    setZoom(zoom * delta, e.clientX, e.clientY);
+  }
+
+  function onKeyDown(e) {
+    if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.tagName === 'SELECT') return;
+    if ((e.key === 'Delete' || e.key === 'Backspace') && selectedIds.size > 0) { e.preventDefault(); deleteSelected(); }
+    else if (e.key === 'Escape') { deselectAll(); setTool('select'); }
+    else if (e.key === 'c' && e.ctrlKey) { e.preventDefault(); copyObj(); }
+    else if (e.key === 'v' && e.ctrlKey) { e.preventDefault(); pasteObj(); }
+    else if (e.key === 'd' && e.ctrlKey) { e.preventDefault(); dupObj(); }
+    else if (e.key === 'z' && e.ctrlKey) { e.preventDefault(); undo(); }
+    else if (e.key === 'y' && e.ctrlKey) { e.preventDefault(); redo(); }
+    else if (e.key === '1') setTool('select');
+    else if (e.key === '2') setTool('place');
+    else if (e.key === '3') setTool('move');
+    else if (e.key === '4') setTool('delete');
+  }
+
+  function genId() { return 'obj_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5); }
+
+  function hitTest(x, y) {
+    for (let i = currentMap.objects.length - 1; i >= 0; i--) {
+      const obj = currentMap.objects[i];
+      if (x >= obj.x && x <= obj.x + (obj.w || 0) && y >= obj.y && y <= obj.y + (obj.h || 0)) return obj;
+    }
+    return null;
+  }
+
+  function getObjBounds(obj) { return { x: obj.x, y: obj.y, w: obj.w || 0, h: obj.h || 0 }; }
+
+  function placeObj(key, x, y) {
+    const def = ASSETS[key]; if (!def) return;
+    const obj = {
+      _id: genId(), type: def.cat === 'building' ? 'building' : def.cat === 'decoration' ? 'decoration' : 'obstacle',
+      x: x, y: y, w: def.w, h: def.h, assetKey: key, name: def.name,
+      collisionPadding: def.colPad || 0, layer: def.cat === 'decoration' ? 'decoration' : 'main',
+    };
+    if (obj.type === 'building') obj.npcId = '';
+    currentMap.objects.push(obj); selectObj(obj, false); saveUndo(); render();
+  }
+
+  function deleteObj(obj) {
+    const idx = currentMap.objects.findIndex(o => o._id === obj._id);
+    if (idx >= 0) { currentMap.objects.splice(idx, 1); selectedIds.delete(obj._id); if (selectedIds.size === 0) updatePropertyPanel(); saveUndo(); render(); }
+  }
+
+  function deleteSelected() {
+    const selected = getSelectedObjs();
+    for (const obj of selected) { const idx = currentMap.objects.indexOf(obj); if (idx >= 0) currentMap.objects.splice(idx, 1); }
+    selectedIds.clear(); updatePropertyPanel(); saveUndo(); render();
+  }
+
+  function selectObj(obj, add) { if (!add) selectedIds.clear(); selectedIds.add(obj._id); updatePropertyPanel(); render(); }
+  function deselectAll() { selectedIds.clear(); updatePropertyPanel(); render(); }
+  function getSelectedObjs() { return currentMap.objects.filter(o => selectedIds.has(o._id)); }
+
+  function copyObj() { const sel = getSelectedObjs(); if (sel.length > 0) clipboard = JSON.parse(JSON.stringify(sel)); }
+  function pasteObj() {
+    if (!clipboard || clipboard.length === 0) return; deselectAll();
+    for (const src of clipboard) { const obj = JSON.parse(JSON.stringify(src)); obj._id = genId(); obj.x += 20; obj.y += 20; currentMap.objects.push(obj); selectedIds.add(obj._id); }
+    updatePropertyPanel(); saveUndo(); render();
+  }
+  function dupObj() { copyObj(); pasteObj(); }
+
+  function updatePropertyPanel() {
+    const panel = document.getElementById('property-content');
+    const selected = getSelectedObjs();
+    if (selected.length === 0) { panel.innerHTML = '<div style="padding:10px;color:#666;text-align:center;font-size:12px;">选择一个对象以编辑属性</div>'; return; }
+    const obj = selected[0];
+    let html = '';
+    html += '<div class="prop-group"><div class="prop-group-title">基本信息</div>';
+    html += '<div class="prop-row"><label>名称:</label><input type="text" value="' + (obj.name||'') + '" onchange="Editor.updateProp(\'name\',this.value)"></div>';
+    html += '<div class="prop-row"><label>类型:</label><select onchange="Editor.updateProp(\'type\',this.value)">';
+    html += '<option value="obstacle"' + (obj.type==='obstacle'?' selected':'') + '>障碍物</option>';
+    html += '<option value="decoration"' + (obj.type==='decoration'?' selected':'') + '>装饰物</option>';
+    html += '<option value="building"' + (obj.type==='building'?' selected':'') + '>建筑物</option>';
+    html += '</select></div>';
+    html += '<div class="prop-row"><label>素材键:</label><input type="text" value="' + (obj.assetKey||'') + '" onchange="Editor.updateProp(\'assetKey\',this.value)"></div></div>';
+    html += '<div class="prop-group"><div class="prop-group-title">位置大小</div>';
+    html += '<div class="prop-row"><label>X:</label><input type="number" value="' + obj.x + '" onchange="Editor.updateProp(\'x\',parseInt(this.value))"></div>';
+    html += '<div class="prop-row"><label>Y:</label><input type="number" value="' + obj.y + '" onchange="Editor.updateProp(\'y\',parseInt(this.value))"></div>';
+    html += '<div class="prop-row"><label>宽度:</label><input type="number" value="' + (obj.w||0) + '" onchange="Editor.updateProp(\'w\',parseInt(this.value))"></div>';
+    html += '<div class="prop-row"><label>高度:</label><input type="number" value="' + (obj.h||0) + '" onchange="Editor.updateProp(\'h\',parseInt(this.value))"></div></div>';
+    html += '<div class="prop-group"><div class="prop-group-title">碰撞设置</div>';
+    html += '<div class="prop-row"><label>碰撞边距:</label><input type="number" value="' + (obj.collisionPadding||0) + '" onchange="Editor.updateProp(\'collisionPadding\',parseInt(this.value))"></div></div>';
+    if (obj.type === 'building') {
+      html += '<div class="prop-group"><div class="prop-group-title">建筑属性</div>';
+      html += '<div class="prop-row"><label>NPC ID:</label><input type="text" value="' + (obj.npcId||'') + '" onchange="Editor.updateProp(\'npcId\',this.value)"></div>';
+      html += '<div class="prop-row"><label>层级:</label><select onchange="Editor.updateProp(\'layer\',this.value)">';
+      html += '<option value="main"' + ((obj.layer||'main')==='main'?' selected':'') + '>main</option>';
+      html += '<option value="foreground"' + (obj.layer==='foreground'?' selected':'') + '>foreground</option>';
+      html += '<option value="background"' + (obj.layer==='background'?' selected':'') + '>background</option>';
+      html += '</select></div></div>';
+    }
+    html += '<div class="prop-group"><div class="prop-group-title">操作</div>';
+    html += '<div style="display:flex;gap:5px;flex-wrap:wrap;"><button class="prop-btn" onclick="Editor.moveToTop()">置顶</button><button class="prop-btn" onclick="Editor.moveToBottom()">置底</button></div>';
+    html += '<div style="display:flex;gap:5px;flex-wrap:wrap;margin-top:5px;"><button class="prop-btn danger" onclick="Editor.deleteSelected()" style="flex:1;">删除</button></div></div>';
+    panel.innerHTML = html;
+  }
+
+  function updateProp(prop, value) { for (const obj of getSelectedObjs()) obj[prop] = value; render(); }
+
+  function render() {
+    if (!currentMap) return;
+    canvasW = currentMap.config.width; canvasH = currentMap.config.height;
+    mainCanvas.width = canvasW; mainCanvas.height = canvasH;
+    gridCanvas.width = canvasW; gridCanvas.height = canvasH;
+    overlayCanvas.width = canvasW; overlayCanvas.height = canvasH;
+    mainCtx.fillStyle = currentMap.config.bgColor || '#5dae4a';
+    mainCtx.fillRect(0, 0, canvasW, canvasH);
+    drawGround();
+    if (showGrid) drawGrid();
+    for (const obj of currentMap.objects) drawObj(obj);
+    for (const obj of getSelectedObjs()) drawSelection(obj);
+    updateTransform(); updateMinimap();
+  }
+
+  function drawGround() {
+    const cfg = currentMap.config;
+    if (!cfg.bgDarkColor) return;
+    mainCtx.fillStyle = cfg.bgDarkColor;
+    const ts = 100;
+    for (let gx = 0; gx < canvasW; gx += ts) {
+      for (let gy = 0; gy < canvasH; gy += ts) {
+        const hash = Math.sin(gx * 127.1 + gy * 311.7) * 43758.5453;
+        if ((hash - Math.floor(hash)) > 0.6) mainCtx.fillRect(gx, gy, ts, ts);
+      }
+    }
+  }
+
+  function drawGrid() {
+    const s = parseInt(document.getElementById('snap-size').value);
+    gridCtx.clearRect(0, 0, canvasW, canvasH);
+    gridCtx.strokeStyle = 'rgba(255,255,255,0.08)';
+    gridCtx.lineWidth = 1;
+    gridCtx.beginPath();
+    for (let x = 0; x <= canvasW; x += s) { gridCtx.moveTo(x, 0); gridCtx.lineTo(x, canvasH); }
+    for (let y = 0; y <= canvasH; y += s) { gridCtx.moveTo(0, y); gridCtx.lineTo(canvasW, y); }
+    gridCtx.stroke();
+  }
+
+  function drawObj(obj) {
+    const b = getObjBounds(obj);
+    const img = new Image();
+    img.src = findAssetPath(obj.assetKey);
+    let loaded = false;
+    img.onload = () => { mainCtx.drawImage(img, obj.x, obj.y, b.w, b.h); loaded = true; };
+    setTimeout(() => {
+      if (!loaded) {
+        const colors = { obstacle: 'rgba(255,100,100,0.3)', decoration: 'rgba(100,255,100,0.3)', building: 'rgba(100,100,255,0.3)' };
+        mainCtx.fillStyle = colors[obj.type] || 'rgba(150,150,150,0.3)';
+        mainCtx.fillRect(obj.x, obj.y, b.w, b.h);
+        mainCtx.strokeStyle = colors[obj.type] || '#999';
+        mainCtx.lineWidth = 1;
+        mainCtx.strokeRect(obj.x, obj.y, b.w, b.h);
+        mainCtx.fillStyle = '#fff'; mainCtx.font = '10px sans-serif'; mainCtx.textAlign = 'center';
+        mainCtx.fillText(obj.name || obj.assetKey || '?', obj.x + b.w/2, obj.y + b.h/2 + 4);
+      }
+    }, 50);
+    if (showCollision && obj.type !== 'decoration') {
+      let cx = obj.x, cy = obj.y, cw = b.w, ch = b.h;
+      const pad = obj.collisionPadding || 0;
+      if (pad > 0) { cx += pad; cy += pad; cw -= pad*2; ch -= pad*2; }
+      if (obj.assetKey === 'TOWN_TREE') { ch = Math.max(20, b.h * 0.30); cw = Math.max(28, b.w * 0.50); cx = obj.x + (b.w - cw) / 2; cy = obj.y + b.h * 0.70; }
+      mainCtx.strokeStyle = 'rgba(255,50,50,0.8)'; mainCtx.lineWidth = 2; mainCtx.setLineDash([4,4]);
+      mainCtx.strokeRect(cx, cy, cw, ch); mainCtx.setLineDash([]);
+    }
+  }
+
+  function drawSelection(obj) {
+    const b = getObjBounds(obj);
+    overlayCtx.strokeStyle = '#e94560'; overlayCtx.lineWidth = 2; overlayCtx.setLineDash([4,2]);
+    overlayCtx.strokeRect(b.x - 2, b.y - 2, b.w + 4, b.h + 4); overlayCtx.setLineDash([]);
+    const pts = [[b.x, b.y], [b.x+b.w, b.y], [b.x, b.y+b.h], [b.x+b.w, b.y+b.h]];
+    for (const [px, py] of pts) { overlayCtx.fillStyle = '#fff'; overlayCtx.fillRect(px-3, py-3, 6, 6); overlayCtx.strokeStyle = '#e94560'; overlayCtx.lineWidth = 1; overlayCtx.strokeRect(px-3, py-3, 6, 6); }
+  }
+
+  function newMap() {
+    const name = prompt('地图名称:', '新地图'); if (!name) return;
+    const w = parseInt(prompt('宽度:', '4000')) || 4000;
+    const h = parseInt(prompt('高度:', '3000')) || 3000;
+    const id = 'map_' + Date.now();
+    const map = { id: id, name: name, config: { width: w, height: h, bgColor: '#5dae4a', bgDarkColor: '#4d9e3c' }, objects: [], roadZones: [] };
+    maps[id] = map; updateMapList(); selectMap(id);
+  }
+
+  function selectMap(id) {
+    if (!maps[id]) return;
+    currentMap = maps[id];
+    document.querySelectorAll('.map-item').forEach(el => el.classList.toggle('active', el.dataset.id === id));
+    deselectAll(); render();
+  }
+
+  function updateMapList() {
+    const list = document.getElementById('map-list'); list.innerHTML = '';
+    for (const [id, map] of Object.entries(maps)) {
+      const item = document.createElement('div'); item.className = 'map-item'; item.dataset.id = id;
+      item.innerHTML = '<div style="font-weight:bold;font-size:12px;">' + map.name + '</div><div class="map-info">' + map.config.width + 'x' + map.config.height + ' | ' + map.objects.length + '对象</div>';
+      item.onclick = () => selectMap(id); list.appendChild(item);
+    }
+  }
+
+  function exportJS() { if (!currentMap) return; document.getElementById('export-textarea').value = genJSCode(currentMap); document.getElementById('export-modal').classList.add('active'); }
+
+  function genJSCode(map) {
+    const typeEnum = map.name.includes('城镇') ? 'MAP_OBJ_TYPE' : 'GLAND_OBJ_TYPE';
+    const configName = map.name.toUpperCase().replace(/\s+/g, '_') + '_MAP_CONFIG';
+    const objectsName = map.name.toUpperCase().replace(/\s+/g, '_') + '_MAP_OBJECTS';
+    let code = '// ' + map.name + ' 地图数据\n// 由地图编辑器生成 - ' + new Date().toLocaleString() + '\n\n';
+    code += 'export const ' + configName + ' = ' + JSON.stringify(map.config, null, 2).replace(/"(\w+)":/g, '$1:').replace(/"/g, "'") + ';\n\n';
+    code += 'export const ' + objectsName + ' = [\n';
+    for (const obj of map.objects) {
+      code += '  {\n';
+      code += '    type: ' + typeEnum + '.' + obj.type.toUpperCase() + ',\n';
+      code += '    x: ' + obj.x + ', y: ' + obj.y + ',\n';
+      code += '    w: ' + obj.w + ', h: ' + obj.h + ',\n';
+      code += "    assetKey: '" + obj.assetKey + "',\n";
+      code += "    name: '" + obj.name + "',\n";
+      if (obj.collisionPadding) code += '    collisionPadding: ' + obj.collisionPadding + ',\n';
+      if (obj.npcId) code += "    npcId: '" + obj.npcId + "',\n";
+      if (obj.layer && obj.layer !== 'main') code += "    layer: '" + obj.layer + "',\n";
+      code += '  },\n';
+    }
+    code += '];\n';
+    return code;
+  }
+
+  function importJS() { document.getElementById('import-textarea').value = ''; document.getElementById('import-modal').classList.add('active'); }
+
+  function doImport() {
+    const text = document.getElementById('import-textarea').value; if (!text) return;
+    try {
+      const objects = parseJS(text);
+      if (objects && objects.length > 0) {
+        if (!currentMap) newMap();
+        for (const obj of objects) { obj._id = obj._id || genId(); }
+        currentMap.objects = objects; saveUndo(); render(); closeModal('import-modal');
+        alert('成功导入 ' + objects.length + ' 个对象！');
+      } else { alert('未能解析出地图对象，请检查JS代码格式。'); }
+    } catch (e) { alert('导入失败: ' + e.message); }
+  }
+
+  function parseJS(text) {
+    const objects = [];
+    const objMatches = text.matchAll(/\{\s*type:\s*\w+\.\w+[\s\S]*?\}/g);
+    for (const m of objMatches) {
+      const objStr = m[0]; const obj = {};
+      const typeM = objStr.match(/type:\s*\w+\.(\w+)/); if (typeM) obj.type = typeM[1].toLowerCase();
+      const xM = objStr.match(/x:\s*(\d+)/); if (xM) obj.x = parseInt(xM[1]);
+      const yM = objStr.match(/y:\s*(\d+)/); if (yM) obj.y = parseInt(yM[1]);
+      const wM = objStr.match(/w:\s*(\d+)/); if (wM) obj.w = parseInt(wM[1]);
+      const hM = objStr.match(/h:\s*(\d+)/); if (hM) obj.h = parseInt(hM[1]);
+      const assetM = objStr.match(/assetKey:\s*'([^']+)'/); if (assetM) obj.assetKey = assetM[1];
+      const nameM = objStr.match(/name:\s*'([^']+)'/); if (nameM) obj.name = nameM[1];
+      const colM = objStr.match(/collisionPadding:\s*(\d+)/); if (colM) obj.collisionPadding = parseInt(colM[1]);
+      const npcM = objStr.match(/npcId:\s*'([^']+)'/); if (npcM) obj.npcId = npcM[1];
+      const layerM = objStr.match(/layer:\s*'([^']+)'/); if (layerM) obj.layer = layerM[1];
+      obj._id = genId(); if (obj.type) objects.push(obj);
+    }
+    return objects;
+  }
+
+  function setTool(tool) {
+    currentTool = tool;
+    document.querySelectorAll('.tool-btn[data-tool]').forEach(btn => btn.classList.toggle('active', btn.dataset.tool === tool));
+  }
+
+  function snap(v) { return Math.round(v / snapSize) * snapSize; }
+  function setSnapSize(v) { snapSize = parseInt(v); if (showGrid) render(); }
+  function toggleGrid() { showGrid = document.getElementById('grid-toggle').checked; render(); }
+  function toggleCollision() { showCollision = !showCollision; render(); }
+  function zoomIn() { setZoom(zoom * 1.15); }
+  function zoomOut() { setZoom(zoom * 0.85); }
+  function resetView() { zoom = 1; panX = 0; panY = 0; updateTransform(); render(); }
+  function setZoom(nz, cx, cy) {
+    nz = Math.max(0.1, Math.min(5, nz));
+    if (cx !== undefined) {
+      const area = document.getElementById('canvas-area'); const rect = area.getBoundingClientRect();
+      const mx = cx - rect.left; const my = cy - rect.top;
+      panX = mx - (mx - panX) * (nz / zoom); panY = my - (my - panY) * (nz / zoom);
+    }
+    zoom = nz; updateTransform(); render();
+  }
+  function updateTransform() { document.getElementById('canvas-wrapper').style.transform = 'translate(' + panX + 'px,' + panY + 'px) scale(' + zoom + ')'; }
+  function showContextMenu(x, y) { const m = document.getElementById('context-menu'); m.style.display = 'block'; m.style.left = x + 'px'; m.style.top = y + 'px'; }
+  function hideContextMenu() { document.getElementById('context-menu').style.display = 'none'; }
+  function saveUndo() { undoStack.push(JSON.stringify(currentMap.objects)); if (undoStack.length > 30) undoStack.shift(); redoStack = []; }
+  function undo() { if (undoStack.length === 0) return; redoStack.push(JSON.stringify(currentMap.objects)); currentMap.objects = JSON.parse(undoStack.pop()); render(); }
+  function redo() { if (redoStack.length === 0) return; undoStack.push(JSON.stringify(currentMap.objects)); currentMap.objects = JSON.parse(redoStack.pop()); render(); }
+  function moveToTop() { for (const obj of getSelectedObjs()) { const idx = currentMap.objects.indexOf(obj); if (idx >= 0) { currentMap.objects.splice(idx, 1); currentMap.objects.push(obj); } } render(); }
+  function moveToBottom() { for (const obj of getSelectedObjs()) { const idx = currentMap.objects.indexOf(obj); if (idx >= 0) { currentMap.objects.splice(idx, 1); currentMap.objects.unshift(obj); } } render(); }
+  function copyExport() { const ta = document.getElementById('export-textarea'); ta.select(); document.execCommand('copy'); alert('已复制到剪贴板！'); }
+  function downloadExport() {
+    const code = document.getElementById('export-textarea').value;
+    const blob = new Blob([code], { type: 'text/javascript' }); const url = URL.createObjectURL(blob);
+    const a = document.createElement('a'); a.href = url; a.download = (currentMap||{}).name || 'map' + '.js';
+    a.click(); URL.revokeObjectURL(url);
+  }
+  function closeModal(id) { document.getElementById(id).classList.remove('active'); }
+  function deleteObj() { deleteSelected(); hideContextMenu(); }
+  function updateMinimap() {
+    if (!minimapCtx || !currentMap) return;
+    const mw = minimapCanvas.width = 180; const mh = minimapCanvas.height = 135;
+    minimapCtx.fillStyle = '#111'; minimapCtx.fillRect(0, 0, mw, mh);
+    const sx = mw / canvasW; const sy = mh / canvasH;
+    for (const obj of currentMap.objects) {
+      const b = getObjBounds(obj);
+      const c = obj.type === 'obstacle' ? '#ff6464' : obj.type === 'decoration' ? '#64ff64' : obj.type === 'building' ? '#6464ff' : '#ffff64';
+      minimapCtx.fillStyle = c; minimapCtx.fillRect(obj.x * sx, obj.y * sy, Math.max(1, b.w * sx), Math.max(1, b.h * sy));
+    }
+    const area = document.getElementById('canvas-area'); const rect = area.getBoundingClientRect();
+    minimapCtx.strokeStyle = '#e94560'; minimapCtx.lineWidth = 1;
+    minimapCtx.strokeRect((-panX / zoom) * sx, (-panY / zoom) * sy, (rect.width / zoom) * sx, (rect.height / zoom) * sy);
+  }
+
+  return {
+    init, setTool, toggleGrid, toggleCollision, setSnapSize,
+    zoomIn, zoomOut, resetView, newMap, exportJS, importJS, doImport,
+    closeModal, copyExport, downloadExport, updateProp,
+    deleteObj, deleteSelected, moveToTop, moveToBottom, copyObj, pasteObj, dupObj, undo, redo,
+  };
+})();
+
+window.addEventListener('DOMContentLoaded', () => { Editor.init(); });
+</script>
+</body>
+</html>

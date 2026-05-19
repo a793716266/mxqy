@@ -28,7 +28,7 @@
 const BG_DECORATIONS = {
   // 草原主题（节点1-2）：只使用草地和花朵
   grassland: [
-    // 草地装饰（分布在画面底部，y: 0.74~0.86）
+    // 草地装饰（分布在画面中上部，y: 0.12~0.60）
     { type: 'TOWN_GRASS',   x: 0.18, y: 0.12, scale: 0.5 },
     { type: 'TOWN_GRASS',   x: 0.23, y: 0.24, scale: 0.5 },
     { type: 'TOWN_GRASS',   x: 0.33, y: 0.33, scale: 0.5 },
@@ -36,7 +36,7 @@ const BG_DECORATIONS = {
     { type: 'TOWN_GRASS',   x: 0.25, y: 0.55, scale: 0.5 },
     { type: 'TOWN_GRASS',   x: 0.45, y: 0.60, scale: 0.5 },
 
-    // 花朵装饰（穿插在草地之间，y: 0.74~0.83）
+    // 花朵装饰（穿插在草地之间，y: 0.12~0.33）
     { type: 'TOWN_FLOWER1', x: 0.15, y: 0.12, scale: 0.5 },
     { type: 'TOWN_FLOWER2', x: 0.32, y: 0.22, scale: 0.5 },
     { type: 'TOWN_FLOWER3', x: 0.50, y: 0.33, scale: 0.5 },

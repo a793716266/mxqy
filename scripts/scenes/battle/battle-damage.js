@@ -399,12 +399,13 @@ export function installBattleDamage(BattleSceneClass) {
 
     // ★ 史莱姆猫分裂：被攻击时30%几率分裂
     if (target && target.hp > 0 && (target.id === 'slime_cat' || target.type === 'slime_cat')) {
-      this._trySplitSlimeCat(target, targetIndex, finalPos)
+      this._trySplitSlimeCat(target, this.enemies.indexOf(target), finalPos)
     }
 
     // 状态效果触发
-    if (skill.statusEffect && targetIndex >= 0) {
-      this._applyStatusEffectToEnemy(skill.statusEffect, targetIndex, finalPos)
+    if (skill.statusEffect && target && target.id) {
+      const idx = this.enemies.includes(target) ? this.enemies.indexOf(target) : this.party.indexOf(target)
+      if (idx >= 0) this._applyStatusEffectToEnemy(skill.statusEffect, idx, finalPos)
     }
 
     // 屏幕震动
@@ -899,8 +900,8 @@ export function installBattleDamage(BattleSceneClass) {
           existing.duration = 8
           this._addLog(`🛡️ ${enemy.name} 的防御提升已刷新！`)
         } else {
-          this.statusEffects.enemies[enemyIndex].push({ type: 'def_up', duration: 8 })
-          this._addLog(`🛡️ ${(this._attackingEnemy || this.enemy).name} 防御力大幅提升！持续8秒`)
+          this.statusEffects.enemies[enemyId].push({ type: 'def_up', duration: 8 })
+          this._addLog(`🛡️ ${enemy.name} 防御力大幅提升！持续8秒`)
         }
       }
     }
@@ -1357,7 +1358,6 @@ export function installBattleDamage(BattleSceneClass) {
   // ======== 史莱姆猫分裂技能 ========
   proto._trySplitSlimeCat = function(enemy, enemyIndex, pos) {
     if (Math.random() >= 0.3) return  // 30%几率
-    if (Math.random() >= 0.3) return  // 30%几率
 
     const cloneHp = Math.max(1, Math.floor(enemy.hp * 0.5))
     const clone = {
@@ -1526,8 +1526,9 @@ export function installBattleDamage(BattleSceneClass) {
     }
     
     const enemy = this.enemies[enemyIndex]
-    if (!this.statusEffects.enemies[enemyIndex]) {
-      this.statusEffects.enemies[enemyIndex] = []
+    const enemyId = enemy.id
+    if (!this.statusEffects.enemies[enemyId]) {
+      this.statusEffects.enemies[enemyId] = []
     }
     
     // 添加 BUFF
@@ -1538,18 +1539,18 @@ export function installBattleDamage(BattleSceneClass) {
     }
     
     // 检查是否已有同名 BUFF
-    const existing = this.statusEffects.enemies[enemyIndex].find(e => e.type === effectType)
+    const existing = this.statusEffects.enemies[enemyId].find(e => e.type === effectType)
     if (existing) {
       existing.duration = buff.duration
       console.log(`[BUFF测试] 刷新已有 ${effectType} BUFF`)
     } else {
-      this.statusEffects.enemies[enemyIndex].push(buff)
+      this.statusEffects.enemies[enemyId].push(buff)
       console.log(`[BUFF测试] 新增 ${effectType} BUFF`)
     }
     
     // 输出当前所有 BUFF
     console.log(`[BUFF测试] ${enemy.name} 当前 BUFF 列表:`)
-    this.statusEffects.enemies[enemyIndex].forEach((e, i) => {
+    this.statusEffects.enemies[enemyId].forEach((e, i) => {
       console.log(`  [${i}] type=${e.type}, value=${e.value}, duration=${e.duration}`)
     })
     
@@ -1565,7 +1566,7 @@ export function installBattleDamage(BattleSceneClass) {
     this._addLog(`${icon} ${enemy.name} 获得 ${effectType} BUFF！`)
     console.log(`[BUFF测试] 请在游戏中观察 ${enemy.name} 头上的 ${icon} 图标`)
     
-    // ★ 自动绑定键盘事件（按 B 键触发）
+    // ★ 自动绑定键盘事件（按 B 键触发）——兼容浏览器和微信环境
     if (!this._buffKeyListener) {
       this._buffKeyListener = (e) => {
         if (e.key === 'b' || e.key === 'B') {
@@ -1573,8 +1574,12 @@ export function installBattleDamage(BattleSceneClass) {
           this.testBuff(0, 'def_up', 0.3, 3)
         }
       }
-      window.addEventListener('keydown', this._buffKeyListener)
-      console.log('[BUFF测试] ✅ 已绑定 B 键 → 触发 BUFF (按 B 键测试)')
+      if (typeof window !== 'undefined' && window.addEventListener) {
+        window.addEventListener('keydown', this._buffKeyListener)
+        console.log('[BUFF测试] ✅ 已绑定 B 键 → 触发 BUFF (按 B 键测试)')
+      } else {
+        console.log('[BUFF测试] ⚠️ 非浏览器环境，跳过键盘绑定')
+      }
     }
   }
 }

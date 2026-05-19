@@ -34,15 +34,17 @@ export class TownScene {
     this.time = 0
     
     // 地图尺寸
-    const mapWidth = TOWN_MAP_CONFIG.width * this.dpr
-    const mapHeight = TOWN_MAP_CONFIG.height * this.dpr
+    const mapWidth = (TOWN_MAP_CONFIG?.width || 2000) * this.dpr
+    const mapHeight = (TOWN_MAP_CONFIG?.height || 1200) * this.dpr
     
-    // 初始化移动系统
+    // 初始化移动系统（防御性检查 TOWN_SPAWN_POINT）
+    const spawnX = (TOWN_SPAWN_POINT?.x || 985) * this.dpr
+    const spawnY = (TOWN_SPAWN_POINT?.y || 700) * this.dpr
     this.movement = new FieldMovement(game, {
       mapWidth: mapWidth,
       mapHeight: mapHeight,
-      playerX: TOWN_SPAWN_POINT.x * this.dpr,
-      playerY: TOWN_SPAWN_POINT.y * this.dpr
+      playerX: spawnX,
+      playerY: spawnY
     })
     
     // 加载碰撞数据
@@ -99,11 +101,30 @@ export class TownScene {
       main: [],    // 主层：建筑、树、障碍物
       fg: [],     // 前景层：花、草等装饰
     }
+    let skipped = 0
     for (const obj of TOWN_MAP_OBJECTS) {
+      // 防御性检查：跳过 undefined 或 null 元素
+      if (!obj) {
+        console.warn('[Town] 跳过 undefined/null 地图对象')
+        skipped++
+        continue
+      }
+      
+      // 防御性检查：确保 obj 有有效的 width 和 height
+      if (obj.width === undefined || obj.height === undefined) {
+        console.warn('[Town] 地图对象缺少 width 或 height:', obj.id || 'unknown', obj)
+        // 尝试修复：设置默认值
+        obj.width = obj.width || obj.w || 64
+        obj.height = obj.height || obj.h || 64
+      }
+      
       const layer = obj.layer || 'main'
       if (this._layerCache[layer]) {
         this._layerCache[layer].push(obj)
       }
+    }
+    if (skipped > 0) {
+      console.warn(`[Town] 共跳过 ${skipped} 个无效地图对象`)
     }
     console.log(`[Town] 图层缓存: bg=${this._layerCache.bg.length}, road=${this._layerCache.road.length}, main=${this._layerCache.main.length}, fg=${this._layerCache.fg.length}`)
   }

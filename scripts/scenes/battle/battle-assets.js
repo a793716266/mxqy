@@ -201,13 +201,13 @@ export function installBattleAssets(BattleSceneClass) {
     if (animState.state === 'walk') {
       return `SLIME_CAT_WALK_${String(animState.frame).padStart(2, '0')}`
     } else if (animState.state === 'idle') {
-      return `SLIME_CAT_IDLE_${animState.frame}`
+      return `SLIME_CAT_IDLE_${String(animState.frame).padStart(2, '0')}`
     } else if (animState.state === 'attack') {
-      return `SLIME_CAT_ATTACK_${String(animState.frame).padStart(4, '0')}`
+      return `SLIME_CAT_ATTACK_${String(animState.frame).padStart(2, '0')}`
     } else if (animState.state === 'skill') {
-      return `SLIME_CAT_SKILL_${String(animState.frame).padStart(4, '0')}`
+      return `SLIME_CAT_SKILL_${String(animState.frame).padStart(2, '0')}`
     }
-    return 'SLIME_CAT_IDLE_1'
+    return 'SLIME_CAT_IDLE_01'
   }
 
   // ======== 角色精灵图片解析（渲染去重：animation.js + renderer.js 共用） ========

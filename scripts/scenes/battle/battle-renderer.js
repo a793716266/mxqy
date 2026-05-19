@@ -1589,50 +1589,6 @@ export function installBattleRenderer(BattleSceneClass) {
   }
 
   proto._renderAttackButton = function(ctx) {
-    const jc = this._joystickConfig
-    if (!jc) return
-    const dpr = this.dpr
-
-    if (this._joystick.active) {
-      const dx = this._joystick.currentX - jc.centerX
-      const dy = this._joystick.currentY - jc.centerY
-      const dist = Math.sqrt(dx * dx + dy * dy)
-      let hx = jc.centerX
-      let hy = jc.centerY
-      if (dist > 0) {
-        const clamped = Math.min(dist, jc.maxOffset)
-        hx = jc.centerX + (dx / dist) * clamped
-        hy = jc.centerY + (dy / dist) * clamped
-      }
-      // 底座
-      ctx.beginPath()
-      ctx.arc(jc.centerX, jc.centerY, jc.baseRadius, 0, Math.PI * 2)
-      ctx.fillStyle = 'rgba(255,255,255,0.15)'
-      ctx.fill()
-      ctx.strokeStyle = 'rgba(255,255,255,0.35)'
-      ctx.lineWidth = 2 * dpr
-      ctx.stroke()
-      // 手柄
-      ctx.beginPath()
-      ctx.arc(hx, hy, jc.handleRadius, 0, Math.PI * 2)
-      ctx.fillStyle = 'rgba(255,255,255,0.5)'
-      ctx.fill()
-    } else {
-      ctx.beginPath()
-      ctx.arc(jc.centerX, jc.centerY, jc.baseRadius, 0, Math.PI * 2)
-      ctx.fillStyle = 'rgba(255,255,255,0.08)'
-      ctx.fill()
-      ctx.strokeStyle = 'rgba(255,255,255,0.2)'
-      ctx.lineWidth = 1.5 * dpr
-      ctx.stroke()
-      ctx.beginPath()
-      ctx.arc(jc.centerX, jc.centerY, jc.handleRadius, 0, Math.PI * 2)
-      ctx.fillStyle = 'rgba(255,255,255,0.2)'
-      ctx.fill()
-    }
-  }
-
-  proto._renderAttackButton = function(ctx) {
     const btn = this._attackBtn
     if (!btn) return
     const dpr = this.dpr

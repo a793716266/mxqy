@@ -104,231 +104,192 @@ export const MAP_OBJ_TYPE = {
 // ========== 完整地图对象列表 ==========
 // 每个对象包含：type, x, y, width, height, assetKey, name, collisionPadding
 export const TOWN_MAP_OBJECTS = [
-  // ==================== 背景装饰层（最底层） ====================
-  
-  // 左侧森林区域
-  { type: MAP_OBJ_TYPE.OBSTACLE, x: -20, y: 300, width: 180, height: 220, assetKey: 'TOWN_FOREST', name: '左森林', collisionPadding: 10, layer: 'main' },
-  { type: MAP_OBJ_TYPE.OBSTACLE, x: 100, y: 480, width: 140, height: 180, assetKey: 'TOWN_FOREST', name: '左森林2', collisionPadding: 10, layer: 'main' },
-  // 新增：左上角森林
-  { type: MAP_OBJ_TYPE.OBSTACLE, x: -30, y: 30, width: 170, height: 200, assetKey: 'TOWN_FOREST', name: '左上森林1', collisionPadding: 10, layer: 'main' },
-  { type: MAP_OBJ_TYPE.OBSTACLE, x: 120, y: -20, width: 150, height: 170, assetKey: 'TOWN_FOREST', name: '左上森林2', collisionPadding: 10, layer: 'main' },
-  
-  // 右侧森林区域
-  { type: MAP_OBJ_TYPE.OBSTACLE, x: 1850, y: 250, width: 180, height: 240, assetKey: 'TOWN_FOREST', name: '右森林', collisionPadding: 10, layer: 'main' },
-  { type: MAP_OBJ_TYPE.OBSTACLE, x: 1750, y: 500, width: 160, height: 200, assetKey: 'TOWN_FOREST', name: '右森林2', collisionPadding: 10, layer: 'main' },
-  // 新增：右上角森林
-  { type: MAP_OBJ_TYPE.OBSTACLE, x: 1830, y: -10, width: 190, height: 220, assetKey: 'TOWN_FOREST', name: '右上森林1', collisionPadding: 10, layer: 'main' },
-  
-  // 底部森林带
-  { type: MAP_OBJ_TYPE.OBSTACLE, x: 300, y: 1050, width: 200, height: 170, assetKey: 'TOWN_FOREST', name: '底森林1', collisionPadding: 10, layer: 'main' },
-  { type: MAP_OBJ_TYPE.OBSTACLE, x: 1500, y: 1020, width: 220, height: 200, assetKey: 'TOWN_FOREST', name: '底森林2', collisionPadding: 10, layer: 'main' },
-  // 新增：底部中间森林 + 底部左侧森林
-  { type: MAP_OBJ_TYPE.OBSTACLE, x: 850, y: 1080, width: 200, height: 150, assetKey: 'TOWN_FOREST', name: '底中森林', collisionPadding: 10, layer: 'main' },
-  { type: MAP_OBJ_TYPE.OBSTACLE, x: 50, y: 1020, width: 170, height: 200, assetKey: 'TOWN_FOREST', name: '底左森林', collisionPadding: 10, layer: 'main' },
-
-  // 新增：中部空白区森林点缀（主干道北侧大片区）
-  { type: MAP_OBJ_TYPE.OBSTACLE, x: 420, y: 180, width: 160, height: 140, assetKey: 'TOWN_FOREST', name: '中北森林1', collisionPadding: 10, layer: 'main' },
-  { type: MAP_OBJ_TYPE.OBSTACLE, x: 1250, y: 150, width: 170, height: 130, assetKey: 'TOWN_FOREST', name: '中北森林2', collisionPadding: 10, layer: 'main' },
-
-  // ==================== 建筑物层 ====================
-  
-  // 商店 - 右上角区域
-  { type: MAP_OBJ_TYPE.BUILDING, x: 1550, y: 180, width: 160, height: 140, assetKey: 'TOWN_SHOP', 
-    name: '商店', collisionPadding: 8, npcId: 'shop_keeper', layer: 'main' },
-    
-  // 武器库 - 右侧中部
-  { type: MAP_OBJ_TYPE.BUILDING, x: 1600, y: 520, width: 170, height: 150, assetKey: 'TOWN_WEAPON_SHOP', 
-    name: '武器库', collisionPadding: 8, npcId: 'blacksmith', layer: 'main' },
-    
-  // 药品店 - 左下区域
-  { type: MAP_OBJ_TYPE.BUILDING, x: 150, y: 780, width: 165, height: 145, assetKey: 'TOWN_POTION_SHOP', 
-    name: '药品店', collisionPadding: 8, npcId: 'potion_seller', layer: 'main' },
-    
-  // 任务告示栏 - 左上区域
-  { type: MAP_OBJ_TYPE.BUILDING, x: 280, y: 180, width: 175, height: 130, assetKey: 'TOWN_QUEST_BOARD', 
-    name: '冒险者公会', collisionPadding: 8, npcId: 'quest_giver', layer: 'main' },
-
-  // ==================== 树木障碍物（围绕边界和路径） ====================
-  
-  // 顶部边界树木（加密）
-  { type: MAP_OBJ_TYPE.OBSTACLE, x: 280, y: 70, width: 55, height: 75, assetKey: 'TOWN_TREE', name: '树1', collisionPadding: 12, layer: 'main' },
-  { type: MAP_OBJ_TYPE.OBSTACLE, x: 420, y: 50, width: 55, height: 80, assetKey: 'TOWN_TREE', name: '树2', collisionPadding: 12, layer: 'main' },
-  { type: MAP_OBJ_TYPE.OBSTACLE, x: 550, y: 80, width: 55, height: 75, assetKey: 'TOWN_TREE', name: '树3', collisionPadding: 12, layer: 'main' },
-  { type: MAP_OBJ_TYPE.OBSTACLE, x: 700, y: 60, width: 55, height: 80, assetKey: 'TOWN_TREE', name: '树4', collisionPadding: 12, layer: 'main' },
-  { type: MAP_OBJ_TYPE.OBSTACLE, x: 820, y: 45, width: 55, height: 78, assetKey: 'TOWN_TREE', name: '树5', collisionPadding: 12, layer: 'main' },
-  { type: MAP_OBJ_TYPE.OBSTACLE, x: 950, y: 70, width: 55, height: 78, assetKey: 'TOWN_TREE', name: '树6', collisionPadding: 12, layer: 'main' },
-  { type: MAP_OBJ_TYPE.OBSTACLE, x: 1080, y: 55, width: 55, height: 75, assetKey: 'TOWN_TREE', name: '树7', collisionPadding: 12, layer: 'main' },
-  { type: MAP_OBJ_TYPE.OBSTACLE, x: 1150, y: 85, width: 55, height: 72, assetKey: 'TOWN_TREE', name: '树8', collisionPadding: 12, layer: 'main' },
-  { type: MAP_OBJ_TYPE.OBSTACLE, x: 1280, y: 60, width: 55, height: 78, assetKey: 'TOWN_TREE', name: '树9', collisionPadding: 12, layer: 'main' },
-  { type: MAP_OBJ_TYPE.OBSTACLE, x: 1380, y: 65, width: 55, height: 82, assetKey: 'TOWN_TREE', name: '树10', collisionPadding: 12, layer: 'main' },
-  { type: MAP_OBJ_TYPE.OBSTACLE, x: 1500, y: 75, width: 55, height: 76, assetKey: 'TOWN_TREE', name: '树11', collisionPadding: 12, layer: 'main' },
-  { type: MAP_OBJ_TYPE.OBSTACLE, x: 1680, y: 55, width: 55, height: 80, assetKey: 'TOWN_TREE', name: '树12', collisionPadding: 12, layer: 'main' },
-
-  // 左侧树木
-  { type: MAP_OBJ_TYPE.OBSTACLE, x: 30, y: 180, width: 55, height: 75, assetKey: 'TOWN_TREE', name: '左树1', collisionPadding: 12, layer: 'main' },
-  { type: MAP_OBJ_TYPE.OBSTACLE, x: 45, y: 320, width: 55, height: 75, assetKey: 'TOWN_TREE', name: '左树2', collisionPadding: 12, layer: 'main' },
-  { type: MAP_OBJ_TYPE.OBSTACLE, x: 50, y: 600, width: 55, height: 75, assetKey: 'TOWN_TREE', name: '左树3', collisionPadding: 12, layer: 'main' },
-  { type: MAP_OBJ_TYPE.OBSTACLE, x: 35, y: 760, width: 55, height: 78, assetKey: 'TOWN_TREE', name: '左树4', collisionPadding: 12, layer: 'main' },
-  { type: MAP_OBJ_TYPE.OBSTACLE, x: 80, y: 920, width: 55, height: 78, assetKey: 'TOWN_TREE', name: '左树5', collisionPadding: 12, layer: 'main' },
-
-  // 右侧树木
-  { type: MAP_OBJ_TYPE.OBSTACLE, x: 1900, y: 120, width: 55, height: 75, assetKey: 'TOWN_TREE', name: '右树1', collisionPadding: 12, layer: 'main' },
-  { type: MAP_OBJ_TYPE.OBSTACLE, x: 1920, y: 280, width: 55, height: 78, assetKey: 'TOWN_TREE', name: '右树2', collisionPadding: 12, layer: 'main' },
-  { type: MAP_OBJ_TYPE.OBSTACLE, x: 1920, y: 420, width: 55, height: 78, assetKey: 'TOWN_TREE', name: '右树3', collisionPadding: 12, layer: 'main' },
-  { type: MAP_OBJ_TYPE.OBSTACLE, x: 1880, y: 600, width: 55, height: 75, assetKey: 'TOWN_TREE', name: '右树4', collisionPadding: 12, layer: 'main' },
-  { type: MAP_OBJ_TYPE.OBSTACLE, x: 1880, y: 780, width: 55, height: 75, assetKey: 'TOWN_TREE', name: '右树5', collisionPadding: 12, layer: 'main' },
-  { type: MAP_OBJ_TYPE.OBSTACLE, x: 1930, y: 950, width: 55, height: 80, assetKey: 'TOWN_TREE', name: '右树6', collisionPadding: 12, layer: 'main' },
-
-  // 中间散落树木（填充主干道北侧空白区）
-  { type: MAP_OBJ_TYPE.OBSTACLE, x: 380, y: 260, width: 55, height: 75, assetKey: 'TOWN_TREE', name: '中树1', collisionPadding: 12, layer: 'main' },
-  { type: MAP_OBJ_TYPE.OBSTACLE, x: 520, y: 380, width: 55, height: 75, assetKey: 'TOWN_TREE', name: '中树2', collisionPadding: 12, layer: 'main' },
-  { type: MAP_OBJ_TYPE.OBSTACLE, x: 650, y: 250, width: 55, height: 78, assetKey: 'TOWN_TREE', name: '中树3', collisionPadding: 12, layer: 'main' },
-  { type: MAP_OBJ_TYPE.OBSTACLE, x: 780, y: 350, width: 55, height: 75, assetKey: 'TOWN_TREE', name: '中树4', collisionPadding: 12, layer: 'main' },
-  { type: MAP_OBJ_TYPE.OBSTACLE, x: 1180, y: 240, width: 55, height: 78, assetKey: 'TOWN_TREE', name: '中树5', collisionPadding: 12, layer: 'main' },
-  { type: MAP_OBJ_TYPE.OBSTACLE, x: 1320, y: 320, width: 55, height: 75, assetKey: 'TOWN_TREE', name: '中树6', collisionPadding: 12, layer: 'main' },
-  { type: MAP_OBJ_TYPE.OBSTACLE, x: 1450, y: 230, width: 55, height: 78, assetKey: 'TOWN_TREE', name: '中树7', collisionPadding: 12, layer: 'main' },
-  { type: MAP_OBJ_TYPE.OBSTACLE, x: 1350, y: 360, width: 55, height: 78, assetKey: 'TOWN_TREE', name: '中树8', collisionPadding: 12, layer: 'main' },
-
-  // 主干道南侧散落树木
-  { type: MAP_OBJ_TYPE.OBSTACLE, x: 400, y: 700, width: 55, height: 75, assetKey: 'TOWN_TREE', name: '南树1', collisionPadding: 12, layer: 'main' },
-  { type: MAP_OBJ_TYPE.OBSTACLE, x: 580, y: 850, width: 55, height: 75, assetKey: 'TOWN_TREE', name: '南树2', collisionPadding: 12, layer: 'main' },
-  { type: MAP_OBJ_TYPE.OBSTACLE, x: 600, y: 720, width: 55, height: 75, assetKey: 'TOWN_TREE', name: '南树3', collisionPadding: 12, layer: 'main' },
-  { type: MAP_OBJ_TYPE.OBSTACLE, x: 780, y: 800, width: 55, height: 78, assetKey: 'TOWN_TREE', name: '南树4', collisionPadding: 12, layer: 'main' },
-  { type: MAP_OBJ_TYPE.OBSTACLE, x: 1100, y: 740, width: 55, height: 75, assetKey: 'TOWN_TREE', name: '南树5', collisionPadding: 12, layer: 'main' },
-  { type: MAP_OBJ_TYPE.OBSTACLE, x: 1250, y: 820, width: 55, height: 78, assetKey: 'TOWN_TREE', name: '南树6', collisionPadding: 12, layer: 'main' },
-  { type: MAP_OBJ_TYPE.OBSTACLE, x: 1420, y: 760, width: 55, height: 75, assetKey: 'TOWN_TREE', name: '南树7', collisionPadding: 12, layer: 'main' },
-  { type: MAP_OBJ_TYPE.OBSTACLE, x: 1280, y: 900, width: 55, height: 78, assetKey: 'TOWN_TREE', name: '南树8', collisionPadding: 12, layer: 'main' },
-  { type: MAP_OBJ_TYPE.OBSTACLE, x: 1600, y: 800, width: 55, height: 75, assetKey: 'TOWN_TREE', name: '南树9', collisionPadding: 12, layer: 'main' },
-
-  // ==================== 石块障碍物 ====================
-  // 原有石块
-  { type: MAP_OBJ_TYPE.OBSTACLE, x: 850, y: 380, width: 45, height: 38, assetKey: 'TOWN_ROCK', name: '石块1', collisionPadding: 5, layer: 'main' },
-  { type: MAP_OBJ_TYPE.OBSTACLE, x: 1100, y: 420, width: 40, height: 35, assetKey: 'TOWN_ROCK', name: '石块2', collisionPadding: 5, layer: 'main' },
-  { type: MAP_OBJ_TYPE.OBSTACLE, x: 450, y: 680, width: 42, height: 36, assetKey: 'TOWN_ROCK', name: '石块3', collisionPadding: 5, layer: 'main' },
-  { type: MAP_OBJ_TYPE.OBSTACLE, x: 1480, y: 700, width: 44, height: 37, assetKey: 'TOWN_ROCK', name: '石块4', collisionPadding: 5, layer: 'main' },
-  { type: MAP_OBJ_TYPE.OBSTACLE, x: 900, y: 920, width: 43, height: 36, assetKey: 'TOWN_ROCK', name: '石块5', collisionPadding: 5, layer: 'main' },
-  { type: MAP_OBJ_TYPE.OBSTACLE, x: 1180, y: 960, width: 40, height: 35, assetKey: 'TOWN_ROCK', name: '石块6', collisionPadding: 5, layer: 'main' },
-  // 新增石块（散布各空旷区）
-  { type: MAP_OBJ_TYPE.OBSTACLE, x: 260, y: 260, width: 42, height: 36, assetKey: 'TOWN_ROCK', name: '石块7', collisionPadding: 5, layer: 'main' },
-  { type: MAP_OBJ_TYPE.OBSTACLE, x: 720, y: 180, width: 40, height: 35, assetKey: 'TOWN_ROCK', name: '石块8', collisionPadding: 5, layer: 'main' },
-  { type: MAP_OBJ_TYPE.OBSTACLE, x: 1400, y: 200, width: 44, height: 37, assetKey: 'TOWN_ROCK', name: '石块9', collisionPadding: 5, layer: 'main' },
-  { type: MAP_OBJ_TYPE.OBSTACLE, x: 1680, y: 350, width: 43, height: 36, assetKey: 'TOWN_ROCK', name: '石块10', collisionPadding: 5, layer: 'main' },
-  { type: MAP_OBJ_TYPE.OBSTACLE, x: 330, y: 550, width: 40, height: 35, assetKey: 'TOWN_ROCK', name: '石块11', collisionPadding: 5, layer: 'main' },
-  { type: MAP_OBJ_TYPE.OBSTACLE, x: 820, y: 640, width: 42, height: 36, assetKey: 'TOWN_ROCK', name: '石块12', collisionPadding: 5, layer: 'main' },
-  { type: MAP_OBJ_TYPE.OBSTACLE, x: 1150, y: 630, width: 44, height: 37, assetKey: 'TOWN_ROCK', name: '石块13', collisionPadding: 5, layer: 'main' },
-  { type: MAP_OBJ_TYPE.OBSTACLE, x: 1520, y: 900, width: 43, height: 36, assetKey: 'TOWN_ROCK', name: '石块14', collisionPadding: 5, layer: 'main' },
-  { type: MAP_OBJ_TYPE.OBSTACLE, x: 500, y: 950, width: 40, height: 35, assetKey: 'TOWN_ROCK', name: '石块15', collisionPadding: 5, layer: 'main' },
-
-  // ==================== 装饰层（无碰撞，前景） ====================
-  //
-  // ⚠️ 禁区（所有装饰物不得落入以下矩形内部）：
-  // 建筑物：公会[280~455,180~310] 商店[1550~1710,180~320] 武器库[1600~1770,520~670] 药品店[150~315,780~925]
-  // 森林：左森林[-20~160,300~520] 左森林2[100~240,480~660] 左上1[-30~140,30~230] 左上2[120~270,-20~150]
-  //       右森林[1850~2030,250~490] 右森林2[1750~1910,500~700] 右上1[1830~2020,-10~210]
-  //       底1[300~500,1050~1220] 底2[1500~1720,1020~1220] 底中[850~1050,1080~1230] 底左[50~220,1020~1220]
-  //       中北1[420~580,180~320] 中北2[1250~1420,150~280]
-
-  // ── 草堆（有碰撞）──
-  { type: MAP_OBJ_TYPE.OBSTACLE, x: 200, y: 350,   width: 50, height: 45, assetKey: 'TOWN_GRASS_PILE', name: '草堆1', collisionPadding: 8, layer: 'fg' },
-  { type: MAP_OBJ_TYPE.OBSTACLE, x: 1480, y: 320, width: 50, height: 45, assetKey: 'TOWN_GRASS_PILE', name: '草堆2', collisionPadding: 8, layer: 'fg' },
-  { type: MAP_OBJ_TYPE.OBSTACLE, x: 700, y: 720, width: 50, height: 45, assetKey: 'TOWN_GRASS_PILE', name: '草堆3', collisionPadding: 8, layer: 'fg' },
-  { type: MAP_OBJ_TYPE.OBSTACLE, x: 1250, y: 880, width: 50, height: 45, assetKey: 'TOWN_GRASS_PILE', name: '草堆4', collisionPadding: 8, layer: 'fg' },
-  { type: MAP_OBJ_TYPE.OBSTACLE, x: 290, y: 135, width: 50, height: 45, assetKey: 'TOWN_GRASS_PILE', name: '草堆5', collisionPadding: 8, layer: 'fg' },
-  { type: MAP_OBJ_TYPE.OBSTACLE, x: 880, y: 180, width: 50, height: 45, assetKey: 'TOWN_GRASS_PILE', name: '草堆6', collisionPadding: 8, layer: 'fg' },
-  { type: MAP_OBJ_TYPE.OBSTACLE, x: 1150, y: 160, width: 50, height: 45, assetKey: 'TOWN_GRASS_PILE', name: '草堆7', collisionPadding: 8, layer: 'fg' },
-  { type: MAP_OBJ_TYPE.OBSTACLE, x: 1730, y: 140, width: 50, height: 45, assetKey: 'TOWN_GRASS_PILE', name: '草堆8', collisionPadding: 8, layer: 'fg' },
-  { type: MAP_OBJ_TYPE.OBSTACLE, x: 330, y: 620, width: 50, height: 45, assetKey: 'TOWN_GRASS_PILE', name: '草堆9', collisionPadding: 8, layer: 'fg' },
-  { type: MAP_OBJ_TYPE.OBSTACLE, x: 1050, y: 800, width: 50, height: 45, assetKey: 'TOWN_GRASS_PILE', name: '草堆10', collisionPadding: 8, layer: 'fg' },
-  { type: MAP_OBJ_TYPE.OBSTACLE, x: 1380, y: 650, width: 50, height: 45, assetKey: 'TOWN_GRASS_PILE', name: '草堆11', collisionPadding: 8, layer: 'fg' },
-  { type: MAP_OBJ_TYPE.OBSTACLE, x: 550, y: 1000, width: 50, height: 45, assetKey: 'TOWN_GRASS_PILE', name: '草堆12', collisionPadding: 8, layer: 'fg' },
-
-  // ── 单片草 ──
-  { type: MAP_OBJ_TYPE.DECORATION, x: 295, y: 165, width: 35, height: 32, assetKey: 'TOWN_GRASS', name: '草1', layer: 'fg' },
-  { type: MAP_OBJ_TYPE.DECORATION, x: 350, y: 450, width: 35, height: 32, assetKey: 'TOWN_GRASS2', name: '草2', layer: 'fg' },
-  { type: MAP_OBJ_TYPE.DECORATION, x: 480, y: 780, width: 35, height: 32, assetKey: 'TOWN_GRASS3', name: '草3', layer: 'fg' },
-  { type: MAP_OBJ_TYPE.DECORATION, x: 1520, y: 880, width: 35, height: 32, assetKey: 'TOWN_GRASS', name: '草4', layer: 'fg' },
-  { type: MAP_OBJ_TYPE.DECORATION, x: 380, y: 920, width: 35, height: 32, assetKey: 'TOWN_GRASS2', name: '草5', layer: 'fg' },
-  { type: MAP_OBJ_TYPE.DECORATION, x: 1080, y: 720, width: 35, height: 32, assetKey: 'TOWN_GRASS3', name: '草6', layer: 'fg' },
-  { type: MAP_OBJ_TYPE.DECORATION, x: 150, y: 250, width: 35, height: 32, assetKey: 'TOWN_GRASS', name: '草7', layer: 'fg' },
-  { type: MAP_OBJ_TYPE.DECORATION, x: 465, y: 190, width: 35, height: 32, assetKey: 'TOWN_GRASS2', name: '草8', layer: 'fg' },
-  { type: MAP_OBJ_TYPE.DECORATION, x: 595, y: 340, width: 35, height: 32, assetKey: 'TOWN_GRASS3', name: '草9', layer: 'fg' },
-  { type: MAP_OBJ_TYPE.DECORATION, x: 750, y: 260, width: 35, height: 32, assetKey: 'TOWN_GRASS', name: '草10', layer: 'fg' },
-  { type: MAP_OBJ_TYPE.DECORATION, x: 1000, y: 200, width: 35, height: 32, assetKey: 'TOWN_GRASS2', name: '草11', layer: 'fg' },
-  { type: MAP_OBJ_TYPE.DECORATION, x: 1195, y: 295, width: 35, height: 32, assetKey: 'TOWN_GRASS3', name: '草12', layer: 'fg' },
-  { type: MAP_OBJ_TYPE.DECORATION, x: 1480, y: 220, width: 35, height: 32, assetKey: 'TOWN_GRASS', name: '草13', layer: 'fg' },
-  { type: MAP_OBJ_TYPE.DECORATION, x: 1780, y: 200, width: 35, height: 32, assetKey: 'TOWN_GRASS2', name: '草14', layer: 'fg' },
-  { type: MAP_OBJ_TYPE.DECORATION, x: 195, y: 540, width: 35, height: 32, assetKey: 'TOWN_GRASS3', name: '草15', layer: 'fg' },
-  { type: MAP_OBJ_TYPE.DECORATION, x: 340, y: 750, width: 35, height: 32, assetKey: 'TOWN_GRASS', name: '草16', layer: 'fg' },
-  { type: MAP_OBJ_TYPE.DECORATION, x: 495, y: 620, width: 35, height: 32, assetKey: 'TOWN_GRASS2', name: '草17', layer: 'fg' },
-  { type: MAP_OBJ_TYPE.DECORATION, x: 850, y: 680, width: 35, height: 32, assetKey: 'TOWN_GRASS3', name: '草18', layer: 'fg' },
-  { type: MAP_OBJ_TYPE.DECORATION, x: 1020, y: 600, width: 35, height: 32, assetKey: 'TOWN_GRASS', name: '草19', layer: 'fg' },
-  { type: MAP_OBJ_TYPE.DECORATION, x: 1200, y: 650, width: 35, height: 32, assetKey: 'TOWN_GRASS2', name: '草20', layer: 'fg' },
-  { type: MAP_OBJ_TYPE.DECORATION, x: 1460, y: 585, width: 35, height: 32, assetKey: 'TOWN_GRASS3', name: '草21', layer: 'fg' },
-  { type: MAP_OBJ_TYPE.DECORATION, x: 1780, y: 630, width: 35, height: 32, assetKey: 'TOWN_GRASS', name: '草22', layer: 'fg' },
-  { type: MAP_OBJ_TYPE.DECORATION, x: 330, y: 940, width: 35, height: 32, assetKey: 'TOWN_GRASS2', name: '草23', layer: 'fg' },
-  { type: MAP_OBJ_TYPE.DECORATION, x: 420, y: 900, width: 35, height: 32, assetKey: 'TOWN_GRASS3', name: '草24', layer: 'fg' },
-  { type: MAP_OBJ_TYPE.DECORATION, x: 340, y: 1030, width: 35, height: 32, assetKey: 'TOWN_GRASS', name: '草25', layer: 'fg' },
-  { type: MAP_OBJ_TYPE.DECORATION, x: 540, y: 1000, width: 35, height: 32, assetKey: 'TOWN_GRASS2', name: '草26', layer: 'fg' },
-  { type: MAP_OBJ_TYPE.DECORATION, x: 1150, y: 980, width: 35, height: 32, assetKey: 'TOWN_GRASS3', name: '草27', layer: 'fg' },
-  { type: MAP_OBJ_TYPE.DECORATION, x: 1430, y: 1000, width: 35, height: 32, assetKey: 'TOWN_GRASS', name: '草28', layer: 'fg' },
-  { type: MAP_OBJ_TYPE.DECORATION, x: 1760, y: 960, width: 35, height: 32, assetKey: 'TOWN_GRASS2', name: '草29', layer: 'fg' },
-
-  // ── 花朵（全部坐标已校验，不与任何建筑/障碍物重叠）──
-  // ★ 公会周边（仅y>310区域）
-  { type: MAP_OBJ_TYPE.DECORATION, x: 260, y: 420, width: 28, height: 28, assetKey: 'TOWN_FLOWER1', name: '公会花1', layer: 'fg' },
-  { type: MAP_OBJ_TYPE.DECORATION, x: 305, y: 450, width: 26, height: 26, assetKey: 'TOWN_FLOWER2', name: '公会花2', layer: 'fg' },
-  { type: MAP_OBJ_TYPE.DECORATION, x: 235, y: 475, width: 27, height: 27, assetKey: 'TOWN_FLOWER3', name: '公会花3', layer: 'fg' },
-  { type: MAP_OBJ_TYPE.DECORATION, x: 290, y: 505, width: 28, height: 28, assetKey: 'TOWN_FLOWER1', name: '公会花4', layer: 'fg' },
-  // ★ 商店周边（左侧x<1550 + 下方y>320）
-  { type: MAP_OBJ_TYPE.DECORATION, x: 1440, y: 340, width: 28, height: 28, assetKey: 'TOWN_FLOWER1', name: '商店花1', layer: 'fg' },
-  { type: MAP_OBJ_TYPE.DECORATION, x: 1480, y: 370, width: 26, height: 26, assetKey: 'TOWN_FLOWER2', name: '商店花2', layer: 'fg' },
-  { type: MAP_OBJ_TYPE.DECORATION, x: 1410, y: 395, width: 27, height: 27, assetKey: 'TOWN_FLOWER3', name: '商店花3', layer: 'fg' },
-  { type: MAP_OBJ_TYPE.DECORATION, x: 1470, y: 430, width: 28, height: 28, assetKey: 'TOWN_FLOWER2', name: '商店花4', layer: 'fg' },
-  { type: MAP_OBJ_TYPE.DECORATION, x: 1560, y: 360, width: 28, height: 28, assetKey: 'TOWN_FLOWER1', name: '商店花5', layer: 'fg' },
-  // ★ 中央区域花丛
-  { type: MAP_OBJ_TYPE.DECORATION, x: 560, y: 760, width: 28, height: 28, assetKey: 'TOWN_FLOWER1', name: '中花1', layer: 'fg' },
-  { type: MAP_OBJ_TYPE.DECORATION, x: 605, y: 795, width: 26, height: 26, assetKey: 'TOWN_FLOWER2', name: '中花2', layer: 'fg' },
-  { type: MAP_OBJ_TYPE.DECORATION, x: 530, y: 815, width: 27, height: 27, assetKey: 'TOWN_FLOWER3', name: '中花3', layer: 'fg' },
-  { type: MAP_OBJ_TYPE.DECORATION, x: 585, y: 845, width: 28, height: 28, assetKey: 'TOWN_FLOWER1', name: '中花4', layer: 'fg' },
-  { type: MAP_OBJ_TYPE.DECORATION, x: 1315, y: 840, width: 28, height: 28, assetKey: 'TOWN_FLOWER3', name: '中花5', layer: 'fg' },
-  { type: MAP_OBJ_TYPE.DECORATION, x: 1365, y: 875, width: 27, height: 27, assetKey: 'TOWN_FLOWER1', name: '中花6', layer: 'fg' },
-  { type: MAP_OBJ_TYPE.DECORATION, x: 1290, y: 895, width: 28, height: 28, assetKey: 'TOWN_FLOWER2', name: '中花7', layer: 'fg' },
-  { type: MAP_OBJ_TYPE.DECORATION, x: 1355, y: 925, width: 26, height: 26, assetKey: 'TOWN_FLOWER3', name: '中花8', layer: 'fg' },
-  // ★ 北侧空地
-  { type: MAP_OBJ_TYPE.DECORATION, x: 200, y: 125, width: 28, height: 28, assetKey: 'TOWN_FLOWER1', name: '北花1', layer: 'fg' },
-  { type: MAP_OBJ_TYPE.DECORATION, x: 245, y: 155, width: 26, height: 26, assetKey: 'TOWN_FLOWER2', name: '北花2', layer: 'fg' },
-  { type: MAP_OBJ_TYPE.DECORATION, x: 320, y: 230, width: 27, height: 27, assetKey: 'TOWN_FLOWER3', name: '北花3', layer: 'fg' },
-  { type: MAP_OBJ_TYPE.DECORATION, x: 460, y: 105, width: 28, height: 28, assetKey: 'TOWN_FLOWER1', name: '北花4', layer: 'fg' },
-  { type: MAP_OBJ_TYPE.DECORATION, x: 620, y: 135, width: 28, height: 28, assetKey: 'TOWN_FLOWER1', name: '北花5', layer: 'fg' },
-  { type: MAP_OBJ_TYPE.DECORATION, x: 820, y: 115, width: 26, height: 26, assetKey: 'TOWN_FLOWER2', name: '北花6', layer: 'fg' },
-  { type: MAP_OBJ_TYPE.DECORATION, x: 985, y: 145, width: 27, height: 27, assetKey: 'TOWN_FLOWER3', name: '北花7', layer: 'fg' },
-  { type: MAP_OBJ_TYPE.DECORATION, x: 1180, y: 110, width: 28, height: 28, assetKey: 'TOWN_FLOWER1', name: '北花8', layer: 'fg' },
-  { type: MAP_OBJ_TYPE.DECORATION, x: 1435, y: 305, width: 27, height: 27, assetKey: 'TOWN_FLOWER3', name: '北花9', layer: 'fg' },
-  { type: MAP_OBJ_TYPE.DECORATION, x: 1780, y: 230, width: 28, height: 28, assetKey: 'TOWN_FLOWER1', name: '北花10', layer: 'fg' },
-  // ★ 主干道北侧空白区（避开公会+中北森林1）
-  { type: MAP_OBJ_TYPE.DECORATION, x: 465, y: 340, width: 28, height: 28, assetKey: 'TOWN_FLOWER2', name: '道北花1', layer: 'fg' },
-  { type: MAP_OBJ_TYPE.DECORATION, x: 600, y: 345, width: 27, height: 27, assetKey: 'TOWN_FLOWER3', name: '道北花2', layer: 'fg' },
-  { type: MAP_OBJ_TYPE.DECORATION, x: 790, y: 305, width: 28, height: 28, assetKey: 'TOWN_FLOWER1', name: '道北花3', layer: 'fg' },
-  { type: MAP_OBJ_TYPE.DECORATION, x: 950, y: 280, width: 26, height: 26, assetKey: 'TOWN_FLOWER2', name: '道北花4', layer: 'fg' },
-  { type: MAP_OBJ_TYPE.DECORATION, x: 1095, y: 300, width: 27, height: 27, assetKey: 'TOWN_FLOWER3', name: '道北花5', layer: 'fg' },
-  // ★ 主干道南侧空白区（避开药品店+武器库）
-  { type: MAP_OBJ_TYPE.DECORATION, x: 320, y: 650, width: 27, height: 27, assetKey: 'TOWN_FLOWER3', name: '道南花1', layer: 'fg' },
-  { type: MAP_OBJ_TYPE.DECORATION, x: 485, y: 685, width: 28, height: 28, assetKey: 'TOWN_FLOWER1', name: '道南花2', layer: 'fg' },
-  { type: MAP_OBJ_TYPE.DECORATION, x: 730, y: 645, width: 26, height: 26, assetKey: 'TOWN_FLOWER2', name: '道南花3', layer: 'fg' },
-  { type: MAP_OBJ_TYPE.DECORATION, x: 885, y: 705, width: 27, height: 27, assetKey: 'TOWN_FLOWER3', name: '道南花4', layer: 'fg' },
-  { type: MAP_OBJ_TYPE.DECORATION, x: 1065, y: 675, width: 28, height: 28, assetKey: 'TOWN_FLOWER1', name: '道南花5', layer: 'fg' },
-  { type: MAP_OBJ_TYPE.DECORATION, x: 1225, y: 725, width: 26, height: 26, assetKey: 'TOWN_FLOWER2', name: '道南花6', layer: 'fg' },
-  { type: MAP_OBJ_TYPE.DECORATION, x: 1390, y: 695, width: 27, height: 27, assetKey: 'TOWN_FLOWER3', name: '道南花7', layer: 'fg' },
-  { type: MAP_OBJ_TYPE.DECORATION, x: 1560, y: 735, width: 28, height: 28, assetKey: 'TOWN_FLOWER1', name: '道南花8', layer: 'fg' },
-  // ★ 底部区域（各森林缝隙）
-  { type: MAP_OBJ_TYPE.DECORATION, x: 235, y: 955, width: 28, height: 28, assetKey: 'TOWN_FLOWER3', name: '底花1', layer: 'fg' },
-  { type: MAP_OBJ_TYPE.DECORATION, x: 245, y: 1010, width: 27, height: 27, assetKey: 'TOWN_FLOWER1', name: '底花2', layer: 'fg' },
-  { type: MAP_OBJ_TYPE.DECORATION, x: 535, y: 965, width: 28, height: 28, assetKey: 'TOWN_FLOWER2', name: '底花3', layer: 'fg' },
-  { type: MAP_OBJ_TYPE.DECORATION, x: 760, y: 1045, width: 26, height: 26, assetKey: 'TOWN_FLOWER3', name: '底花4', layer: 'fg' },
-  { type: MAP_OBJ_TYPE.DECORATION, x: 1090, y: 1060, width: 27, height: 27, assetKey: 'TOWN_FLOWER1', name: '底花5', layer: 'fg' },
-  { type: MAP_OBJ_TYPE.DECORATION, x: 1290, y: 975, width: 28, height: 28, assetKey: 'TOWN_FLOWER2', name: '底花6', layer: 'fg' },
-  { type: MAP_OBJ_TYPE.DECORATION, x: 1490, y: 1005, width: 26, height: 26, assetKey: 'TOWN_FLOWER3', name: '底花7', layer: 'fg' },
-  { type: MAP_OBJ_TYPE.DECORATION, x: 1740, y: 985, width: 27, height: 27, assetKey: 'TOWN_FLOWER1', name: '底花8', layer: 'fg' },
+  { type: MAP_OBJ_TYPE.OBSTACLE, x: -20, y: 300, width: 180, height: 220, w: 180, h: 220, assetKey: 'TOWN_FOREST', collisionPadding: 10 },
+  { type: MAP_OBJ_TYPE.OBSTACLE, x: 100, y: 480, width: 140, height: 180, w: 140, h: 180, assetKey: 'TOWN_FOREST', collisionPadding: 10 },
+  { type: MAP_OBJ_TYPE.OBSTACLE, x: 480, y: 173, width: 170, height: 200, w: 170, h: 200, assetKey: 'TOWN_FOREST', collisionPadding: 10 },
+  { type: MAP_OBJ_TYPE.OBSTACLE, x: 621, y: 284, width: 150, height: 170, w: 150, h: 170, assetKey: 'TOWN_FOREST', collisionPadding: 10 },
+  { type: MAP_OBJ_TYPE.OBSTACLE, x: 1850, y: 36, width: 180, height: 240, w: 180, h: 240, assetKey: 'TOWN_FOREST', collisionPadding: 10 },
+  { type: MAP_OBJ_TYPE.OBSTACLE, x: 1750, y: 500, width: 160, height: 200, w: 160, h: 200, assetKey: 'TOWN_FOREST', collisionPadding: 10 },
+  { type: MAP_OBJ_TYPE.OBSTACLE, x: 1844, y: 195, width: 190, height: 220, w: 190, h: 220, assetKey: 'TOWN_FOREST', collisionPadding: 10 },
+  { type: MAP_OBJ_TYPE.OBSTACLE, x: 300, y: 1050, width: 200, height: 170, w: 200, h: 170, assetKey: 'TOWN_FOREST', collisionPadding: 10 },
+  { type: MAP_OBJ_TYPE.OBSTACLE, x: 1500, y: 1020, width: 220, height: 200, w: 220, h: 200, assetKey: 'TOWN_FOREST', collisionPadding: 10 },
+  { type: MAP_OBJ_TYPE.OBSTACLE, x: 850, y: 1080, width: 200, height: 150, w: 200, h: 150, assetKey: 'TOWN_FOREST', collisionPadding: 10 },
+  { type: MAP_OBJ_TYPE.OBSTACLE, x: 50, y: 1020, width: 170, height: 200, w: 170, h: 200, assetKey: 'TOWN_FOREST', collisionPadding: 10 },
+  { type: MAP_OBJ_TYPE.OBSTACLE, x: 358, y: 161, width: 160, height: 140, w: 160, h: 140, assetKey: 'TOWN_FOREST', collisionPadding: 10 },
+  { type: MAP_OBJ_TYPE.OBSTACLE, x: 1250, y: 150, width: 170, height: 130, w: 170, h: 130, assetKey: 'TOWN_FOREST', collisionPadding: 10 },
+  { type: MAP_OBJ_TYPE.BUILDING, x: 920, y: 295, width: 350, height: 240, w: 350, h: 240, assetKey: 'TOWN_SHOP', collisionPadding: 46, npcId: 'shop_keeper' },
+  { type: MAP_OBJ_TYPE.BUILDING, x: 445, y: 363, width: 170, height: 150, w: 170, h: 150, assetKey: 'TOWN_WEAPON_SHOP', collisionPadding: 8, npcId: 'blacksmith' },
+  { type: MAP_OBJ_TYPE.BUILDING, x: 1076, y: 664, width: 165, height: 145, w: 165, h: 145, assetKey: 'TOWN_POTION_SHOP', collisionPadding: 8, npcId: 'potion_seller' },
+  { type: MAP_OBJ_TYPE.BUILDING, x: 441, y: 659, width: 175, height: 130, w: 175, h: 130, assetKey: 'TOWN_QUEST_BOARD', collisionPadding: 8, npcId: 'quest_giver' },
+  { type: MAP_OBJ_TYPE.OBSTACLE, x: 204, y: 222, width: 55, height: 75, w: 55, h: 75, assetKey: 'TOWN_TREE', collisionPadding: 12 },
+  { type: MAP_OBJ_TYPE.OBSTACLE, x: 272, y: 251, width: 55, height: 80, w: 55, h: 80, assetKey: 'TOWN_TREE', collisionPadding: 12 },
+  { type: MAP_OBJ_TYPE.OBSTACLE, x: 655, y: 66, width: 55, height: 75, w: 55, h: 75, assetKey: 'TOWN_TREE', collisionPadding: 12 },
+  { type: MAP_OBJ_TYPE.OBSTACLE, x: 700, y: 60, width: 55, height: 80, w: 55, h: 80, assetKey: 'TOWN_TREE', collisionPadding: 12 },
+  { type: MAP_OBJ_TYPE.OBSTACLE, x: 820, y: 45, width: 55, height: 78, w: 55, h: 78, assetKey: 'TOWN_TREE', collisionPadding: 12 },
+  { type: MAP_OBJ_TYPE.OBSTACLE, x: 950, y: 70, width: 55, height: 78, w: 55, h: 78, assetKey: 'TOWN_TREE', collisionPadding: 12 },
+  { type: MAP_OBJ_TYPE.OBSTACLE, x: 1080, y: 55, width: 55, height: 75, w: 55, h: 75, assetKey: 'TOWN_TREE', collisionPadding: 12 },
+  { type: MAP_OBJ_TYPE.OBSTACLE, x: 1150, y: 85, width: 55, height: 72, w: 55, h: 72, assetKey: 'TOWN_TREE', collisionPadding: 12 },
+  { type: MAP_OBJ_TYPE.OBSTACLE, x: 1280, y: 60, width: 55, height: 78, w: 55, h: 78, assetKey: 'TOWN_TREE', collisionPadding: 12 },
+  { type: MAP_OBJ_TYPE.OBSTACLE, x: 1380, y: 65, width: 55, height: 82, w: 55, h: 82, assetKey: 'TOWN_TREE', collisionPadding: 12 },
+  { type: MAP_OBJ_TYPE.OBSTACLE, x: 1500, y: 75, width: 55, height: 76, w: 55, h: 76, assetKey: 'TOWN_TREE', collisionPadding: 12 },
+  { type: MAP_OBJ_TYPE.OBSTACLE, x: 1680, y: 55, width: 55, height: 80, w: 55, h: 80, assetKey: 'TOWN_TREE', collisionPadding: 12 },
+  { type: MAP_OBJ_TYPE.OBSTACLE, x: 20, y: 236, width: 55, height: 75, w: 55, h: 75, assetKey: 'TOWN_TREE', collisionPadding: 12 },
+  { type: MAP_OBJ_TYPE.OBSTACLE, x: 45, y: 320, width: 55, height: 75, w: 55, h: 75, assetKey: 'TOWN_TREE', collisionPadding: 12 },
+  { type: MAP_OBJ_TYPE.OBSTACLE, x: 50, y: 600, width: 55, height: 75, w: 55, h: 75, assetKey: 'TOWN_TREE', collisionPadding: 12 },
+  { type: MAP_OBJ_TYPE.OBSTACLE, x: 35, y: 760, width: 55, height: 78, w: 55, h: 78, assetKey: 'TOWN_TREE', collisionPadding: 12 },
+  { type: MAP_OBJ_TYPE.OBSTACLE, x: 80, y: 920, width: 55, height: 78, w: 55, h: 78, assetKey: 'TOWN_TREE', collisionPadding: 12 },
+  { type: MAP_OBJ_TYPE.OBSTACLE, x: 1874, y: 471, width: 55, height: 75, w: 55, h: 75, assetKey: 'TOWN_TREE', collisionPadding: 12 },
+  { type: MAP_OBJ_TYPE.OBSTACLE, x: 1331, y: 609, width: 55, height: 78, w: 55, h: 78, assetKey: 'TOWN_TREE', collisionPadding: 12 },
+  { type: MAP_OBJ_TYPE.OBSTACLE, x: 1939, y: 471, width: 55, height: 78, w: 55, h: 78, assetKey: 'TOWN_TREE', collisionPadding: 12 },
+  { type: MAP_OBJ_TYPE.OBSTACLE, x: 1880, y: 600, width: 55, height: 75, w: 55, h: 75, assetKey: 'TOWN_TREE', collisionPadding: 12 },
+  { type: MAP_OBJ_TYPE.OBSTACLE, x: 1880, y: 780, width: 55, height: 75, w: 55, h: 75, assetKey: 'TOWN_TREE', collisionPadding: 12 },
+  { type: MAP_OBJ_TYPE.OBSTACLE, x: 1930, y: 950, width: 55, height: 80, w: 55, h: 80, assetKey: 'TOWN_TREE', collisionPadding: 12 },
+  { type: MAP_OBJ_TYPE.OBSTACLE, x: 609, y: 180, width: 55, height: 75, w: 55, h: 75, assetKey: 'TOWN_TREE', collisionPadding: 12 },
+  { type: MAP_OBJ_TYPE.OBSTACLE, x: 505, y: 178, width: 55, height: 75, w: 55, h: 75, assetKey: 'TOWN_TREE', collisionPadding: 12 },
+  { type: MAP_OBJ_TYPE.OBSTACLE, x: 902, y: 404, width: 55, height: 78, w: 55, h: 78, assetKey: 'TOWN_TREE', collisionPadding: 12 },
+  { type: MAP_OBJ_TYPE.OBSTACLE, x: 780, y: 350, width: 55, height: 75, w: 55, h: 75, assetKey: 'TOWN_TREE', collisionPadding: 12 },
+  { type: MAP_OBJ_TYPE.OBSTACLE, x: 1208, y: 193, width: 55, height: 78, w: 55, h: 78, assetKey: 'TOWN_TREE', collisionPadding: 12 },
+  { type: MAP_OBJ_TYPE.OBSTACLE, x: 1320, y: 320, width: 55, height: 75, w: 55, h: 75, assetKey: 'TOWN_TREE', collisionPadding: 12 },
+  { type: MAP_OBJ_TYPE.OBSTACLE, x: 1450, y: 230, width: 55, height: 78, w: 55, h: 78, assetKey: 'TOWN_TREE', collisionPadding: 12 },
+  { type: MAP_OBJ_TYPE.OBSTACLE, x: 1350, y: 360, width: 55, height: 78, w: 55, h: 78, assetKey: 'TOWN_TREE', collisionPadding: 12 },
+  { type: MAP_OBJ_TYPE.OBSTACLE, x: 359, y: 672, width: 55, height: 75, w: 55, h: 75, assetKey: 'TOWN_TREE', collisionPadding: 12 },
+  { type: MAP_OBJ_TYPE.OBSTACLE, x: 580, y: 850, width: 55, height: 75, w: 55, h: 75, assetKey: 'TOWN_TREE', collisionPadding: 12 },
+  { type: MAP_OBJ_TYPE.OBSTACLE, x: 770, y: 946, width: 55, height: 75, w: 55, h: 75, assetKey: 'TOWN_TREE', collisionPadding: 12 },
+  { type: MAP_OBJ_TYPE.OBSTACLE, x: 780, y: 800, width: 55, height: 78, w: 55, h: 78, assetKey: 'TOWN_TREE', collisionPadding: 12 },
+  { type: MAP_OBJ_TYPE.OBSTACLE, x: 1142, y: 849, width: 55, height: 75, w: 55, h: 75, assetKey: 'TOWN_TREE', collisionPadding: 12 },
+  { type: MAP_OBJ_TYPE.OBSTACLE, x: 1250, y: 820, width: 55, height: 78, w: 55, h: 78, assetKey: 'TOWN_TREE', collisionPadding: 12 },
+  { type: MAP_OBJ_TYPE.OBSTACLE, x: 1420, y: 760, width: 55, height: 75, w: 55, h: 75, assetKey: 'TOWN_TREE', collisionPadding: 12 },
+  { type: MAP_OBJ_TYPE.OBSTACLE, x: 1282, y: 421, width: 55, height: 78, w: 55, h: 78, assetKey: 'TOWN_TREE', collisionPadding: 12 },
+  { type: MAP_OBJ_TYPE.OBSTACLE, x: 1600, y: 800, width: 55, height: 75, w: 55, h: 75, assetKey: 'TOWN_TREE', collisionPadding: 12 },
+  { type: MAP_OBJ_TYPE.OBSTACLE, x: 850, y: 380, width: 45, height: 38, w: 45, h: 38, assetKey: 'TOWN_ROCK', collisionPadding: 5 },
+  { type: MAP_OBJ_TYPE.OBSTACLE, x: 854, y: 240, width: 40, height: 35, w: 40, h: 35, assetKey: 'TOWN_ROCK', collisionPadding: 5 },
+  { type: MAP_OBJ_TYPE.OBSTACLE, x: 303, y: 792, width: 42, height: 36, w: 42, h: 36, assetKey: 'TOWN_ROCK', collisionPadding: 5 },
+  { type: MAP_OBJ_TYPE.OBSTACLE, x: 1480, y: 700, width: 44, height: 37, w: 44, h: 37, assetKey: 'TOWN_ROCK', collisionPadding: 5 },
+  { type: MAP_OBJ_TYPE.OBSTACLE, x: 900, y: 920, width: 43, height: 36, w: 43, h: 36, assetKey: 'TOWN_ROCK', collisionPadding: 5 },
+  { type: MAP_OBJ_TYPE.OBSTACLE, x: 1180, y: 960, width: 40, height: 35, w: 40, h: 35, assetKey: 'TOWN_ROCK', collisionPadding: 5 },
+  { type: MAP_OBJ_TYPE.OBSTACLE, x: 289, y: 552, width: 42, height: 36, w: 42, h: 36, assetKey: 'TOWN_ROCK', collisionPadding: 5 },
+  { type: MAP_OBJ_TYPE.OBSTACLE, x: 720, y: 180, width: 40, height: 35, w: 40, h: 35, assetKey: 'TOWN_ROCK', collisionPadding: 5 },
+  { type: MAP_OBJ_TYPE.OBSTACLE, x: 1400, y: 200, width: 44, height: 37, w: 44, h: 37, assetKey: 'TOWN_ROCK', collisionPadding: 5 },
+  { type: MAP_OBJ_TYPE.OBSTACLE, x: 1460, y: 664, width: 43, height: 36, w: 43, h: 36, assetKey: 'TOWN_ROCK', collisionPadding: 5 },
+  { type: MAP_OBJ_TYPE.OBSTACLE, x: 330, y: 550, width: 40, height: 35, w: 40, h: 35, assetKey: 'TOWN_ROCK', collisionPadding: 5 },
+  { type: MAP_OBJ_TYPE.OBSTACLE, x: 942, y: 219, width: 42, height: 36, w: 42, h: 36, assetKey: 'TOWN_ROCK', collisionPadding: 5 },
+  { type: MAP_OBJ_TYPE.OBSTACLE, x: 999, y: 264, width: 44, height: 37, w: 44, h: 37, assetKey: 'TOWN_ROCK', collisionPadding: 5 },
+  { type: MAP_OBJ_TYPE.OBSTACLE, x: 1452, y: 706, width: 43, height: 36, w: 43, h: 36, assetKey: 'TOWN_ROCK', collisionPadding: 5 },
+  { type: MAP_OBJ_TYPE.OBSTACLE, x: 500, y: 950, width: 40, height: 35, w: 40, h: 35, assetKey: 'TOWN_ROCK', collisionPadding: 5 },
+  { type: MAP_OBJ_TYPE.OBSTACLE, x: 200, y: 350, width: 50, height: 45, w: 50, h: 45, assetKey: 'TOWN_GRASS_PILE', collisionPadding: 8, layer: 'fg' },
+  { type: MAP_OBJ_TYPE.OBSTACLE, x: 1272, y: 387, width: 50, height: 45, w: 50, h: 45, assetKey: 'TOWN_GRASS_PILE', collisionPadding: 8, layer: 'fg' },
+  { type: MAP_OBJ_TYPE.OBSTACLE, x: 697, y: 903, width: 50, height: 45, w: 50, h: 45, assetKey: 'TOWN_GRASS_PILE', collisionPadding: 8, layer: 'fg' },
+  { type: MAP_OBJ_TYPE.OBSTACLE, x: 957, y: 963, width: 50, height: 45, w: 50, h: 45, assetKey: 'TOWN_GRASS_PILE', collisionPadding: 8, layer: 'fg' },
+  { type: MAP_OBJ_TYPE.OBSTACLE, x: 184, y: 190, width: 50, height: 45, w: 50, h: 45, assetKey: 'TOWN_GRASS_PILE', collisionPadding: 8, layer: 'fg' },
+  { type: MAP_OBJ_TYPE.OBSTACLE, x: 880, y: 180, width: 50, height: 45, w: 50, h: 45, assetKey: 'TOWN_GRASS_PILE', collisionPadding: 8, layer: 'fg' },
+  { type: MAP_OBJ_TYPE.OBSTACLE, x: 1150, y: 160, width: 50, height: 45, w: 50, h: 45, assetKey: 'TOWN_GRASS_PILE', collisionPadding: 8, layer: 'fg' },
+  { type: MAP_OBJ_TYPE.OBSTACLE, x: 1730, y: 140, width: 50, height: 45, w: 50, h: 45, assetKey: 'TOWN_GRASS_PILE', collisionPadding: 8, layer: 'fg' },
+  { type: MAP_OBJ_TYPE.OBSTACLE, x: 330, y: 620, width: 50, height: 45, w: 50, h: 45, assetKey: 'TOWN_GRASS_PILE', collisionPadding: 8, layer: 'fg' },
+  { type: MAP_OBJ_TYPE.OBSTACLE, x: 1068, y: 938, width: 50, height: 45, w: 50, h: 45, assetKey: 'TOWN_GRASS_PILE', collisionPadding: 8, layer: 'fg' },
+  { type: MAP_OBJ_TYPE.OBSTACLE, x: 1380, y: 650, width: 50, height: 45, w: 50, h: 45, assetKey: 'TOWN_GRASS_PILE', collisionPadding: 8, layer: 'fg' },
+  { type: MAP_OBJ_TYPE.OBSTACLE, x: 550, y: 1000, width: 50, height: 45, w: 50, h: 45, assetKey: 'TOWN_GRASS_PILE', collisionPadding: 8, layer: 'fg' },
+  { type: MAP_OBJ_TYPE.DECORATION, x: 474, y: 250, width: 35, height: 32, w: 35, h: 32, assetKey: 'TOWN_GRASS', layer: 'fg' },
+  { type: MAP_OBJ_TYPE.DECORATION, x: 350, y: 450, width: 35, height: 32, w: 35, h: 32, assetKey: 'TOWN_GRASS2', layer: 'fg' },
+  { type: MAP_OBJ_TYPE.DECORATION, x: 480, y: 780, width: 35, height: 32, w: 35, h: 32, assetKey: 'TOWN_GRASS3', layer: 'fg' },
+  { type: MAP_OBJ_TYPE.DECORATION, x: 1520, y: 880, width: 35, height: 32, w: 35, h: 32, assetKey: 'TOWN_GRASS', layer: 'fg' },
+  { type: MAP_OBJ_TYPE.DECORATION, x: 380, y: 920, width: 35, height: 32, w: 35, h: 32, assetKey: 'TOWN_GRASS2', layer: 'fg' },
+  { type: MAP_OBJ_TYPE.DECORATION, x: 1103, y: 869, width: 35, height: 32, w: 35, h: 32, assetKey: 'TOWN_GRASS3', layer: 'fg' },
+  { type: MAP_OBJ_TYPE.DECORATION, x: 150, y: 250, width: 35, height: 32, w: 35, h: 32, assetKey: 'TOWN_GRASS', layer: 'fg' },
+  { type: MAP_OBJ_TYPE.DECORATION, x: 717, y: 818, width: 35, height: 32, w: 35, h: 32, assetKey: 'TOWN_GRASS2', layer: 'fg' },
+  { type: MAP_OBJ_TYPE.DECORATION, x: 432, y: 891, width: 35, height: 32, w: 35, h: 32, assetKey: 'TOWN_GRASS3', layer: 'fg' },
+  { type: MAP_OBJ_TYPE.DECORATION, x: 750, y: 260, width: 35, height: 32, w: 35, h: 32, assetKey: 'TOWN_GRASS', layer: 'fg' },
+  { type: MAP_OBJ_TYPE.DECORATION, x: 1000, y: 200, width: 35, height: 32, w: 35, h: 32, assetKey: 'TOWN_GRASS2', layer: 'fg' },
+  { type: MAP_OBJ_TYPE.DECORATION, x: 1195, y: 295, width: 35, height: 32, w: 35, h: 32, assetKey: 'TOWN_GRASS3', layer: 'fg' },
+  { type: MAP_OBJ_TYPE.DECORATION, x: 1480, y: 220, width: 35, height: 32, w: 35, h: 32, assetKey: 'TOWN_GRASS', layer: 'fg' },
+  { type: MAP_OBJ_TYPE.DECORATION, x: 1492, y: 173, width: 35, height: 32, w: 35, h: 32, assetKey: 'TOWN_GRASS2', layer: 'fg' },
+  { type: MAP_OBJ_TYPE.DECORATION, x: 195, y: 540, width: 35, height: 32, w: 35, h: 32, assetKey: 'TOWN_GRASS3', layer: 'fg' },
+  { type: MAP_OBJ_TYPE.DECORATION, x: 340, y: 750, width: 35, height: 32, w: 35, h: 32, assetKey: 'TOWN_GRASS', layer: 'fg' },
+  { type: MAP_OBJ_TYPE.DECORATION, x: 280, y: 715, width: 35, height: 32, w: 35, h: 32, assetKey: 'TOWN_GRASS2', layer: 'fg' },
+  { type: MAP_OBJ_TYPE.DECORATION, x: 1001, y: 978, width: 35, height: 32, w: 35, h: 32, assetKey: 'TOWN_GRASS3', layer: 'fg' },
+  { type: MAP_OBJ_TYPE.DECORATION, x: 1048, y: 848, width: 35, height: 32, w: 35, h: 32, assetKey: 'TOWN_GRASS', layer: 'fg' },
+  { type: MAP_OBJ_TYPE.DECORATION, x: 1305, y: 796, width: 35, height: 32, w: 35, h: 32, assetKey: 'TOWN_GRASS2', layer: 'fg' },
+  { type: MAP_OBJ_TYPE.DECORATION, x: 1460, y: 585, width: 35, height: 32, w: 35, h: 32, assetKey: 'TOWN_GRASS3', layer: 'fg' },
+  { type: MAP_OBJ_TYPE.DECORATION, x: 1780, y: 630, width: 35, height: 32, w: 35, h: 32, assetKey: 'TOWN_GRASS', layer: 'fg' },
+  { type: MAP_OBJ_TYPE.DECORATION, x: 330, y: 940, width: 35, height: 32, w: 35, h: 32, assetKey: 'TOWN_GRASS2', layer: 'fg' },
+  { type: MAP_OBJ_TYPE.DECORATION, x: 420, y: 900, width: 35, height: 32, w: 35, h: 32, assetKey: 'TOWN_GRASS3', layer: 'fg' },
+  { type: MAP_OBJ_TYPE.DECORATION, x: 340, y: 1030, width: 35, height: 32, w: 35, h: 32, assetKey: 'TOWN_GRASS', layer: 'fg' },
+  { type: MAP_OBJ_TYPE.DECORATION, x: 414, y: 941, width: 35, height: 32, w: 35, h: 32, assetKey: 'TOWN_GRASS2', layer: 'fg' },
+  { type: MAP_OBJ_TYPE.DECORATION, x: 1150, y: 980, width: 35, height: 32, w: 35, h: 32, assetKey: 'TOWN_GRASS3', layer: 'fg' },
+  { type: MAP_OBJ_TYPE.DECORATION, x: 1430, y: 1000, width: 35, height: 32, w: 35, h: 32, assetKey: 'TOWN_GRASS', layer: 'fg' },
+  { type: MAP_OBJ_TYPE.DECORATION, x: 1760, y: 960, width: 35, height: 32, w: 35, h: 32, assetKey: 'TOWN_GRASS2', layer: 'fg' },
+  { type: MAP_OBJ_TYPE.DECORATION, x: 260, y: 420, width: 28, height: 28, w: 28, h: 28, assetKey: 'TOWN_FLOWER1', layer: 'fg' },
+  { type: MAP_OBJ_TYPE.DECORATION, x: 305, y: 450, width: 26, height: 26, w: 26, h: 26, assetKey: 'TOWN_FLOWER2', layer: 'fg' },
+  { type: MAP_OBJ_TYPE.DECORATION, x: 235, y: 475, width: 27, height: 27, w: 27, h: 27, assetKey: 'TOWN_FLOWER3', layer: 'fg' },
+  { type: MAP_OBJ_TYPE.DECORATION, x: 290, y: 505, width: 28, height: 28, w: 28, h: 28, assetKey: 'TOWN_FLOWER1', layer: 'fg' },
+  { type: MAP_OBJ_TYPE.DECORATION, x: 1440, y: 340, width: 28, height: 28, w: 28, h: 28, assetKey: 'TOWN_FLOWER1', layer: 'fg' },
+  { type: MAP_OBJ_TYPE.DECORATION, x: 1571, y: 373, width: 26, height: 26, w: 26, h: 26, assetKey: 'TOWN_FLOWER2', layer: 'fg' },
+  { type: MAP_OBJ_TYPE.DECORATION, x: 1527, y: 334, width: 27, height: 27, w: 27, h: 27, assetKey: 'TOWN_FLOWER3', layer: 'fg' },
+  { type: MAP_OBJ_TYPE.DECORATION, x: 1546, y: 375, width: 28, height: 28, w: 28, h: 28, assetKey: 'TOWN_FLOWER2', layer: 'fg' },
+  { type: MAP_OBJ_TYPE.DECORATION, x: 1717, y: 388, width: 28, height: 28, w: 28, h: 28, assetKey: 'TOWN_FLOWER1', layer: 'fg' },
+  { type: MAP_OBJ_TYPE.DECORATION, x: 257, y: 872, width: 28, height: 28, w: 28, h: 28, assetKey: 'TOWN_FLOWER1', layer: 'fg' },
+  { type: MAP_OBJ_TYPE.DECORATION, x: 490, y: 883, width: 26, height: 26, w: 26, h: 26, assetKey: 'TOWN_FLOWER2', layer: 'fg' },
+  { type: MAP_OBJ_TYPE.DECORATION, x: 530, y: 815, width: 27, height: 27, w: 27, h: 27, assetKey: 'TOWN_FLOWER3', layer: 'fg' },
+  { type: MAP_OBJ_TYPE.DECORATION, x: 354, y: 881, width: 28, height: 28, w: 28, h: 28, assetKey: 'TOWN_FLOWER1', layer: 'fg' },
+  { type: MAP_OBJ_TYPE.DECORATION, x: 1315, y: 840, width: 28, height: 28, w: 28, h: 28, assetKey: 'TOWN_FLOWER3', layer: 'fg' },
+  { type: MAP_OBJ_TYPE.DECORATION, x: 1365, y: 875, width: 27, height: 27, w: 27, h: 27, assetKey: 'TOWN_FLOWER1', layer: 'fg' },
+  { type: MAP_OBJ_TYPE.DECORATION, x: 1265, y: 973, width: 28, height: 28, w: 28, h: 28, assetKey: 'TOWN_FLOWER2', layer: 'fg' },
+  { type: MAP_OBJ_TYPE.DECORATION, x: 1355, y: 925, width: 26, height: 26, w: 26, h: 26, assetKey: 'TOWN_FLOWER3', layer: 'fg' },
+  { type: MAP_OBJ_TYPE.DECORATION, x: 123, y: 9, width: 28, height: 28, w: 28, h: 28, assetKey: 'TOWN_FLOWER1', layer: 'fg' },
+  { type: MAP_OBJ_TYPE.DECORATION, x: 177, y: -1, width: 26, height: 26, w: 26, h: 26, assetKey: 'TOWN_FLOWER2', layer: 'fg' },
+  { type: MAP_OBJ_TYPE.DECORATION, x: 70, y: 13, width: 27, height: 27, w: 27, h: 27, assetKey: 'TOWN_FLOWER3', layer: 'fg' },
+  { type: MAP_OBJ_TYPE.DECORATION, x: 674, y: 297, width: 28, height: 28, w: 28, h: 28, assetKey: 'TOWN_FLOWER1', layer: 'fg' },
+  { type: MAP_OBJ_TYPE.DECORATION, x: 620, y: 135, width: 28, height: 28, w: 28, h: 28, assetKey: 'TOWN_FLOWER1', layer: 'fg' },
+  { type: MAP_OBJ_TYPE.DECORATION, x: 820, y: 115, width: 26, height: 26, w: 26, h: 26, assetKey: 'TOWN_FLOWER2', layer: 'fg' },
+  { type: MAP_OBJ_TYPE.DECORATION, x: 985, y: 145, width: 27, height: 27, w: 27, h: 27, assetKey: 'TOWN_FLOWER3', layer: 'fg' },
+  { type: MAP_OBJ_TYPE.DECORATION, x: 1218, y: 40, width: 28, height: 28, w: 28, h: 28, assetKey: 'TOWN_FLOWER1', layer: 'fg' },
+  { type: MAP_OBJ_TYPE.DECORATION, x: 1489, y: 346, width: 27, height: 27, w: 27, h: 27, assetKey: 'TOWN_FLOWER3', layer: 'fg' },
+  { type: MAP_OBJ_TYPE.DECORATION, x: 1691, y: 389, width: 28, height: 28, w: 28, h: 28, assetKey: 'TOWN_FLOWER1', layer: 'fg' },
+  { type: MAP_OBJ_TYPE.DECORATION, x: 299, y: 422, width: 28, height: 28, w: 28, h: 28, assetKey: 'TOWN_FLOWER2', layer: 'fg' },
+  { type: MAP_OBJ_TYPE.DECORATION, x: 350, y: 332, width: 27, height: 27, w: 27, h: 27, assetKey: 'TOWN_FLOWER3', layer: 'fg' },
+  { type: MAP_OBJ_TYPE.DECORATION, x: 790, y: 305, width: 28, height: 28, w: 28, h: 28, assetKey: 'TOWN_FLOWER1', layer: 'fg' },
+  { type: MAP_OBJ_TYPE.DECORATION, x: 950, y: 280, width: 26, height: 26, w: 26, h: 26, assetKey: 'TOWN_FLOWER2', layer: 'fg' },
+  { type: MAP_OBJ_TYPE.DECORATION, x: 1159, y: 228, width: 27, height: 27, w: 27, h: 27, assetKey: 'TOWN_FLOWER3', layer: 'fg' },
+  { type: MAP_OBJ_TYPE.DECORATION, x: 320, y: 650, width: 27, height: 27, w: 27, h: 27, assetKey: 'TOWN_FLOWER3', layer: 'fg' },
+  { type: MAP_OBJ_TYPE.DECORATION, x: 399, y: 802, width: 28, height: 28, w: 28, h: 28, assetKey: 'TOWN_FLOWER1', layer: 'fg' },
+  { type: MAP_OBJ_TYPE.DECORATION, x: 841, y: 929, width: 26, height: 26, w: 26, h: 26, assetKey: 'TOWN_FLOWER2', layer: 'fg' },
+  { type: MAP_OBJ_TYPE.DECORATION, x: 1108, y: 955, width: 27, height: 27, w: 27, h: 27, assetKey: 'TOWN_FLOWER3', layer: 'fg' },
+  { type: MAP_OBJ_TYPE.DECORATION, x: 1003, y: 948, width: 28, height: 28, w: 28, h: 28, assetKey: 'TOWN_FLOWER1', layer: 'fg' },
+  { type: MAP_OBJ_TYPE.DECORATION, x: 1371, y: 738, width: 26, height: 26, w: 26, h: 26, assetKey: 'TOWN_FLOWER2', layer: 'fg' },
+  { type: MAP_OBJ_TYPE.DECORATION, x: 1390, y: 695, width: 27, height: 27, w: 27, h: 27, assetKey: 'TOWN_FLOWER3', layer: 'fg' },
+  { type: MAP_OBJ_TYPE.DECORATION, x: 1560, y: 735, width: 28, height: 28, w: 28, h: 28, assetKey: 'TOWN_FLOWER1', layer: 'fg' },
+  { type: MAP_OBJ_TYPE.DECORATION, x: 235, y: 955, width: 28, height: 28, w: 28, h: 28, assetKey: 'TOWN_FLOWER3', layer: 'fg' },
+  { type: MAP_OBJ_TYPE.DECORATION, x: 245, y: 1010, width: 27, height: 27, w: 27, h: 27, assetKey: 'TOWN_FLOWER1', layer: 'fg' },
+  { type: MAP_OBJ_TYPE.DECORATION, x: 535, y: 965, width: 28, height: 28, w: 28, h: 28, assetKey: 'TOWN_FLOWER2', layer: 'fg' },
+  { type: MAP_OBJ_TYPE.DECORATION, x: 760, y: 1045, width: 26, height: 26, w: 26, h: 26, assetKey: 'TOWN_FLOWER3', layer: 'fg' },
+  { type: MAP_OBJ_TYPE.DECORATION, x: 1090, y: 1060, width: 27, height: 27, w: 27, h: 27, assetKey: 'TOWN_FLOWER1', layer: 'fg' },
+  { type: MAP_OBJ_TYPE.DECORATION, x: 1290, y: 975, width: 28, height: 28, w: 28, h: 28, assetKey: 'TOWN_FLOWER2', layer: 'fg' },
+  { type: MAP_OBJ_TYPE.DECORATION, x: 1490, y: 1005, width: 26, height: 26, w: 26, h: 26, assetKey: 'TOWN_FLOWER3', layer: 'fg' },
+  { type: MAP_OBJ_TYPE.DECORATION, x: 1740, y: 985, width: 27, height: 27, w: 27, h: 27, assetKey: 'TOWN_FLOWER1', layer: 'fg' },
+  { type: MAP_OBJ_TYPE.BUILDING, x: 284, y: 59, width: 79, height: 78, w: 79, h: 78, assetKey: 'TOWN_BUILDINGS_009_75X74', collisionPadding: 5 },
+  { type: MAP_OBJ_TYPE.BUILDING, x: 352, y: 355, width: 97, height: 144, w: 97, h: 144, assetKey: 'TOWN_BUILDINGS_010_93X140', collisionPadding: 5 },
+  { type: MAP_OBJ_TYPE.BUILDING, x: -4, y: 33, width: 79, height: 78, w: 79, h: 78, assetKey: 'TOWN_BUILDINGS_009_75X74', collisionPadding: 5 },
+  { type: MAP_OBJ_TYPE.BUILDING, x: 356, y: 61, width: 79, height: 78, w: 79, h: 78, assetKey: 'TOWN_BUILDINGS_009_75X74', collisionPadding: 5 },
+  { type: MAP_OBJ_TYPE.BUILDING, x: 67, y: 47, width: 79, height: 78, w: 79, h: 78, assetKey: 'TOWN_BUILDINGS_009_75X74', collisionPadding: 5 },
+  { type: MAP_OBJ_TYPE.BUILDING, x: 211, y: 55, width: 79, height: 78, w: 79, h: 78, assetKey: 'TOWN_BUILDINGS_009_75X74', collisionPadding: 5 },
+  { type: MAP_OBJ_TYPE.BUILDING, x: 139, y: 53, width: 79, height: 78, w: 79, h: 78, assetKey: 'TOWN_BUILDINGS_009_75X74', collisionPadding: 5 },
+  { type: MAP_OBJ_TYPE.BUILDING, x: 425, y: 59, width: 76, height: 72, w: 76, h: 72, assetKey: 'TOWN_BUILDINGS_011_72X68', collisionPadding: 5 },
+  { type: MAP_OBJ_TYPE.BUILDING, x: 101, y: 263, width: 61, height: 60, w: 61, h: 60, assetKey: 'TOWN_BUILDINGS_023_57X56', collisionPadding: 5 },
+  { type: MAP_OBJ_TYPE.BUILDING, x: 1176, y: 505, width: 66, height: 47, w: 66, h: 47, assetKey: 'TOWN_BUILDINGS_025_62X43', collisionPadding: 5 },
+  { type: MAP_OBJ_TYPE.DECORATION, x: -7, y: 100, width: 58, height: 61, w: 58, h: 61, assetKey: 'TOWN_BUILDINGS_024_54X57', collisionPadding: 5 },
+  { type: MAP_OBJ_TYPE.DECORATION, x: 36, y: 100, width: 58, height: 61, w: 58, h: 61, assetKey: 'TOWN_BUILDINGS_024_54X57', collisionPadding: 5 },
+  { type: MAP_OBJ_TYPE.DECORATION, x: 79, y: 102, width: 58, height: 61, w: 58, h: 61, assetKey: 'TOWN_BUILDINGS_024_54X57', collisionPadding: 5 },
+  { type: MAP_OBJ_TYPE.BUILDING, x: -8, y: 121, width: 66, height: 47, w: 66, h: 47, assetKey: 'TOWN_BUILDINGS_025_62X43', collisionPadding: 5 },
+  { type: MAP_OBJ_TYPE.BUILDING, x: 52, y: 121, width: 66, height: 47, w: 66, h: 47, assetKey: 'TOWN_BUILDINGS_025_62X43', collisionPadding: 5 },
+  { type: MAP_OBJ_TYPE.BUILDING, x: 104, y: 123, width: 66, height: 47, w: 66, h: 47, assetKey: 'TOWN_BUILDINGS_025_62X43', collisionPadding: 5 },
+  { type: MAP_OBJ_TYPE.BUILDING, x: 164, y: 124, width: 66, height: 47, w: 66, h: 47, assetKey: 'TOWN_BUILDINGS_025_62X43', collisionPadding: 5 },
+  { type: MAP_OBJ_TYPE.BUILDING, x: 214, y: 126, width: 66, height: 47, w: 66, h: 47, assetKey: 'TOWN_BUILDINGS_025_62X43', collisionPadding: 5 },
+  { type: MAP_OBJ_TYPE.BUILDING, x: 273, y: 128, width: 66, height: 47, w: 66, h: 47, assetKey: 'TOWN_BUILDINGS_025_62X43', collisionPadding: 5 },
+  { type: MAP_OBJ_TYPE.BUILDING, x: 333, y: 129, width: 66, height: 47, w: 66, h: 47, assetKey: 'TOWN_BUILDINGS_025_62X43', collisionPadding: 5 },
+  { type: MAP_OBJ_TYPE.BUILDING, x: 391, y: 129, width: 66, height: 47, w: 66, h: 47, assetKey: 'TOWN_BUILDINGS_025_62X43', collisionPadding: 5 },
+  { type: MAP_OBJ_TYPE.BUILDING, x: 452, y: 126, width: 66, height: 47, w: 66, h: 47, assetKey: 'TOWN_BUILDINGS_025_62X43', collisionPadding: 5 },
+  { type: MAP_OBJ_TYPE.BUILDING, x: 1116, y: 506, width: 66, height: 47, w: 66, h: 47, assetKey: 'TOWN_BUILDINGS_025_62X43', collisionPadding: 5 },
+  { type: MAP_OBJ_TYPE.DECORATION, x: 942, y: 501, width: 34, height: 54, w: 34, h: 54, assetKey: 'TOWN_BUILDINGS_032_30X50', collisionPadding: 5 },
+  { type: MAP_OBJ_TYPE.BUILDING, x: 927, y: 475, width: 51, height: 55, w: 51, h: 55, assetKey: 'TOWN_BUILDINGS_028_47X51', collisionPadding: 5 },
 ]
 
 // ========== NPC初始位置配置 ==========
@@ -358,34 +319,38 @@ export function generateTownCollisions() {
     
     const pad = obj.collisionPadding || 0
 
+    // 兼容两种尺寸格式：w/h 和 width/height
+    const objW = obj.width || obj.w || 64
+    const objH = obj.height || obj.h || 64
+
     // ── 层次感碰撞逻辑（与 grassland 一致）──
     // 高大物体（树/森林）的视觉高度 >> 实际碰撞区。
     // 碰撞只覆盖物体底部占地范围。
     // 渲染时靠 Y 轴排序产生伪3D层次感（前遮后）。
-    let collW = obj.width - pad * 2
-    let collH = obj.height - pad * 2
+    let collW = objW - pad * 2
+    let collH = objH - pad * 2
     let collX = obj.x + pad
     let collY = obj.y + pad
 
     if (obj.assetKey === 'TOWN_TREE') {
       // 树：碰撞只覆盖树干部位（底部18%高度×42%宽度）
-      collH = Math.max(14, obj.height * 0.18)
-      collW = Math.max(23, obj.width * 0.42)
-      collX = obj.x + (obj.width - collW) / 2   // 水平居中
-      collY = obj.y + obj.height - collH          // 锚定在树根部
+      collH = Math.max(14, objH * 0.18)
+      collW = Math.max(23, objW * 0.42)
+      collX = obj.x + (objW - collW) / 2   // 水平居中
+      collY = obj.y + objH - collH          // 锚定在树根部
     } else if (obj.assetKey === 'TOWN_FOREST') {
       // 森林/灌木：碰撞 = 最底部树根区（20%高度×45%宽度）
       // 视觉上森林很高大，实际可通行区域应更大
-      collH = Math.max(22, obj.height * 0.20)
-      collW = Math.max(28, obj.width * 0.45)
-      collX = obj.x + (obj.width - collW) / 2
-      collY = obj.y + obj.height - collH
+      collH = Math.max(22, objH * 0.20)
+      collW = Math.max(28, objW * 0.45)
+      collX = obj.x + (objW - collW) / 2
+      collY = obj.y + objH - collH
     } else if (obj.assetKey === 'TOWN_ROCK') {
       // 石块：碰撞 = 底部 55%
-      collH = Math.max(15, obj.height * 0.55)
-      collW = Math.max(18, obj.width * 0.60)
-      collX = obj.x + (obj.width - collW) / 2
-      collY = obj.y + obj.height - collH
+      collH = Math.max(15, objH * 0.55)
+      collW = Math.max(18, objW * 0.60)
+      collX = obj.x + (objW - collW) / 2
+      collY = obj.y + objH - collH
     }
     // 建筑物保持全高全宽（玩家不能走进建筑）
 
