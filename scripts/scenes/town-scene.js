@@ -549,10 +549,10 @@ export class TownScene {
     this._renderPaths(ctx)
 
     // 3. 按图层顺序绘制地图对象
-    this._renderMapLayer(ctx, this._layerCache.bg)       // 背景层：山脉
-    this._renderMapLayer(ctx, this._layerCache.road)      // 道路层
-    this._renderMapLayer(ctx, this._layerCache.main)      // 主层：建筑、树、障碍物
-    this._renderMapLayer(ctx, this._layerCache.fg)        // 前景层：花、草装饰
+    this._renderMapLayer(ctx, this._layerCache.bg);       // 背景层：山脉
+    this._renderMapLayer(ctx, this._layerCache.road);      // 道路层
+    this._renderMapLayer(ctx, this._layerCache.main);      // 主层：建筑、树、障碍物
+    this._renderMapLayer(ctx, this._layerCache.fg);        // 前景层：花、草装饰
 
     // 3. 渲染NPC
     this._renderNPCs(ctx)
@@ -760,12 +760,22 @@ export class TownScene {
       if (objRight < viewLeft || objLeft > viewRight || objBottom < viewTop || objTop > viewBottom) continue
 
       const img = this.game.assets.get(obj.assetKey)
-      if (img) {
-        const renderX = obj.x * this.dpr - camX
-        const renderY = obj.y * this.dpr - camY
-        const renderW = obj.width * this.dpr
-        const renderH = obj.height * this.dpr
-        
+      if (!img) continue
+
+      const renderX = obj.x * this.dpr - camX
+      const renderY = obj.y * this.dpr - camY
+      const renderW = obj.width * this.dpr
+      const renderH = obj.height * this.dpr
+      const rotation = obj.rotation || 0
+
+      if (rotation !== 0) {
+        ctx.save()
+        // 将原点移到对象中心，旋转后再绘制
+        ctx.translate(renderX + renderW / 2, renderY + renderH / 2)
+        ctx.rotate(rotation * Math.PI / 180)
+        ctx.drawImage(img, -renderW / 2, -renderH / 2, renderW, renderH)
+        ctx.restore()
+      } else {
         ctx.drawImage(img, renderX, renderY, renderW, renderH)
       }
     }
