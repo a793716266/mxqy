@@ -13,6 +13,7 @@ import { charStateManager } from '../data/character-state.js'
 import { FieldMovement } from '../utils/field-movement.js'
 import { equipmentManager } from '../managers/equipment-manager.js'
 import { EquipmentPanel } from '../ui/equipment-panel.js'
+import { Renderer2D5 } from '../engine/renderer-2.5d.js'
 import {
   TOWN_MAP_CONFIG,
   TOWN_MAP_OBJECTS,
@@ -86,49 +87,11 @@ export class TownScene {
     // 初始对话
     this.introShown = this.game.data.get('introShown')
 
-    // 按对象类型分层缓存（优化渲染性能）
-    this._layerCache = null
-    this._buildLayerCache()
+    // ── 2.5D 引擎（所有地图场景共用）─
+    this._renderer2d5 = new Renderer2D5({ dpr: this.dpr, width: this.width, height: this.height })
+    this._renderer2d5.setAssets(this.game.assets)
   }
   
-  /**
-   * 按图层预分类地图对象，避免每帧遍历
-   */
-  _buildLayerCache() {
-    this._layerCache = {
-      bg: [],     // 背景层：山脉等远景
-      road: [],    // 道路层
-      main: [],    // 主层：建筑、树、障碍物
-      fg: [],     // 前景层：花、草等装饰
-    }
-    let skipped = 0
-    for (const obj of TOWN_MAP_OBJECTS) {
-      // 防御性检查：跳过 undefined 或 null 元素
-      if (!obj) {
-        console.warn('[Town] 跳过 undefined/null 地图对象')
-        skipped++
-        continue
-      }
-      
-      // 防御性检查：确保 obj 有有效的 width 和 height
-      if (obj.width === undefined || obj.height === undefined) {
-        console.warn('[Town] 地图对象缺少 width 或 height:', obj.id || 'unknown', obj)
-        // 尝试修复：设置默认值
-        obj.width = obj.width || obj.w || 64
-        obj.height = obj.height || obj.h || 64
-      }
-      
-      const layer = obj.layer || 'main'
-      if (this._layerCache[layer]) {
-        this._layerCache[layer].push(obj)
-      }
-    }
-    if (skipped > 0) {
-      console.warn(`[Town] 共跳过 ${skipped} 个无效地图对象`)
-    }
-    console.log(`[Town] 图层缓存: bg=${this._layerCache.bg.length}, road=${this._layerCache.road.length}, main=${this._layerCache.main.length}, fg=${this._layerCache.fg.length}`)
-  }
-
   _initNPCs(mapWidth, mapHeight) {
     const dpr = this.dpr
     return [
@@ -548,19 +511,11 @@ export class TownScene {
     // 2. 绘制程序化土路
     this._renderPaths(ctx)
 
-    // 3. 按图层顺序绘制地图对象
-    this._renderMapLayer(ctx, this._layerCache.bg);       // 背景层：山脉
-    this._renderMapLayer(ctx, this._layerCache.road);      // 道路层
-    this._renderMapLayer(ctx, this._layerCache.main);      // 主层：建筑、树、障碍物
-    this._renderMapLayer(ctx, this._layerCache.fg);        // 前景层：花、草装饰
-
-    // 3. 渲染NPC
-    this._renderNPCs(ctx)
+    // 3. 统一Y轴排序渲染（伪3D层次感）
+    // 地图对象、NPC、主角全部按底部Y坐标排序后绘制
+    this._renderYSortedEntities(ctx)
     
-    // 4. 渲染主角和队友
-    this.movement.renderCharacters(ctx)
-    
-    // 5. 渲染摇杆
+    // 4. 渲染摇杆
     this.movement.renderJoystick(ctx)
     
     // 6. UI元素
@@ -740,80 +695,60 @@ export class TownScene {
   }
 
   /**
-   * 渲染一个图层中的所有地图对象
+   * 统一Y轴排序渲染 — 使用 Renderer2D5 引擎
+   *
+   * 渲染流程由引擎统一管理，scene 只负责提供实体数据。
+   * 地图对象、NPC、玩家全部按底部Y坐标排序后绘制。
    */
-  _renderMapLayer(ctx, layerObjects) {
-    const camX = this.movement.cameraX
-    const camY = this.movement.cameraY
-    const viewLeft = camX - 100
-    const viewRight = camX + this.width + 100
-    const viewTop = camY - 100
-    const viewBottom = camY + this.height + 100
+  _renderYSortedEntities(ctx) {
+    const engine = this._renderer2d5
+    const self = this
+    engine.setCamera(this.movement.cameraX, this.movement.cameraY)
+    engine.clear()
 
-    for (const obj of layerObjects) {
-      // 视野裁剪
-      const objRight = obj.x * this.dpr + obj.width * this.dpr
-      const objBottom = obj.y * this.dpr + obj.height * this.dpr
-      const objLeft = obj.x * this.dpr
-      const objTop = obj.y * this.dpr
-      
-      if (objRight < viewLeft || objLeft > viewRight || objBottom < viewTop || objTop > viewBottom) continue
+    // ── 遍历所有地图对象，根据 obj.layer 设置图层 ──
+    for (const obj of TOWN_MAP_OBJECTS) {
+      // 根据 obj.layer 确定图层
+      // fg层降低层级，与road层差不多（都是layer 1），避免遮挡过多
+      let layer = 2 // 默认 layer=2（main）
+      if (obj.layer === 'bg') layer = 0
+      else if (obj.layer === 'road') layer = 1
+      else if (obj.layer === 'fg') layer = 1  // 修改：从3降为1，与road同层
 
-      const img = this.game.assets.get(obj.assetKey)
-      if (!img) continue
-
-      const renderX = obj.x * this.dpr - camX
-      const renderY = obj.y * this.dpr - camY
-      const renderW = obj.width * this.dpr
-      const renderH = obj.height * this.dpr
-      const rotation = obj.rotation || 0
-
-      if (rotation !== 0) {
-        ctx.save()
-        // 将原点移到对象中心，旋转后再绘制
-        ctx.translate(renderX + renderW / 2, renderY + renderH / 2)
-        ctx.rotate(rotation * Math.PI / 180)
-        ctx.drawImage(img, -renderW / 2, -renderH / 2, renderW, renderH)
-        ctx.restore()
+      // 根据类型添加到引擎
+      if (obj.type === MAP_OBJ_TYPE.DECORATION) {
+        engine.addDecoration(obj, { layer })
       } else {
-        ctx.drawImage(img, renderX, renderY, renderW, renderH)
+        engine.addObstacle(obj, { layer })
       }
     }
-  }
-  
-  _renderNPCs(ctx) {
-    for (const npc of this.npcs) {
-      const screenPos = this.movement.worldToScreen(npc.x, npc.y)
-      
-      if (screenPos.x < -100 || screenPos.x > this.width + 100 ||
-          screenPos.y < -100 || screenPos.y > this.height + 100) {
-        continue
+
+    // ── layer=2：NPC─
+    if (this.npcs && Array.isArray(this.npcs)) {
+      for (const npc of this.npcs) {
+        const screenPos = this.movement.worldToScreen(npc.x, npc.y)
+        engine.addNPC(npc, { x: screenPos.x, y: screenPos.y }, {
+          dpr: this.dpr,
+          nearbyNPC: this.nearbyNPC
+        })
       }
-      
-      // 互动范围指示
-      if (this.nearbyNPC === npc) {
-        ctx.beginPath()
-        ctx.arc(screenPos.x, screenPos.y, npc.interactionRadius, 0, Math.PI * 2)
-        ctx.fillStyle = `${npc.color}33`
-        ctx.fill()
-      }
-      
-      // NPC图标
-      ctx.font = `${40 * this.dpr}px sans-serif`
-      ctx.textAlign = 'center'
-      ctx.textBaseline = 'middle'
-      ctx.fillText(npc.sprite, screenPos.x, screenPos.y)
-      
-      // 名称标签
-      ctx.font = `bold ${14 * this.dpr}px sans-serif`
-      ctx.fillStyle = '#ffffff'
-      ctx.strokeStyle = '#000000'
-      ctx.lineWidth = 3
-      ctx.strokeText(npc.name, screenPos.x, screenPos.y - 35 * this.dpr)
-      ctx.fillText(npc.name, screenPos.x, screenPos.y - 35 * this.dpr)
     }
+
+    // ── layer=2：主角+队友（作为整体参与Y排序）─
+    if (typeof this.movement.playerX === 'number') {
+      engine.addPlayer(this.movement.playerY / this.dpr + 50, (ctx) => {
+        self.movement.renderCharacters(ctx)
+      })
+    }
+
+    // 排序 + 统一绘制（通过 hooks 处理NPC渲染）
+    engine.render(ctx, {
+      renderNPC: (ctx, npc, sx, sy, extra) => {
+        self._renderNPC(ctx, npc, sx, sy, extra)
+      }
+    })
   }
-  
+
   _renderInteractionTip(ctx) {
     const tipY = 100 * this.dpr
     
@@ -826,6 +761,40 @@ export class TownScene {
     const text = `点击与 ${this.nearbyNPC.name} 互动`
     ctx.strokeText(text, this.width / 2, tipY)
     ctx.fillText(text, this.width / 2, tipY)
+  }
+
+  /**
+   * 渲染单个NPC（供 Renderer2D5 引擎调用）
+   * @param {CanvasRenderingContext2D} ctx
+   * @param {Object} npc      NPC数据对象
+   * @param {number} sx       屏幕X坐标
+   * @param {number} sy       屏幕Y坐标
+   * @param {Object} extra    额外参数 { nearbyNPC, dpr }
+   */
+  _renderNPC(ctx, npc, sx, sy, extra) {
+    const dpr = extra.dpr || this.dpr
+
+    // 互动范围指示
+    if (extra.nearbyNPC === npc) {
+      ctx.beginPath()
+      ctx.arc(sx, sy, npc.interactionRadius || 50 * dpr, 0, Math.PI * 2)
+      ctx.fillStyle = `${npc.color || '#ffffff'}33`
+      ctx.fill()
+    }
+
+    // NPC图标
+    ctx.font = `${40 * dpr}px sans-serif`
+    ctx.textAlign = 'center'
+    ctx.textBaseline = 'middle'
+    ctx.fillText(npc.sprite || '🐱', sx, sy)
+    
+    // 名称标签
+    ctx.font = `bold ${14 * dpr}px sans-serif`
+    ctx.fillStyle = '#ffffff'
+    ctx.strokeStyle = '#000000'
+    ctx.lineWidth = 3
+    ctx.strokeText(npc.name || 'Unknown', sx, sy - 35 * dpr)
+    ctx.fillText(npc.name || 'Unknown', sx, sy - 35 * dpr)
   }
   
   _renderDialogue(ctx) {

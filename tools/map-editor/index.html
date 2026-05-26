@@ -1072,8 +1072,8 @@ function snapToTile(v, tileSize) {
 
 function hitTest(x, y) {
   if (!currentMap) return null;
-  // 按图层从上到下检测（fg先命中）
-  const layerOrder = { fg: 3, main: 2, road: 1, bg: 0 };
+  // 按图层从上到下检测（fg与road同层，渲染顺序一致）
+  const layerOrder = { fg: 1, main: 2, road: 1, bg: 0 };
   const getLayerVal = (obj) => {
     const l = (obj.layer || 'main');
     return layerOrder[l] !== undefined ? layerOrder[l] : 2;
@@ -1414,7 +1414,7 @@ function updatePropertyPanel() {
     { value: 'bg',   label: '🏔️ 背景 (最底层)' },
     { value: 'road', label: '🛤️ 道路层' },
     { value: 'main', label: '🏠 主层 (默认)' },
-    { value: 'fg',   label: '🌿 前景 (最顶层)' },
+    { value: 'fg',   label: '🌿 前景 - 与道路同层' },
   ];
   layers.forEach(l => {
     const sel = layer === l.value ? ' selected' : '';
@@ -2089,7 +2089,7 @@ Editor.fillBackgroundDialog = function() {
   html += '<option value="bg" selected>🏔️ 背景层 (最底)</option>';
   html += '<option value="road">🛤️ 道路层</option>';
   html += '<option value="main">🏠 主层</option>';
-  html += '<option value="fg">🌿 前景层 (最顶)</option>';
+  html += '<option value="fg">🌿 前景层 (与道路同层)</option>';
   html += '</select>';
   html += '</div>';
 

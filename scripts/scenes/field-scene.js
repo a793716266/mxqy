@@ -3,6 +3,7 @@
  */
 
 import { ENEMIES_CH1, ENEMIES_CH2, getEnemyByLevel } from '../data/enemies.js'
+import { installFieldBattleSystem } from '../systems/field-battle-system.js'
 import { HEROES } from '../data/heroes.js'
 import { getMapCollisionsSync } from '../data/map_collisions.js'
 import { isPointInObstacle as _isPointInGrasslandObstacle, generateGrasslandCollisions as _genGrassCollisions, GRASSLAND_MAP_CONFIG, GRASSLAND_MAP_OBJECTS, GLAND_OBJ_TYPE } from '../data/grassland-map-data.js'
@@ -99,6 +100,19 @@ export class FieldScene extends SceneBase {
     
     // 战斗触发标志（防止重复触发）
     this.isEnteringBattle = false
+    
+    // ★ 新增：ARPG战斗系统（在地图上直接战斗）
+    this.battleSystem = {
+      active: false,          // 是否处于战斗状态
+      attackButton: null,     // 攻击按钮
+      skillButtons: [],       // 技能按钮
+      playerAttackCD: 0,     // 玩家攻击冷却
+      playerAttackInterval: 1000, // 玩家攻击间隔（毫秒）
+      damageTexts: [],       // 伤害数字数组
+      battleTarget: null,     // 当前战斗目标
+      attackRange: 80,       // 玩家攻击范围（像素）
+      showBattleUI: false     // 是否显示战斗UI
+    }
 
     // 地图怪物（尝试恢复保存的状态，每个副本独立保存）
     const savedMonsters = this.game.data.get(`fieldMonsters_${this.areaId}`)
@@ -653,6 +667,11 @@ export class FieldScene extends SceneBase {
       }
     }
 
+    // ★ 新增：更新战斗系统
+    if (this.battleSystem.active) {
+      this._updateBattleSystem(dt)
+    }
+
     // 更新队友跟随
     this._updateFollowers(dt)
 
@@ -1040,23 +1059,205 @@ export class FieldScene extends SceneBase {
     // 如果已经在进入战斗，不再检测
     if (this.isEnteringBattle) return
     
+    // ★ 新增：如果已经处于战斗状态，不再检测碰撞
+    if (this.battleSystem.active) return
+    
     if (!this.mapMonsters || !Array.isArray(this.mapMonsters)) return
-
+    
     const playerRadius = 30 * this.dpr
     const monsterRadius = 35 * this.dpr
-
+    
     for (const monster of this.mapMonsters) {
       if (!monster.alive) continue
-
+      
       const dist = Math.sqrt(
         (this.playerX - monster.x) ** 2 + (this.playerY - monster.y) ** 2
       )
-
-      // 碰撞检测
+      
+      // 碰撞检测 - 现在直接在地图上触发战斗
       if (dist < playerRadius + monsterRadius) {
-        this._triggerBattle(monster)
+        this._startFieldBattle(monster)
         break
       }
+    }
+  }
+  
+  /**
+   * ★ 新增：在地图上直接开始战斗（不切换场景）
+   */
+  _startFieldBattle(monster) {
+    // 标记正在进入战斗，防止重复触发
+    if (this.isEnteringBattle) return
+    this.isEnteringBattle = true
+    
+    console.log(`[Field-Battle] 开始地图战斗 - 怪物: ${monster.name}`)
+    
+    // 设置战斗目标
+    this.battleSystem.battleTarget = monster
+    this.battleSystem.active = true
+    this.battleSystem.showBattleUI = true
+    
+    // 初始化战斗UI
+    this._initBattleUI()
+    
+    // 重置进入战斗标志（允许战斗结束后再次触发）
+    setTimeout(() => {
+      this.isEnteringBattle = false
+    }, 1000)
+  }
+  
+  /**
+   * ★ 新增：初始化战斗UI（攻击按钮、技能按钮等）
+   */
+  _initBattleUI() {
+    const btnSize = 50 * this.dpr
+    const margin = 20 * this.dpr
+    
+    // 攻击按钮（右下角）
+    this.battleSystem.attackButton = {
+      x: this.width - btnSize - margin,
+      y: this.height - btnSize - margin - 60 * this.dpr, // 在摇杆上方
+      width: btnSize,
+      height: btnSize,
+      text: '⚔️',
+      cooldown: 0,
+      active: true
+    }
+    
+    // 技能按钮（攻击按钮上方）
+    this.battleSystem.skillButtons = []
+    const skills = this.party[0]?.skills || []
+    skills.forEach((skill, index) => {
+      this.battleSystem.skillButtons.push({
+        x: this.width - btnSize - margin,
+        y: this.height - btnSize - margin - 60 * this.dpr - (index + 1) * (btnSize + 10 * this.dpr),
+        width: btnSize,
+        height: btnSize,
+        text: skill.name,
+        skill: skill,
+        cooldown: 0,
+        active: true,
+        index: index
+      })
+    })
+    
+    console.log(`[Field-Battle] 战斗UI初始化完成，技能数量: ${skills.length}`)
+  }
+
+  /**
+   * ★ 新增：更新战斗系统
+   */
+  _updateBattleSystem(dt) {
+    if (!this.battleSystem.active) return
+
+    // 1. 更新玩家攻击冷却
+    if (this.battleSystem.playerAttackCD > 0) {
+      this.battleSystem.playerAttackCD -= dt * 1000
+    }
+
+    // 2. 更新伤害数字
+    this._updateFieldDamageTexts(dt)
+
+    // 3. 检查战斗目标是否还存活
+    if (this.battleSystem.battleTarget && !this.battleSystem.battleTarget.alive) {
+      console.log(`[Field-Battle] 战斗目标 ${this.battleSystem.battleTarget.name} 已被击败`)
+      this._endFieldBattle(true)
+    }
+
+    // 4. 检查玩家是否死亡
+    const mainHero = this.party[0]
+    if (mainHero && mainHero.hp <= 0) {
+      console.log(`[Field-Battle] 玩家 ${mainHero.name} 已死亡`)
+      this._endFieldBattle(false)
+    }
+  }
+
+  /**
+   * ★ 新增：结束地图战斗
+   */
+  _endFieldBattle(victory) {
+    console.log(`[Field-Battle] 战斗结束，胜利: ${victory}`)
+    
+    if (victory) {
+      // 战斗胜利，标记怪物死亡
+      if (this.battleSystem.battleTarget) {
+        this.battleSystem.battleTarget.alive = false
+      }
+      // 显示胜利消息
+      this.game.showToast && this.game.showToast('战斗胜利！')
+    } else {
+      // 战斗失败，玩家死亡
+      // 重置玩家HP
+      this.party.forEach(hero => {
+        hero.hp = hero.maxHp
+      })
+      this.game.showToast && this.game.showToast('战斗失败，已恢复HP')
+    }
+
+    // 重置战斗系统
+    this.battleSystem.active = false
+    this.battleSystem.battleTarget = null
+    this.battleSystem.showBattleUI = false
+    this.battleSystem.attackButton = null
+    this.battleSystem.skillButtons = []
+    this.battleSystem.damageTexts = []
+
+    // 保存怪物状态
+    this.game.data.set(`fieldMonsters_${this.areaId}`, this.mapMonsters)
+  }
+
+  /**
+   * ★ 新增：更新伤害数字
+   */
+  _updateFieldDamageTexts(dt) {
+    if (!this.battleSystem.damageTexts || !Array.isArray(this.battleSystem.damageTexts)) return
+
+    for (let i = this.battleSystem.damageTexts.length - 1; i >= 0; i--) {
+      const item = this.battleSystem.damageTexts[i]
+      item.life -= dt
+      item.y -= 30 * dt // 上升效果
+
+      if (item.life <= 0) {
+        this.battleSystem.damageTexts.splice(i, 1)
+      }
+    }
+  }
+
+  /**
+   * ★ 新增：玩家攻击怪物
+   */
+  _playerAttackMonster(monster) {
+    if (!monster || !monster.alive) return
+    if (this.battleSystem.playerAttackCD > 0) return
+
+    const mainHero = this.party[0]
+    if (!mainHero) return
+
+    // 计算伤害
+    const damage = Math.max(1, mainHero.atk - Math.floor(monster.def * 0.5))
+    monster.hp = Math.max(0, monster.hp - damage)
+
+    // 添加伤害数字
+    const screenX = monster.x - this.cameraX
+    const screenY = monster.y - this.cameraY
+    this.battleSystem.damageTexts.push({
+      text: `-${damage}`,
+      x: screenX,
+      y: screenY - 40 * this.dpr,
+      color: '#ff4757',
+      life: 1.0
+    })
+
+    // 设置攻击冷却
+    this.battleSystem.playerAttackCD = this.battleSystem.playerAttackInterval
+
+    console.log(`[Field-Battle] ${mainHero.name} 攻击 ${monster.name}，造成 ${damage} 点伤害，剩余HP: ${monster.hp}`)
+
+    // 检查怪物是否死亡
+    if (monster.hp <= 0) {
+      monster.alive = false
+      console.log(`[Field-Battle] ${monster.name} 被击败！`)
+      this.battleSystem.battleTarget = null
     }
   }
 
@@ -1412,6 +1613,11 @@ export class FieldScene extends SceneBase {
 
     // 调试：显示碰撞区域（临时开启用于排查问题）
     this._renderObstacles(ctx)
+
+    // ★ 新增：渲染战斗UI
+    if (this.battleSystem && this.battleSystem.showBattleUI) {
+      this._renderBattleUI(ctx)
+    }
   }
 
   /**
@@ -2220,8 +2426,10 @@ export class FieldScene extends SceneBase {
         ctx.font = `${12 * this.dpr}px sans-serif`
         ctx.fillStyle = '#ff0000'
         ctx.textAlign = 'center'
-        ctx.fillText(obstacle.name || '障碍', screenX, screenY)
-      }
+      ctx.fillText(obstacle.name || '障碍', screenX, screenY)
     }
   }
 }
+
+// 安装野外战斗系统
+installFieldBattleSystem(FieldScene)

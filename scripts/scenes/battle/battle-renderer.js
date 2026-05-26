@@ -5,7 +5,7 @@
  * 从 battle-scene.js 提取：
  * - render() 主入口
  * - 围栏绘制
- * - _buildBattleEntities / _renderCollisionDebug
+ * - _buildBattleEntities
  * - _renderBattleHeroSprite / _renderEnemyUI / _drawEnemySprite
  * - _renderEnemySprites (legacy)
  * - _renderAutoBattleUI / _renderFleeButton
@@ -338,9 +338,6 @@ export function installBattleRenderer(BattleSceneClass) {
     this._buildBattleEntities()
     this._renderEngine.render(ctx)
 
-    // 碰撞调试
-    this._renderCollisionDebug(ctx)
-
     // ★ 闪白效果渲染（Flash White）
     this._renderFlashWhite(ctx)
 
@@ -529,48 +526,6 @@ export function installBattleRenderer(BattleSceneClass) {
         render(ctx, e) { self._renderBattleHeroSprite(ctx, e) }
       })
     }
-  }
-
-  // ======== 碰撞调试 ========
-  proto._renderCollisionDebug = function(ctx) {
-    const physics = this._physics
-    physics.clearUnits()
-    const dpr = this.dpr
-
-    for (const area of this.heroAreas) {
-      const hero = area.hero
-      if (!hero || hero.hp <= 0) continue
-      const uState = this.unitStates[hero.id]
-      if (!uState) continue
-      const isInBattlePhase = (this.phase === 'auto_battle' || this.phase === 'animating')
-      if (!isInBattlePhase) continue
-      physics.addUnit(uState)
-    }
-
-    for (let i = 0; i < this.enemies.length; i++) {
-      const enemy = this.enemies[i]
-      if (enemy.hp <= 0) continue
-      const estate = this.unitStates['enemy_' + i]
-      if (!estate) {
-        const pos = this.enemyPositions?.[i]
-        if (!pos) continue
-          // 碰撞半径与 battle-combat.js 保持一致（视觉尺寸的 ~45%）
-          physics.addUnit({
-            x: pos.x, y: pos.y,
-            radius: (enemy.isBoss ? 28 : 16) * dpr,
-          footOffsetY: 0,
-          isBoss: !!enemy.isBoss,
-          id: 'enemy_' + i,
-          faction: 'enemy',
-          state: 'idle',
-        })
-      } else {
-        physics.addUnit(estate)
-      }
-    }
-
-    physics.debugMode = true
-    physics.renderDebug(ctx, { showUnits: true, showBounds: false, showObstacles: false })
   }
 
   // ======== 闪白效果渲染（Flash White）========

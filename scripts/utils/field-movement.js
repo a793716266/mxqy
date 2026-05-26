@@ -46,11 +46,11 @@ export class FieldMovement {
     this.joystick = { active: false, touchId: null, currentX: 0, currentY: 0 }
     this.joystickConfig = null
     
-    // 队友跟随系统
+    // 队友跟随系统（新逻辑：每个队友跟随前方队友）
     this.followers = []
-    this.followerDistance = 35 * this.dpr
-    this.playerHistory = []
-    this.historyMaxLength = 90
+    this.followerSpacing = 60 * this.dpr  // 队友之间的最小间距
+    this.playerHistory = []  // 保留以防其他地方使用
+    this.historyMaxLength = 120
     this.historyInterval = 3
     this.historyFrameCount = 0
     
@@ -199,7 +199,11 @@ export class FieldMovement {
           this.facingLeft = dx < 0 // 向左移动时 facingLeft 为 true
         } else {
           this.playerDirection = dy > 0 ? 'down' : 'up'
-          // 上下移动时不改变水平朝向
+          // 上下移动时，如果水平分量超过死区，也更新水平朝向
+          // 这样斜方向切换时不会出现倒着走的情况
+          if (Math.abs(dx) > this.joystickConfig.deadZone) {
+            this.facingLeft = dx < 0
+          }
         }
       }
 
@@ -282,6 +286,7 @@ export class FieldMovement {
   
   /**
    * 初始化跟随队友
+   * 新逻辑：队友排成一列，每个跟随前一个
    */
   _initFollowers() {
     const allChars = charStateManager.getAllCharacters()
@@ -290,8 +295,9 @@ export class FieldMovement {
     for (let i = 1; i < allChars.length; i++) {
       this.followers.push({
         character: allChars[i],
-        x: this.playerX - i * this.followerDistance,
-        y: this.playerY,
+        // 初始位置：在主角后方 followerspacing 距离
+        x: this.playerX - (i * this.followerSpacing),
+        y: this.playerY + (i % 2 === 0 ? -20 * this.dpr : 20 * this.dpr),  // 错开Y轴避免重叠
         animFrame: 0,
         animTimer: 0,
         isMoving: false,
@@ -301,73 +307,115 @@ export class FieldMovement {
       })
     }
     
-    console.log(`[FieldMovement] 初始化了 ${this.followers.length} 个跟随队友`)
+    console.log(`[FieldMovement] 初始化了 ${this.followers.length} 个跟随队友，间距: ${this.followerSpacing}`)
   }
   
   /**
    * 更新队友跟随
+   * 新逻辑：每个队友跟随前方队友（或主角），保持固定间距
    */
   _updateFollowers(dt) {
     if (this.followers.length === 0) return
 
-    // 记录主角位置历史（每3帧记录一次，避免太密集）
-    this.historyFrameCount++
-    if (this.historyFrameCount >= this.historyInterval) {
-      this.historyFrameCount = 0
-      this.playerHistory.unshift({
-        x: this.playerX,
-        y: this.playerY,
-        facingLeft: this.facingLeft
-      })
-      
-      // 限制历史长度
-      if (this.playerHistory.length > this.historyMaxLength) {
-        this.playerHistory.pop()
-      }
-    }
-
-    // 每个队友跟随不同的历史位置
+    // 依次更新每个队友（从第一个开始，确保顺序正确）
     for (let i = 0; i < this.followers.length; i++) {
       const follower = this.followers[i]
       
-      // 计算队友应该在的历史位置索引
-      const historyIndex = Math.min((i + 1) * 10, this.playerHistory.length - 1)
+      // 目标位置：前方队友或主角
+      let targetX, targetY, targetFacingLeft
+      if (i === 0) {
+        // 第一个队友跟随主角
+        targetX = this.playerX
+        targetY = this.playerY
+        targetFacingLeft = this.facingLeft
+      } else {
+        // 后续队友跟随前一个队友
+        const prevFollower = this.followers[i - 1]
+        targetX = prevFollower.x
+        targetY = prevFollower.y
+        targetFacingLeft = prevFollower.facingLeft
+      }
       
-      if (historyIndex >= 0 && this.playerHistory.length > 0) {
-        const targetPos = this.playerHistory[historyIndex]
+      // 计算期望位置（在目标后方 followerspacing 距离）
+      // 根据目标的朝向，计算后方位置
+      let desiredX, desiredY
+      if (targetFacingLeft) {
+        // 目标面向左，队友应该在目标右边
+        desiredX = targetX + this.followerSpacing
+        desiredY = targetY
+      } else {
+        // 目标面向右，队友应该在目标左边
+        desiredX = targetX - this.followerSpacing
+        desiredY = targetY
+      }
+      
+      // 平滑移动到期望位置
+      const dx = desiredX - follower.x
+      const dy = desiredY - follower.y
+      const dist = Math.sqrt(dx * dx + dy * dy)
+      
+      // 判断是否需要移动
+      // 条件1：距离大于停止阈值
+      // 条件2：主角还在移动，或者距离还比较大（避免停止后队友跑太远）
+      const stopThreshold = 10 * this.dpr
+      const shouldMove = dist > stopThreshold && (this._effectiveMoving || dist > this.followerSpacing * 1.5)
+      
+      if (shouldMove) {
+        const speed = this.playerSpeed * 0.95
+        const moveX = (dx / dist) * speed * dt
+        const moveY = (dy / dist) * speed * dt
         
-        // 平滑移动到目标位置
-        const dx = targetPos.x - follower.x
-        const dy = targetPos.y - follower.y
-        const dist = Math.sqrt(dx * dx + dy * dy)
-        
-        // 如果距离大于阈值，移动队友
-        if (dist > 10 * this.dpr) {
-          const speed = this.playerSpeed * 0.95
-          const moveX = (dx / dist) * speed * dt
-          const moveY = (dy / dist) * speed * dt
-          
-          follower.x += moveX
-          follower.y += moveY
-          follower.facingLeft = targetPos.facingLeft
-          follower.isMoving = true
+        follower.x += moveX
+        follower.y += moveY
+        follower.facingLeft = targetFacingLeft
+        follower.isMoving = true
 
-          // 队友边界限制（防止跑出地图）
-          const fMargin = this.playerRadius * 0.8
-          follower.x = Math.max(fMargin, Math.min(this.mapWidth - fMargin, follower.x))
-          follower.y = Math.max(fMargin, Math.min(this.mapHeight - fMargin, follower.y))
-        } else {
-          // 距离足够近，且主角已停止移动时，才让队友也停止
-          // 使用主角的_effectiveMoving判断，避免循环依赖
-          if (!this._effectiveMoving) {
-            const wasMoving = follower.isMoving
-            follower.isMoving = false
+        // 队友边界限制（防止跑出地图）
+        const fMargin = this.playerRadius * 0.8
+        follower.x = Math.max(fMargin, Math.min(this.mapWidth - fMargin, follower.x))
+        follower.y = Math.max(fMargin, Math.min(this.mapHeight - fMargin, follower.y))
+      } else {
+        // 距离足够近，停止移动
+        const wasMoving = follower.isMoving
+        follower.isMoving = false
+        
+        if (wasMoving && !follower.isMoving) {
+          follower.animFrame = 0
+          follower.animTimer = 0
+        }
+      }
+      
+      // 防重叠检测（只在移动时执行，避免振荡）
+      if (follower.isMoving || follower._effectiveMoving) {
+        // 队友之间的防重叠检测
+        for (let j = 0; j < i; j++) {
+          const other = this.followers[j]
+          const sepDx = follower.x - other.x
+          const sepDy = follower.y - other.y
+          const sepDist = Math.sqrt(sepDx * sepDx + sepDy * sepDy)
+          
+          // 如果距离太近，推开
+          if (sepDist < this.followerSpacing && sepDist > 0) {
+            const pushForce = (this.followerSpacing - sepDist) / 2
+            const pushX = (sepDx / sepDist) * pushForce
+            const pushY = (sepDy / sepDist) * pushForce
             
-            if (wasMoving && !follower.isMoving) {
-              follower.animFrame = 0
-              follower.animTimer = 0
-            }
+            follower.x += pushX
+            follower.y += pushY
+            other.x -= pushX
+            other.y -= pushY
           }
+        }
+        
+        // 队友与主角之间的防重叠检测
+        const playerDx = follower.x - this.playerX
+        const playerDy = follower.y - this.playerY
+        const playerDist = Math.sqrt(playerDx * playerDx + playerDy * playerDy)
+        
+        if (playerDist < this.followerSpacing && playerDist > 0) {
+          const pushForce = (this.followerSpacing - playerDist) / 2
+          follower.x += (playerDx / playerDist) * pushForce
+          follower.y += (playerDy / playerDist) * pushForce
         }
       }
       

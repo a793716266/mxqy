@@ -1,13 +1,3 @@
-// ===== BATTLE-TEST-LOGGER =====
-const __battleTestLog = (category, data) => {
-  if (typeof cc !== 'undefined' && cc.log) {
-    cc.log('[BATTLE-TEST][' + category + '] ' + JSON.stringify(data));
-  } else if (typeof console !== 'undefined') {
-    console.log('[BATTLE-TEST][' + category + ']', JSON.stringify(data));
-  }
-};
-// ===== END BATTLE-TEST-LOGGER =====
-
 /**
  * tower-combat.js - 战斗核心逻辑
  *
@@ -45,13 +35,6 @@ function calcDamage(atk, def, isMagic = false) {
 
 /** 应用伤害到目标（含特殊状态免疫判定 + 减伤debuff） */
 function applyDamage(battle, target, type, dmg) {
-  __battleTestLog('DAMAGE', {
-    target: target.name || target.type,
-    targetType: target.currentHp !== undefined ? 'character' : 'monster',
-    damageType: type,
-    damage: dmg,
-    hpBefore: target.currentHp || target.hp
-  });
   if (!isFinite(dmg)) dmg = 0
 
   // 已死亡目标不再受伤
@@ -284,13 +267,6 @@ function getEffectiveMatk(char) {
 
 /** 施放Buff技能（战吼/狂暴/二档） */
 function applyBuffSkill(battle, char, skill) {
-  __battleTestLog('BUFF_APPLY', {
-    target: char.name || char.heroType,
-    skillId: skill.id,
-    skillType: skill.type,
-    buffType: skill.buffType,
-    source: skill.source || 'unknown'
-  });
   const cfg = BUFF_CONFIG[skill.id]
   if (!cfg) { console.warn(`[Tower] \u26A0\uFE0F 未知buff技能: ${skill.id}`); return }
 
@@ -435,12 +411,6 @@ function updateBuffs(battle, dtMs) {
  * ★ 统一入口：AI自动施法 + 玩家手动施法都走这个函数
  */
 function castSkill(battle, char, skillIdx) {
-  __battleTestLog('SKILL_CAST', {
-    caster: char.name || char.heroType,
-    skillIdx: skillIdx,
-    mp: char.mp,
-    isCasting: char.isCasting
-  });
   const sk = char.skills[skillIdx]; if (!sk) return
   console.log(`[Tower] 施放技能: ${sk.name} (id=${sk.id}, type=${sk.type})`)
 

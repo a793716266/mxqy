@@ -143,13 +143,6 @@ function updateCharacters(battle, dt) {
 // ========== 法师AI风筝 ==========
 
 function runMageKitingAI(battle, c, enemy, dt, isMoving) {
-  __battleTestLog('AI_MAGE', {
-    character: c.name || c.heroType,
-    state: c.animState,
-    targetX: c.targetX,
-    targetY: c.targetY,
-    attackTimer: c.attackTimer
-  });
   const eDx = enemy.obj.x - c.x, eDy = enemy.obj.y - c.y
   const eDist = Math.sqrt(eDx*eDx + eDy*eDy)
 
@@ -306,12 +299,6 @@ function runMeleeAI(battle, c, enemy, dt, isMoving) {
 
 /** 近战/远程角色自动普通攻击 */
 function charAutoAttack(battle, c, target) {
-  __battleTestLog('CHAR_ATTACK', {
-    character: c.name || c.heroType,
-    target: target.type || target.name,
-    targetHp: target.hp || target.currentHp,
-    attackTimer: c.attackTimer
-  });
   if (!target || target.isDead) return
   const Combat = require('./tower-combat.js')
   
@@ -422,17 +409,6 @@ function roundRect(ctx,x,y,w,h,r){
 }
 
 
-
-
-// ===== BATTLE-TEST-LOGGER (injected) =====
-const __battleTestLog = (category, data) => {
-  if (typeof cc !== 'undefined' && cc.log) {
-    cc.log('[BATTLE-TEST][' + category + '] ' + JSON.stringify(data));
-  } else if (typeof console !== 'undefined') {
-    console.log('[BATTLE-TEST][' + category + ']', JSON.stringify(data));
-  }
-};
-// ===== END BATTLE-TEST-LOGGER =====
 
 module.exports = {
   updateCharacters,

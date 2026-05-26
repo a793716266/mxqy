@@ -473,14 +473,8 @@ export function installBattleCombat(BattleSceneClass) {
             }
 
             if (dist > eSpeed2) {
-              let nx = estate.x + (dx / dist) * eSpeed2
-              let ny = estate.y + (dy / dist) * eSpeed2
-              const blocked = this._getMovementBlocker(estate, nx, ny)
-              if (blocked) {
-                const slide = this._slideAround(estate, nx, ny, dx / dist, dy / dist, eSpeed2, blocked)
-                nx = slide.x; ny = slide.y
-              }
-              estate.x = nx; estate.y = ny
+              estate.x = estate.x + (dx / dist) * eSpeed2
+              estate.y = estate.y + (dy / dist) * eSpeed2
             } else {
               estate.x = estate.targetX
               estate.y = estate.targetY
@@ -495,14 +489,8 @@ export function installBattleCombat(BattleSceneClass) {
           const erDist = Math.sqrt(erx * erx + ery * ery)
           const eReturnSpeed = this._getMoveSpeed(enemy) * 1.15 * effectiveDt
           if (erDist > eReturnSpeed) {
-            let nx = estate.x + (erx / erDist) * eReturnSpeed
-            let ny = estate.y + (ery / erDist) * eReturnSpeed
-            const blocked = this._getMovementBlocker(estate, nx, ny)
-            if (blocked) {
-              const slide = this._slideAround(estate, nx, ny, erx / erDist, ery / erDist, eReturnSpeed, blocked)
-              nx = slide.x; ny = slide.y
-            }
-            estate.x = nx; estate.y = ny
+            estate.x = estate.x + (erx / erDist) * eReturnSpeed
+            estate.y = estate.y + (ery / erDist) * eReturnSpeed
           } else {
             estate.x = estate.baseX
             estate.y = estate.baseY
@@ -525,14 +513,8 @@ export function installBattleCombat(BattleSceneClass) {
           const fdy = estate.targetY - estate.y
           const fdist = Math.sqrt(fdx * fdx + fdy * fdy)
           if (fdist > fleeSpeed) {
-            let nx = estate.x + (fdx / fdist) * fleeSpeed
-            let ny = estate.y + (fdy / fdist) * fleeSpeed
-            const blocked = this._getMovementBlocker(estate, nx, ny)
-            if (blocked) {
-              const slide = this._slideAround(estate, nx, ny, fdx / fdist, fdy / fdist, fleeSpeed, blocked)
-              nx = slide.x; ny = slide.y
-            }
-            estate.x = nx; estate.y = ny
+            estate.x = estate.x + (fdx / fdist) * fleeSpeed
+            estate.y = estate.y + (fdy / fdist) * fleeSpeed
           } else {
             estate.x = estate.targetX
             estate.y = estate.targetY
@@ -552,10 +534,7 @@ export function installBattleCombat(BattleSceneClass) {
       }
     }
 
-    // ★ P3-19: 只做一次碰撞分离，且排除攻击中的单位
-    this._applyCollisionSeparation()
-
-    // ★ P3-19: 攻击中单位不参与碰撞，无需还原位置
+    // ★ 碰撞分离已禁用
   }
 
   // ======== 距离/范围判断 ========
@@ -796,17 +775,8 @@ export function installBattleCombat(BattleSceneClass) {
         const ratio = clampedDist / jc.maxOffset
         const speed = heroSpeed * ratio * this.battleSpeed
 
-        let nx = state.x + (dx / dist) * speed
-        let ny = state.y + (dy / dist) * speed
-
-        // 碰撞检测
-        const blocked = this._getMovementBlocker(state, nx, ny)
-        if (blocked) {
-          const slide = this._slideAround(state, nx, ny, dx / dist, dy / dist, speed, blocked)
-          nx = slide.x; ny = slide.y
-        }
-
-        state.x = nx; state.y = ny
+        state.x = state.x + (dx / dist) * speed
+        state.y = state.y + (dy / dist) * speed
         this._clampToBattlefield(state)
 
         // 同步 basePosition

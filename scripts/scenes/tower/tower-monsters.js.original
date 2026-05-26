@@ -336,12 +336,6 @@ function executeMovementAndAttack(battle, m, target, dt, dist, dx, dy) {
 // ========== 怪物攻击 ==========
 
 function monsterRangedAttack(battle, monster, target, isCrystal) {
-  __battleTestLog('MONSTER_ATTACK', {
-    monster: monster.type,
-    target: target.name || target.heroType,
-    attackType: 'ranged',
-    targetHp: target.currentHp || target.hp
-  });
   const skillsFiltered = monster.skills && monster.skills.length > 0
     ? monster.skills.filter(s => !s.mpCost || Math.random() > 0.25)
     : []
@@ -403,12 +397,6 @@ function monsterRangedAttack(battle, monster, target, isCrystal) {
 }
 
 function monsterMeleeAttack(battle, monster, target, isCrystal) {
-  __battleTestLog('MONSTER_ATTACK', {
-    monster: monster.type,
-    target: target.name || target.heroType,
-    attackType: 'melee',
-    targetHp: target.currentHp || target.hp
-  });
   let baseDmg = Math.max(1, monster.atk - (target.def || 0) * 0.5)
   const finalDmg = Math.floor(baseDmg * (0.85 + Math.random() * 0.3))
 
@@ -786,17 +774,6 @@ function updateMonsterAnim(m, dt) {
   m.animTimer += dt
   if (m.animTimer >= rate) { m.animTimer = 0; m.animFrame = (m.animFrame + 1) % frames.length }
 }
-
-
-// ===== BATTLE-TEST-LOGGER (injected) =====
-const __battleTestLog = (category, data) => {
-  if (typeof cc !== 'undefined' && cc.log) {
-    cc.log('[BATTLE-TEST][' + category + '] ' + JSON.stringify(data));
-  } else if (typeof console !== 'undefined') {
-    console.log('[BATTLE-TEST][' + category + ']', JSON.stringify(data));
-  }
-};
-// ===== END BATTLE-TEST-LOGGER =====
 
 module.exports = {
   createMonster,

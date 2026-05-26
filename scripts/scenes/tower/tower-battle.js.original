@@ -1,14 +1,3 @@
-
-// ===== BATTLE-TEST-LOGGER (injected) =====
-const __battleTestLog = (category, data) => {
-  if (typeof cc !== 'undefined' && cc.log) {
-    cc.log('[BATTLE-TEST][' + category + '] ' + JSON.stringify(data));
-  } else if (typeof console !== 'undefined') {
-    console.log('[BATTLE-TEST][' + category + ']', JSON.stringify(data));
-  }
-};
-// ===== END BATTLE-TEST-LOGGER =====
-
 /**
  * tower-battle.js - 闯关战斗核心（重构版 - 纯调度器）
  *
@@ -325,12 +314,6 @@ class TowerBattle {
    * @param {number} dt - 时间差(ms)
    */
   update(dt) {
-    __battleTestLog('BATTLE_TICK', {
-      battleTime: this.battleTime,
-      waveIndex: this.waveIndex,
-      partyAlive: (this.party || []).filter(c => !c.isDead).length,
-      monstersAlive: (this.monsters || []).filter(m => !m.isDead).length
-    });
     if (this.phase === 'card_select') return
     if (this.phase !== 'battle' && this.phase !== 'victory' && this.phase !== 'defeat') return
 

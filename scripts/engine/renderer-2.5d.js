@@ -82,10 +82,11 @@ export class Renderer2D5 {
     if (this._outOfView(screenX, screenY, w, h, 50)) return
 
     this._entities.push({
-      layer: 0,
-      sortY: 0,
+      layer: opts.layer !== undefined ? opts.layer : 0,
+      sortY: opts.sortY !== undefined ? opts.sortY : 0,
       type: 'decoration',
       _img: img, _sx: screenX, _sy: screenY, _w: w, _h: h,
+      _rotation: obj.rotation || 0,
     })
   }
 
@@ -108,11 +109,12 @@ export class Renderer2D5 {
     if (this._outOfView(screenX, screenY, w, h, 100)) return
 
     this._entities.push({
-      layer: 2,
-      sortY: (obj.y * scale / this.dpr) + (obj.h || obj.height || 80),
+      layer: opts.layer !== undefined ? opts.layer : 2,
+      sortY: opts.sortY !== undefined ? opts.sortY : (obj.y * scale / this.dpr) + (obj.h || obj.height || 80),
       type: 'obstacle',
       name: opts.name || obj.name,
       _img: img, _sx: screenX, _sy: screenY, _w: w, _h: h,
+      _rotation: obj.rotation || 0,
     })
   }
 
@@ -216,7 +218,15 @@ export class Renderer2D5 {
       switch (e.type) {
         case 'decoration':
         case 'obstacle':
-          ctx.drawImage(e._img, e._sx, e._sy, e._w, e._h)
+          if (e._rotation) {
+            ctx.save()
+            ctx.translate(e._sx + e._w / 2, e._sy + e._h / 2)
+            ctx.rotate(e._rotation * Math.PI / 180)
+            ctx.drawImage(e._img, -e._w / 2, -e._h / 2, e._w, e._h)
+            ctx.restore()
+          } else {
+            ctx.drawImage(e._img, e._sx, e._sy, e._w, e._h)
+          }
           break
 
         case 'npc':
