@@ -2,6 +2,35 @@
 
 ## 📅 更新日志
 
+### 2026-05-26（22:30）
+
+**feat: 添加野外ARPG战斗系统（阳光草原副本模式）**：
+
+- **需求**：将阳光草原从碰怪切场景模式改为ARPG副本模式（地图上直接战斗）
+- **修改方案**：
+  1. 创建 `scripts/systems/field-battle-system.js` - 野外战斗系统（伤害计算、攻击判定、血条渲染、伤害数字）
+  2. 创建 `scripts/entities/monsters/` 目录 - 怪物配置文件（史莱姆猫、暗影鼠、BOSS艾米）
+  3. 修改 `scripts/scenes/field-scene.js` - 引入战斗系统，移除碰怪切场景逻辑
+- **新增功能**：
+  - 攻击按钮（右下角）- 点击攻击最近怪物
+  - 技能按钮（攻击按钮上方）- 点击使用技能
+  - 血条系统 - 玩家和怪物头顶显示HP条
+  - 伤害数字 - 攻击时显示伤害值（含暴击）
+  - 战斗系统 - 玩家和怪物互相攻击，HP归零则死亡
+- **修改文件**：
+  - `scripts/systems/field-battle-system.js` - 新增，野外战斗系统
+  - `scripts/entities/monsters/slime-cat.js` - 新增，史莱姆猫配置
+  - `scripts/entities/monsters/shadow-mouse.js` - 新增，暗影鼠配置
+  - `scripts/entities/monsters/lost-healer-cat.js` - 新增，BOSS艾米配置
+  - `scripts/scenes/field-scene.js` - 修改，引入战斗系统
+- **测试说明**：
+  1. 进入阳光草原，靠近怪物会自动触发战斗模式
+  2. 点击攻击按钮，玩家会攻击当前目标或最近怪物
+  3. 点击技能按钮，玩家会使用对应技能
+  4. 怪物会主动攻击玩家
+  5. 玩家和怪物头顶有血条，攻击时显示伤害数字
+  6. 玩家或怪物HP归零则死亡，战斗结束
+
 ### 2026-05-17（23:50）
 
 **debug: 添加详细调试日志，诊断敌人移动速度慢的问题**

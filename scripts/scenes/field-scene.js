@@ -440,6 +440,11 @@ export class FieldScene extends SceneBase {
     // 处理战斗结果
     this._checkBattleResult()
 
+    // 安装野外战斗系统（只执行一次）
+    if (!this.constructor._battleSystemInstalled) {
+      installFieldBattleSystem(this.constructor)
+    }
+
     // 初始化相机位置
     this._updateCamera()
 
@@ -2426,10 +2431,8 @@ export class FieldScene extends SceneBase {
         ctx.font = `${12 * this.dpr}px sans-serif`
         ctx.fillStyle = '#ff0000'
         ctx.textAlign = 'center'
-      ctx.fillText(obstacle.name || '障碍', screenX, screenY)
+        ctx.fillText(obstacle.name || '障碍', screenX, screenY)
+      }  // 结束 if (obstacle.type === 'circle')
     }
   }
 }
-
-// 安装野外战斗系统
-installFieldBattleSystem(FieldScene)

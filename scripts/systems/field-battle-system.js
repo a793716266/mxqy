@@ -3,6 +3,12 @@
  * 负责：伤害计算、攻击判定、血条渲染、伤害数字
  */
 export function installFieldBattleSystem(FieldSceneClass) {
+  // 防止重复安装
+  if (FieldSceneClass._battleSystemInstalled) {
+    console.log('[FieldBattle] 战斗系统已安装，跳过')
+    return
+  }
+
   const proto = FieldSceneClass.prototype
 
   // ==========================================================================
@@ -570,6 +576,9 @@ export function installFieldBattleSystem(FieldSceneClass) {
 
     return nearest
   }
+
+  // 标记已安装
+  FieldSceneClass._battleSystemInstalled = true
 
   console.log('[FieldBattle] 野外战斗系统安装完成')
 }
