@@ -2045,18 +2045,18 @@ export class FieldScene extends SceneBase {
     // 获取动画帧图片
     let frameImg = null
     if (monster.isMoving) {
-      if (monster.id === 'slime_cat') {
+      if (monster.enemyId === 'slime_cat') {
         frameImg = this.game.assets.get(`SLIME_CAT_WALK_${(monster.animFrame + 1).toString().padStart(2, '0')}`)
-      } else if (monster.id === 'shadow_mouse') {
+      } else if (monster.enemyId === 'shadow_mouse') {
         frameImg = this.game.assets.get(`SHADOW_MOUSE_WALK_${(monster.animFrame + 1).toString().padStart(2, '0')}`)
       } else {
         const walkKey = `CAT_WALK_${(monster.animFrame + 1).toString().padStart(2, '0')}`
         frameImg = this.game.assets.get(walkKey)
       }
     } else {
-      if (monster.id === 'slime_cat') {
+      if (monster.enemyId === 'slime_cat') {
         frameImg = this.game.assets.get(`SLIME_CAT_IDLE_${monster.animFrame + 1}`)
-      } else if (monster.id === 'shadow_mouse') {
+      } else if (monster.enemyId === 'shadow_mouse') {
         frameImg = this.game.assets.get(`SHADOW_MOUSE_IDLE_${String(monster.animFrame + 1).padStart(2, '0')}`)
       } else {
         const idleKey = `CAT_IDLE_${(monster.animFrame + 1).toString().padStart(2, '0')}`
