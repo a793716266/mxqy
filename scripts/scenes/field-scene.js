@@ -445,6 +445,17 @@ export class FieldScene extends SceneBase {
       installFieldBattleSystem(this.constructor)
     }
 
+    // 初始化战斗系统（为阳光草原副本模式准备）
+    this._initFieldBattleSystem()
+
+    // ★ 阳光草原副本模式：进入地图就激活战斗模式
+    if (this.areaId === 'grassland') {
+      console.log('[Field] 阳光草原副本模式：进入战斗状态')
+      this.battleSystem.active = true
+      this.battleSystem.showBattleUI = true
+      this._initBattleUI()
+    }
+
     // 初始化相机位置
     this._updateCamera()
 
@@ -1160,16 +1171,19 @@ export class FieldScene extends SceneBase {
       this.battleSystem.playerAttackCD -= dt * 1000
     }
 
-    // 2. 更新伤害数字
+    // 2. 更新怪物攻击（★ 新增）
+    this._updateMonsterAttack(dt)
+
+    // 3. 更新伤害数字
     this._updateFieldDamageTexts(dt)
 
-    // 3. 检查战斗目标是否还存活
+    // 4. 检查战斗目标是否还存活
     if (this.battleSystem.battleTarget && !this.battleSystem.battleTarget.alive) {
       console.log(`[Field-Battle] 战斗目标 ${this.battleSystem.battleTarget.name} 已被击败`)
       this._endFieldBattle(true)
     }
 
-    // 4. 检查玩家是否死亡
+    // 5. 检查玩家是否死亡
     const mainHero = this.party[0]
     if (mainHero && mainHero.hp <= 0) {
       console.log(`[Field-Battle] 玩家 ${mainHero.name} 已死亡`)
