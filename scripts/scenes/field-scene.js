@@ -114,6 +114,18 @@ export class FieldScene extends SceneBase {
       showBattleUI: false     // 是否显示战斗UI
     }
 
+    // ★ 强制清除旧存档（避免 NaN 数据影响测试）
+    // TODO: 测试通过后删除此代码
+    try {
+      const saved = this.game.data.get(`fieldMonsters_${this.areaId}`)
+      if (saved && Array.isArray(saved)) {
+        this.game.data.remove(`fieldMonsters_${this.areaId}`)
+        console.warn(`[Field] 已强制清除旧存档: fieldMonsters_${this.areaId}`)
+      }
+    } catch (e) {
+      console.error('[Field] 清除旧存档失败:', e)
+    }
+
     // 地图怪物（尝试恢复保存的状态，每个副本独立保存）
     const savedMonsters = this.game.data.get(`fieldMonsters_${this.areaId}`)
     console.log(`[Field] 尝试恢复区域 ${this.areaId} 的怪物状态, 已保存: ${!!savedMonsters}`)
@@ -125,6 +137,37 @@ export class FieldScene extends SceneBase {
       if (validMonsters.length === savedMonsters.length) {
         // 所有怪物都属于当前区域
         this.mapMonsters = savedMonsters
+        
+        // ★ 属性迁移：补充缺失的战斗属性（兼容旧存档）
+        this.mapMonsters.forEach(monster => {
+          if (!monster.alive) return
+          
+          // 如果缺失战斗属性，从 enemyData 补充
+          if (monster.atk === undefined || monster.def === undefined || monster.hp === undefined) {
+            const enemyData = (this.areaInfo.enemyData || ENEMIES_CH1)[monster.enemyId]
+            if (enemyData) {
+              const finalData = getEnemyByLevel(enemyData, enemyData?.level || 1)
+              monster.level = finalData.level
+              monster.maxHp = finalData.maxHp
+              monster.hp = finalData.hp
+              monster.atk = finalData.atk
+              monster.def = finalData.def
+              monster.spd = finalData.spd
+              monster.crit = finalData.crit
+              monster.aiPattern = finalData.aiPattern
+              monster.attackRange = finalData.attackRange || 80
+              monster.attackInterval = finalData.attackInterval || 2000
+              monster.skills = finalData.skills || []
+              console.log(`[Field] 迁移怪物属性: ${monster.enemyId}, atk=${monster.atk}, def=${monster.def}, hp=${monster.hp}`)
+            }
+          }
+          
+          // 确保有 attackCDTimer 属性
+          if (monster.attackCDTimer === undefined) {
+            monster.attackCDTimer = 0
+          }
+        })
+        
         const aliveCount = this.mapMonsters.filter(m => m.alive).length
         const bossCount = this.mapMonsters.filter(m => m.isBoss && m.alive).length
         console.log(`[Field] 恢复了 ${aliveCount} 只怪物，其中 ${bossCount} 只BOSS`)
@@ -333,19 +376,38 @@ export class FieldScene extends SceneBase {
         const bossX = this.mapWidth * 0.85
         const bossY = this.mapHeight * 0.08
         
+        
+        // ★ 使用 getEnemyByLevel 计算最终属性
+        const finalBossData = getEnemyByLevel(bossData, bossData?.level || 5)
+        
         monsters.push({
           id: `${this.areaId}_boss_${bossId}`,
           enemyId: bossId,
           x: bossX,
           y: bossY,
-          name: bossData.name,
+          name: finalBossData.name,
           isBoss: true,
           isElite: false,
           alive: true,
+          // ★ 战斗属性
+          level: finalBossData.level,
+          maxHp: finalBossData.maxHp,
+          hp: finalBossData.hp,
+          atk: finalBossData.atk,
+          def: finalBossData.def,
+          spd: finalBossData.spd,
+          crit: finalBossData.crit,
+          aiPattern: finalBossData.aiPattern,
+          attackRange: finalBossData.attackRange || 80,
+          attackInterval: finalBossData.attackInterval || 2000,
+          skills: finalBossData.skills || [],
+          // 动画属性
           bobOffset: 0,
           bobSpeed: 1.5,
           animTimer: 0,
           animFrame: 0,
+          attackCDTimer: 0,
+          // 怪物巡逻移动
           homeX: bossX,
           homeY: bossY,
           patrolRadius: 20 * this.dpr,
@@ -405,20 +467,36 @@ export class FieldScene extends SceneBase {
         const enemyId = this.areaInfo.enemies[Math.floor(Math.random() * this.areaInfo.enemies.length)]
         const enemyData = (this.areaInfo.enemyData || ENEMIES_CH1)[enemyId]  // 使用对应章节的敌人数据
 
+        // ★ 使用 getEnemyByLevel 计算最终属性（包含等级加成）
+        const finalEnemyData = getEnemyByLevel(enemyData, enemyData?.level || 1)
+
         monsters.push({
           id: `${this.areaId}_monster_${i}`,  // 包含区域ID前缀
           enemyId: enemyId,
           x: x,
           y: y,
-          name: (enemyData?.isBoss || enemyData?.isElite) ? (enemyData?.name || '未知怪物') : '坏猫',
-          isBoss: enemyData?.isBoss || false,
-          isElite: enemyData?.isElite || false,
+          name: finalEnemyData?.name || '坏猫',
+          isBoss: finalEnemyData?.isBoss || false,
+          isElite: finalEnemyData?.isElite || false,
           alive: true,
-          // 怪物动画
+          // ★ 战斗属性（从 finalEnemyData 复制）
+          level: finalEnemyData?.level || 1,
+          maxHp: finalEnemyData?.maxHp || 50,
+          hp: finalEnemyData?.hp || finalEnemyData?.maxHp || 50,
+          atk: finalEnemyData?.atk || 10,
+          def: finalEnemyData?.def || 5,
+          spd: finalEnemyData?.spd || 9,
+          crit: finalEnemyData?.crit || 0.05,
+          aiPattern: finalEnemyData?.aiPattern || 'normal',
+          attackRange: finalEnemyData?.attackRange || 80,
+          attackInterval: finalEnemyData?.attackInterval || 2000,
+          skills: finalEnemyData?.skills || [],
+          // 动画属性
           bobOffset: Math.random() * Math.PI * 2, // 随机浮动偏移
           bobSpeed: 2 + Math.random(), // 随机浮动速度
           animTimer: 0, // 动画计时器
           animFrame: 0, // 动画帧索引
+          attackCDTimer: 0, // 攻击冷却计时器
           // 怪物巡逻移动
           homeX: x, // 出生点（巡逻中心）
           homeY: y,
@@ -722,8 +800,8 @@ export class FieldScene extends SceneBase {
     for (const monster of this.mapMonsters) {
       if (!monster.alive) continue
 
-      // 初始化猫咪动画属性（所有普通怪物都使用坏猫动画）
-      const useCatAnim = !monster.isBoss && !monster.isElite
+      // ★ 修复：所有有动画资源的怪物都使用猫咪动画（包括精英）
+      const useCatAnim = ['slime_cat', 'shadow_mouse', 'wild_cat'].includes(monster.enemyId)
       if (useCatAnim && monster.animTimer === undefined) {
         monster.animTimer = 0
         monster.animFrame = 0
@@ -731,15 +809,53 @@ export class FieldScene extends SceneBase {
 
       // 更新猫咪动画（无论是否暂停）
       if (useCatAnim) {
-        monster.animTimer += dt
-        const frameDuration = monster.isMoving ? 0.08 : 0.15
-
-        if (monster.animTimer >= frameDuration) {
-          monster.animTimer = 0
-          if (monster.isMoving) {
-            monster.animFrame = (monster.animFrame + 1) % 12
+        // ★ 攻击动画（优先级最高）
+        if (monster.isAttacking && monster.attackAnimTimer > 0) {
+          monster.attackAnimTimer -= dt * 1000
+          
+          // 攻击动画：使用 attack 帧
+          const enemyConfig = this._getMonsterConfig(monster.enemyId)
+          if (enemyConfig && enemyConfig.animationConfig.attack) {
+            const attackConf = enemyConfig.animationConfig.attack
+            const totalFrames = attackConf.end - attackConf.start + 1
+            const progress = 1 - (monster.attackAnimTimer / 500) // 500ms 攻击动画
+            const frameIdx = Math.floor(progress * totalFrames)
+            monster.animFrame = Math.min(frameIdx, totalFrames - 1) + attackConf.start - 1
+          }
+          
+          if (monster.attackAnimTimer <= 0) {
+            monster.isAttacking = false
+            monster.attackAnimTimer = 0
+            monster.animFrame = 0
+          }
+        } else {
+          // 普通待机/移动动画
+          monster.animTimer += dt
+          
+          // ★ 根据怪物类型确定帧数
+          let walkFrames = 12
+          let idleFrames = 8
+          if (monster.enemyId === 'slime_cat') {
+            walkFrames = 12
+            idleFrames = 7  // 史莱姆猫idle只有7帧
+          } else if (monster.enemyId === 'shadow_mouse') {
+            walkFrames = 8
+            idleFrames = 6  // 暗影鼠idle只有6帧
           } else {
-            monster.animFrame = (monster.animFrame + 1) % 8
+            // wild_cat 等普通猫咪
+            walkFrames = 12
+            idleFrames = 8
+          }
+          
+          const frameDuration = monster.isMoving ? 0.08 : 0.15
+
+          if (monster.animTimer >= frameDuration) {
+            monster.animTimer = 0
+            if (monster.isMoving) {
+              monster.animFrame = (monster.animFrame + 1) % walkFrames
+            } else {
+              monster.animFrame = (monster.animFrame + 1) % idleFrames
+            }
           }
         }
       }
@@ -859,19 +975,36 @@ export class FieldScene extends SceneBase {
         const enemyId = this.areaInfo.enemies[Math.floor(Math.random() * this.areaInfo.enemies.length)]
         const enemyData = (this.areaInfo.enemyData || ENEMIES_CH1)[enemyId]  // 使用对应章节的敌人数据
 
+        // ★ 使用 getEnemyByLevel 计算最终属性（包含等级加成）
+        const finalEnemyData = getEnemyByLevel(enemyData, enemyData?.level || 1)
+
         this.mapMonsters.push({
           id: `${this.areaId}_monster_${Date.now()}_${i}`,  // 包含区域ID前缀
           enemyId: enemyId,
           x: x,
           y: y,
-          name: (enemyData?.isBoss || enemyData?.isElite) ? (enemyData?.name || '未知怪物') : '坏猫',
-          isBoss: enemyData?.isBoss || false,
-          isElite: enemyData?.isElite || false,
+          name: finalEnemyData?.name || '坏猫',
+          isBoss: finalEnemyData?.isBoss || false,
+          isElite: finalEnemyData?.isElite || false,
           alive: true,
+          // ★ 战斗属性（从 finalEnemyData 复制）
+          level: finalEnemyData?.level || 1,
+          maxHp: finalEnemyData?.maxHp || 50,
+          hp: finalEnemyData?.hp || finalEnemyData?.maxHp || 50,
+          atk: finalEnemyData?.atk || 10,
+          def: finalEnemyData?.def || 5,
+          spd: finalEnemyData?.spd || 9,
+          crit: finalEnemyData?.crit || 0.05,
+          aiPattern: finalEnemyData?.aiPattern || 'normal',
+          attackRange: finalEnemyData?.attackRange || 80,
+          attackInterval: finalEnemyData?.attackInterval || 2000,
+          skills: finalEnemyData?.skills || [],
+          // 动画属性
           bobOffset: Math.random() * Math.PI * 2,
           bobSpeed: 2 + Math.random(),
           animTimer: 0, // 动画计时器
           animFrame: 0, // 动画帧索引
+          attackCDTimer: 0, // 攻击冷却计时器
           // 怪物巡逻移动
           homeX: x,
           homeY: y,
@@ -1476,7 +1609,8 @@ export class FieldScene extends SceneBase {
     // 排序 + 统一绘制（通过 hooks 处理特殊类型）
     engine.render(ctx, {
       renderMonster: (ctx, monster, sx, sy) => {
-        const useCatAnim = !monster.isBoss && !monster.isElite
+        // ★ 修复：所有有动画资源的怪物都使用猫咪动画
+        const useCatAnim = ['slime_cat', 'shadow_mouse', 'wild_cat', 'lost_healer_cat'].includes(monster.enemyId)
         if (useCatAnim) {
           self._renderCatMonster(ctx, monster, sx, sy)
         } else {
@@ -2024,7 +2158,8 @@ export class FieldScene extends SceneBase {
       }
 
       // 所有普通怪物使用坏猫动画，Boss/精英使用emoji
-      const useCatAnim = !monster.isBoss && !monster.isElite
+      // ★ 修复：所有有动画资源的怪物都使用猫咪动画
+      const useCatAnim = ['slime_cat', 'shadow_mouse', 'wild_cat'].includes(monster.enemyId)
 
       if (useCatAnim) {
         // 使用猫咪动画渲染
@@ -2039,29 +2174,50 @@ export class FieldScene extends SceneBase {
   /**
    * 渲染猫咪怪物（使用动画帧）
    */
+  /**
+   * 渲染猫咪怪物（使用 animationConfig 配置）
+   */
   _renderCatMonster(ctx, monster, screenX, screenY) {
     const targetHeight = 80 * this.dpr // 猫咪怪物尺寸（比主角小一点）
 
-    // 获取动画帧图片
-    let frameImg = null
-    if (monster.isMoving) {
-      if (monster.enemyId === 'slime_cat') {
-        frameImg = this.game.assets.get(`SLIME_CAT_WALK_${(monster.animFrame + 1).toString().padStart(2, '0')}`)
-      } else if (monster.enemyId === 'shadow_mouse') {
-        frameImg = this.game.assets.get(`SHADOW_MOUSE_WALK_${(monster.animFrame + 1).toString().padStart(2, '0')}`)
-      } else {
-        const walkKey = `CAT_WALK_${(monster.animFrame + 1).toString().padStart(2, '0')}`
-        frameImg = this.game.assets.get(walkKey)
-      }
+    // ★ 读取怪物配置中的 animationConfig
+    const enemyConfig = this._getMonsterConfig(monster.enemyId)
+    if (!enemyConfig || !enemyConfig.animationConfig) {
+      // 配置不存在，降级到 emoji 渲染
+      this._renderEmojiMonster(ctx, monster, screenX, screenY)
+      return
+    }
+
+    // ★ 攻击动画优先级最高
+    let animType, animConf
+    if (monster.isAttacking && enemyConfig.animationConfig.attack) {
+      animType = 'attack'
+      animConf = enemyConfig.animationConfig.attack
+      // 注意：animFrame 已经在 _updateMonsters 中更新，这里不需要再更新
     } else {
-      if (monster.enemyId === 'slime_cat') {
-        frameImg = this.game.assets.get(`SLIME_CAT_IDLE_${monster.animFrame + 1}`)
-      } else if (monster.enemyId === 'shadow_mouse') {
-        frameImg = this.game.assets.get(`SHADOW_MOUSE_IDLE_${String(monster.animFrame + 1).padStart(2, '0')}`)
-      } else {
-        const idleKey = `CAT_IDLE_${(monster.animFrame + 1).toString().padStart(2, '0')}`
-        frameImg = this.game.assets.get(idleKey)
+      // 普通待机/移动动画
+      animType = monster.isMoving ? 'walk' : 'idle'
+      animConf = enemyConfig.animationConfig[animType]
+      if (!animConf) {
+        this._renderEmojiMonster(ctx, monster, screenX, screenY)
+        return
       }
+    }
+
+    // 计算当前帧号（循环）
+    const totalFrames = animConf.end - animConf.start + 1
+    const frameIdx = (monster.animFrame % totalFrames) + animConf.start
+
+    // 构建资源路径（与 animationConfig.path 一致）
+    const frameKey = this._buildFrameKey(monster.enemyId, animType, frameIdx, animConf.framePad)
+
+    // 获取动画帧图片
+    let frameImg = this.game.assets.get(frameKey)
+    if (!frameImg) {
+      // 资源未加载，降级到 emoji
+      console.warn(`[Field] 怪物 ${monster.enemyId} 的动画帧未找到: ${frameKey}`)
+      this._renderEmojiMonster(ctx, monster, screenX, screenY)
+      return
     }
 
     if (frameImg) {
@@ -2128,6 +2284,77 @@ export class FieldScene extends SceneBase {
 
     // 靠近警告
     this._renderMonsterWarning(ctx, monster, screenX, screenY, targetHeight)
+  }
+
+  /**
+   * 获取怪物配置（从 scripts/entities/monsters/ 读取）
+   */
+  _getMonsterConfig(enemyId) {
+    // 配置映射表（避免动态导入，直接映射）
+    const configMap = {
+      'slime_cat': {
+        animationConfig: {
+          idle: { start: 1, end: 7, path: 'images/characters_anim/transparent/slime_cat/idle/', framePad: 1, frameDuration: 150 },
+          walk: { start: 1, end: 12, path: 'images/characters_anim/transparent/slime_cat/walk/', framePad: 2, frameDuration: 120 },
+          attack: { start: 8, end: 22, path: 'images/characters_anim/transparent/slime_cat/attack/', frameList: [8, 10, 12, 14, 16, 18, 20, 22], framePad: 2, frameDuration: 100 },
+          hurt: { start: 1, end: 2, path: 'images/characters_anim/transparent/slime_cat/hurt/', framePad: 1, frameDuration: 80 },
+          death: { start: 1, end: 6, path: 'images/characters_anim/transparent/slime_cat/death/', framePad: 2, frameDuration: 120 },
+          skill: { start: 50, end: 80, path: 'images/characters_anim/transparent/slime_cat/skill/', frameList: [50, 53, 56, 59, 62, 65, 68, 71, 74, 77, 80], framePad: 2, frameDuration: 100 }
+        }
+      },
+      'shadow_mouse': {
+        animationConfig: {
+          idle: { start: 1, end: 6, path: 'images/characters_anim/transparent/shadow_mouse/idle/', framePad: 2, frameDuration: 150 },
+          walk: { start: 1, end: 8, path: 'images/characters_anim/transparent/shadow_mouse/walk/', framePad: 2, frameDuration: 100 },
+          attack: { start: 1, end: 7, path: 'images/characters_anim/transparent/shadow_mouse/attack/', framePad: 2, frameDuration: 80 },
+          hurt: { start: 1, end: 2, path: 'images/characters_anim/transparent/shadow_mouse/hurt/', framePad: 2, frameDuration: 80 },
+          death: { start: 1, end: 6, path: 'images/characters_anim/transparent/shadow_mouse/death/', framePad: 2, frameDuration: 120 },
+          skill: { start: 1, end: 8, path: 'images/characters_anim/transparent/shadow_mouse/skill/', framePad: 2, frameDuration: 100 }
+        }
+      },
+      'lost_healer_cat': {
+        animationConfig: {
+          idle: { start: 1, end: 8, path: 'images/characters_anim/transparent/aimi/idle/', framePad: 2, frameDuration: 150 },
+          walk: { start: 1, end: 8, path: 'images/characters_anim/transparent/aimi/walk/', framePad: 2, frameDuration: 120 },
+          attack: { start: 1, end: 8, path: 'images/characters_anim/transparent/aimi/attack/', framePad: 2, frameDuration: 100 },
+          hurt: { start: 1, end: 2, path: 'images/characters_anim/transparent/aimi/hurt/', framePad: 2, frameDuration: 80 },
+          death: { start: 1, end: 8, path: 'images/characters_anim/transparent/aimi/death/', framePad: 2, frameDuration: 150 },
+          skill: { start: 1, end: 8, path: 'images/characters_anim/transparent/aimi/skill/', framePad: 2, frameDuration: 100 },
+          buff: { start: 1, end: 8, path: 'images/characters_anim/transparent/aimi/buff/', framePad: 2, frameDuration: 100 },
+          support: { start: 1, end: 8, path: 'images/characters_anim/transparent/aimi/support/', framePad: 2, frameDuration: 100 },
+          cast: { start: 1, end: 4, path: 'images/characters_anim/transparent/aimi/cast/', framePad: 2, frameDuration: 120 }
+        }
+      },
+      'wild_cat': {
+        // 复用史莱姆猫的资源
+        animationConfig: {
+          idle: { start: 1, end: 7, path: 'images/characters_anim/transparent/slime_cat/idle/', framePad: 1, frameDuration: 150 },
+          walk: { start: 1, end: 12, path: 'images/characters_anim/transparent/slime_cat/walk/', framePad: 2, frameDuration: 120 }
+        }
+      }
+    }
+    
+    return configMap[enemyId] || null
+  }
+
+  /**
+   * 构建资源键（与 asset-manager.js 中的 buildFrames 逻辑一致）
+   */
+  _buildFrameKey(enemyId, animType, frameIdx, framePad) {
+    // 获取资源前缀
+    const prefixMap = {
+      'slime_cat': 'SLIME_CAT',
+      'shadow_mouse': 'SHADOW_MOUSE',
+      'lost_healer_cat': 'AIMI',
+      'wild_cat': 'SLIME_CAT'  // wild_cat 复用史莱姆猫资源
+    }
+    
+    const prefix = prefixMap[enemyId] || 'SLIME_CAT'
+    const action = animType.toUpperCase()
+    
+    // 构建资源键：PREFIX_ACTION_FRAME
+    const frameNum = String(frameIdx).padStart(framePad, '0')
+    return `${prefix}_${action}_${frameNum}`
   }
 
   /**
