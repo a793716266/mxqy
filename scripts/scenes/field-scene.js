@@ -2207,7 +2207,8 @@ export class FieldScene extends SceneBase {
 
     // 计算当前帧号（循环）
     // animFrame 是 0-based 索引（相对于 start）
-    const frameIdx = monster.animFrame + animConf.start
+    const totalFrames = animConf.end - animConf.start + 1
+    const frameIdx = (monster.animFrame % totalFrames) + animConf.start
 
     // 构建资源路径（与 animationConfig.path 一致）
     const frameKey = this._buildFrameKey(monster.enemyId, animType, frameIdx, animConf.framePad)
