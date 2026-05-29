@@ -800,8 +800,8 @@ export class FieldScene extends SceneBase {
     for (const monster of this.mapMonsters) {
       if (!monster.alive) continue
 
-      // ★ 修复：所有有动画资源的怪物都使用猫咪动画（包括精英）
-      const useCatAnim = ['slime_cat', 'shadow_mouse', 'wild_cat'].includes(monster.enemyId)
+      // ★ 修复：所有有动画资源的怪物都使用猫咪动画（包括精英、BOSS）
+      const useCatAnim = ['slime_cat', 'shadow_mouse', 'wild_cat', 'lost_healer_cat'].includes(monster.enemyId)
       if (useCatAnim && monster.animTimer === undefined) {
         monster.animTimer = 0
         monster.animFrame = 0
@@ -862,6 +862,9 @@ export class FieldScene extends SceneBase {
           } else if (monster.enemyId === 'shadow_mouse') {
             walkFrames = 8
             idleFrames = 6  // 暗影鼠idle只有6帧
+          } else if (monster.enemyId === 'lost_healer_cat') {
+            walkFrames = 8  // 艾米walk有8帧
+            idleFrames = 8  // 艾米idle有8帧
           } else {
             // wild_cat 等普通猫咪
             walkFrames = 12
