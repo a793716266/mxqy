@@ -254,6 +254,24 @@ export function installFieldBattleSystem(FieldSceneClass) {
 
   proto._monsterAttackPlayer = function(monster, hero) {
     if (!hero || hero.hp <= 0) return
+    
+    // ★ 设置攻击动画状态（防止重复触发）
+    if (monster.isAttacking) return
+    monster.isAttacking = true
+    monster.attackAnimTimer = 500 // 攻击动画持续时间（毫秒）
+    monster.hasDealtDamage = false // 标记尚未造成伤害
+
+    console.log(`[FieldBattle] ${monster.name} 开始攻击动画`)
+  }
+
+  /**
+   * ★ 新增：在攻击动画的命中帧计算伤害
+   */
+  proto._dealMonsterDamage = function(monster, hero) {
+    if (!hero || hero.hp <= 0 || monster.hasDealtDamage) return
+
+    // 标记已造成伤害（防止同一攻击动画造成多次伤害）
+    monster.hasDealtDamage = true
 
     // 计算伤害
     const damage = Math.max(1, monster.atk - Math.floor(hero.def * 0.4))

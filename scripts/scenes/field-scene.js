@@ -824,6 +824,16 @@ export class FieldScene extends SceneBase {
             monster.animFrame = Math.min(frameIdx, totalFrames - 1)
           }
           
+          // ★ 在攻击动画的 60% 进度时计算伤害（命中帧）
+          const attackProgress = 1 - (monster.attackAnimTimer / 500)
+          if (attackProgress >= 0.6 && !monster.hasDealtDamage) {
+            // 找到最近的英雄并造成伤害
+            const mainHero = this.party[0]
+            if (mainHero && mainHero.hp > 0) {
+              this._dealMonsterDamage(monster, mainHero)
+            }
+          }
+          
           if (monster.attackAnimTimer <= 0) {
             monster.isAttacking = false
             monster.attackAnimTimer = 0
