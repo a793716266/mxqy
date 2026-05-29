@@ -2,6 +2,32 @@
 
 ## 📅 更新日志
 
+### 2026-05-29（23:15）
+
+**fix: 修复艾米动画不更新（一张图片飘来飘去）**
+
+- **问题**：艾米的所有动画（idle/walk/attack/skill）都显示异常，表现为"一张图片飘来飘去"
+- **原因**：`field-scene.js` 第804行的 `useCatAnim` 列表中没有 `lost_healer_cat`，导致艾米的动画帧根本不更新
+- **分析**：
+  1. 第804行：`const useCatAnim = ['slime_cat', 'shadow_mouse', 'wild_cat'].includes(monster.enemyId)`
+  2. 艾米（`lost_healer_cat`）不在这个列表中
+  3. 导致 `animTimer` 和 `animFrame` 不会被初始化（第805-808行）
+  4. 虽然 `_renderCatMonster` 会尝试渲染，但 `animFrame` 一直是 `undefined`
+  5. 实际只显示了静态资源 `AIMI`（对应 `idle_01.png`）
+- **修复方案**：
+  1. 在 `useCatAnim` 列表中添加 `'lost_healer_cat'`（第804行）
+  2. 在动画帧数配置中添加艾米的帧数（第859-869行）：`walkFrames = 8`, `idleFrames = 8`
+- **修改文件**：
+  - `scripts/scenes/field-scene.js`:
+    - 第804行：在 `useCatAnim` 列表中添加 `'lost_healer_cat'`
+    - 第865-868行：添加艾米的帧数配置（idle=8帧，walk=8帧）
+- **测试说明**：
+  1. 进入阳光草原，找到艾米BOSS
+  2. 艾米的 idle/walk/attack/skill 动画应该正常播放（不再是静态图片）
+  3. 史莱姆猫和暗影鼠的动画也应该正常工作
+- **提交信息**：`fix: 修复艾米动画不更新的问题`
+- **关联修复**：之前的 `2c8012a` (fix: 修复艾米/史莱姆猫/暗影鼠资源路径错误) 也是必需的前置修复
+
 ### 2026-05-29（23:10）
 
 **fix: 修复艾米/史莱姆猫/暗影鼠动画资源路径错误**
