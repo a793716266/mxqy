@@ -817,11 +817,21 @@ export class FieldScene extends SceneBase {
           const enemyConfig = this._getMonsterConfig(monster.enemyId)
           if (enemyConfig && enemyConfig.animationConfig.attack) {
             const attackConf = enemyConfig.animationConfig.attack
-            const totalFrames = attackConf.end - attackConf.start + 1
-            const progress = 1 - (monster.attackAnimTimer / 500) // 500ms 攻击动画
-            const frameIdx = Math.floor(progress * totalFrames)
-            // animFrame 存储 0-based 索引（相对于 start）
-            monster.animFrame = Math.min(frameIdx, totalFrames - 1)
+            
+            // 支持 frameList（非连续帧号）和连续帧
+            if (attackConf.frameList) {
+              // 非连续帧号：根据进度选择 frameList 中的帧号
+              const totalFrames = attackConf.frameList.length
+              const progress = 1 - (monster.attackAnimTimer / 500) // 500ms 攻击动画
+              const frameIdx = Math.floor(progress * totalFrames)
+              monster.animFrame = Math.min(frameIdx, totalFrames - 1)
+            } else {
+              // 连续帧号
+              const totalFrames = attackConf.end - attackConf.start + 1
+              const progress = 1 - (monster.attackAnimTimer / 500)
+              const frameIdx = Math.floor(progress * totalFrames)
+              monster.animFrame = Math.min(frameIdx, totalFrames - 1)
+            }
           }
           
           // ★ 在攻击动画的 60% 进度时计算伤害（命中帧）
@@ -2216,9 +2226,17 @@ export class FieldScene extends SceneBase {
     }
 
     // 计算当前帧号（循环）
-    // animFrame 是 0-based 索引（相对于 start）
-    const totalFrames = animConf.end - animConf.start + 1
-    const frameIdx = (monster.animFrame % totalFrames) + animConf.start
+    // 支持 frameList（非连续帧号）和连续帧
+    let frameIdx
+    if (animConf.frameList) {
+      // 非连续帧号：animFrame 是 frameList 的索引
+      const frameListIdx = monster.animFrame % animConf.frameList.length
+      frameIdx = animConf.frameList[frameListIdx]
+    } else {
+      // 连续帧号
+      const totalFrames = animConf.end - animConf.start + 1
+      frameIdx = (monster.animFrame % totalFrames) + animConf.start
+    }
 
     // 构建资源路径（与 animationConfig.path 一致）
     const frameKey = this._buildFrameKey(monster.enemyId, animType, frameIdx, animConf.framePad)
@@ -2351,6 +2369,7 @@ export class FieldScene extends SceneBase {
 
   /**
    * 构建资源键（与 asset-manager.js 中的 buildFrames 逻辑一致）
+   * 支持连续帧和非连续帧（frameList）
    */
   _buildFrameKey(enemyId, animType, frameIdx, framePad) {
     // 获取资源前缀
@@ -2364,7 +2383,8 @@ export class FieldScene extends SceneBase {
     const prefix = prefixMap[enemyId] || 'SLIME_CAT'
     const action = animType.toUpperCase()
     
-    // 构建资源键：PREFIX_ACTION_FRAME
+    // 构建资源键：PREFIX_ACTION_FRAMENUM
+    // frameIdx 是实际文件名中的帧号（如 8, 10, 12... 或 1, 2, 3...）
     const frameNum = String(frameIdx).padStart(framePad, '0')
     return `${prefix}_${action}_${frameNum}`
   }
