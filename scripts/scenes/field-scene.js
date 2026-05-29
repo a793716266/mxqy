@@ -2227,7 +2227,7 @@ export class FieldScene extends SceneBase {
     let frameImg = this.game.assets.get(frameKey)
     if (!frameImg) {
       // 资源未加载，降级到 emoji
-      console.warn(`[Field] 怪物 ${monster.enemyId} 的动画帧未找到: ${frameKey}`)
+      console.warn(`[Field] 怪物 ${monster.enemyId} 的动画帧未找到: ${frameKey}, animType=${animType}, animFrame=${monster.animFrame}, start=${animConf.start}, end=${animConf.end}, framePad=${animConf.framePad}`)
       this._renderEmojiMonster(ctx, monster, screenX, screenY)
       return
     }
