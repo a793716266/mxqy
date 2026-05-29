@@ -42,43 +42,43 @@ export default {
   animationConfig: {
     idle: {
       start: 1,
-      end: 8,
-      path: 'images/monsters/shadow_mouse/idle/',
+      end: 6,
+      path: 'images/characters_anim/transparent/shadow_mouse/idle/',
       framePad: 2,
       frameDuration: 150
     },
     walk: {
       start: 1,
       end: 8,
-      path: 'images/monsters/shadow_mouse/walk/',
+      path: 'images/characters_anim/transparent/shadow_mouse/walk/',
       framePad: 2,
       frameDuration: 100
     },
     attack: {
       start: 1,
-      end: 6,
-      path: 'images/monsters/shadow_mouse/attack/',
+      end: 7,
+      path: 'images/characters_anim/transparent/shadow_mouse/attack/',
       framePad: 2,
       frameDuration: 80
     },
     hurt: {
       start: 1,
       end: 2,
-      path: 'images/monsters/shadow_mouse/hurt/',
+      path: 'images/characters_anim/transparent/shadow_mouse/hurt/',
       framePad: 2,
       frameDuration: 80
     },
     death: {
       start: 1,
       end: 6,
-      path: 'images/monsters/shadow_mouse/death/',
+      path: 'images/characters_anim/transparent/shadow_mouse/death/',
       framePad: 2,
       frameDuration: 120
     },
     skill: {
       start: 1,
       end: 8,
-      path: 'images/monsters/shadow_mouse/skill/',
+      path: 'images/characters_anim/transparent/shadow_mouse/skill/',
       framePad: 2,
       frameDuration: 100
     }
@@ -96,7 +96,7 @@ export default {
     idleFramePad: 2,
     flipRule: 'opposite',
     shadow: true,
-    targetHeight: 80,
+    targetHeight: 80,     // 渲染目标高度（像素），修改此值调整精灵大小
     frameDuration: 0.15
   },
   

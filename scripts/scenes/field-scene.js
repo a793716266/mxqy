@@ -800,7 +800,7 @@ export class FieldScene extends SceneBase {
     for (const monster of this.mapMonsters) {
       if (!monster.alive) continue
 
-      // ★ 修复：所有有动画资源的怪物都使用猫咪动画（包括精英、BOSS）
+      // ★ 支持序列帧动画的怪物列表（使用 _renderCatMonster 渲染）
       const useCatAnim = ['slime_cat', 'shadow_mouse', 'wild_cat', 'lost_healer_cat'].includes(monster.enemyId)
       if (useCatAnim && monster.animTimer === undefined) {
         monster.animTimer = 0
@@ -2196,16 +2196,15 @@ export class FieldScene extends SceneBase {
   }
 
   /**
-   * 渲染猫咪怪物（使用动画帧）
-   */
-  /**
    * 渲染猫咪怪物（使用 animationConfig 配置）
    */
   _renderCatMonster(ctx, monster, screenX, screenY) {
-    const targetHeight = 80 * this.dpr // 猫咪怪物尺寸（比主角小一点）
+    // ★ 读取怪物配置中的 renderConfig，获取 targetHeight（默认80）
+    const enemyConfig = this._getMonsterConfig(monster.enemyId)
+    const renderConfig = enemyConfig?.renderConfig || {}
+    const targetHeight = (renderConfig.targetHeight || 80) * this.dpr
 
     // ★ 读取怪物配置中的 animationConfig
-    const enemyConfig = this._getMonsterConfig(monster.enemyId)
     if (!enemyConfig || !enemyConfig.animationConfig) {
       // 配置不存在，降级到 emoji 渲染
       this._renderEmojiMonster(ctx, monster, screenX, screenY)

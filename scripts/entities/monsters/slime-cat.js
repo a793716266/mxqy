@@ -43,43 +43,45 @@ export default {
   animationConfig: {
     idle: {
       start: 1,
-      end: 6,
-      path: 'images/monsters/slime_cat/idle/',
+      end: 7,
+      path: 'images/characters_anim/transparent/slime_cat/idle/',
       framePad: 1,
       frameDuration: 150
     },
     walk: {
       start: 1,
       end: 12,
-      path: 'images/monsters/slime_cat/walk/',
+      path: 'images/characters_anim/transparent/slime_cat/walk/',
       framePad: 2,
       frameDuration: 120
     },
     attack: {
-      start: 1,
-      end: 6,
-      path: 'images/monsters/slime_cat/attack/',
+      start: 8,
+      end: 22,
+      path: 'images/characters_anim/transparent/slime_cat/attack/',
+      frameList: [8, 10, 12, 14, 16, 18, 20, 22],
       framePad: 2,
       frameDuration: 100
     },
     hurt: {
       start: 1,
       end: 2,
-      path: 'images/monsters/slime_cat/hurt/',
+      path: 'images/characters_anim/transparent/slime_cat/hurt/',
       framePad: 1,
       frameDuration: 80
     },
     death: {
       start: 1,
       end: 6,
-      path: 'images/monsters/slime_cat/death/',
+      path: 'images/characters_anim/transparent/slime_cat/death/',
       framePad: 2,
       frameDuration: 120
     },
     skill: {
-      start: 1,
-      end: 8,
-      path: 'images/monsters/slime_cat/skill/',
+      start: 50,
+      end: 80,
+      path: 'images/characters_anim/transparent/slime_cat/skill/',
+      frameList: [50, 53, 56, 59, 62, 65, 68, 71, 74, 77, 80],
       framePad: 2,
       frameDuration: 100
     }
@@ -97,7 +99,7 @@ export default {
     idleFramePad: 1,
     flipRule: 'opposite',
     shadow: true,
-    targetHeight: 80,
+    targetHeight: 80,     // 渲染目标高度（像素），修改此值调整精灵大小
     frameDuration: 0.15
   },
   

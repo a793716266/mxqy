@@ -51,49 +51,63 @@ export default {
     idle: {
       start: 1,
       end: 8,
-      path: 'images/monsters/aimi/idle/',
+      path: 'images/characters_anim/transparent/aimi/idle/',
       framePad: 2,
       frameDuration: 150
     },
     walk: {
       start: 1,
       end: 8,
-      path: 'images/monsters/aimi/walk/',
+      path: 'images/characters_anim/transparent/aimi/walk/',
       framePad: 2,
       frameDuration: 120
     },
     attack: {
       start: 1,
-      end: 6,
-      path: 'images/monsters/aimi/attack/',
+      end: 8,
+      path: 'images/characters_anim/transparent/aimi/attack/',
       framePad: 2,
       frameDuration: 100
     },
     hurt: {
       start: 1,
       end: 2,
-      path: 'images/monsters/aimi/hurt/',
+      path: 'images/characters_anim/transparent/aimi/hurt/',
       framePad: 2,
       frameDuration: 80
     },
     death: {
       start: 1,
       end: 8,
-      path: 'images/monsters/aimi/death/',
+      path: 'images/characters_anim/transparent/aimi/death/',
       framePad: 2,
       frameDuration: 150
     },
     skill: {
       start: 1,
       end: 8,
-      path: 'images/monsters/aimi/skill/',
+      path: 'images/characters_anim/transparent/aimi/skill/',
+      framePad: 2,
+      frameDuration: 100
+    },
+    buff: {
+      start: 1,
+      end: 8,
+      path: 'images/characters_anim/transparent/aimi/buff/',
+      framePad: 2,
+      frameDuration: 100
+    },
+    support: {
+      start: 1,
+      end: 8,
+      path: 'images/characters_anim/transparent/aimi/support/',
       framePad: 2,
       frameDuration: 100
     },
     cast: {
       start: 1,
       end: 4,
-      path: 'images/monsters/aimi/cast/',
+      path: 'images/characters_anim/transparent/aimi/cast/',
       framePad: 2,
       frameDuration: 120
     }
@@ -111,7 +125,7 @@ export default {
     idleFramePad: 2,
     flipRule: 'same',  // 与英雄一致
     shadow: true,
-    targetHeight: 80,
+    targetHeight: 80,     // 渲染目标高度（像素），修改此值调整精灵大小
     frameDuration: 0.15
   },
   
