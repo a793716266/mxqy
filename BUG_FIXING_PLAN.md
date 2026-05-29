@@ -2,6 +2,38 @@
 
 ## 📅 更新日志
 
+### 2026-05-29（23:10）
+
+**fix: 修复艾米/史莱姆猫/暗影鼠动画资源路径错误**
+
+- **问题**：艾米的所有动画（idle/walk/attack/skill）都显示异常，表现为"一张图片飘来飘去"
+- **原因**：`asset-manager.js` 中 `buildFrames` 调用时使用了 `{ battlePkg: false }`，导致生成的资源路径**缺少 `subpackages/battle/` 前缀**
+- **分析**：
+  1. `asset-manager.js` 位于主包（`scripts/core/`），加载分包资源时必须添加 `subpackages/battle/` 前缀
+  2. `BATTLE_PKG` 常量定义为 `'subpackages/battle/'`（第64行）
+  3. `buildFrames` 函数默认 `battlePkg: true`，会自动添加 `BATTLE_PKG` 前缀
+  4. 错误配置 `{ battlePkg: false }` 导致路径变为 `images/characters_anim/...`（缺少分包前缀）
+  5. 实际文件路径是 `subpackages/battle/images/characters_anim/...`
+  6. 只有静态资源 `AIMI`（对应 `idle/idle_01.png`）能加载成功，其他动画帧全部失败
+- **修复方案**：
+  1. 删除 `buildFrames` 调用中的 `{ battlePkg: false }` 参数
+  2. 使用默认的 `battlePkg: true`，让路径自动添加 `subpackages/battle/` 前缀
+  3. 同步修复史莱姆猫和暗影鼠的相同问题
+- **修改文件**：
+  - `scripts/core/asset-manager.js`:
+    - 第367行：删除史莱姆猫配置的 `{ battlePkg: false }`
+    - 第375行：删除暗影鼠配置的 `{ battlePkg: false }`
+    - 第382行：删除艾米配置的 `{ battlePkg: false }`
+- **影响范围**：
+  - 艾米（lost_healer_cat）：idle/walk/attack/skill/buff/support 全部动画
+  - 史莱姆猫（slime_cat）：所有动画
+  - 暗影鼠（shadow_mouse）：所有动画
+- **测试说明**：
+  1. 进入阳光草原，靠近艾米BOSS
+  2. 艾米的 idle/walk/attack/skill 动画应该正常播放（不再是静态图片）
+  3. 史莱姆猫和暗影鼠的动画也应该正常工作
+- **提交信息**：`fix: 修复艾米/史莱姆猫/暗影鼠资源路径错误`
+
 ### 2026-05-26（23:50）
 
 **fix: 修复野外怪物攻击动画导致的渲染崩溃**
