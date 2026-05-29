@@ -369,7 +369,7 @@ export const ASSETS = {
     { action: 'attack', frameList: [8, 10, 12, 14, 16, 18, 20, 22], pad: 4, filePrefix: 'attack' },
     { action: 'skill',  frameList: [50, 53, 56, 59, 62, 65, 68, 71, 74, 77, 80], pad: 4, filePrefix: 'skill' },
     { action: 'walk',   frames: 12 },
-  ], { battlePkg: false }),
+  ]),
 
   // --- 暗影鼠动画 ---
   ...buildFrames('SHADOW_MOUSE', 'images/characters_anim/transparent/shadow_mouse', [
@@ -377,7 +377,7 @@ export const ASSETS = {
     { action: 'attack', frames: 7 },
     { action: 'skill',  frames: 8 },
     { action: 'walk',   frames: 8 },
-  ], { battlePkg: false }),
+  ]),
 
   // --- 艾米动画帧 ---
   ...buildFrames('AIMI', 'images/characters_anim/transparent/aimi', [
@@ -387,5 +387,5 @@ export const ASSETS = {
     { action: 'buff',    frames: 8 },
     { action: 'skill',   frames: 8 },
     { action: 'support', frames: 8 },
-  ], { battlePkg: false }),
+  ]),
 }
