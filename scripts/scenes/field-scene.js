@@ -47,6 +47,9 @@ export class FieldScene extends SceneBase {
     this.animTimer = 0
     this.isMoving = false
     this._effectiveMoving = false   // 带滞后的有效移动状态，防止walk/idle闪烁
+    
+    // 怪物配置缓存
+    this._monsterConfigCache = {}
     this._movingHoldFrames = 0      // 停止移动后的保持计数器（帧）
     this._MOVING_HOLD = 5           // 停止后保持5帧(约80ms)不切回idle
     this.frameDuration = 0.15 // 每帧150ms
@@ -2318,11 +2321,38 @@ export class FieldScene extends SceneBase {
     this._renderMonsterWarning(ctx, monster, screenX, screenY, targetHeight)
   }
 
-  /**
-   * 获取怪物配置（从 scripts/entities/monsters/ 读取）
+   /**
+   * 获取怪物配置（动态读取 scripts/entities/monsters/ 下的配置文件）
    */
   _getMonsterConfig(enemyId) {
-    // 配置映射表（避免动态导入，直接映射）
+    // ★ 优先返回缓存
+    if (this._monsterConfigCache[enemyId]) {
+      return this._monsterConfigCache[enemyId]
+    }
+    
+    // ★ 动态导入配置文件
+    try {
+      const configModule = require(`../entities/monsters/${enemyId}.js`)
+      const config = configModule.default || configModule
+      
+      // 缓存配置
+      this._monsterConfigCache[enemyId] = config
+      
+      console.log(`[Field] 动态加载怪物配置: ${enemyId}`, config)
+      return config
+    } catch (err) {
+      console.warn(`[Field] 无法加载怪物配置 ${enemyId}，使用默认配置`, err)
+      
+      // 降级：返回默认配置（保持向后兼容）
+      const defaultConfig = this._getDefaultMonsterConfig(enemyId)
+      return defaultConfig
+    }
+  }
+
+  /**
+   * 获取默认怪物配置（降级方案）
+   */
+  _getDefaultMonsterConfig(enemyId) {
     const configMap = {
       'slime_cat': {
         animationConfig: {
@@ -2332,6 +2362,9 @@ export class FieldScene extends SceneBase {
           hurt: { start: 1, end: 2, path: 'images/characters_anim/transparent/slime_cat/hurt/', framePad: 1, frameDuration: 80 },
           death: { start: 1, end: 6, path: 'images/characters_anim/transparent/slime_cat/death/', framePad: 2, frameDuration: 120 },
           skill: { start: 50, end: 80, path: 'images/characters_anim/transparent/slime_cat/skill/', frameList: [50, 53, 56, 59, 62, 65, 68, 71, 74, 77, 80], framePad: 4, frameDuration: 100 }
+        },
+        renderConfig: {
+          targetHeight: 80
         }
       },
       'shadow_mouse': {
@@ -2342,6 +2375,9 @@ export class FieldScene extends SceneBase {
           hurt: { start: 1, end: 2, path: 'images/characters_anim/transparent/shadow_mouse/hurt/', framePad: 2, frameDuration: 80 },
           death: { start: 1, end: 6, path: 'images/characters_anim/transparent/shadow_mouse/death/', framePad: 2, frameDuration: 120 },
           skill: { start: 1, end: 8, path: 'images/characters_anim/transparent/shadow_mouse/skill/', framePad: 2, frameDuration: 100 }
+        },
+        renderConfig: {
+          targetHeight: 80
         }
       },
       'lost_healer_cat': {
@@ -2355,6 +2391,9 @@ export class FieldScene extends SceneBase {
           buff: { start: 1, end: 8, path: 'images/characters_anim/transparent/aimi/buff/', framePad: 2, frameDuration: 100 },
           support: { start: 1, end: 8, path: 'images/characters_anim/transparent/aimi/support/', framePad: 2, frameDuration: 100 },
           cast: { start: 1, end: 4, path: 'images/characters_anim/transparent/aimi/cast/', framePad: 2, frameDuration: 120 }
+        },
+        renderConfig: {
+          targetHeight: 80
         }
       },
       'wild_cat': {
@@ -2362,6 +2401,9 @@ export class FieldScene extends SceneBase {
         animationConfig: {
           idle: { start: 1, end: 7, path: 'images/characters_anim/transparent/slime_cat/idle/', framePad: 1, frameDuration: 150 },
           walk: { start: 1, end: 12, path: 'images/characters_anim/transparent/slime_cat/walk/', framePad: 2, frameDuration: 120 }
+        },
+        renderConfig: {
+          targetHeight: 80
         }
       }
     }
