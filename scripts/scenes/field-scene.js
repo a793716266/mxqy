@@ -2331,6 +2331,38 @@ export class FieldScene extends SceneBase {
         ctx.restore()
       }
     }
+
+    // ★ 新增：渲染跳跃攻击预警区域（红色警示圈，收缩+闪烁，1秒后爆发）
+    if (this.battleSystem && this.battleSystem.warningZones && this.battleSystem.warningZones.length > 0) {
+      for (const z of this.battleSystem.warningZones) {
+        const sx = z.x - this.cameraX
+        const sy = z.y - this.cameraY
+        const progress = z.total > 0 ? 1 - (z.timer / z.total) : 1 // 0→1 倒计时进度
+        // 圈随倒计时收缩（从外圈收到实际半径），增强"即将命中"的压迫感
+        const curR = z.r * (1.0 - 0.35 * progress)
+        const blink = 0.35 + 0.35 * Math.abs(Math.sin(progress * Math.PI * 6)) // 闪烁
+        ctx.save()
+        // 半透明红色填充
+        ctx.fillStyle = `rgba(255, 40, 40, ${0.20 + 0.25 * progress})`
+        ctx.beginPath()
+        ctx.arc(sx, sy, curR, 0, Math.PI * 2)
+        ctx.fill()
+        // 边缘红圈
+        ctx.lineWidth = 3 * this.dpr
+        ctx.strokeStyle = `rgba(255, 60, 60, ${blink})`
+        ctx.beginPath()
+        ctx.arc(sx, sy, curR, 0, Math.PI * 2)
+        ctx.stroke()
+        // 十字准星
+        ctx.strokeStyle = `rgba(255, 80, 80, ${blink})`
+        ctx.lineWidth = 2 * this.dpr
+        ctx.beginPath()
+        ctx.moveTo(sx - curR, sy); ctx.lineTo(sx + curR, sy)
+        ctx.moveTo(sx, sy - curR); ctx.lineTo(sx, sy + curR)
+        ctx.stroke()
+        ctx.restore()
+      }
+    }
   }
 
   /**

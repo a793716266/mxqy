@@ -3700,3 +3700,17 @@ _checkBattleEnd() {
 - **相关文件**：`scripts/systems/field-battle-system.js`、`scripts/scenes/field-scene.js`、`scripts/entities/monsters/shadow-mouse.js`。
 - **验证**：Babel 语法检查通过；用户实测确认暗影鼠倒走问题已解决、怪物战斗移动速度正常。
 
+---
+
+## 🐛 优化：跳跃攻击（jump_attack）增加红色预警区域 + 延迟落地
+
+- **提交信息**：`feat: 跳跃攻击红色预警区域-延迟落地-落地技能演出`
+- **需求**：跳跃攻击应有红色警示区域，延迟约 1 秒后再攻击该区域，否则角色根本躲不开；且预警出现时怪物不要立刻跳过去，应在预警消失瞬间才跳落。
+- **问题**：原 `jump_attack` 实现为施法瞬间冲撞并立刻 `doMelee` 结算，无预警、无躲避窗口、且怪物立即跳到玩家身上。
+- **实现**（`scripts/systems/field-battle-system.js`）：
+  - `_fieldCastMonsterSkill` 的 `jump_attack` 分支重构为"读条"：怪物**原地不动**（进入 `isCastingSkill` 施法态），仅在玩家当前位置生成 `battleSystem.warningZones` 预警区域（`warnMs=1000ms`、半径 `aoeRadius||dashDistance||110`），记录 `monsterRef` 供落地引用；标记 `_jumpWarn=true` 使施法期间不黏住玩家、保持原位。
+  - 新增 `_fieldUpdateWarningZones(dt)`（在 `_updateMonsterAttack` 开头每帧调用）：预警倒计时；**归零瞬间（红圈消失）**才将 `monsterRef` 跳落至红圈中心（`x=tx, y=ty-6*dpr`），并**仅对此时仍在圈内的玩家**结算伤害（躲开则安全）；跳落后重新进入 `isCastingSkill` 状态 `skillAnimTimer=450ms`（`_jumpWarn=true` 停在落点），作为落地砸地演出，避免落地瞬间直接普攻。
+- **渲染**（`scripts/scenes/field-scene.js`）：在抛射物渲染后绘制 `warningZones`——红色半透明填充 + 闪烁红边 + 十字准星，圈随倒计时从外向内收缩（增强压迫感），到点爆发。
+- **相关文件**：`scripts/systems/field-battle-system.js`、`scripts/scenes/field-scene.js`。
+- **验证**：Babel 语法检查通过；用户实测确认：红色预警出现、读条期间怪物原地不动、红圈消失瞬间跳跃落地并播放技能攻击演出、走出圈可躲避。
+

@@ -223,6 +223,7 @@ export function installFieldBattleSystem(FieldSceneClass) {
 
     // 更新怪物抛射物（飞行/命中结算）
     this._fieldUpdateProjectiles(dt)
+    this._fieldUpdateWarningZones(dt)
 
     const mainHero = this.party[0]
     if (!mainHero) return
@@ -267,9 +268,10 @@ export function installFieldBattleSystem(FieldSceneClass) {
         if (monster.skillAnimTimer <= 0) {
           monster.isCastingSkill = false
           monster.skillCastId = null
+          monster._jumpWarn = false
         }
-        // 施法期间也缓慢黏住玩家，避免玩家移动后脱节
-        if (dist > attackRange * 0.6) {
+        // 跳跃攻击已锁定落点（预警圈），不再黏住玩家，避免落点错位
+        if (!monster._jumpWarn && dist > attackRange * 0.6) {
           const nx = dx / (dist || 1), ny = dy / (dist || 1)
           const sp = (monster.moveSpeed || 30) * 0.5 * dt
           monster.x += nx * sp
@@ -402,6 +404,32 @@ export function installFieldBattleSystem(FieldSceneClass) {
     // 设置技能冷却（秒）
     if (monster.skillCDs) monster.skillCDs[skill.id] = skill.cooldown || 10
 
+    // ★ jump_attack（跳跃攻击）特殊处理：先落下预警区域，延迟 1 秒后再结算，给玩家躲避时间
+    if (skill.type === 'jump_attack') {
+      const warnMs = skill.warnDuration || 1000 // 预警时长（毫秒）
+      const r = (skill.aoeRadius || skill.dashDistance || 110) * this.dpr
+      const tx = this.playerX
+      const ty = this.playerY
+      // 跳跃落点 = 玩家当前位置（预警圈中心）；但预警阶段怪物原地不动，等预警结束才跳过去
+      // （tx/ty 仅作为警示圈中心保存，怪物此刻不移动）
+      if (!this.battleSystem.warningZones) this.battleSystem.warningZones = []
+      this.battleSystem.warningZones.push({
+        x: tx, y: ty, r,
+        timer: warnMs / 1000, total: warnMs / 1000,
+        power: skill.power || 1,
+        atk: monster.atk, def: monster.def,
+        monsterName: monster.name,
+        skillName: skill.name,
+        monsterRef: monster, // 预警结束时跳跃落地的怪物引用
+        ownerId: monster.enemyId
+      })
+      // 施法状态与预警时长对齐
+      monster.skillAnimTimer = warnMs
+      monster._jumpWarn = true
+      console.log(`[FieldBattle] ${monster.name} 跳跃攻击预警：${skill.name}，1秒后落在 (${Math.round(tx)},${Math.round(ty)})`)
+      return
+    }
+
     const doMelee = (mult) => {
       const dmg = Math.max(1, Math.floor(monster.atk * (mult || skill.power || 1) - hero.def * 0.3))
       hero.hp = Math.max(0, hero.hp - dmg)
@@ -421,7 +449,7 @@ export function installFieldBattleSystem(FieldSceneClass) {
     } else if (skill.type === 'debuff') {
       this._applyMonsterDebuff(monster, skill)
       if (skill.power > 0) doMelee(skill.power)
-    } else if (skill.type === 'jump_attack' || skill.type === 'charge') {
+    } else if (skill.type === 'charge') {
       const dash = Math.min(skill.dashDistance || 120, dist) * this.dpr
       if (dist > 1) {
         monster.x += (dx / dist) * dash
@@ -500,6 +528,47 @@ export function installFieldBattleSystem(FieldSceneClass) {
         continue
       }
       if (p.life <= 0) this.battleSystem.projectiles.splice(i, 1)
+    }
+  }
+
+  /**
+   * ★ 怪物跳跃攻击预警区域更新：倒计时结束在区域内结算伤害（玩家已走出区域则安全）
+   */
+  proto._fieldUpdateWarningZones = function(dt) {
+    if (!this.battleSystem.warningZones) return
+    const list = this.battleSystem.warningZones
+    for (let i = list.length - 1; i >= 0; i--) {
+      const z = list[i]
+      z.timer -= dt
+      // 到点（预警消失瞬间）：怪物跳跃落至红圈中心，再对"此刻仍在区域内"的玩家结算伤害
+      if (z.timer <= 0) {
+        // 怪物落地：重新进入短暂"技能攻击状态"（砸地演出），避免落地瞬间直接普攻
+        if (z.monsterRef && z.monsterRef.hp > 0) {
+          z.monsterRef.x = z.x
+          z.monsterRef.y = z.y - 6 * this.dpr
+          z.monsterRef.isCastingSkill = true
+          z.monsterRef.skillAnimTimer = 450 // 落地攻击演出时长（毫秒）
+          z.monsterRef._jumpWarn = true // 落地演出期间仍不黏住，停在落点
+        }
+        const hero = this.party[0]
+        if (hero && hero.hp > 0) {
+          const hdx = this.playerX - z.x
+          const hdy = this.playerY - z.y
+          if ((hdx * hdx + hdy * hdy) <= z.r * z.r) {
+            const dmg = Math.max(1, Math.floor(z.atk * (z.power || 1) - hero.def * 0.3))
+            hero.hp = Math.max(0, hero.hp - dmg)
+            this.battleSystem.damageTexts.push({
+              text: `-${dmg}`,
+              x: this.playerX - this.cameraX,
+              y: this.playerY - this.cameraY - 60 * this.dpr,
+              color: '#ff4757',
+              life: 1.0, maxLife: 1.0,
+              _startY: this.playerY - this.cameraY - 60 * this.dpr
+            })
+          }
+        }
+        list.splice(i, 1)
+      }
     }
   }
 
