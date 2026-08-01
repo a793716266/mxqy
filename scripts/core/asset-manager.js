@@ -379,7 +379,7 @@ export const ASSETS = {
     { action: 'walk',   frames: 8 },
   ]),
 
-  // --- 暗影鼠·补帧顺滑版（walk 8→15 帧，其余复用原始）---
+  // --- 暗影鼠·补帧顺滑版（walk 8→15 帧，其余复用原始）--- [battle 分包资源]
   ...buildFrames('SHADOW_MOUSE_SMOOTH', 'images/characters_anim/transparent/shadow_mouse', [
     { action: 'idle',   frames: 6 },
     { action: 'attack', frames: 7 },
@@ -389,7 +389,7 @@ export const ASSETS = {
     { action: 'walk',   frames: 15, pad: 2, filePrefix: 'frame' },
   ]),
 
-  // --- 史莱姆猫·换肤变体（同模异色，色相旋转派生）---
+  // --- 史莱姆猫·换肤变体（同模异色，色相旋转派生）--- [battle 分包资源]
   // 赤焰(20°) / 碧波(180°) / 魅紫(300°)，路径指向 slime_cat_skins/hue_xx/
   ...buildFrames('FLAME_SLIME', 'images/characters_anim/transparent/slime_cat_skins/hue_20', [
     { action: 'idle',   frames: 7,  pad: 1 },
@@ -411,7 +411,7 @@ export const ASSETS = {
   ]),
 
   // --- 艾米动画帧（位于 battle 分包，避免占主包体积）---
-  ...buildFrames('AIMI', BATTLE_PKG + 'images/characters_anim/transparent/aimi', [
+  ...buildFrames('AIMI', 'images/characters_anim/transparent/aimi', [
     { action: 'walk',    frames: 8 },
     { action: 'idle',    frames: 8 },
     { action: 'attack',  frames: 8 },

@@ -6,7 +6,7 @@
  */
 const { ENEMIES_CH1 } = require('../../data/enemies.js')
 
-const SKIN_BASE = 'images/characters_anim/transparent/slime_cat_skins'
+const SKIN_BASE = 'subpackages/battle/images/characters_anim/transparent/slime_cat_skins'
 
 function buildSkin(id, name, hueTag, tint, assetPrefix) {
   return {

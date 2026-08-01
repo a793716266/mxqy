@@ -12,12 +12,12 @@ module.exports = {
   ...ENEMIES_CH1.shadow_mouse,
 
   animationConfig: {
-    idle:   { start: 1, end: 6, path: 'images/characters_anim/transparent/shadow_mouse/idle/',   framePad: 2, frameDuration: 150 },
-    walk:   { start: 1, end: 15, path: 'images/characters_anim/transparent/shadow_mouse/walk_tween/', framePad: 2, frameDuration: 60 },
-    attack: { start: 1, end: 7, path: 'images/characters_anim/transparent/shadow_mouse/attack/', framePad: 2, frameDuration: 80 },
-    hurt:   { start: 1, end: 2, path: 'images/characters_anim/transparent/shadow_mouse/hurt/',   framePad: 2, frameDuration: 80 },
-    death:  { start: 1, end: 6, path: 'images/characters_anim/transparent/shadow_mouse/death/',  framePad: 2, frameDuration: 120 },
-    skill:  { start: 1, end: 8, path: 'images/characters_anim/transparent/shadow_mouse/skill/',  framePad: 2, frameDuration: 100 }
+    idle:   { start: 1, end: 6, path: 'subpackages/battle/images/characters_anim/transparent/shadow_mouse/idle/',   framePad: 2, frameDuration: 150 },
+    walk:   { start: 1, end: 15, path: 'subpackages/battle/images/characters_anim/transparent/shadow_mouse/walk_tween/', framePad: 2, frameDuration: 60 },
+    attack: { start: 1, end: 7, path: 'subpackages/battle/images/characters_anim/transparent/shadow_mouse/attack/', framePad: 2, frameDuration: 80 },
+    hurt:   { start: 1, end: 2, path: 'subpackages/battle/images/characters_anim/transparent/shadow_mouse/hurt/',   framePad: 2, frameDuration: 80 },
+    death:  { start: 1, end: 6, path: 'subpackages/battle/images/characters_anim/transparent/shadow_mouse/death/',  framePad: 2, frameDuration: 120 },
+    skill:  { start: 1, end: 8, path: 'subpackages/battle/images/characters_anim/transparent/shadow_mouse/skill/',  framePad: 2, frameDuration: 100 }
   },
 
   renderConfig: {
