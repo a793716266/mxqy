@@ -29,8 +29,8 @@ module.exports = {
     idleFrameOffset: 1,
     walkFramePad: 2,
     idleFramePad: 2,
-    flipRule: 'opposite',
-    assetFacing: 'right',
+    flipRule: 'same',
+    assetFacing: 'right', // 与 flipRule:'same' 语义一致：素材朝右，面向左时翻转
     shadow: true,
     targetHeight: 80,
     frameDuration: 0.15

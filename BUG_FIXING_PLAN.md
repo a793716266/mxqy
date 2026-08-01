@@ -3731,3 +3731,32 @@ _checkBattleEnd() {
 - **资源路径**：`subpackages/battle/images/characters_anim/transparent/slime_cat/skill_fx/`、`.../slime_cat_skins/`、`.../shadow_mouse/walk_tween/`。
 - **验证**：Babel 语法检查通过（`slime_cat_skins.js`、`shadow-mouse-tween.js`）；`require('../../data/enemies.js')` 可取 `ENEMIES_CH1`，依赖正常；三类资源实际文件数核对正确（11 特效帧 / 每套 12 walk 帧 / 15 补帧）。
 
+
+---
+
+## 🐛 修复：野外怪物行走方向统一修复（艾米倒走 + 暗影鼠倒走）
+
+- **提交信息**：`fix: 统一野外角色翻转逻辑修复艾米与暗影鼠倒着走`
+- **问题A（boss 艾米倒着走）**：
+  - 根因：boss 艾米 `lost_healer_cat` 不在 `useCatAnim` 列表，走 `_renderCatMonster` 路径，翻转依赖 `renderConfig.assetFacing`；但其配置只有 `flipRule: 'same'`、缺 `assetFacing`，代码默认按 `'left'`（opposite 语义）处理，而艾米素材实际朝右 → 翻转反了。
+  - 修复（`field-scene.js` 的 `_renderCatMonster`）：新增 `_shouldFlipByRule(facingLeft, flipRule)` 统一翻转判定（语义与 `CharacterSprite._shouldFlip` 一致），怪物渲染优先使用 `renderConfig.flipRule`，仅在缺失时回退旧 `assetFacing`。艾米读 `flipRule: 'same'` 即正确。
+- **问题B（暗影鼠倒着走）**：
+  - 根因：`shadow-mouse.js` / `shadow-mouse-tween.js` / `enemies.js` 三处 `shadow_mouse` 的 `flipRule` 写成 `'opposite'`，但其素材朝右（与 `assetFacing: 'right'` 矛盾）。统一翻转后优先采用 `flipRule`，触发错误配置 → 倒走。
+  - 修复：三处数据源 `flipRule` 统一改为 `'same'`（素材朝右，面向左时翻转），与 `assetFacing: 'right'` 语义一致。
+- **问题C（主角/队友渲染硬编码）**：原 `_renderPlayer` / `_renderFollower` 用 `heroId === 'zhenbao' || 'lixiaobao'` 二分硬编码翻转，忽略各角色 `renderConfig.flipRule`。改为统一读取 `flipRule`（`follower` 创建时缓存，主角从 `mainCharacter.renderConfig.flipRule` 读取），所有角色共用同一套正确翻转规则。
+- **相关文件**：`scripts/scenes/field-scene.js`、`scripts/entities/monsters/shadow-mouse.js`、`scripts/entities/monsters/shadow-mouse-tween.js`、`scripts/data/enemies.js`。
+- **验证**：Babel 语法检查通过；用户实测确认 boss 艾米、暗影鼠（含 smooth 版）朝向均正常。
+
+---
+
+## 🐛 排查中：暗影鼠"完全不放技能"
+
+- **状态**：待用户实机验证（已加一次性调试日志排查，未提交）。
+- **现象**：用户实测暗影鼠方向修复后"完全不放任何技能"（持续仅普攻）。
+- **初步排查**（静态分析，均未发现代码缺陷）：
+  - `enemies.js` 的 `shadow_mouse.skills`（shadow_bite / shadow_raid）完整，`getEnemyByLevel` 用 `...enemyData` 展开完整保留 skills。
+  - `_normalizeMonsterSkills` 正确补全 `id`/`cooldown`；`_initSkillCDs` 用 `s.id || s.name` 初始化。
+  - `_updateSingleMonsterCombat` 技能触发条件、`_castMonsterSkill` 各分支（含 jump_attack / buff）逻辑完整。`forceSkill`（普攻累计 3 次）兜底存在。
+  - `asset-manager.js` 的 SHADOW_MOUSE skill 资源（8 帧）注册完整，素材 `shadow_mouse/skill/skill_01~08.png` 均存在。
+  - 本次翻转修复（仅 flipRule/assetFacing/渲染）完全不涉及 skills/AI/cooldown 代码。
+- **下一步**：在 `_updateSingleMonsterCombat` 对 `shadow_mouse` 加一次性 `console.log` 打印运行时 `skills`/`skillCDs`/`attackRange` 状态，待用户重新编译后提供 console 日志定位。

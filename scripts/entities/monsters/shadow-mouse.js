@@ -120,8 +120,8 @@ module.exports = {
     idleFrameOffset: 1,
     walkFramePad: 2,
     idleFramePad: 2,
-    flipRule: 'opposite',
-    assetFacing: 'right', // ★ 暗影鼠素材原样朝右（与史莱姆猫相反），渲染时面向左需翻转
+    flipRule: 'same', // ★ 暗影鼠素材原样朝右（与史莱姆猫相反），面向左时需翻转
+    assetFacing: 'right', // 与 flipRule:'same' 语义一致：素材朝右
     shadow: true,
     targetHeight: 80,     // 渲染目标高度（像素），修改此值调整精灵大小
     frameDuration: 0.15

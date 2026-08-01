@@ -171,7 +171,8 @@ export const ENEMIES_CH1 = {
       idleFrameOffset: 1,
       walkFramePad: 2,
       idleFramePad: 2,
-      flipRule: 'opposite', // 敌人默认 facingLeft=false 时翻转
+      flipRule: 'same', // ★ 暗影鼠素材原样朝右，面向左时需翻转
+      assetFacing: 'right', // 与 flipRule:'same' 语义一致
       shadow: true,
       targetHeight: 80,
       frameDuration: 0.15

@@ -338,6 +338,8 @@ export class FieldScene extends SceneBase {
       this.followers.push({
         character: charData,
         sprite: followerSprite, // 存储 CharacterSprite 实例
+        // ★ 缓存翻转规则（与角色 renderConfig.flipRule 一致），供 _renderFollower 统一判定
+        flipRule: (heroData && heroData.renderConfig && heroData.renderConfig.flipRule) || 'opposite',
         x: this.playerX - i * this.followerDistance, // 初始位置在主角后面
         y: this.playerY,
         animFrame: 0,
@@ -707,8 +709,11 @@ export class FieldScene extends SceneBase {
       const char = allChars[i]
       if (!currentFollowerIds.includes(char.id)) {
         // 新角色加入，添加到followers
+        const newHeroData = HEROES.find(h => h.id === char.id)
         this.followers.push({
           character: char,
+          // ★ 缓存翻转规则（与角色 renderConfig.flipRule 一致）
+          flipRule: (newHeroData && newHeroData.renderConfig && newHeroData.renderConfig.flipRule) || 'opposite',
           x: this.playerX - (this.followers.length + 1) * this.followerDistance,
           y: this.playerY,
           animFrame: 0,
@@ -2464,49 +2469,27 @@ export class FieldScene extends SceneBase {
 
         ctx.save()
 
-        // 根据角色素材默认朝向决定是否翻转（与主角一致）
-        if (heroId === 'zhenbao' || heroId === 'lixiaobao') {
-          // 臻宝/李小宝：默认朝右 → facingLeft 时翻转
-          if (follower.facingLeft) {
-            ctx.translate(screenX, screenY)
-            ctx.scale(-1, 1)
-            ctx.drawImage(
-              frameImg,
-              -renderWidth / 2,
-              -renderHeight / 2,
-              renderWidth,
-              renderHeight
-            )
-          } else {
-            ctx.drawImage(
-              frameImg,
-              screenX - renderWidth / 2,
-              screenY - renderHeight / 2,
-              renderWidth,
-              renderHeight
-            )
-          }
+        // ★ 统一翻转逻辑：从角色 renderConfig.flipRule 读取，避免逐个 heroId 硬编码导致朝向错误
+        // flipRule: 'same' = facingLeft 时翻转；'opposite' = !facingLeft 时翻转
+        const followFlipRule = follower.flipRule || 'opposite'
+        if (this._shouldFlipByRule(follower.facingLeft, followFlipRule)) {
+          ctx.translate(screenX, screenY)
+          ctx.scale(-1, 1)
+          ctx.drawImage(
+            frameImg,
+            -renderWidth / 2,
+            -renderHeight / 2,
+            renderWidth,
+            renderHeight
+          )
         } else {
-          // 李小宝及其他：默认朝左 → !facingLeft 时翻转
-          if (!follower.facingLeft) {
-            ctx.translate(screenX, screenY)
-            ctx.scale(-1, 1)
-            ctx.drawImage(
-              frameImg,
-              -renderWidth / 2,
-              -renderHeight / 2,
-              renderWidth,
-              renderHeight
-            )
-          } else {
-            ctx.drawImage(
-              frameImg,
-              screenX - renderWidth / 2,
-              screenY - renderHeight / 2,
-              renderWidth,
-              renderHeight
-            )
-          }
+          ctx.drawImage(
+            frameImg,
+            screenX - renderWidth / 2,
+            screenY - renderHeight / 2,
+            renderWidth,
+            renderHeight
+          )
         }
 
         ctx.restore()
@@ -2531,6 +2514,20 @@ export class FieldScene extends SceneBase {
     follower.sprite.render(ctx, screenX, screenY)
   }
   
+  /**
+   * 根据 flipRule 判断是否水平翻转渲染
+   * 与 scripts/core/character-sprite.js 的 CharacterSprite._shouldFlip 语义保持一致，
+   * 作为 field 场景手写渲染的统一翻转判定，避免各角色朝向硬编码出错。
+   * @param {boolean} facingLeft - 当前是否应朝左
+   * @param {string} flipRule - 'same'(facingLeft 时翻转) | 'opposite'(!facingLeft 时翻转) | 'none'(永不翻转)
+   * @returns {boolean}
+   */
+  _shouldFlipByRule(facingLeft, flipRule) {
+    if (flipRule === 'none') return false
+    if (flipRule === 'same') return !!facingLeft
+    return !facingLeft // 'opposite' 或默认
+  }
+
   _renderPlayer(ctx) {
     const targetHeight = 80 * this.dpr // 与小镇一致的角色大小
 
@@ -2621,50 +2618,27 @@ export class FieldScene extends SceneBase {
       // 保存当前状态
       ctx.save()
 
-      // 根据角色素材默认朝向决定是否翻转
-      // 臻宝/李小宝: 默认朝右 → 向左(facingLeft)时翻转
-      // 其他角色: 默认朝左 → 向右(!facingLeft)时翻转
-      if (heroId === 'zhenbao' || heroId === 'lixiaobao') {
-        if (this.facingLeft) {
-          ctx.translate(screenX, screenY)
-          ctx.scale(-1, 1)
-          ctx.drawImage(
-            frameImg,
-            -renderWidth / 2,
-            -renderHeight / 2,
-            renderWidth,
-            renderHeight
-          )
-        } else {
-          ctx.drawImage(
-            frameImg,
-            screenX - renderWidth / 2,
-            screenY - renderHeight / 2,
-            renderWidth,
-            renderHeight
-          )
-        }
+      // ★ 统一翻转逻辑：从主角 renderConfig.flipRule 读取（与 CharacterSprite._shouldFlip 一致）
+      // flipRule: 'same' = facingLeft 时翻转；'opposite' = !facingLeft 时翻转
+      const mainFlipRule = this.mainCharacter?.renderConfig?.flipRule || 'opposite'
+      if (this._shouldFlipByRule(this.facingLeft, mainFlipRule)) {
+        ctx.translate(screenX, screenY)
+        ctx.scale(-1, 1)
+        ctx.drawImage(
+          frameImg,
+          -renderWidth / 2,
+          -renderHeight / 2,
+          renderWidth,
+          renderHeight
+        )
       } else {
-        // 李小宝及其他角色：默认朝左
-        if (!this.facingLeft) {
-          ctx.translate(screenX, screenY)
-          ctx.scale(-1, 1)
-          ctx.drawImage(
-            frameImg,
-            -renderWidth / 2,
-            -renderHeight / 2,
-            renderWidth,
-            renderHeight
-          )
-        } else {
-          ctx.drawImage(
-            frameImg,
-            screenX - renderWidth / 2,
-            screenY - renderHeight / 2,
-            renderWidth,
-            renderHeight
-          )
-        }
+        ctx.drawImage(
+          frameImg,
+          screenX - renderWidth / 2,
+          screenY - renderHeight / 2,
+          renderWidth,
+          renderHeight
+        )
       }
 
       // 恢复状态
@@ -2865,9 +2839,19 @@ export class FieldScene extends SceneBase {
       }
       monster._prevRenderX = monster.x
 
-      // 不同怪物素材固有朝向不同：'left' = 素材原样朝左(面向左时不翻转)，'right' = 素材原样朝右(面向左时需翻转)
-      const assetFacing = (enemyConfig.renderConfig && enemyConfig.renderConfig.assetFacing) || 'left'
-      const shouldFlip = assetFacing === 'left' ? !facingLeft : facingLeft
+      // 翻转判定：优先使用 renderConfig.flipRule（与英雄/主角统一的语义），
+      // 仅当未配置 flipRule 时回退到旧版 assetFacing 字段。
+      // flipRule: 'same' = facingLeft 时翻转；'opposite' = !facingLeft 时翻转
+      // assetFacing: 'left'(素材朝左) ⇔ opposite；'right'(素材朝右) ⇔ same
+      const enemyRenderConfig = enemyConfig.renderConfig || {}
+      const enemyFlipRule = enemyRenderConfig.flipRule
+      let shouldFlip
+      if (enemyFlipRule && enemyFlipRule !== 'none') {
+        shouldFlip = this._shouldFlipByRule(facingLeft, enemyFlipRule)
+      } else {
+        const assetFacing = enemyRenderConfig.assetFacing || 'left'
+        shouldFlip = assetFacing === 'left' ? !facingLeft : facingLeft
+      }
 
       ctx.save()
 
