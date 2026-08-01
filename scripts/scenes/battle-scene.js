@@ -332,17 +332,18 @@ export class BattleScene extends SceneBase {
       console.log('[Battle] 测试模式：已禁用英雄自动攻击，使用摇杆和攻击按钮手动控制')
       // 只初始化敌人攻击计时器（敌人AI需要）
       this._initEnemyAttackTimersOnly()
-      // ★ 强制：将英雄攻击计时器设为永远不会触发的值
+      // ★ 强制：将英雄【自动攻击】计时器设为永远不会触发的值（测试模式靠按钮手动控制）
       this.party.forEach(hero => {
         this.heroAttackTimers[hero.id] = {
-          attackTimer: Infinity,  // ★ 无穷大，永远不会触发
+          attackTimer: Infinity,  // ★ 无穷大，永远不会自动触发
           skillCDs: {},
           _hasFirstAttacked: false,
           _needsFirstStrike: false
         }
-        // ★ 所有技能CD设为无穷大
+        // ★ 技能 CD 初始化为 0（就绪），确保技能按钮可用；
+        //   手动释放技能时由 _captainManualSkill 按 nodeId 决定是否重新计 CD
         hero.skills.forEach(skill => {
-          this.heroAttackTimers[hero.id].skillCDs[skill.id] = Infinity
+          this.heroAttackTimers[hero.id].skillCDs[skill.id] = 0
         })
       })
       console.log('[Battle] 测试模式：英雄攻击计时器已禁用', this.heroAttackTimers)
