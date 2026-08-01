@@ -3667,3 +3667,23 @@ _checkBattleEnd() {
 - **相关文件**：`scripts/scenes/field-scene.js`（`_updateMonsterAttack` 重构为多怪遍历 + 新增 `_updateSingleMonsterCombat`；`_updateMonsters` 改用 `inCombat` 跳过巡逻；`_endFieldBattle` 清空战斗状态）。
 - **字段新增**：怪物初始化与存档迁移补充 `inCombat` / `strafeDir` / `strafeTimer`。
 
+---
+
+## 🐛 修复：野外怪物不释放技能/自行走开（根因定位到 field-battle-system.js）
+
+- **提交信息**：`fix: 野外怪物技能施放失效-修正真实战斗系统+牵引范围`
+- **问题**：`refactor: 野外怪物AI聪明化` 的改动写到了 `scripts/scenes/field-scene.js` 的 `_updateMonsterAttack`，但运行时实际生效的是 `scripts/systems/field-battle-system.js`（通过 `installFieldBattleSystem` 覆盖原型方法，日志前缀 `[FieldBattle]` 无连字符）。导致：怪物只在极近距离普攻几下、从不放技能、玩家稍退就脱战走开。
+- **根因**：存在两套并存战斗系统，本次所有战斗逻辑改动必须落在 `field-battle-system.js`，而非 field-scene.js 的自身方法（已被覆盖）。
+- **修复内容**：
+  - 将技能施放/战斗走位全部重写进 `field-battle-system.js` 的 `proto._updateMonsterAttack`，并新增辅助方法 `_fieldMonsterCombatMove` / `_fieldMaxSkillRange` / `_fieldChooseMonsterSkill` / `_fieldCastMonsterSkill` / `_fieldSpawnMonsterProjectile` / `_fieldUpdateProjectiles`。
+  - **参战/脱战**：仇恨范围 `aggroRange=320*dpr` 内进入 `inCombat`，超出 `leashRange=620*dpr` 才脱战回巡逻，怪物不再"打几下就自己走掉"。
+  - **技能施放**：每 3 次普攻强制放一次技能（`skillUseCount`），其余按距离/血量情境评分选技能；CD 以秒为单位递减。
+  - **抛射物系统**：新增 `_fieldSpawnMonsterProjectile` / `_fieldUpdateProjectiles`，支持远程技能飞行与命中结算。
+  - **施法状态**：`isCastingSkill` 期间站定结算伤害、缓慢黏住玩家，避免脱节。
+- **关联渲染修复**（`scripts/scenes/field-scene.js` 的 `_renderCatMonster`）：
+  - 史莱姆猫 `animationConfig.skill = {start:50, end:80}` 的资源帧（`images/characters_anim/transparent/slime_cat/skill/`）实际缺失，导致施法时每秒刷屏 `SLIME_CAT_SKILL_50 ~ SLIME_CAT_SKILL_80` 帧未找到告警。
+  - 修复：渲染前先探测首帧资源；缺失则降级到 `attack`（再降级 `idle`）动画；告警限制为每个怪物每种动画类型仅打印一次（借助 `monster._warnedFrames`），消除控制台刷屏。
+  - **遗留**：slime_cat 暂无专属 skill 帧资源，目前复用 attack 帧。如需真实技能视觉需补充 `slime_cat/skill/` 帧图。
+- **相关文件**：`scripts/systems/field-battle-system.js`（核心逻辑重写）、`scripts/scenes/field-scene.js`（skill 帧缺失渲染降级 + 一次性告警）。
+- **验证**：Babel 语法检查（`scripts/tools/check_syntax.js`）两文件均通过；日志确认 `史莱姆猫 施放技能: 跳跃攻击/黏液喷射`、`暗影鼠 施放技能: 暗影突袭` 正常触发，控制台无帧缺失刷屏。
+

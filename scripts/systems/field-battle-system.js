@@ -221,34 +221,282 @@ export function installFieldBattleSystem(FieldSceneClass) {
   proto._updateMonsterAttack = function(dt) {
     if (!this.mapMonsters || !Array.isArray(this.mapMonsters)) return
 
+    // 更新怪物抛射物（飞行/命中结算）
+    this._fieldUpdateProjectiles(dt)
+
     const mainHero = this.party[0]
     if (!mainHero) return
+
+    // 1. 先递减所有怪物技能的冷却（单位：秒）
+    for (const monster of this.mapMonsters) {
+      if (!monster.alive || !monster.skillCDs) continue
+      for (const k in monster.skillCDs) {
+        if (monster.skillCDs[k] > 0) {
+          monster.skillCDs[k] = Math.max(0, monster.skillCDs[k] - dt)
+        }
+      }
+    }
+
+    const aggroRange = 320 * this.dpr
+    const leashRange = 620 * this.dpr
 
     for (const monster of this.mapMonsters) {
       if (!monster.alive) continue
 
-      // 计算距离
-      const dist = Math.sqrt(
-        (this.playerX - monster.x) ** 2 + (this.playerY - monster.y) ** 2
-      )
+      const dx = this.playerX - monster.x
+      const dy = this.playerY - monster.y
+      const dist = Math.sqrt(dx * dx + dy * dy)
+      const attackRange = (monster.attackRange || 80) * this.dpr
 
-      // 如果在攻击范围内
-      if (dist < (monster.attackRange || 80)) {
-        // 检查攻击冷却
-        if (!monster.attackCDTimer) {
-          monster.attackCDTimer = 0
-        }
-
-        monster.attackCDTimer -= dt * 1000
-
-        if (monster.attackCDTimer <= 0) {
-          // 攻击玩家
-          this._monsterAttackPlayer(monster, mainHero)
-
-          // 设置攻击冷却
-          monster.attackCDTimer = monster.attackInterval || 2000
+      // 2. 参战/脱战判定
+      if (this.battleSystem.active) {
+        if (dist <= aggroRange) {
+          monster.inCombat = true
+        } else if (dist > leashRange) {
+          monster.inCombat = false
+          monster.isAttacking = false
+          monster.isCastingSkill = false
+          continue
         }
       }
+      if (!monster.inCombat) continue
+
+      // 3. 施法中：站定结算，不普攻不走位
+      if (monster.isCastingSkill) {
+        monster.skillAnimTimer -= dt * 1000
+        if (monster.skillAnimTimer <= 0) {
+          monster.isCastingSkill = false
+          monster.skillCastId = null
+        }
+        // 施法期间也缓慢黏住玩家，避免玩家移动后脱节
+        if (dist > attackRange * 0.6) {
+          const nx = dx / (dist || 1), ny = dy / (dist || 1)
+          const sp = (monster.moveSpeed || 30) * 0.5 * dt
+          monster.x += nx * sp
+          monster.y += ny * sp
+        }
+        continue
+      }
+
+      // 4. 战斗走位（贴近攻击距离，避免原地站桩/被甩开脱战）
+      this._fieldMonsterCombatMove(monster, dx, dy, dist, attackRange, dt)
+
+      // 5. 进入可攻击距离：技能优先，其次普攻
+      const maxSR = this._fieldMaxSkillRange(monster)
+      if (dist <= Math.max(attackRange, maxSR)) {
+        const chosen = this._fieldChooseMonsterSkill(monster, dist, attackRange)
+        if (chosen) {
+          this._fieldCastMonsterSkill(monster, chosen, mainHero, dx, dy, dist)
+          monster.skillUseCount = 0
+          continue
+        }
+
+        // 普攻（冷却结束才放）
+        if (!monster.attackCDTimer) monster.attackCDTimer = 0
+        monster.attackCDTimer -= dt * 1000
+        if (monster.attackCDTimer <= 0 && !monster.isAttacking) {
+          this._monsterAttackPlayer(monster, mainHero)
+          monster.attackCDTimer = monster.attackInterval || 2000
+          monster.skillUseCount = (monster.skillUseCount || 0) + 1
+        }
+      }
+    }
+  }
+
+  /**
+   * ★ 野外怪物战斗走位：贴近攻击距离并带横向绕圈，避免站桩/被甩脱
+   */
+  proto._fieldMonsterCombatMove = function(monster, dx, dy, dist, attackRange, dt) {
+    if (dist < 1) return
+    const nx = dx / dist, ny = dy / dist
+    const px = -ny, py = nx // 垂直方向（横向）
+    const spd = monster.moveSpeed || 30
+    let vx = 0, vy = 0
+    const keep = attackRange * 0.75
+    if (dist > attackRange) {
+      vx += nx * spd * 6
+      vy += ny * spd * 6
+      vx += px * monster.strafeDir * spd * 1.2
+      vy += py * monster.strafeDir * spd * 1.2
+    } else if (dist < keep) {
+      vx -= nx * spd * 4
+      vy -= ny * spd * 4
+      vx += px * monster.strafeDir * spd * 2.0
+      vy += py * monster.strafeDir * spd * 2.0
+    } else {
+      vx += px * monster.strafeDir * spd * 1.8
+      vy += py * monster.strafeDir * spd * 1.8
+      vx += nx * spd * 1.5
+      vy += ny * spd * 1.5
+    }
+    monster.x += vx * dt
+    monster.y += vy * dt
+    monster.strafeTimer = (monster.strafeTimer || 0) + dt
+    if (monster.strafeTimer > 1.2) {
+      monster.strafeTimer = 0
+      monster.strafeDir = Math.random() > 0.5 ? 1 : -1
+    }
+  }
+
+  /**
+   * ★ 计算怪物所有就绪技能的最大释放距离
+   */
+  proto._fieldMaxSkillRange = function(monster) {
+    if (!monster.skills || !monster.skillCDs) return 0
+    let maxSR = 0
+    for (const s of monster.skills) {
+      if ((monster.skillCDs[s.id] || 0) <= 0) {
+        const r = (s.range || monster.attackRange || 120) * this.dpr
+        if (r > maxSR) maxSR = r
+      }
+    }
+    return maxSR
+  }
+
+  /**
+   * ★ 智能选技能：按距离/血量/技能类型加权，兼容 enemies.js 的多种 type
+   */
+  proto._fieldChooseMonsterSkill = function(monster, dist, attackRange) {
+    if (!monster.skills || !monster.skills.length || !monster.skillCDs) return null
+    const ready = monster.skills.filter(s => (monster.skillCDs[s.id] || 0) <= 0)
+    if (ready.length === 0) return null
+
+    const hpRatio = (monster.hp / monster.maxHp)
+    let best = -1, chosen = null
+    for (const s of ready) {
+      let score = 0.6 + Math.random() * 0.4
+      const sRange = (s.range || monster.attackRange || 120) * this.dpr
+      if (s.type === 'attack' || s.type === 'magic' || s.type === 'charge') {
+        if (dist <= sRange) score += 1.8
+        else score -= 1.2
+      }
+      if (s.type === 'jump_attack' && dist > attackRange * 0.4) {
+        score += (hpRatio < 0.4 ? 2.2 : 1.2)
+      }
+      if (s.type === 'debuff' && dist < attackRange) score += 1.4
+      if (s.type === 'buff' || s.type === 'heal_self' || s.type === 'summon') score += 1.1
+      if (score > best) { best = score; chosen = s }
+    }
+    // 评分达标即放；或普攻累计 3 次后强制穿插技能（兜底，保证技能必出现）
+    const forceSkill = (monster.skillUseCount || 0) >= 3
+    if (chosen && (best > 1.0 || forceSkill)) return chosen
+    return null
+  }
+
+  /**
+   * ★ 怪物施放技能（兼容多种 type，直接结算伤害/效果）
+   */
+  proto._fieldCastMonsterSkill = function(monster, skill, hero, dx, dy, dist) {
+    if (!hero || hero.hp <= 0) return
+
+    console.log(`[FieldBattle] ${monster.name} 施放技能: ${skill.name} (${skill.id})`)
+
+    // 进入施法状态（供渲染播放 skill 动画）
+    monster.isCastingSkill = true
+    monster.skillCastId = skill.id
+    monster.skillAnimTimer = 800 // 默认 800ms 技能动画
+    monster.animFrame = 0
+    // 设置技能冷却（秒）
+    if (monster.skillCDs) monster.skillCDs[skill.id] = skill.cooldown || 10
+
+    const doMelee = (mult) => {
+      const dmg = Math.max(1, Math.floor(monster.atk * (mult || skill.power || 1) - hero.def * 0.3))
+      hero.hp = Math.max(0, hero.hp - dmg)
+      this.battleSystem.damageTexts.push({
+        text: `-${dmg}`,
+        x: this.playerX - this.cameraX,
+        y: this.playerY - this.cameraY - 60 * this.dpr,
+        color: '#ff4757',
+        life: 1.0, maxLife: 1.0,
+        _startY: this.playerY - this.cameraY - 60 * this.dpr
+      })
+    }
+
+    if ((skill.type === 'attack' || skill.type === 'magic') && skill.projectile) {
+      // 远程抛射物
+      this._fieldSpawnMonsterProjectile(monster, skill, dx, dy, dist)
+    } else if (skill.type === 'debuff') {
+      this._applyMonsterDebuff(monster, skill)
+      if (skill.power > 0) doMelee(skill.power)
+    } else if (skill.type === 'jump_attack' || skill.type === 'charge') {
+      const dash = Math.min(skill.dashDistance || 120, dist) * this.dpr
+      if (dist > 1) {
+        monster.x += (dx / dist) * dash
+        monster.y += (dy / dist) * dash
+      }
+      doMelee(skill.power)
+    } else if (skill.type === 'heal_self') {
+      const heal = skill.healAmount || Math.floor(monster.maxHp * 0.15)
+      monster.hp = Math.min(monster.maxHp, monster.hp + heal)
+      this.battleSystem.damageTexts.push({
+        text: `+${heal}`,
+        x: monster.x - this.cameraX,
+        y: monster.y - this.cameraY - 60 * this.dpr,
+        color: '#2ed573',
+        life: 1.0, maxLife: 1.0,
+        _startY: monster.y - this.cameraY - 60 * this.dpr
+      })
+    } else if (skill.type === 'buff') {
+      if (this.game.showToast) this.game.showToast(`${monster.name} 使用 ${skill.name}！`)
+    } else if (skill.type === 'summon') {
+      if (this.game.showToast) this.game.showToast(`${monster.name} 召唤了帮手！`)
+    } else {
+      // 默认近战
+      doMelee(skill.power || 1)
+    }
+  }
+
+  /**
+   * ★ 怪物远程抛射物（简化：飞行中逐渐靠近玩家，到达结算伤害）
+   */
+  proto._fieldSpawnMonsterProjectile = function(monster, skill, dx, dy, dist) {
+    if (!this.battleSystem.projectiles) this.battleSystem.projectiles = []
+    const speed = (skill.projectileSpeed || 220) * this.dpr
+    this.battleSystem.projectiles.push({
+      x: monster.x,
+      y: monster.y,
+      tx: this.playerX,
+      ty: this.playerY,
+      vx: (dx / (dist || 1)) * speed,
+      vy: (dy / (dist || 1)) * speed,
+      power: skill.power || 1,
+      atk: monster.atk,
+      def: monster.def,
+      life: 2.0,
+      color: '#b15eff',
+      owner: 'monster'
+    })
+  }
+
+  /**
+   * ★ 怪物抛射物更新：飞行→命中玩家结算伤害
+   */
+  proto._fieldUpdateProjectiles = function(dt) {
+    if (!this.battleSystem.projectiles) return
+    const hero = this.party[0]
+    for (let i = this.battleSystem.projectiles.length - 1; i >= 0; i--) {
+      const p = this.battleSystem.projectiles[i]
+      p.x += p.vx * dt
+      p.y += p.vy * dt
+      p.life -= dt
+      // 命中判定（到达玩家附近）
+      const hdx = this.playerX - p.x
+      const hdy = this.playerY - p.y
+      if (hero && hero.hp > 0 && (hdx * hdx + hdy * hdy) < (40 * this.dpr) ** 2) {
+        const dmg = Math.max(1, Math.floor(p.atk * (p.power || 1) - hero.def * 0.3))
+        hero.hp = Math.max(0, hero.hp - dmg)
+        this.battleSystem.damageTexts.push({
+          text: `-${dmg}`,
+          x: this.playerX - this.cameraX,
+          y: this.playerY - this.cameraY - 60 * this.dpr,
+          color: '#ff4757',
+          life: 1.0, maxLife: 1.0,
+          _startY: this.playerY - this.cameraY - 60 * this.dpr
+        })
+        this.battleSystem.projectiles.splice(i, 1)
+        continue
+      }
+      if (p.life <= 0) this.battleSystem.projectiles.splice(i, 1)
     }
   }
 

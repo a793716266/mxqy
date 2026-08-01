@@ -160,9 +160,10 @@ export class FieldScene extends SceneBase {
               monster.aiPattern = finalData.aiPattern
               monster.attackRange = finalData.attackRange || 80
               monster.attackInterval = finalData.attackInterval || 2000
-              monster.skills = finalData.skills || []
+              // ★ 标准化技能（与初次生成保持一致，补全 id/cooldown/range）
+              monster.skills = this._normalizeMonsterSkills(finalData.skills, monster.enemyId)
               if (!monster.skillCDs) {
-                monster.skillCDs = this._initSkillCDs(finalData.skills || [])
+                monster.skillCDs = this._initSkillCDs(monster.skills)
                 monster.isCastingSkill = false
                 monster.skillAnimTimer = 0
                 monster.skillCastId = null
@@ -393,7 +394,10 @@ export class FieldScene extends SceneBase {
         
         // ★ 使用 getEnemyByLevel 计算最终属性
         const finalBossData = getEnemyByLevel(bossData, bossData?.level || 5)
-        
+
+        // ★ 标准化技能数据
+        const normalizedBossSkills = this._normalizeMonsterSkills(finalBossData.skills, bossId)
+
         monsters.push({
           id: `${this.areaId}_boss_${bossId}`,
           enemyId: bossId,
@@ -414,14 +418,15 @@ export class FieldScene extends SceneBase {
           aiPattern: finalBossData.aiPattern,
           attackRange: finalBossData.attackRange || 80,
           attackInterval: finalBossData.attackInterval || 2000,
-          skills: finalBossData.skills || [],
+          skills: normalizedBossSkills,
           // 技能冷却计时器（每个技能单独冷却，单位：秒）
-          skillCDs: this._initSkillCDs(finalBossData.skills || []),
+          skillCDs: this._initSkillCDs(normalizedBossSkills),
           isCastingSkill: false,  // 是否正在施放技能
           skillAnimTimer: 0,      // 技能动画计时器（毫秒）
           skillCastId: null,      // 当前施放中的技能id
           // 战斗AI状态
           inCombat: false,        // 是否进入战斗（参与AI）
+          skillUseCount: 0,       // 普攻计数，用于强制穿插技能
           strafeDir: Math.random() > 0.5 ? 1 : -1, // 横向走位方向
           strafeTimer: 0,         // 走位方向切换计时
           // 动画属性
@@ -493,6 +498,9 @@ export class FieldScene extends SceneBase {
         // ★ 使用 getEnemyByLevel 计算最终属性（包含等级加成）
         const finalEnemyData = getEnemyByLevel(enemyData, enemyData?.level || 1)
 
+        // ★ 标准化技能数据（enemies.js 中技能字段不统一，补全 id/cooldown/range 等）
+        const normalizedSkills = this._normalizeMonsterSkills(finalEnemyData?.skills, enemyId)
+
         monsters.push({
           id: `${this.areaId}_monster_${i}`,  // 包含区域ID前缀
           enemyId: enemyId,
@@ -513,14 +521,15 @@ export class FieldScene extends SceneBase {
           aiPattern: finalEnemyData?.aiPattern || 'normal',
           attackRange: finalEnemyData?.attackRange || 80,
           attackInterval: finalEnemyData?.attackInterval || 2000,
-          skills: finalEnemyData?.skills || [],
+          skills: normalizedSkills,
           // 技能冷却计时器（每个技能单独冷却，单位：秒）
-          skillCDs: this._initSkillCDs(finalEnemyData?.skills || []),
+          skillCDs: this._initSkillCDs(normalizedSkills),
           isCastingSkill: false,  // 是否正在施放技能
           skillAnimTimer: 0,      // 技能动画计时器（毫秒）
           skillCastId: null,      // 当前施放中的技能id
           // 战斗AI状态
           inCombat: false,        // 是否进入战斗（参与AI）
+          skillUseCount: 0,       // 普攻计数，用于强制穿插技能
           strafeDir: Math.random() > 0.5 ? 1 : -1, // 横向走位方向
           strafeTimer: 0,         // 走位方向切换计时
           // 动画属性
@@ -998,15 +1007,45 @@ export class FieldScene extends SceneBase {
   /**
    * ★ 新增：初始化怪物技能冷却表
    * 每个技能单独维护一个倒计时（秒），初始为 0 表示就绪
+   * 注意：enemies.js 中的技能定义可能缺少 id/cooldown/range 等字段，
+   * 这里统一以 s.id || s.name 作为冷却表的 key，保证多技能不互相覆盖。
    */
   _initSkillCDs(skills) {
     const cds = {}
     if (Array.isArray(skills)) {
-      skills.forEach(s => {
-        cds[s.id] = 0
+      skills.forEach((s, i) => {
+        const key = s.id || s.name || `skill_${i}`
+        cds[key] = 0
       })
     }
     return cds
+  }
+
+  /**
+   * ★ 新增：标准化怪物技能数据
+   * enemies.js 中的技能定义字段不统一（缺 id/cooldown/range 等），
+   * 这里补全为 AI 与施法逻辑可消费的统一格式。
+   */
+  _normalizeMonsterSkills(skills, enemyId) {
+    if (!Array.isArray(skills) || skills.length === 0) return []
+    return skills.map((s, i) => ({
+      id: s.id || `${enemyId}_sk_${i}`,
+      name: s.name || '技能',
+      type: s.type || 'attack',
+      power: s.power != null ? s.power : 1,
+      cooldown: s.cooldown || 6,           // 默认 6 秒冷却
+      range: s.range || 120,               // 默认 120 像素释放距离
+      projectile: !!s.projectile,
+      projectileSpeed: s.projectileSpeed || 220,
+      effect: s.effect || null,
+      value: s.value || 0,
+      duration: s.duration || 3,
+      dashDistance: s.dashDistance || 120,
+      healAmount: s.healAmount || 0,
+      summonId: s.summonId || null,
+      target: s.target || 'single',
+      desc: s.desc || ''
+    }))
   }
 
   /**
@@ -1054,7 +1093,7 @@ export class FieldScene extends SceneBase {
     if (!hero || hero.hp <= 0) return
 
     const aggroRange = 320 * this.dpr      // 仇恨/参战范围
-    const leashRange = 460 * this.dpr      // 脱战（回到巡逻）范围
+    const leashRange = 620 * this.dpr      // 脱战（回到巡逻）范围（调大，避免走位被甩脱）
 
     for (const monster of this.mapMonsters) {
       if (!monster.alive) continue
@@ -1075,6 +1114,9 @@ export class FieldScene extends SceneBase {
           monster.isAttacking = false
           monster.attackAnimTimer = 0
           continue
+        } else {
+          // 在 aggro~leash 之间：已参战的怪继续追击，不脱战
+          if (monster.inCombat) monster.inCombat = true
         }
       }
 
@@ -1132,18 +1174,20 @@ export class FieldScene extends SceneBase {
       // 太远：靠近（带一点横向偏移，避免直线愣头青）
       vx += nx * spd * 6
       vy += ny * spd * 6
-      vx += px * monster.strafeDir * spd * 1.6
-      vy += py * monster.strafeDir * spd * 1.6
+      vx += px * monster.strafeDir * spd * 1.2
+      vy += py * monster.strafeDir * spd * 1.2
     } else if (dist < keepDistance) {
       // 太近：后撤并横向绕，避免粘身
       vx -= nx * spd * 4
       vy -= ny * spd * 4
-      vx += px * monster.strafeDir * spd * 2.4
-      vy += py * monster.strafeDir * spd * 2.4
+      vx += px * monster.strafeDir * spd * 2.0
+      vy += py * monster.strafeDir * spd * 2.0
     } else {
-      // 在攻击甜区内：主要以横向走位为主，少量贴近
-      vx += px * monster.strafeDir * spd * 2.2
-      vy += py * monster.strafeDir * spd * 2.2
+      // 在攻击甜区内：横向绕圈 + 强制向心锁定，避免被玩家甩出攻击范围
+      vx += px * monster.strafeDir * spd * 1.8
+      vy += py * monster.strafeDir * spd * 1.8
+      vx += nx * spd * 1.5
+      vy += ny * spd * 1.5
     }
 
     monster.x += vx * dt
@@ -1159,30 +1203,52 @@ export class FieldScene extends SceneBase {
       }
     }
 
-    // 在攻击范围内才考虑进攻
-    if (dist <= attackRange) {
-      // 智能选技能：按距离/血量情境加权，而非纯随机
+    // 计算所有就绪技能的最大射程，作为"可考虑放技能"的距离阈值
+    // （避免走位把怪物推出普攻范围后技能永远无法触发）
+    let maxSkillRange = attackRange
+    let hasReadySkill = false
+    if (monster.skills && monster.skills.length > 0 && monster.skillCDs) {
+      for (const s of monster.skills) {
+        if ((monster.skillCDs[s.id] || 0) <= 0) {
+          hasReadySkill = true
+          const r = (s.range || attackRange) * this.dpr
+          if (r > maxSkillRange) maxSkillRange = r
+        }
+      }
+    }
+
+    // 在"普攻或技能射程"内才考虑进攻
+    if (dist <= Math.max(attackRange, maxSkillRange)) {
+      // 智能选技能：按距离/血量/技能类型情境加权，兼容 enemies.js 数据格式
       let chosen = null
-      if (monster.skills && monster.skills.length > 0 && monster.skillCDs) {
+      if (hasReadySkill) {
         const ready = monster.skills.filter(s => (monster.skillCDs[s.id] || 0) <= 0)
-        if (ready.length > 0) {
-          const hpRatio = (monster.hp / monster.maxHp)
-          // 评分：远距→远程抛射；近身→debuff；残血→jump_attack 拼命
-          let best = -1
-          for (const s of ready) {
-            let score = Math.random() * 0.5 // 基础随机，避免完全 deterministic
-            const sRange = (s.range || attackRange) * this.dpr
-            if (s.type === 'attack' && dist <= sRange) score += 2.0
-            if (s.type === 'debuff' && dist < attackRange * 0.9) score += 1.6
-            if (s.type === 'jump_attack' && dist > attackRange * 0.5) score += (hpRatio < 0.4 ? 2.5 : 1.0)
-            if (dist > sRange && s.type !== 'jump_attack') score -= 1.5 // 超距技能不优先
-            if (score > best) { best = score; chosen = s }
+        const hpRatio = (monster.hp / monster.maxHp)
+        let best = -1
+        for (const s of ready) {
+          let score = 0.6 + Math.random() * 0.4 // 基础分，避免完全 deterministic
+          const sRange = (s.range || attackRange) * this.dpr
+          // 进攻型技能（attack/magic/charge）：在射程内给高分，超距扣分
+          if (s.type === 'attack' || s.type === 'magic' || s.type === 'charge') {
+            if (dist <= sRange) score += 1.8
+            else score -= 1.2
           }
-          // 有较高评分才放（给普攻留出空间），并限制整体频率
-          if (chosen && best > 1.2 && Math.random() < 0.7) {
-            this._castMonsterSkill(monster, chosen, hero)
-            return
+          // 跳跃攻击：中近距离突进，残血时更激进
+          if (s.type === 'jump_attack' && dist > attackRange * 0.4) {
+            score += (hpRatio < 0.4 ? 2.2 : 1.2)
           }
+          // 减益：近身时使用
+          if (s.type === 'debuff' && dist < attackRange) score += 1.4
+          // 增益/自愈/召唤：冷却好了就该放（提升威胁感）
+          if (s.type === 'buff' || s.type === 'heal_self' || s.type === 'summon') score += 1.1
+          if (score > best) { best = score; chosen = s }
+        }
+        // 评分达标即放；或普攻累计 3 次后强制穿插一个就绪技能（兜底，保证技能必出现）
+        const forceSkill = monster.skillUseCount >= 3
+        if (chosen && (best > 1.0 || forceSkill)) {
+          this._castMonsterSkill(monster, chosen, hero)
+          monster.skillUseCount = 0
+          return
         }
       }
 
@@ -1194,6 +1260,7 @@ export class FieldScene extends SceneBase {
         monster.attackAnimTimer = 500
         monster.hasDealtDamage = false
         monster.attackCDTimer = monster.attackInterval || 2000
+        monster.skillUseCount = (monster.skillUseCount || 0) + 1
       }
     }
   }
@@ -1225,22 +1292,9 @@ export class FieldScene extends SceneBase {
     const dy = this.playerY - monster.y
     const dist = Math.sqrt(dx * dx + dy * dy)
 
-    if (skill.type === 'attack' && skill.projectile) {
-      // 远程抛射物：生成飞弹，到达后结算伤害
-      this._spawnMonsterProjectile(monster, skill, dist)
-    } else if (skill.type === 'debuff') {
-      // 减速/减益：立即对玩家生效
-      this._applyMonsterDebuff(monster, skill)
-      // 也补一点基础伤害（power=0 时只上 debuff）
-      if (skill.power > 0) this._dealMonsterDamage(monster, hero)
-    } else if (skill.type === 'jump_attack') {
-      // 跳跃攻击：突进到玩家附近并造成高额伤害
-      const dash = Math.min(skill.dashDistance || 100, dist) * this.dpr
-      if (dist > 1) {
-        monster.x += (dx / dist) * dash
-        monster.y += (dy / dist) * dash
-      }
-      const dmg = Math.max(1, Math.floor(monster.atk * (skill.power || 1) - hero.def * 0.3))
+    // 根据技能类型施放效果（兼容 enemies.js 的多种 type）
+    const doMeleeDamage = (mult) => {
+      const dmg = Math.max(1, Math.floor(monster.atk * (mult || skill.power || 1) - hero.def * 0.3))
       hero.hp = Math.max(0, hero.hp - dmg)
       this.battleSystem.damageTexts.push({
         text: `-${dmg}`,
@@ -1253,17 +1307,43 @@ export class FieldScene extends SceneBase {
         const cs = charStateManager.getCharacter(hero.id)
         if (cs) cs.hp = hero.hp
       } catch (e) {}
-    } else {
-      // 默认近战技能：直接造成伤害
-      const dmg = Math.max(1, Math.floor(monster.atk * (skill.power || 1) - hero.def * 0.4))
-      hero.hp = Math.max(0, hero.hp - dmg)
+    }
+
+    if ((skill.type === 'attack' || skill.type === 'magic') && skill.projectile) {
+      // 远程抛射物：生成飞弹，到达后结算伤害
+      this._spawnMonsterProjectile(monster, skill, dist)
+    } else if (skill.type === 'debuff') {
+      // 减速/减益：立即对玩家生效
+      this._applyMonsterDebuff(monster, skill)
+      if (skill.power > 0) doMeleeDamage(skill.power)
+    } else if (skill.type === 'jump_attack' || skill.type === 'charge') {
+      // 突进/冲锋：冲到玩家附近并造成高额伤害
+      const dash = Math.min(skill.dashDistance || 120, dist) * this.dpr
+      if (dist > 1) {
+        monster.x += (dx / dist) * dash
+        monster.y += (dy / dist) * dash
+      }
+      doMeleeDamage(skill.power)
+    } else if (skill.type === 'heal_self') {
+      // 自愈
+      const heal = skill.healAmount || Math.floor(monster.maxHp * 0.15)
+      monster.hp = Math.min(monster.maxHp, monster.hp + heal)
       this.battleSystem.damageTexts.push({
-        text: `-${dmg}`,
-        x: this.playerX - this.cameraX,
-        y: this.playerY - this.cameraY - 40 * this.dpr,
-        color: '#ff4757',
+        text: `+${heal}`,
+        x: monster.x - this.cameraX,
+        y: monster.y - this.cameraY - 40 * this.dpr,
+        color: '#2ed573',
         life: 1.0
       })
+    } else if (skill.type === 'buff') {
+      // 自身增益：提示+标记（视觉反馈），实际增益可后续扩展
+      this.game.showToast && this.game.showToast(`${monster.name} 使用 ${skill.name}！`)
+    } else if (skill.type === 'summon') {
+      // 召唤：提示（实际召唤逻辑可后续扩展）
+      this.game.showToast && this.game.showToast(`${monster.name} 召唤了援助！`)
+    } else {
+      // 默认近战技能：直接造成伤害
+      doMeleeDamage(skill.power)
     }
   }
 
@@ -1378,6 +1458,9 @@ export class FieldScene extends SceneBase {
         // ★ 使用 getEnemyByLevel 计算最终属性（包含等级加成）
         const finalEnemyData = getEnemyByLevel(enemyData, enemyData?.level || 1)
 
+        // ★ 标准化技能数据
+        const normalizedSkills = this._normalizeMonsterSkills(finalEnemyData?.skills, enemyId)
+
         this.mapMonsters.push({
           id: `${this.areaId}_monster_${Date.now()}_${i}`,  // 包含区域ID前缀
           enemyId: enemyId,
@@ -1398,14 +1481,15 @@ export class FieldScene extends SceneBase {
           aiPattern: finalEnemyData?.aiPattern || 'normal',
           attackRange: finalEnemyData?.attackRange || 80,
           attackInterval: finalEnemyData?.attackInterval || 2000,
-          skills: finalEnemyData?.skills || [],
+          skills: normalizedSkills,
           // 技能冷却计时器（每个技能单独冷却，单位：秒）
-          skillCDs: this._initSkillCDs(finalEnemyData?.skills || []),
+          skillCDs: this._initSkillCDs(normalizedSkills),
           isCastingSkill: false,  // 是否正在施放技能
           skillAnimTimer: 0,      // 技能动画计时器（毫秒）
           skillCastId: null,      // 当前施放中的技能id
           // 战斗AI状态
           inCombat: false,        // 是否进入战斗（参与AI）
+          skillUseCount: 0,       // 普攻计数，用于强制穿插技能
           strafeDir: Math.random() > 0.5 ? 1 : -1, // 横向走位方向
           strafeTimer: 0,         // 走位方向切换计时
           // 动画属性
@@ -2669,6 +2753,20 @@ export class FieldScene extends SceneBase {
       animType = 'skill'
       animConf = enemyConfig.animationConfig.skill
       // 注意：animFrame 已经在 _updateMonsters 中更新，这里不需要再更新
+      // ★ 若 skill 动画资产缺失，回退到 attack（若存在），避免每帧刷 warn 并降级
+      const probeFrameIdx = animConf.frameList
+        ? animConf.frameList[0]
+        : animConf.start
+      const probeKey = this._buildFrameKey(monster.enemyId, 'skill', probeFrameIdx, animConf.framePad)
+      if (!this.game.assets.get(probeKey)) {
+        if (enemyConfig.animationConfig.attack) {
+          animType = 'attack'
+          animConf = enemyConfig.animationConfig.attack
+        } else {
+          animType = 'idle'
+          animConf = enemyConfig.animationConfig.idle
+        }
+      }
     } else if (monster.isAttacking && enemyConfig.animationConfig.attack) {
       animType = 'attack'
       animConf = enemyConfig.animationConfig.attack
@@ -2702,8 +2800,12 @@ export class FieldScene extends SceneBase {
     // 获取动画帧图片
     let frameImg = this.game.assets.get(frameKey)
     if (!frameImg) {
-      // 资源未加载，降级到 emoji
-      console.warn(`[Field] 怪物 ${monster.enemyId} 的动画帧未找到: ${frameKey}, animType=${animType}, animFrame=${monster.animFrame}, start=${animConf.start}, end=${animConf.end}, framePad=${animConf.framePad}`)
+      // 资源未加载，降级到 emoji（每个怪物每种 animType 只提示一次，避免刷屏）
+      if (!monster._warnedFrames) monster._warnedFrames = {}
+      if (!monster._warnedFrames[animType]) {
+        monster._warnedFrames[animType] = true
+        console.warn(`[Field] 怪物 ${monster.enemyId} 的动画帧未找到: ${frameKey} (animType=${animType})，降级到 emoji`)
+      }
       this._renderEmojiMonster(ctx, monster, screenX, screenY)
       return
     }
