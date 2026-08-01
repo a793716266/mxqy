@@ -1778,16 +1778,16 @@ export class FieldScene extends SceneBase {
       active: true
     }
 
-    // 技能按钮（王者荣耀式：以攻击按钮为圆心，向上方张开的扇形弧形排布）
+    // 技能按钮（王者荣耀式：以攻击按钮为圆心，向上方张开的紧凑扇形弧形排布，限制在屏幕内）
     this.battleSystem.skillButtons = []
     const skills = this.party[0]?.skills || []
     const n = skills.length
     if (n > 0) {
-      // 扇形张角：从 -150° 到 -30°（左上方 → 正上方 → 右上方），明显呈弧形排布
-      const startDeg = -150
-      const endDeg = -30
-      // 半径：随技能数略微增大，保证不重叠
-      const radius = btnSize * 2.1 + (n > 1 ? (n - 1) * 14 * this.dpr : 0)
+      // 紧凑扇面：从 -120° 到 -60°（集中在正上方偏左/右），避免过度分散
+      const startDeg = -120
+      const endDeg = -60
+      // 半径固定且较小，保证整体不超出屏幕
+      const radius = btnSize * 1.5
       skills.forEach((skill, index) => {
         const t = n === 1 ? 0.5 : index / (n - 1)
         const deg = startDeg + (endDeg - startDeg) * t
@@ -1795,8 +1795,11 @@ export class FieldScene extends SceneBase {
         // 圆心取攻击按钮中心
         const cx = attackX + btnSize / 2
         const cy = attackY + btnSize / 2
-        const bx = cx + Math.cos(rad) * radius - btnSize / 2
-        const by = cy + Math.sin(rad) * radius - btnSize / 2
+        let bx = cx + Math.cos(rad) * radius - btnSize / 2
+        let by = cy + Math.sin(rad) * radius - btnSize / 2
+        // 钳制：保证按钮完整落在屏幕内
+        bx = Math.max(margin, Math.min(this.width - btnSize - margin, bx))
+        by = Math.max(margin, Math.min(this.height - btnSize - margin, by))
         this.battleSystem.skillButtons.push({
           x: bx,
           y: by,
@@ -1830,12 +1833,6 @@ export class FieldScene extends SceneBase {
       for (const sb of this.battleSystem.skillButtons) {
         if (sb.cooldown > 0) sb.cooldown = Math.max(0, sb.cooldown - dt * 1000)
       }
-    }
-
-    // 1.2 扇形 AOE 指示渐隐
-    if (this._aoeFx && this._aoeFx.life > 0) {
-      this._aoeFx.life -= dt
-      if (this._aoeFx.life <= 0) this._aoeFx = null
     }
 
     // 2. 更新怪物攻击（★ 新增）
@@ -2358,9 +2355,6 @@ export class FieldScene extends SceneBase {
     if (this.battleSystem && this.battleSystem.showBattleUI) {
       this._renderBattleUI(ctx)
     }
-
-    // 扇形技能/攻击范围指示（王者荣耀式）
-    if (this._aoeFx) this._renderFieldSkillRange(ctx)
 
     // ★ 新增：渲染怪物抛射物（远程技能飞弹）
     if (this.battleSystem && this.battleSystem.projectiles && this.battleSystem.projectiles.length > 0) {

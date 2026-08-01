@@ -23,6 +23,19 @@
 - **测试说明**：微信开发者工具编译 → 阳光草原副本 → 技能键应呈弧形分布；点攻击/技能主角应有挥砍动作并朝向目标；优先攻击身边最近的怪。
 - **状态**：✅ 已修复并通过 Babel 语法检查
 
+### 2026-08-02（更新）
+
+**fix: 野外战斗技能扇形超出屏幕 + 左上角多余扇形**
+
+- **问题 1**：技能按钮扇形张角 -150°~-30°、半径过大，导致按钮冲出屏幕边缘（太分散）。
+  - **修复**：张角收窄为 **-120°~-60°**（集中在正上方），半径固定为 `btnSize*1.5`；并对每个按钮坐标做屏幕钳制（margin ~ width-btnSize-margin），确保完整落在屏幕内。
+- **问题 2（左上角扇形）**：上一轮误将"扇形"理解为攻击范围指示，在 `_playerAttackMonster` 释放时生成 `this._aoeFx` 扇形高亮（因 `battleSystem.player` 未赋值、坐标异常，扇形画到了屏幕左上角，用户无法理解）。
+  - **修复**：移除场上 AOE 扇形范围指示——删除 `_aoeFx` 生成、`_renderFieldSkillRange`（field-scene 与 field-battle-system 两处），以及对应的渐隐更新逻辑。攻击反馈改由主角 SLASH 动画帧体现。
+- **修改文件**：
+  - `scripts/scenes/field-scene.js`：`_initBattleUI`（钳制+紧凑扇形）、移除 `_renderFieldSkillRange` 调用与 `_aoeFx` 渐隐
+  - `scripts/systems/field-battle-system.js`：移除 `_aoeFx` 生成、`_renderFieldSkillRange` 定义与调用
+- **状态**：✅ 已修复并通过 Babel 语法检查
+
 ---
 
 ### 2026-08-02（更新）
