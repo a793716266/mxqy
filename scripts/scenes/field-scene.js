@@ -161,6 +161,12 @@ export class FieldScene extends SceneBase {
               monster.attackRange = finalData.attackRange || 80
               monster.attackInterval = finalData.attackInterval || 2000
               monster.skills = finalData.skills || []
+              if (!monster.skillCDs) {
+                monster.skillCDs = this._initSkillCDs(finalData.skills || [])
+                monster.isCastingSkill = false
+                monster.skillAnimTimer = 0
+                monster.skillCastId = null
+              }
               console.log(`[Field] 迁移怪物属性: ${monster.enemyId}, atk=${monster.atk}, def=${monster.def}, hp=${monster.hp}`)
             }
           }
@@ -404,6 +410,11 @@ export class FieldScene extends SceneBase {
           attackRange: finalBossData.attackRange || 80,
           attackInterval: finalBossData.attackInterval || 2000,
           skills: finalBossData.skills || [],
+          // 技能冷却计时器（每个技能单独冷却，单位：秒）
+          skillCDs: this._initSkillCDs(finalBossData.skills || []),
+          isCastingSkill: false,  // 是否正在施放技能
+          skillAnimTimer: 0,      // 技能动画计时器（毫秒）
+          skillCastId: null,      // 当前施放中的技能id
           // 动画属性
           bobOffset: 0,
           bobSpeed: 1.5,
@@ -494,6 +505,11 @@ export class FieldScene extends SceneBase {
           attackRange: finalEnemyData?.attackRange || 80,
           attackInterval: finalEnemyData?.attackInterval || 2000,
           skills: finalEnemyData?.skills || [],
+          // 技能冷却计时器（每个技能单独冷却，单位：秒）
+          skillCDs: this._initSkillCDs(finalEnemyData?.skills || []),
+          isCastingSkill: false,  // 是否正在施放技能
+          skillAnimTimer: 0,      // 技能动画计时器（毫秒）
+          skillCastId: null,      // 当前施放中的技能id
           // 动画属性
           bobOffset: Math.random() * Math.PI * 2, // 随机浮动偏移
           bobSpeed: 2 + Math.random(), // 随机浮动速度
@@ -734,8 +750,15 @@ export class FieldScene extends SceneBase {
 
       if (dist > this.joystickConfig.deadZone) {
         this.isMoving = true
-        const moveX = (dx / dist) * this.playerSpeed * dt
-        const moveY = (dy / dist) * this.playerSpeed * dt
+        // 应用怪物减速 debuff（黏液包裹等）
+        let speedFactor = 1
+        if (this.battleSystem.playerDebuffs && this.battleSystem.playerDebuffs.length > 0) {
+          for (const d of this.battleSystem.playerDebuffs) {
+            if (d.effect === 'slow') speedFactor *= (1 - d.value)
+          }
+        }
+        const moveX = (dx / dist) * this.playerSpeed * speedFactor * dt
+        const moveY = (dy / dist) * this.playerSpeed * speedFactor * dt
 
         // 保存旧位置（用于碰撞回退）
         const oldX = this.playerX
@@ -812,8 +835,26 @@ export class FieldScene extends SceneBase {
 
       // 更新猫咪动画（无论是否暂停）
       if (useCatAnim) {
-        // ★ 攻击动画（优先级最高）
-        if (monster.isAttacking && monster.attackAnimTimer > 0) {
+        // ★ 技能动画（优先级最高）
+        if (monster.isCastingSkill && monster.skillAnimTimer > 0) {
+          const enemyConfig = this._getMonsterConfig(monster.enemyId)
+          const skillConf = enemyConfig?.animationConfig?.skill
+          if (skillConf) {
+            if (skillConf.frameList) {
+              const total = skillConf.frameList.length
+              const progress = 1 - (monster.skillAnimTimer / (total * (skillConf.frameDuration || 100)))
+              const idx = Math.min(Math.floor(progress * total), total - 1)
+              monster.animFrame = idx
+            } else {
+              const total = skillConf.end - skillConf.start + 1
+              const progress = 1 - (monster.skillAnimTimer / (total * (skillConf.frameDuration || 100)))
+              const idx = Math.min(Math.floor(progress * total), total - 1)
+              monster.animFrame = idx
+            }
+          }
+        }
+        // ★ 攻击动画（优先级次高）
+        else if (monster.isAttacking && monster.attackAnimTimer > 0) {
           monster.attackAnimTimer -= dt * 1000
           
           // 攻击动画：使用 attack 帧
@@ -887,6 +928,9 @@ export class FieldScene extends SceneBase {
         }
       }
 
+      // ★ 战斗激活且本怪为战斗目标时，跳过巡逻移动（由 _updateMonsterAttack 控制走位）
+      const isBattleTarget = this.battleSystem.active && monster === this.battleSystem.battleTarget
+      if (!isBattleTarget) {
       // 暂停计时器（只暂停移动，不暂停动画）
       if (monster.pauseTimer > 0) {
         monster.pauseTimer -= dt
@@ -934,7 +978,258 @@ export class FieldScene extends SceneBase {
           monster.isMoving = true
         }
       }
+      } // !isBattleTarget
     }
+  }
+
+  /**
+   * ★ 新增：初始化怪物技能冷却表
+   * 每个技能单独维护一个倒计时（秒），初始为 0 表示就绪
+   */
+  _initSkillCDs(skills) {
+    const cds = {}
+    if (Array.isArray(skills)) {
+      skills.forEach(s => {
+        cds[s.id] = 0
+      })
+    }
+    return cds
+  }
+
+  /**
+   * ★ 新增：怪物对英雄造成伤害
+   */
+  _dealMonsterDamage(monster, hero) {
+    if (!monster || !hero || hero.hp <= 0) return
+
+    // 计算伤害（参考玩家攻击公式，考虑暴击）
+    let base = Math.max(1, monster.atk - Math.floor(hero.def * 0.5))
+    const isCrit = Math.random() < (monster.crit || 0.05)
+    let damage = isCrit ? Math.floor(base * 1.5) : base
+
+    hero.hp = Math.max(0, hero.hp - damage)
+
+    // 伤害数字
+    const screenX = hero.x !== undefined ? hero.x : this.playerX
+    const screenY = hero.y !== undefined ? hero.y : this.playerY
+    this.battleSystem.damageTexts.push({
+      text: (isCrit ? '暴击 ' : '') + `-${damage}`,
+      x: screenX - this.cameraX,
+      y: screenY - this.cameraY - 40 * this.dpr,
+      color: isCrit ? '#ff9f1a' : '#ff4757',
+      life: 1.0
+    })
+
+    // 同步回角色状态管理（确保战斗结算后存档正确）
+    try {
+      const charState = charStateManager.getCharacter(hero.id)
+      if (charState) charState.hp = hero.hp
+    } catch (e) { /* 忽略 */ }
+
+    console.log(`[Field-Battle] ${monster.name} 攻击 ${hero.name}，造成 ${damage} 点伤害（暴击:${isCrit}），剩余HP: ${hero.hp}`)
+  }
+
+  /**
+   * ★ 新增：更新怪物战斗行为（普攻 + 技能）
+   * 仅在地图战斗激活（battleSystem.active）且本怪物为战斗目标时执行
+   * 关键：怪物与玩家保持攻击距离，不贴脸，避免“粘身”BUG
+   */
+  _updateMonsterAttack(dt) {
+    const monster = this.battleSystem.battleTarget
+    if (!monster || !monster.alive) return
+    const hero = this.party[0]
+    if (!hero || hero.hp <= 0) return
+
+    const dx = this.playerX - monster.x
+    const dy = this.playerY - monster.y
+    const dist = Math.sqrt(dx * dx + dy * dy)
+    const attackRange = (monster.attackRange || 80) * this.dpr
+    // 保持距离：站桩攻击范围，留一点缓冲，不进入玩家身体
+    const keepDistance = attackRange * 0.7
+
+    // 朝向玩家
+    if (dist > 1) {
+      monster.moveAngle = Math.atan2(dy, dx)
+    }
+
+    // 正在施放技能时不移动、不普攻
+    if (monster.isCastingSkill) {
+      monster.isMoving = false
+      monster.skillAnimTimer -= dt * 1000
+      if (monster.skillAnimTimer <= 0) {
+        monster.isCastingSkill = false
+        monster.skillCastId = null
+        monster.skillAnimTimer = 0
+        monster.animFrame = 0
+      }
+      return
+    }
+
+    // 维持攻击距离（不贴脸）
+    if (dist > attackRange) {
+      // 距离太远，靠近到攻击范围
+      const step = monster.moveSpeed * 6 * dt
+      monster.x += (dx / dist) * step
+      monster.y += (dy / dist) * step
+      monster.isMoving = true
+    } else if (dist < keepDistance) {
+      // 太近，后撤一点（避免粘身）
+      const step = monster.moveSpeed * 4 * dt
+      monster.x -= (dx / dist) * step
+      monster.y -= (dy / dist) * step
+      monster.isMoving = true
+    } else {
+      monster.isMoving = false
+    }
+
+    // 更新技能冷却
+    if (monster.skillCDs) {
+      for (const id in monster.skillCDs) {
+        if (monster.skillCDs[id] > 0) {
+          monster.skillCDs[id] = Math.max(0, monster.skillCDs[id] - dt)
+        }
+      }
+    }
+
+    // 在攻击范围内：优先尝试施放可用技能，否则普攻
+    if (dist <= attackRange) {
+      // 尝试施放技能（随机选一个就绪且距离合适的）
+      if (monster.skills && monster.skills.length > 0 && monster.skillCDs) {
+        const ready = monster.skills.filter(s => (monster.skillCDs[s.id] || 0) <= 0)
+        if (ready.length > 0) {
+          // 优先选一个在范围内且 CD 好的技能
+          const usable = ready.filter(s => dist <= (s.range || attackRange) * this.dpr)
+          const pick = (usable.length > 0 ? usable : ready)[Math.floor(Math.random() * (usable.length > 0 ? usable.length : ready.length))]
+          if (pick && Math.random() < 0.6) { // 60%概率放技能，避免无脑狂放
+            this._castMonsterSkill(monster, pick, hero)
+            return
+          }
+        }
+      }
+
+      // 普攻（冷却结束才放）
+      if (monster.attackCDTimer > 0) {
+        monster.attackCDTimer -= dt * 1000
+      } else if (!monster.isAttacking) {
+        // 触发普攻动画（500ms，命中帧在 60%）
+        monster.isAttacking = true
+        monster.attackAnimTimer = 500
+        monster.hasDealtDamage = false
+        monster.attackCDTimer = monster.attackInterval || 2000
+      }
+    }
+  }
+
+  /**
+   * ★ 新增：怪物施放技能
+   */
+  _castMonsterSkill(monster, skill, hero) {
+    if (!monster || !skill || !hero) return
+
+    console.log(`[Field-Battle] ${monster.name} 施放技能: ${skill.name} (${skill.id})`)
+
+    // 进入施法状态：播放 skill 动画
+    monster.isCastingSkill = true
+    monster.skillCastId = skill.id
+    // 技能动画时长（取 animationConfig.skill.frameDuration * 帧数 或默认 800ms）
+    const enemyConfig = this._getMonsterConfig(monster.enemyId)
+    const skillConf = enemyConfig?.animationConfig?.skill
+    const skillFrames = skillConf ? (skillConf.frameList ? skillConf.frameList.length : (skillConf.end - skillConf.start + 1)) : 8
+    const skillFrameDur = skillConf?.frameDuration || 100
+    monster.skillAnimTimer = skillFrames * skillFrameDur
+    monster.animFrame = 0
+    monster.hasDealtDamage = false
+
+    // 设置技能冷却（秒）
+    if (monster.skillCDs) monster.skillCDs[skill.id] = skill.cooldown || 10
+
+    const dx = this.playerX - monster.x
+    const dy = this.playerY - monster.y
+    const dist = Math.sqrt(dx * dx + dy * dy)
+
+    if (skill.type === 'attack' && skill.projectile) {
+      // 远程抛射物：生成飞弹，到达后结算伤害
+      this._spawnMonsterProjectile(monster, skill, dist)
+    } else if (skill.type === 'debuff') {
+      // 减速/减益：立即对玩家生效
+      this._applyMonsterDebuff(monster, skill)
+      // 也补一点基础伤害（power=0 时只上 debuff）
+      if (skill.power > 0) this._dealMonsterDamage(monster, hero)
+    } else if (skill.type === 'jump_attack') {
+      // 跳跃攻击：突进到玩家附近并造成高额伤害
+      const dash = Math.min(skill.dashDistance || 100, dist) * this.dpr
+      if (dist > 1) {
+        monster.x += (dx / dist) * dash
+        monster.y += (dy / dist) * dash
+      }
+      const dmg = Math.max(1, Math.floor(monster.atk * (skill.power || 1) - hero.def * 0.3))
+      hero.hp = Math.max(0, hero.hp - dmg)
+      this.battleSystem.damageTexts.push({
+        text: `-${dmg}`,
+        x: this.playerX - this.cameraX,
+        y: this.playerY - this.cameraY - 40 * this.dpr,
+        color: '#ff4757',
+        life: 1.0
+      })
+      try {
+        const cs = charStateManager.getCharacter(hero.id)
+        if (cs) cs.hp = hero.hp
+      } catch (e) {}
+    } else {
+      // 默认近战技能：直接造成伤害
+      const dmg = Math.max(1, Math.floor(monster.atk * (skill.power || 1) - hero.def * 0.4))
+      hero.hp = Math.max(0, hero.hp - dmg)
+      this.battleSystem.damageTexts.push({
+        text: `-${dmg}`,
+        x: this.playerX - this.cameraX,
+        y: this.playerY - this.cameraY - 40 * this.dpr,
+        color: '#ff4757',
+        life: 1.0
+      })
+    }
+  }
+
+  /**
+   * ★ 新增：生成怪物远程抛射物（仅视觉 + 延迟结算）
+   */
+  _spawnMonsterProjectile(monster, skill, dist) {
+    if (!this.battleSystem.projectiles) this.battleSystem.projectiles = []
+    const dx = this.playerX - monster.x
+    const dy = this.playerY - monster.y
+    const len = dist > 1 ? dist : 1
+    const speed = (skill.projectileSpeed || 200) * this.dpr
+    this.battleSystem.projectiles.push({
+      x: monster.x,
+      y: monster.y,
+      vx: (dx / len) * speed,
+      vy: (dy / len) * speed,
+      power: skill.power || 1,
+      life: 2.0, // 秒
+      fromMonster: true,
+      skillId: skill.id
+    })
+    console.log(`[Field-Battle] ${monster.name} 发射抛射物: ${skill.name}`)
+  }
+
+  /**
+   * ★ 新增：对玩家施加怪物减益（减速）
+   */
+  _applyMonsterDebuff(monster, skill) {
+    const effect = skill.effect || 'slow'
+    const value = skill.value || 0.3
+    const duration = skill.duration || 3
+
+    // 在 battleSystem 上记录玩家减益
+    if (!this.battleSystem.playerDebuffs) this.battleSystem.playerDebuffs = []
+    this.battleSystem.playerDebuffs.push({
+      effect,
+      value,
+      time: duration
+    })
+
+    // 提示
+    this.game.showToast && this.game.showToast(`${monster.name} 使用 ${skill.name}！`)
+    console.log(`[Field-Battle] 玩家被施加减益: ${effect} 值=${value} 持续=${duration}s`)
   }
 
   _checkAndRespawnMonsters() {
@@ -1026,6 +1321,11 @@ export class FieldScene extends SceneBase {
           attackRange: finalEnemyData?.attackRange || 80,
           attackInterval: finalEnemyData?.attackInterval || 2000,
           skills: finalEnemyData?.skills || [],
+          // 技能冷却计时器（每个技能单独冷却，单位：秒）
+          skillCDs: this._initSkillCDs(finalEnemyData?.skills || []),
+          isCastingSkill: false,  // 是否正在施放技能
+          skillAnimTimer: 0,      // 技能动画计时器（毫秒）
+          skillCastId: null,      // 当前施放中的技能id
           // 动画属性
           bobOffset: Math.random() * Math.PI * 2,
           bobSpeed: 2 + Math.random(),
@@ -1336,6 +1636,46 @@ export class FieldScene extends SceneBase {
 
     // 3. 更新伤害数字
     this._updateFieldDamageTexts(dt)
+
+    // 3.1 更新抛射物（怪物远程技能）
+    if (this.battleSystem.projectiles && this.battleSystem.projectiles.length > 0) {
+      const hero = this.party[0]
+      for (let i = this.battleSystem.projectiles.length - 1; i >= 0; i--) {
+        const p = this.battleSystem.projectiles[i]
+        p.x += p.vx * dt
+        p.y += p.vy * dt
+        p.life -= dt
+        // 命中玩家判定（半径约 30*dpr）
+        if (hero) {
+          const ddx = this.playerX - p.x
+          const ddy = this.playerY - p.y
+          if (Math.sqrt(ddx * ddx + ddy * ddy) < 30 * this.dpr) {
+            const dmg = Math.max(1, Math.floor(this.battleSystem.battleTarget.atk * p.power - hero.def * 0.3))
+            hero.hp = Math.max(0, hero.hp - dmg)
+            this.battleSystem.damageTexts.push({
+              text: `-${dmg}`,
+              x: this.playerX - this.cameraX,
+              y: this.playerY - this.cameraY - 40 * this.dpr,
+              color: '#ff4757',
+              life: 1.0
+            })
+            try { const cs = charStateManager.getCharacter(hero.id); if (cs) cs.hp = hero.hp } catch (e) {}
+            p.life = -1
+          }
+        }
+        if (p.life <= 0) this.battleSystem.projectiles.splice(i, 1)
+      }
+    }
+
+    // 3.2 更新玩家减益（减速）计时
+    if (this.battleSystem.playerDebuffs && this.battleSystem.playerDebuffs.length > 0) {
+      for (let i = this.battleSystem.playerDebuffs.length - 1; i >= 0; i--) {
+        this.battleSystem.playerDebuffs[i].time -= dt
+        if (this.battleSystem.playerDebuffs[i].time <= 0) {
+          this.battleSystem.playerDebuffs.splice(i, 1)
+        }
+      }
+    }
 
     // 4. 检查战斗目标是否还存活
     if (this.battleSystem.battleTarget && !this.battleSystem.battleTarget.alive) {
@@ -1798,6 +2138,20 @@ export class FieldScene extends SceneBase {
     if (this.battleSystem && this.battleSystem.showBattleUI) {
       this._renderBattleUI(ctx)
     }
+
+    // ★ 新增：渲染怪物抛射物（远程技能飞弹）
+    if (this.battleSystem && this.battleSystem.projectiles && this.battleSystem.projectiles.length > 0) {
+      for (const p of this.battleSystem.projectiles) {
+        const sx = p.x - this.cameraX
+        const sy = p.y - this.cameraY
+        ctx.save()
+        ctx.fillStyle = p.fromMonster ? 'rgba(120, 220, 120, 0.85)' : 'rgba(255, 120, 80, 0.85)'
+        ctx.beginPath()
+        ctx.arc(sx, sy, 8 * this.dpr, 0, Math.PI * 2)
+        ctx.fill()
+        ctx.restore()
+      }
+    }
   }
 
   /**
@@ -2214,9 +2568,13 @@ export class FieldScene extends SceneBase {
       return
     }
 
-    // ★ 攻击动画优先级最高
+    // ★ 技能动画优先级最高
     let animType, animConf
-    if (monster.isAttacking && enemyConfig.animationConfig.attack) {
+    if (monster.isCastingSkill && enemyConfig && enemyConfig.animationConfig && enemyConfig.animationConfig.skill) {
+      animType = 'skill'
+      animConf = enemyConfig.animationConfig.skill
+      // 注意：animFrame 已经在 _updateMonsters 中更新，这里不需要再更新
+    } else if (monster.isAttacking && enemyConfig.animationConfig.attack) {
       animType = 'attack'
       animConf = enemyConfig.animationConfig.attack
       // 注意：animFrame 已经在 _updateMonsters 中更新，这里不需要再更新

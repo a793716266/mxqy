@@ -3619,3 +3619,32 @@ _checkBattleEnd() {
 ## 🎨 UI 优化计划
 
 详见项目根目录的 BUG_FIXING_PLAN.md（如有）
+
+---
+
+## 🐛 修复：野外怪物不释放技能
+
+- **提交信息**：`fix: 野外怪物补充普攻与技能施放逻辑`
+- **问题**：野外战斗激活后，怪物只会被玩家攻击，从不主动普攻也不释放技能（史莱姆猫/暗影鼠/野生猫的 `skills` 数组完全未被消费）。
+- **根因**：`field-scene.js` 是个半成品 ARPG 框架，多处怪物战斗方法被调用却**从未实现**：
+  1. `_updateMonsterAttack(dt)` 在第 1335 行被调用但没有定义（导致战斗时怪物无任何攻击/技能行为）。
+  2. `_dealMonsterDamage(monster, hero)` 在攻击命中帧被调用但没有定义。
+  3. 怪物配置中的 `skills`（黏液喷射/黏液包裹/跳跃攻击）没有任何施放逻辑。
+  4. 战斗激活时，怪物的巡逻移动代码仍会执行，覆盖战斗 AI 的走位。
+- **修复内容**：
+  - 新增 `_initSkillCDs(skills)`：为每个技能建立独立冷却计时器。
+  - 新增 `_dealMonsterDamage(monster, hero)`：计算伤害（含暴击）、显示伤害数字、同步角色状态。
+  - 实现 `_updateMonsterAttack(dt)`：
+    - 战斗激活时怪物朝玩家移动并**保持攻击距离**（不贴脸，规避历史「粘身」BUG）。
+    - 普攻冷却结束触发攻击动画（命中帧结算伤害）。
+    - 技能冷却就绪后按概率（60%）施放，支持 attack(远程抛射)/debuff(减速)/jump_attack(突进) 三种类型。
+  - 新增 `_castMonsterSkill` / `_spawnMonsterProjectile` / `_applyMonsterDebuff`：技能施放、飞弹、减益效果。
+  - `_updateBattleSystem` 新增抛射物更新 + 玩家减速 debuff 计时；玩家移动应用减速因子。
+  - `_updateMonsters`：战斗目标跳过巡逻移动；新增 skill 动画推进分支。
+  - `_renderCatMonster`：渲染时优先使用 skill 动画类型（含 null 保护）。
+  - 渲染末尾绘制怪物抛射物（绿色飞弹）。
+  - 怪物初始化（Boss/普通/respawn）与存档迁移均补充 `skillCDs`/`isCastingSkill`/`skillAnimTimer`/`skillCastId` 字段。
+- **相关文件**：
+  - `scripts/scenes/field-scene.js` - 实现怪物普攻与技能施放全流程
+- **注意事项**：Boss（`enemyId` 未在 `_getMonsterConfig` 映射中）仍会结算技能伤害/效果，但无专属 skill 动画帧（走默认配置，已做 null 保护不报错）。野怪（slime_cat/shadow_mouse/wild_cat/lost_healer_cat）均有完整 skill 动画配置，可正常播放。
+
