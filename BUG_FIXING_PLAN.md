@@ -2,6 +2,38 @@
 
 ## 📅 更新日志
 
+### 2026-08-02（更新）
+
+**fix: 战斗队长模式"点击没反应" + 实现王者荣耀式摇杆操作**
+
+- **问题**：战斗测试（队长模式）中，摇杆拖动角色不移动、普攻/技能按钮点击无任何反应；操作手感不符合"王者荣耀式"MOBA 体验预期。
+- **根因**：
+  1. 原输入系统在 `battle-input.js` 中又自行 `wx.onTouchStart` 绑定了一套独立触摸回调（`this._onCaptainTouchStart` 等），与全局 `InputManager` 双线并存，事件链路脆弱，导致点击根本到不了按钮命中逻辑。
+  2. 主循环 `battle-animation.js` 的 `update()` 里**从未读取摇杆状态去驱动 `_controlledHero` 移动**（测试模式 `update` 直接 return，正常模式自动战斗也跳过了操控英雄），所以摇杆完全是"摆设"。
+- **修复方案**：
+  1. 删除 `battle-input.js` 中脆弱的自绑定 `wx.onTouchStart/onTouchMove/onTouchEnd` 及 `BattleInput` 类耦合，改为**统一走 Game 的 `InputManager`**（`this.game.input.touches` / `consumeTap`），与 `field-scene.js` 同一可靠坐标体系（画布像素、已乘 dpr）。
+  2. 新增 `proto._updateCaptainTouch(dt)`：每帧从 `InputManager` 读取实时触点驱动摇杆（左下虚拟摇杆，带手柄偏移/死区/最大半径限制），从 `consumeTap()` 消费短点击触发普攻/技能/切换。
+  3. 新增 `proto._applyJoystickToHero(dt)`：将摇杆方向向量应用于操控英雄，实时移动 `unitStates[hero.id]` 与 `heroPositions[hero.id]`（MOBA 拖动移动手感）。
+  4. 在 `battle-animation.js` 的 `update()` 开头（switch 前）每帧调用 `this._updateCaptainTouch(dt)`，确保测试模式与正常模式都能响应。
+  5. 输入初始化（`_initCaptainInput`）改为建立摇杆运行时状态对象（`active/currentX/currentY/dirX/dirY/magnitude`），不再依赖事件绑定时序。
+- **修改文件**：
+  - `scripts/scenes/battle/battle-input.js`：
+    - 重写 `proto._initCaptainInput`（移除 wx 自绑定、初始化摇杆状态）
+    - 新增 `proto._updateCaptainTouch` / `proto._applyJoystickToHero`
+    - 清理 `_onCaptainTouchStart/Move/End` 与 `wx.onTouch*` 残留
+  - `scripts/scenes/battle/battle-animation.js`：
+    - `update()` 开头每帧调用 `_updateCaptainTouch(dt)`
+- **操作说明（王者荣耀式）**：
+  1. 左下角虚拟摇杆：按住拖动角色移动（手柄跟随手指，带死区/最大半径）
+  2. 右下角普攻键：点击立即普攻最近敌人
+  3. 普攻键两侧技能键：点击释放对应技能（CD 就绪即可点）
+  4. 普攻键下方小按钮：切换操控角色
+- **测试说明**：
+  1. 主菜单 → 战斗测试，进入战斗测试模式
+  2. 左下拖动摇杆，角色应实时移动
+  3. 点击右下普攻/技能键，应触发攻击/技能动画（不再"没反应"）
+- **状态**：✅ 已修复并通过 Babel 语法检查（scripts/scenes/battle/ 7/7 通过）
+
 ### 2026-05-29（23:15）
 
 **fix: 修复艾米动画不更新（一张图片飘来飘去）**
@@ -3760,3 +3792,23 @@ _checkBattleEnd() {
   - `asset-manager.js` 的 SHADOW_MOUSE skill 资源（8 帧）注册完整，素材 `shadow_mouse/skill/skill_01~08.png` 均存在。
   - 本次翻转修复（仅 flipRule/assetFacing/渲染）完全不涉及 skills/AI/cooldown 代码。
 - **下一步**：在 `_updateSingleMonsterCombat` 对 `shadow_mouse` 加一次性 `console.log` 打印运行时 `skills`/`skillCDs`/`attackRange` 状态，待用户重新编译后提供 console 日志定位。
+
+---
+
+## 🐛 修复：战斗测试模式英雄无法释放技能
+
+- **提交信息**：`fix: 修复战斗测试模式英雄无法释放技能`
+- **状态**：✅ 已修复（待用户实机验证）
+- **现象**：战斗测试模式（`_testMode=true`，nodeId=`test_battle`）下，操控英雄（李小宝/艾米）点击技能按钮和普攻按钮，角色完全不攻击、不放技能。
+- **根因**：`battle-scene.js` 测试模式初始化时，把每个英雄的 `heroAttackTimers[hero.id].skillCDs[skill.id]` 设为 `Infinity`（注释"所有技能CD设为无穷大"）。而 `_refreshSkillButtons` / `_refreshSkillButtonCDs` 计算 `disabled = (skillCDs[id] > 0) || (mp不足)`，由于 `Infinity > 0` 恒为 `true`，**所有技能按钮被永久标记为 `disabled`**。`_handleCaptainTap` → `_captainManualSkill` 命中 `if (skillBtn.disabled) return` 分支直接退出 → 技能永远放不出来。
+- **修复**：测试模式初始化时仅禁用**自动攻击计时器**（`attackTimer: Infinity`，符合"手动控制"设计），技能 CD 改为初始化为 `0`（就绪态）。手动释放技能时由 `_captainManualSkill` 按 `nodeId !== 'test_battle'` 决定是否重新计 CD（测试模式不重新计 CD，按钮持续可点，符合测试预期）。
+- **说明**：普攻按钮 `_captainManualAttack` 本就不检查 CD、无测试模式阻止；本次修复主要解决技能按钮被 `disabled` 屏蔽的问题。自动攻击（`_updateAutoBattle` / `_doHeroAttack`）在测试模式下仍被正确跳过，不影响"手动控制"设计。
+- **相关文件**：`scripts/scenes/battle-scene.js`
+- **验证**：Babel 语法检查通过；lint 无新增错误。
+
+---
+
+## 🐛 待排查：野外暗影鼠"完全不放技能"
+
+- **状态**：待实机验证（静态分析未发现代码缺陷，资源完整）
+- 详见上方"野外怪物行走方向统一修复"章节的"排查中"子节。

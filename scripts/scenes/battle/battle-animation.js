@@ -74,6 +74,11 @@ export function installBattleAnimation(BattleSceneClass) {
   proto.update = function(dt) {
     this.time += dt
 
+    // ★ 队长模式：每帧读取统一输入（摇杆移动 + 点击触发技能）
+    if (this._captainMode) {
+      this._updateCaptainTouch(dt)
+    }
+
     // ★ 调试日志（每3秒输出一次）
     if (!this._lastUpdateLog || this.time - this._lastUpdateLog > 3) {
       console.log(`[Battle] update() 被调用, phase=${this.phase}, time=${this.time.toFixed(2)}`)

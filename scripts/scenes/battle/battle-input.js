@@ -598,107 +598,149 @@ export function installBattleInput(BattleSceneClass) {
   // ======== 队长模式：触摸事件（摇杆） ========
   proto._initCaptainInput = function() {
     if (!this._captainMode) {
-      console.log('[Input] _captainMode 未启用，跳过触摸事件绑定')
+      console.log('[Input] _captainMode 未启用，跳过输入初始化')
       return
     }
-    
-    console.log('[Input] 开始绑定触摸事件, _captainMode=', this._captainMode)
-    console.log('[Input] _joystickConfig:', JSON.stringify(this._joystickConfig))
-    console.log('[Input] 当前环境:', typeof wx !== 'undefined' ? '微信小游戏' : '浏览器')
-    console.log('[Input] wx.onTouchStart 是否存在:', typeof wx !== 'undefined' ? typeof wx.onTouchStart : 'N/A')
-    
-    // ★ 测试：添加一个全屏触摸监听器，验证触摸事件是否工作
-    this._testTouchHandler = (e) => {
-      console.log('[Input] 全屏触摸测试：', e.touches ? e.touches.length : 'N/A', '个触摸点')
+
+    // ★ 输入统一走 Game 的 InputManager（this.game.input），与 field-scene 同一可靠路径。
+    // ★ 不再自行绑定 wx.onTouchStart，避免与全局输入管理器冲突导致点击无响应。
+    // ★ 每帧在 update() 中调用 _updateCaptainTouch() 读取 touches / consumeTap。
+
+    const cfg = this._joystickConfig
+    this._joystick = {
+      active: false,
+      originX: cfg.centerX,
+      originY: cfg.centerY,
+      currentX: cfg.centerX,
+      currentY: cfg.centerY,
+      dirX: 0,
+      dirY: 0,
+      magnitude: 0,
+      _touchId: null,
     }
-    if (typeof wx !== 'undefined' && wx.onTouchStart) {
-      wx.onTouchStart(this._testTouchHandler)
-      console.log('[Input] 全屏触摸测试监听器已绑定（wx.onTouchStart）')
-    }
+    if (this._attackBtn) this._attackBtn.pressed = false
+    if (this._skillBtns) this._skillBtns.forEach(b => { b.pressed = false })
+    console.log('[Input] 队长模式输入已就绪（统一 InputManager 派发）')
+  }
 
-    this._onCaptainTouchStart = (e) => {
-      console.log('[Input] 触摸开始事件触发！touches数量=', e.touches ? e.touches.length : 0)
-      
-      if (!e.touches || !this._joystickConfig) {
-        console.log('[Input] 触摸事件被忽略：touches=', e.touches, ', _joystickConfig=', this._joystickConfig)
-        return
-      }
+  // ======== 每帧输入更新（王者荣耀式：左下摇杆 + 右下技能键）========
+  // ★ 统一从 Game 的 InputManager 读取 touches / tap，与 field-scene 同一坐标体系
+  proto._updateCaptainTouch = function(dt) {
+    if (!this._captainMode || !this.game || !this.game.input) return
+    const input = this.game.input
+    const cfg = this._joystickConfig
+    const joy = this._joystick
+    if (!cfg || !joy) return
 
-      for (const t of e.touches) {
-        const tx = t.clientX * this.dpr
-        const ty = t.clientY * this.dpr
+    // ---------- 1) 摇杆：读取当前活动触摸点 ----------
+    // InputManager.touches 是按 identifier 索引的对象 { id: {x,y} }，坐标为画布像素(已乘dpr)
+    const touchEntries = (input.touches && typeof input.touches === 'object')
+      ? Object.entries(input.touches).map(([id, p]) => ({ id: Number(id), x: p.x, y: p.y }))
+      : []
 
-        console.log(`[Input] 触摸点：(${tx}, ${ty}), 摇杆中心=(${this._joystickConfig.centerX}, ${this._joystickConfig.centerY})`)
-
-        // ★ 优先检测按钮区域（普攻/技能/切换角色）
-        if (this._handleCaptainTap(tx, ty)) return
-
-        // 检测摇杆区域
-        if (!this._joystick.active) {
-          const dx = tx - this._joystickConfig.centerX
-          const dy = ty - this._joystickConfig.centerY
-          if (Math.sqrt(dx * dx + dy * dy) < this._joystickConfig.baseRadius * 1.5) {
-            this._joystick.active = true
-            this._joystick.touchId = t.identifier
-            this._joystick.currentX = tx
-            this._joystick.currentY = ty
-          }
+    if (!joy.active) {
+      // 寻找落在摇杆底盘内的触点
+      for (const tp of touchEntries) {
+        const dx = tp.x - cfg.centerX
+        const dy = tp.y - cfg.centerY
+        if (Math.sqrt(dx * dx + dy * dy) < cfg.baseRadius * 1.8) {
+          joy.active = true
+          joy._touchId = tp.id
+          joy.originX = cfg.centerX
+          joy.originY = cfg.centerY
+          joy.currentX = tp.x
+          joy.currentY = tp.y
+          break
         }
       }
     }
 
-    this._onCaptainTouchMove = (e) => {
-      if (this._joystick.active && e.touches) {
-        for (const t of e.touches) {
-          if (t.identifier === this._joystick.touchId) {
-            this._joystick.currentX = t.clientX * this.dpr
-            this._joystick.currentY = t.clientY * this.dpr
-            break
-          }
-        }
+    if (joy.active) {
+      // 找到锁定的触点
+      const tp = touchEntries.find(p => p.id === joy._touchId)
+      if (tp) {
+        joy.currentX = tp.x
+        joy.currentY = tp.y
+      } else {
+        // 触点已松开 → 停止摇杆
+        joy.active = false
+        joy._touchId = null
+        joy.dirX = 0
+        joy.dirY = 0
+        joy.magnitude = 0
       }
     }
 
-    this._onCaptainTouchEnd = (e) => {
-      if (this._joystick.active && e.changedTouches) {
-        for (const t of e.changedTouches) {
-          if (t.identifier === this._joystick.touchId) {
-            this._joystick.active = false
-            this._joystick.touchId = null
-            this._attackBtnAutoTimer = 0  // 重置自动攻击计时
-            break
-          }
-        }
+    // 计算摇杆方向向量（手柄相对底盘中心，限制最大偏移）
+    if (joy.active) {
+      let dx = joy.currentX - joy.originX
+      let dy = joy.currentY - joy.originY
+      const dist = Math.sqrt(dx * dx + dy * dy) || 1
+      const maxOff = cfg.maxOffset
+      const clamped = Math.min(dist, maxOff)
+      joy.magnitude = clamped / maxOff
+      joy.dirX = dx / dist
+      joy.dirY = dy / dist
+      // 死区
+      if (clamped < cfg.deadZone) {
+        joy.dirX = 0
+        joy.dirY = 0
+        joy.magnitude = 0
       }
-    }
-
-    // ★ 微信小游戏环境：直接使用 wx API
-    if (typeof wx !== 'undefined') {
-      console.log('[Input] 使用 wx.onTouchStart 绑定触摸事件')
-      wx.onTouchStart(this._onCaptainTouchStart)
-      wx.onTouchMove(this._onCaptainTouchMove)
-      wx.onTouchEnd(this._onCaptainTouchEnd)
-      console.log('[Input] 触摸事件绑定完成（wx API）')
     } else {
-      // 浏览器环境：使用 game.input
-      console.log('[Input] 使用 game.input 绑定触摸事件')
-      this.game.input.onStart(this._onCaptainTouchStart)
-      this.game.input.onMove(this._onCaptainTouchMove)
-      this.game.input.onEnd(this._onCaptainTouchEnd)
-      console.log('[Input] 触摸事件绑定完成（game.input）')
+      joy.dirX = 0
+      joy.dirY = 0
+      joy.magnitude = 0
+    }
+
+    // ---------- 2) 驱动操控角色移动（MOBA 拖动移动）----------
+    this._applyJoystickToHero(dt)
+
+    // ---------- 3) 点击：消费 tap 触发按钮（普攻/技能/切换）----------
+    const tap = input.consumeTap && input.consumeTap()
+    if (tap) {
+      // 摇杆区域内的点击不视为按钮点击
+      const jdx = tap.x - cfg.centerX
+      const jdy = tap.y - cfg.centerY
+      if (!(joy.active && Math.sqrt(jdx * jdx + jdy * jdy) < cfg.baseRadius * 1.8)) {
+        this._handleCaptainTap(tap.x, tap.y)
+      }
+    }
+  }
+
+  // 将摇杆方向应用到操控英雄（实时移动，王者荣耀手感）
+  proto._applyJoystickToHero = function(dt) {
+    const joy = this._joystick
+    const hero = this._controlledHero
+    if (!joy || !hero || joy.magnitude <= 0) {
+      // 停止移动
+      const st = hero ? this.unitStates[hero.id] : null
+      if (st && st._joystickMoving) {
+        st._joystickMoving = false
+        st._captainMoveDir = 0
+      }
+      return
+    }
+    const st = this.unitStates[hero.id]
+    if (!st) return
+
+    const speed = this._getMoveSpeed(hero) * 1.25 * dt
+    st.x += joy.dirX * speed
+    st.y += joy.dirY * speed
+    st._joystickMoving = true
+    st._captainMoveDir = joy.dirX * this.dpr   // 记录朝向（用于攻击方向判定）
+    st.state = 'moving_to_attack'  // 复用移动动画
+    this._clampToBattlefield(st)
+    if (this.heroPositions && this.heroPositions[hero.id]) {
+      this.heroPositions[hero.id].x = st.x
+      this.heroPositions[hero.id].y = st.y
     }
   }
 
   proto._cleanupCaptainInput = function() {
-    // ★ 兼容浏览器和微信小游戏环境
-    if (this._onCaptainTouchStart) {
-      if (typeof wx !== 'undefined' && wx.offTouchStart) {
-        wx.offTouchStart(this._onCaptainTouchStart)
-      } else {
-        this.game.input.offStart(this._onCaptainTouchStart)
-      }
-    }
-    if (this._onCaptainTouchMove) this.game.input.offMove(this._onCaptainTouchMove)
-    if (this._onCaptainTouchEnd) this.game.input.offEnd(this._onCaptainTouchEnd)
+    // 输入统一由 Game 的 InputManager 管理，场景无需自行解绑。
+    this._joystick = this._joystick || {}
+    this._joystick.active = false
+    this._joystick._touchId = null
   }
 }
