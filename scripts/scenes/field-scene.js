@@ -229,7 +229,7 @@ export class FieldScene extends SceneBase {
         name: '阳光草原',
         fieldBg: null, // 程序化渲染（grassland-map-data.js）
         battleBg: 'BG_GRASSLAND', // 战斗背景
-        enemies: ['wild_cat', 'slime_cat', 'shadow_mouse'],
+        enemies: ['wild_cat', 'slime_cat', 'shadow_mouse', 'flame_slime', 'aqua_slime', 'violet_slime', 'shadow_mouse_smooth'],
         bossEnemy: 'lost_healer_cat',  // 添加Boss
         enemyData: ENEMIES_CH1,  // 敌人数据源
         color: '#5daE4a',
@@ -252,7 +252,7 @@ export class FieldScene extends SceneBase {
         name: '迷雾森林',
         fieldBg: null, // 后续可替换为森林专用图片
         battleBg: 'BG_FOREST',
-        enemies: ['slime_cat', 'shadow_mouse', 'wild_cat'],
+        enemies: ['slime_cat', 'shadow_mouse', 'wild_cat', 'flame_slime', 'aqua_slime', 'violet_slime', 'shadow_mouse_smooth'],
         bossEnemy: 'stray_leader',
         enemyData: ENEMIES_CH1,
         color: '#2ed573',
@@ -263,7 +263,7 @@ export class FieldScene extends SceneBase {
         name: '暗影洞穴',
         fieldBg: null, // 后续可替换为洞穴专用图片
         battleBg: 'BG_CAVE',
-        enemies: ['shadow_mouse', 'slime_cat', 'wild_cat'],
+        enemies: ['shadow_mouse', 'slime_cat', 'wild_cat', 'shadow_mouse_smooth', 'flame_slime', 'aqua_slime', 'violet_slime'],
         bossEnemy: 'dark_cat_king',
         enemyData: ENEMIES_CH1,
         color: '#636e72',
@@ -849,7 +849,7 @@ export class FieldScene extends SceneBase {
       if (!monster.alive) continue
 
       // ★ 支持序列帧动画的怪物列表（使用 _renderCatMonster 渲染）
-      const useCatAnim = ['slime_cat', 'shadow_mouse', 'wild_cat', 'lost_healer_cat'].includes(monster.enemyId)
+      const useCatAnim = ['slime_cat', 'shadow_mouse', 'wild_cat', 'lost_healer_cat', 'flame_slime', 'aqua_slime', 'violet_slime', 'shadow_mouse_smooth'].includes(monster.enemyId)
       if (useCatAnim && monster.animTimer === undefined) {
         monster.animTimer = 0
         monster.animFrame = 0
@@ -922,15 +922,18 @@ export class FieldScene extends SceneBase {
           // ★ 根据怪物类型确定帧数
           let walkFrames = 12
           let idleFrames = 8
-          if (monster.enemyId === 'slime_cat') {
+          if (monster.enemyId === 'slime_cat' || monster.enemyId === 'flame_slime' || monster.enemyId === 'aqua_slime' || monster.enemyId === 'violet_slime') {
             walkFrames = 12
-            idleFrames = 7  // 史莱姆猫idle只有7帧
+            idleFrames = 7  // 史莱姆猫系 idle 7 帧
           } else if (monster.enemyId === 'shadow_mouse') {
             walkFrames = 8
-            idleFrames = 6  // 暗影鼠idle只有6帧
+            idleFrames = 6  // 暗影鼠 idle 6 帧
+          } else if (monster.enemyId === 'shadow_mouse_smooth') {
+            walkFrames = 15  // 补帧顺滑版 15 帧
+            idleFrames = 6
           } else if (monster.enemyId === 'lost_healer_cat') {
-            walkFrames = 8  // 艾米walk有8帧
-            idleFrames = 8  // 艾米idle有8帧
+            walkFrames = 8  // 艾米 walk 8 帧
+            idleFrames = 8  // 艾米 idle 8 帧
           } else {
             // wild_cat 等普通猫咪
             walkFrames = 12
@@ -2156,7 +2159,7 @@ export class FieldScene extends SceneBase {
     engine.render(ctx, {
       renderMonster: (ctx, monster, sx, sy) => {
         // ★ 修复：所有有动画资源的怪物都使用猫咪动画
-        const useCatAnim = ['slime_cat', 'shadow_mouse', 'wild_cat', 'lost_healer_cat'].includes(monster.enemyId)
+        const useCatAnim = ['slime_cat', 'shadow_mouse', 'wild_cat', 'lost_healer_cat', 'flame_slime', 'aqua_slime', 'violet_slime', 'shadow_mouse_smooth'].includes(monster.enemyId)
         if (useCatAnim) {
           self._renderCatMonster(ctx, monster, sx, sy)
         } else {
@@ -2751,7 +2754,7 @@ export class FieldScene extends SceneBase {
 
       // 所有普通怪物使用坏猫动画，Boss/精英使用emoji
       // ★ 修复：所有有动画资源的怪物都使用猫咪动画
-      const useCatAnim = ['slime_cat', 'shadow_mouse', 'wild_cat'].includes(monster.enemyId)
+      const useCatAnim = ['slime_cat', 'shadow_mouse', 'wild_cat', 'flame_slime', 'aqua_slime', 'violet_slime', 'shadow_mouse_smooth'].includes(monster.enemyId)
 
       if (useCatAnim) {
         // 使用猫咪动画渲染
@@ -2939,7 +2942,13 @@ export class FieldScene extends SceneBase {
       'slime_cat': require('../entities/monsters/slime-cat.js'),
       'shadow_mouse': require('../entities/monsters/shadow-mouse.js'),
       'lost_healer_cat': require('../entities/monsters/lost-healer-cat.js'),
-      'wild_cat': require('../entities/monsters/wild-cat.js')
+      'wild_cat': require('../entities/monsters/wild-cat.js'),
+      // === 派生资源：换肤变体（同模异色史莱姆猫）===
+      'flame_slime': require('../entities/monsters/slime_cat_skins.js').flame_slime,
+      'aqua_slime': require('../entities/monsters/slime_cat_skins.js').aqua_slime,
+      'violet_slime': require('../entities/monsters/slime_cat_skins.js').violet_slime,
+      // === 派生资源：暗影鼠补帧顺滑版 ===
+      'shadow_mouse_smooth': require('../entities/monsters/shadow-mouse-tween.js')
     }
 
     try {
@@ -3032,9 +3041,15 @@ export class FieldScene extends SceneBase {
       'slime_cat': 'SLIME_CAT',
       'shadow_mouse': 'SHADOW_MOUSE',
       'lost_healer_cat': 'AIMI',
-      'wild_cat': 'SLIME_CAT'  // wild_cat 复用史莱姆猫资源
+      'wild_cat': 'SLIME_CAT',  // wild_cat 复用史莱姆猫资源
+      // === 派生资源：换肤变体（同模异色史莱姆猫）===
+      'flame_slime': 'FLAME_SLIME',
+      'aqua_slime': 'AQUA_SLIME',
+      'violet_slime': 'VIOLET_SLIME',
+      // === 派生资源：暗影鼠补帧顺滑版 ===
+      'shadow_mouse_smooth': 'SHADOW_MOUSE_SMOOTH'
     }
-    
+
     const prefix = prefixMap[enemyId] || 'SLIME_CAT'
     const action = animType.toUpperCase()
     

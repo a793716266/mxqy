@@ -379,6 +379,37 @@ export const ASSETS = {
     { action: 'walk',   frames: 8 },
   ]),
 
+  // --- 暗影鼠·补帧顺滑版（walk 8→15 帧，其余复用原始）---
+  ...buildFrames('SHADOW_MOUSE_SMOOTH', 'images/characters_anim/transparent/shadow_mouse', [
+    { action: 'idle',   frames: 6 },
+    { action: 'attack', frames: 7 },
+    { action: 'skill',  frames: 8 },
+  ]),
+  ...buildFramesEx('SHADOW_MOUSE_SMOOTH', 'images/characters_anim/transparent/shadow_mouse/walk_tween', [
+    { action: 'walk',   frames: 15, pad: 2, filePrefix: 'frame' },
+  ]),
+
+  // --- 史莱姆猫·换肤变体（同模异色，色相旋转派生）---
+  // 赤焰(20°) / 碧波(180°) / 魅紫(300°)，路径指向 slime_cat_skins/hue_xx/
+  ...buildFrames('FLAME_SLIME', 'images/characters_anim/transparent/slime_cat_skins/hue_20', [
+    { action: 'idle',   frames: 7,  pad: 1 },
+    { action: 'attack', frameList: [8, 10, 12, 14, 16, 18, 20, 22], pad: 4, filePrefix: 'attack' },
+    { action: 'skill',  frameList: [50, 53, 56, 59, 62, 65, 68, 71, 74, 77, 80], pad: 4, filePrefix: 'skill' },
+    { action: 'walk',   frames: 12 },
+  ]),
+  ...buildFrames('AQUA_SLIME', 'images/characters_anim/transparent/slime_cat_skins/hue_180', [
+    { action: 'idle',   frames: 7,  pad: 1 },
+    { action: 'attack', frameList: [8, 10, 12, 14, 16, 18, 20, 22], pad: 4, filePrefix: 'attack' },
+    { action: 'skill',  frameList: [50, 53, 56, 59, 62, 65, 68, 71, 74, 77, 80], pad: 4, filePrefix: 'skill' },
+    { action: 'walk',   frames: 12 },
+  ]),
+  ...buildFrames('VIOLET_SLIME', 'images/characters_anim/transparent/slime_cat_skins/hue_300', [
+    { action: 'idle',   frames: 7,  pad: 1 },
+    { action: 'attack', frameList: [8, 10, 12, 14, 16, 18, 20, 22], pad: 4, filePrefix: 'attack' },
+    { action: 'skill',  frameList: [50, 53, 56, 59, 62, 65, 68, 71, 74, 77, 80], pad: 4, filePrefix: 'skill' },
+    { action: 'walk',   frames: 12 },
+  ]),
+
   // --- 艾米动画帧 ---
   ...buildFrames('AIMI', 'images/characters_anim/transparent/aimi', [
     { action: 'walk',    frames: 8 },

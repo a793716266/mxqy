@@ -3714,3 +3714,20 @@ _checkBattleEnd() {
 - **相关文件**：`scripts/systems/field-battle-system.js`、`scripts/scenes/field-scene.js`。
 - **验证**：Babel 语法检查通过；用户实测确认：红色预警出现、读条期间怪物原地不动、红圈消失瞬间跳跃落地并播放技能攻击演出、走出圈可躲避。
 
+## 🎨 资源派生：基于现有动画生成野外怪物新资源
+
+- **提交信息**：`feat: 从现有怪物动画派生技能特效帧-换肤变体-补帧资源`
+- **需求**：用户希望基于现有野外怪物动画资源，派生三类新资源，应用于野外战斗怪物：
+  1. **技能特效帧**：从现有怪物 skill 帧派生打击/爆裂/光环/拖尾特效，可叠加在技能演出上。
+  2. **换肤/调色新怪物**：复用现有骨架动画，通过色相旋转生成同模异色变体。
+  3. **抽帧/补帧**：对帧率不足的 walk 序列线性插值补帧，让野外移动更顺滑。
+- **实现**（`scripts/tools/derive_monster_assets.py`，纯 PIL，无外部依赖）：
+  - `skill_fx` 子命令：读 `slime_cat/skill/`，对每帧合成「爆裂环 + 高斯光晕 + 向左残影拖尾」，输出 `_fx.png`（纯特效层，运行时叠加）与 `_preview.png`（原图+特效预览）。共 11 帧特效资源。
+  - `recolor` 子命令：对 `slime_cat` 各动画子目录做 HSV 色相旋转（hue 20°/180°/300°），生成 `slime_cat_skins/hue_20|hue_180|hue_300/` 三套换肤资源，每套含 idle/walk/attack/hurt/death/skill 全套帧（跳过派生的 `skill_fx` 子目录，避免递归）。
+  - `tween` 子命令：对 `shadow_mouse/walk`（8 帧）线性插值补帧 ×2，输出 `walk_tween/frame_01~frame_15`（连续序号命名，避免覆盖），移动动画由 8 帧升至 15 帧。
+- **配置文件（接入战斗系统）**：
+  - `scripts/entities/monsters/slime_cat_skins.js`：导出 `flame_slime`(赤焰)、`aqua_slime`(碧波)、`violet_slime`(魅紫) 三个换肤变体，复用 `ENEMIES_CH1.slime_cat` 属性与 AI，仅替换资源路径与 `tint` 提示色。
+  - `scripts/entities/monsters/shadow-mouse-tween.js`：导出 `shadow_mouse_smooth`，walk 指向补帧序列 `walk_tween/`，`totalWalkFrames=15`，移动更顺滑。
+- **资源路径**：`subpackages/battle/images/characters_anim/transparent/slime_cat/skill_fx/`、`.../slime_cat_skins/`、`.../shadow_mouse/walk_tween/`。
+- **验证**：Babel 语法检查通过（`slime_cat_skins.js`、`shadow-mouse-tween.js`）；`require('../../data/enemies.js')` 可取 `ENEMIES_CH1`，依赖正常；三类资源实际文件数核对正确（11 特效帧 / 每套 12 walk 帧 / 15 补帧）。
+
