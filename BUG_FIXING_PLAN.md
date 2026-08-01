@@ -3648,3 +3648,22 @@ _checkBattleEnd() {
   - `scripts/scenes/field-scene.js` - 实现怪物普攻与技能施放全流程
 - **注意事项**：Boss（`enemyId` 未在 `_getMonsterConfig` 映射中）仍会结算技能伤害/效果，但无专属 skill 动画帧（走默认配置，已做 null 保护不报错）。野怪（slime_cat/shadow_mouse/wild_cat/lost_healer_cat）均有完整 skill 动画配置，可正常播放。
 
+---
+
+## 🐛 优化：野外怪物 AI 聪明化（"怪物有点傻"）
+
+- **提交信息**：`refactor: 野外怪物AI聪明化-多怪协同/横向走位/智能选技能/脱战追击`
+- **问题**：怪物行为呆板——只有碰到玩家的那只怪物（battleTarget）会站桩普攻，其他怪仍在巡逻；目标怪只会直线靠近/后撤，技能纯随机 60% 概率，无任何战术，显得"傻"。
+- **优化内容**：
+  - **多怪协同**：战斗激活后，仇恨范围内（320*dpr）所有活着的野怪都会进入 `inCombat` 并参与 AI，不再只有单只站桩。
+  - **横向走位（strafe）**：怪物在保持攻击距离的同时做周期性绕圈走位（`strafeDir` 每隔 1.2~2.7s 有 40% 概率反向），移动自然、会包抄，不再直线愣头青。
+  - **智能选技能**：按距离/血量情境加权评分——
+    - 远距 → 优先 `attack` 远程抛射；
+    - 近身 → 优先 `debuff`（黏液包裹减速）；
+    - 残血（HP<40%）→ 优先 `jump_attack` 突进拼命；
+    - 超距技能降权；评分超过阈值（1.2）且 70% 概率才放，给普攻留空间。
+  - **追击与脱战**：玩家跑远（超牵引范围 460*dpr）则脱战回到巡逻；战斗结束时统一清空所有怪 `inCombat` 状态。
+  - **保持距离规避粘身**：攻击甜区 = [attackRange*0.75, attackRange]，太远靠近、太近后撤，全程不进入玩家身体。
+- **相关文件**：`scripts/scenes/field-scene.js`（`_updateMonsterAttack` 重构为多怪遍历 + 新增 `_updateSingleMonsterCombat`；`_updateMonsters` 改用 `inCombat` 跳过巡逻；`_endFieldBattle` 清空战斗状态）。
+- **字段新增**：怪物初始化与存档迁移补充 `inCombat` / `strafeDir` / `strafeTimer`。
+

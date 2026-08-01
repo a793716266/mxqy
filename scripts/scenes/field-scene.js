@@ -167,6 +167,11 @@ export class FieldScene extends SceneBase {
                 monster.skillAnimTimer = 0
                 monster.skillCastId = null
               }
+              if (monster.inCombat === undefined) {
+                monster.inCombat = false
+                monster.strafeDir = Math.random() > 0.5 ? 1 : -1
+                monster.strafeTimer = 0
+              }
               console.log(`[Field] 迁移怪物属性: ${monster.enemyId}, atk=${monster.atk}, def=${monster.def}, hp=${monster.hp}`)
             }
           }
@@ -415,6 +420,10 @@ export class FieldScene extends SceneBase {
           isCastingSkill: false,  // 是否正在施放技能
           skillAnimTimer: 0,      // 技能动画计时器（毫秒）
           skillCastId: null,      // 当前施放中的技能id
+          // 战斗AI状态
+          inCombat: false,        // 是否进入战斗（参与AI）
+          strafeDir: Math.random() > 0.5 ? 1 : -1, // 横向走位方向
+          strafeTimer: 0,         // 走位方向切换计时
           // 动画属性
           bobOffset: 0,
           bobSpeed: 1.5,
@@ -510,6 +519,10 @@ export class FieldScene extends SceneBase {
           isCastingSkill: false,  // 是否正在施放技能
           skillAnimTimer: 0,      // 技能动画计时器（毫秒）
           skillCastId: null,      // 当前施放中的技能id
+          // 战斗AI状态
+          inCombat: false,        // 是否进入战斗（参与AI）
+          strafeDir: Math.random() > 0.5 ? 1 : -1, // 横向走位方向
+          strafeTimer: 0,         // 走位方向切换计时
           // 动画属性
           bobOffset: Math.random() * Math.PI * 2, // 随机浮动偏移
           bobSpeed: 2 + Math.random(), // 随机浮动速度
@@ -928,8 +941,8 @@ export class FieldScene extends SceneBase {
         }
       }
 
-      // ★ 战斗激活且本怪为战斗目标时，跳过巡逻移动（由 _updateMonsterAttack 控制走位）
-      const isBattleTarget = this.battleSystem.active && monster === this.battleSystem.battleTarget
+      // ★ 处于战斗（inCombat）的怪物跳过巡逻移动，由 _updateMonsterAttack 控制走位
+      const isBattleTarget = monster.inCombat === true
       if (!isBattleTarget) {
       // 暂停计时器（只暂停移动，不暂停动画）
       if (monster.pauseTimer > 0) {
@@ -1030,29 +1043,62 @@ export class FieldScene extends SceneBase {
   }
 
   /**
-   * ★ 新增：更新怪物战斗行为（普攻 + 技能）
-   * 仅在地图战斗激活（battleSystem.active）且本怪物为战斗目标时执行
-   * 关键：怪物与玩家保持攻击距离，不贴脸，避免“粘身”BUG
+   * ★ 更新怪物战斗行为（普攻 + 技能）
+   * 战斗激活时，范围内所有活着的野怪都会进入 inCombat 并参与 AI，
+   * 实现：横向走位、智能选技能、追击脱战 —— 不再是呆板的站桩怪。
+   * 关键：怪物与玩家保持攻击距离，不贴脸，避免“粘身”BUG。
    */
   _updateMonsterAttack(dt) {
-    const monster = this.battleSystem.battleTarget
-    if (!monster || !monster.alive) return
+    if (!this.battleSystem.active) return
     const hero = this.party[0]
     if (!hero || hero.hp <= 0) return
 
-    const dx = this.playerX - monster.x
-    const dy = this.playerY - monster.y
-    const dist = Math.sqrt(dx * dx + dy * dy)
-    const attackRange = (monster.attackRange || 80) * this.dpr
-    // 保持距离：站桩攻击范围，留一点缓冲，不进入玩家身体
-    const keepDistance = attackRange * 0.7
+    const aggroRange = 320 * this.dpr      // 仇恨/参战范围
+    const leashRange = 460 * this.dpr      // 脱战（回到巡逻）范围
 
+    for (const monster of this.mapMonsters) {
+      if (!monster.alive) continue
+
+      const dx = this.playerX - monster.x
+      const dy = this.playerY - monster.y
+      const dist = Math.sqrt(dx * dx + dy * dy)
+
+      // 动态判定参战状态：范围内进入战斗，超出牵引范围则脱战
+      if (this.battleSystem.active) {
+        if (dist <= aggroRange) {
+          if (!monster.inCombat && !monster.isCastingSkill) {
+            monster.inCombat = true
+          }
+        } else if (dist > leashRange) {
+          // 玩家跑太远，脱战回到巡逻
+          monster.inCombat = false
+          monster.isAttacking = false
+          monster.attackAnimTimer = 0
+          continue
+        }
+      }
+
+      if (!monster.inCombat) continue
+
+      this._updateSingleMonsterCombat(monster, dt, hero, dx, dy, dist, attackRangeOf(monster, this.dpr))
+    }
+
+    // 本地辅助：计算攻击距离
+    function attackRangeOf(m, dpr) {
+      return (m.attackRange || 80) * dpr
+    }
+  }
+
+  /**
+   * ★ 单体怪物战斗 AI：走位 + 技能 + 普攻
+   */
+  _updateSingleMonsterCombat(monster, dt, hero, dx, dy, dist, attackRange) {
     // 朝向玩家
     if (dist > 1) {
       monster.moveAngle = Math.atan2(dy, dx)
     }
 
-    // 正在施放技能时不移动、不普攻
+    // 正在施放技能：站定，不打断
     if (monster.isCastingSkill) {
       monster.isMoving = false
       monster.skillAnimTimer -= dt * 1000
@@ -1065,22 +1111,44 @@ export class FieldScene extends SceneBase {
       return
     }
 
-    // 维持攻击距离（不贴脸）
-    if (dist > attackRange) {
-      // 距离太远，靠近到攻击范围
-      const step = monster.moveSpeed * 6 * dt
-      monster.x += (dx / dist) * step
-      monster.y += (dy / dist) * step
-      monster.isMoving = true
-    } else if (dist < keepDistance) {
-      // 太近，后撤一点（避免粘身）
-      const step = monster.moveSpeed * 4 * dt
-      monster.x -= (dx / dist) * step
-      monster.y -= (dy / dist) * step
-      monster.isMoving = true
-    } else {
-      monster.isMoving = false
+    // 保持距离区间（不贴脸），并加入横向走位让移动更自然
+    const keepDistance = attackRange * 0.75
+    const nx = dist > 1 ? dx / dist : 0
+    const ny = dist > 1 ? dy / dist : 0
+    // 垂直方向（用于 strafe）
+    const px = -ny
+    const py = nx
+
+    // 周期性切换走位方向，模拟包抄/绕圈
+    monster.strafeTimer -= dt
+    if (monster.strafeTimer <= 0) {
+      monster.strafeTimer = 1.2 + Math.random() * 1.5
+      if (Math.random() < 0.4) monster.strafeDir *= -1
     }
+
+    let vx = 0, vy = 0
+    const spd = monster.moveSpeed || 60
+    if (dist > attackRange) {
+      // 太远：靠近（带一点横向偏移，避免直线愣头青）
+      vx += nx * spd * 6
+      vy += ny * spd * 6
+      vx += px * monster.strafeDir * spd * 1.6
+      vy += py * monster.strafeDir * spd * 1.6
+    } else if (dist < keepDistance) {
+      // 太近：后撤并横向绕，避免粘身
+      vx -= nx * spd * 4
+      vy -= ny * spd * 4
+      vx += px * monster.strafeDir * spd * 2.4
+      vy += py * monster.strafeDir * spd * 2.4
+    } else {
+      // 在攻击甜区内：主要以横向走位为主，少量贴近
+      vx += px * monster.strafeDir * spd * 2.2
+      vy += py * monster.strafeDir * spd * 2.2
+    }
+
+    monster.x += vx * dt
+    monster.y += vy * dt
+    monster.isMoving = (Math.abs(vx) + Math.abs(vy)) > 0.01
 
     // 更新技能冷却
     if (monster.skillCDs) {
@@ -1091,17 +1159,28 @@ export class FieldScene extends SceneBase {
       }
     }
 
-    // 在攻击范围内：优先尝试施放可用技能，否则普攻
+    // 在攻击范围内才考虑进攻
     if (dist <= attackRange) {
-      // 尝试施放技能（随机选一个就绪且距离合适的）
+      // 智能选技能：按距离/血量情境加权，而非纯随机
+      let chosen = null
       if (monster.skills && monster.skills.length > 0 && monster.skillCDs) {
         const ready = monster.skills.filter(s => (monster.skillCDs[s.id] || 0) <= 0)
         if (ready.length > 0) {
-          // 优先选一个在范围内且 CD 好的技能
-          const usable = ready.filter(s => dist <= (s.range || attackRange) * this.dpr)
-          const pick = (usable.length > 0 ? usable : ready)[Math.floor(Math.random() * (usable.length > 0 ? usable.length : ready.length))]
-          if (pick && Math.random() < 0.6) { // 60%概率放技能，避免无脑狂放
-            this._castMonsterSkill(monster, pick, hero)
+          const hpRatio = (monster.hp / monster.maxHp)
+          // 评分：远距→远程抛射；近身→debuff；残血→jump_attack 拼命
+          let best = -1
+          for (const s of ready) {
+            let score = Math.random() * 0.5 // 基础随机，避免完全 deterministic
+            const sRange = (s.range || attackRange) * this.dpr
+            if (s.type === 'attack' && dist <= sRange) score += 2.0
+            if (s.type === 'debuff' && dist < attackRange * 0.9) score += 1.6
+            if (s.type === 'jump_attack' && dist > attackRange * 0.5) score += (hpRatio < 0.4 ? 2.5 : 1.0)
+            if (dist > sRange && s.type !== 'jump_attack') score -= 1.5 // 超距技能不优先
+            if (score > best) { best = score; chosen = s }
+          }
+          // 有较高评分才放（给普攻留出空间），并限制整体频率
+          if (chosen && best > 1.2 && Math.random() < 0.7) {
+            this._castMonsterSkill(monster, chosen, hero)
             return
           }
         }
@@ -1111,7 +1190,6 @@ export class FieldScene extends SceneBase {
       if (monster.attackCDTimer > 0) {
         monster.attackCDTimer -= dt * 1000
       } else if (!monster.isAttacking) {
-        // 触发普攻动画（500ms，命中帧在 60%）
         monster.isAttacking = true
         monster.attackAnimTimer = 500
         monster.hasDealtDamage = false
@@ -1326,6 +1404,10 @@ export class FieldScene extends SceneBase {
           isCastingSkill: false,  // 是否正在施放技能
           skillAnimTimer: 0,      // 技能动画计时器（毫秒）
           skillCastId: null,      // 当前施放中的技能id
+          // 战斗AI状态
+          inCombat: false,        // 是否进入战斗（参与AI）
+          strafeDir: Math.random() > 0.5 ? 1 : -1, // 横向走位方向
+          strafeTimer: 0,         // 走位方向切换计时
           // 动画属性
           bobOffset: Math.random() * Math.PI * 2,
           bobSpeed: 2 + Math.random(),
@@ -1720,6 +1802,19 @@ export class FieldScene extends SceneBase {
     this.battleSystem.attackButton = null
     this.battleSystem.skillButtons = []
     this.battleSystem.damageTexts = []
+    this.battleSystem.projectiles = []
+    this.battleSystem.playerDebuffs = []
+
+    // 清空所有怪物的战斗状态（回到巡逻）
+    this.mapMonsters.forEach(m => {
+      if (m) {
+        m.inCombat = false
+        m.isAttacking = false
+        m.isCastingSkill = false
+        m.attackAnimTimer = 0
+        m.skillAnimTimer = 0
+      }
+    })
 
     // 保存怪物状态
     this.game.data.set(`fieldMonsters_${this.areaId}`, this.mapMonsters)
