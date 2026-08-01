@@ -92,9 +92,10 @@ export function installFieldBattleSystem(FieldSceneClass) {
   // ==========================================================================
   proto._initBattleUI = function() {
     const btnSize = 54 * this.dpr
+    const gap = 12 * this.dpr
     const margin = 24 * this.dpr
 
-    // 攻击按钮（右下角，作为扇形圆心）
+    // 攻击按钮（右下角）
     const attackX = this.width - btnSize - margin
     const attackY = this.height - btnSize - margin
     this.battleSystem.attackButton = {
@@ -107,26 +108,25 @@ export function installFieldBattleSystem(FieldSceneClass) {
       active: true
     }
 
-    // 技能按钮（王者荣耀式：以攻击按钮为圆心，向上方张开的扇形弧形排布）
+    // 技能按钮：王者荣耀式固定相对布局（以 ATK 为基准向上/左右排布，绝不溢出）
     this.battleSystem.skillButtons = []
     const skills = this.party[0]?.skills || []
     const n = skills.length
     if (n > 0) {
-      // 扇形：-135° ~ -45°（以正上方为中心，左右对称展开）
-      const startDeg = -135
-      const endDeg = -45
-      // 半径随技能数增大：保证按钮之间有足够间距不重叠
-      const radius = btnSize * (1.6 + n * 0.5)
+      // 预定义位置模板（相对于 ATK 按钮左上角的偏移）：最多支持 5 个技能
+      // 布局：ATK 正上方 → 左上 → 右上 → 更左上 → 更右上（呈扇形展开）
+      const layouts = [
+        { dx: 0,            dy: -(btnSize + gap) },              // 1个：正上方
+        { dx: -(btnSize + gap), dy: -(btnSize + gap * 0.4) },   // 2个左：左上方
+        { dx: (btnSize + gap),  dy: -(btnSize + gap * 0.4) },   // 2个右：右上方
+        { dx: -(btnSize + gap) * 1.6, dy: -(btnSize * 0.3) },   // 4个更左
+        { dx: (btnSize + gap) * 1.6,  dy: -(btnSize * 0.3) },   // 5个更右
+      ]
       skills.forEach((skill, index) => {
-        const t = n === 1 ? 0.5 : index / (n - 1)
-        const deg = startDeg + (endDeg - startDeg) * t
-        const rad = (deg * Math.PI) / 180
-        // 圆心取攻击按钮中心
-        const cx = attackX + btnSize / 2
-        const cy = attackY + btnSize / 2
-        let bx = cx + Math.cos(rad) * radius - btnSize / 2
-        let by = cy + Math.sin(rad) * radius - btnSize / 2
-        // 钳制：保证按钮完整落在屏幕内
+        const layout = layouts[Math.min(index, layouts.length - 1)]
+        let bx = attackX + layout.dx
+        let by = attackY + layout.dy
+        // 安全钳制（正常情况不会触发）
         bx = Math.max(margin, Math.min(this.width - btnSize - margin, bx))
         by = Math.max(margin, Math.min(this.height - btnSize - margin, by))
         this.battleSystem.skillButtons.push({
@@ -143,7 +143,7 @@ export function installFieldBattleSystem(FieldSceneClass) {
       })
     }
 
-    console.log(`[FieldBattle] 战斗UI初始化完成（扇形布局），技能数量: ${skills.length}`)
+    console.log(`[FieldBattle] 战斗UI初始化完成（王者荣耀式固定布局），技能数量: ${skills.length}`)
   }
 
   // ==========================================================================
