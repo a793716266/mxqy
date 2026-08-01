@@ -1620,6 +1620,9 @@ export class FieldScene extends SceneBase {
   }
   
   _handleTap(tap) {
+    // ★ 战斗UI按钮（攻击/技能）优先处理（王者荣耀式操作）
+    if (this.battleSystem && this.battleSystem.active && this._handleBattleUITap(tap)) return
+
     // 如果详细信息面板打开，检查关闭按钮
     if (this.charInfoPanel && this.charInfoPanel.visible && this.charDetailBounds) {
       const closeBtn = this.charDetailBounds.closeBtn
@@ -1802,6 +1805,19 @@ export class FieldScene extends SceneBase {
     // 1. 更新玩家攻击冷却
     if (this.battleSystem.playerAttackCD > 0) {
       this.battleSystem.playerAttackCD -= dt * 1000
+    }
+
+    // 1.1 更新技能按钮冷却（★ 新增）
+    if (this.battleSystem.skillButtons && this.battleSystem.skillButtons.length > 0) {
+      for (const sb of this.battleSystem.skillButtons) {
+        if (sb.cooldown > 0) sb.cooldown = Math.max(0, sb.cooldown - dt * 1000)
+      }
+    }
+
+    // 1.2 扇形 AOE 指示渐隐
+    if (this._aoeFx && this._aoeFx.life > 0) {
+      this._aoeFx.life -= dt
+      if (this._aoeFx.life <= 0) this._aoeFx = null
     }
 
     // 2. 更新怪物攻击（★ 新增）
@@ -2324,6 +2340,9 @@ export class FieldScene extends SceneBase {
     if (this.battleSystem && this.battleSystem.showBattleUI) {
       this._renderBattleUI(ctx)
     }
+
+    // 扇形技能/攻击范围指示（王者荣耀式）
+    if (this._aoeFx) this._renderFieldSkillRange(ctx)
 
     // ★ 新增：渲染怪物抛射物（远程技能飞弹）
     if (this.battleSystem && this.battleSystem.projectiles && this.battleSystem.projectiles.length > 0) {

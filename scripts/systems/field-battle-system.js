@@ -213,6 +213,25 @@ export function installFieldBattleSystem(FieldSceneClass) {
       console.log(`[FieldBattle] ${monster.name} 被击败！`)
       this.battleSystem.battleTarget = null
     }
+
+    // ★ 王者荣耀式扇形范围指示（释放普攻/技能时在角色朝向显示）
+    const px = this.battleSystem.player ? this.battleSystem.player.x : mainHero.x
+    const py = this.battleSystem.player ? this.battleSystem.player.y : mainHero.y
+    const ang = Math.atan2(monster.y - py, monster.x - px)
+    const isSkill = !!skill
+    const range = (isSkill ? (skill.range || 120) : (this.battleSystem.attackRange || 80)) * 2.0 * this.dpr
+    this._aoeFx = {
+      x: px, y: py, angle: ang, range,
+      halfAngle: isSkill ? (Math.PI / 5) : (Math.PI / 4),
+      color: isSkill ? '74, 158, 255' : '255, 159, 67',
+      life: 0.35, maxLife: 0.35,
+    }
+
+    // ★ 技能释放后设置按钮冷却（避免无限释放且让冷却遮罩生效）
+    if (isSkill && this.battleSystem.skillButtons) {
+      const sb = this.battleSystem.skillButtons.find(b => b.skill === skill)
+      if (sb) sb.cooldown = (skill.cooldown || 3000)
+    }
   }
 
   // ==========================================================================
@@ -670,6 +689,34 @@ export function installFieldBattleSystem(FieldSceneClass) {
 
     // 4. 渲染血条
     this._renderHealthBars(ctx)
+
+    // 5. 渲染扇形技能/攻击范围指示（王者荣耀式）
+    if (this._aoeFx) this._renderFieldSkillRange(ctx)
+  }
+
+  // 扇形 AOE 范围指示绘制
+  proto._renderFieldSkillRange = function(ctx) {
+    const fx = this._aoeFx
+    if (!fx || fx.life <= 0) return
+    const sx = fx.x - this.cameraX
+    const sy = fx.y - this.cameraY
+    const alpha = Math.min(1, fx.life / fx.maxLife) * 0.5
+    ctx.save()
+    ctx.translate(sx, sy)
+    ctx.rotate(fx.angle)
+    const grad = ctx.createRadialGradient(0, 0, fx.range * 0.15, 0, 0, fx.range)
+    grad.addColorStop(0, `rgba(${fx.color}, ${alpha * 0.75})`)
+    grad.addColorStop(1, `rgba(${fx.color}, 0)`)
+    ctx.fillStyle = grad
+    ctx.beginPath()
+    ctx.moveTo(0, 0)
+    ctx.arc(0, 0, fx.range, -fx.halfAngle, fx.halfAngle)
+    ctx.closePath()
+    ctx.fill()
+    ctx.strokeStyle = `rgba(${fx.color}, ${Math.min(1, alpha + 0.35)})`
+    ctx.lineWidth = 2 * this.dpr
+    ctx.stroke()
+    ctx.restore()
   }
 
   // ==========================================================================
