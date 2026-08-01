@@ -592,53 +592,49 @@ export class FieldScene extends SceneBase {
       deadZone: 5 * this.dpr        // 死区阈值（降低提高灵敏度）
     }
 
-    // 注册触摸事件监听（用touchIdentifier跟踪摇杆触摸点）
-    this._onTouchStart = (e) => {
-      if (!this.joystick.active && e.touches) {
-        for (const t of e.touches) {
-          const tx = t.clientX * this.dpr
-          const ty = t.clientY * this.dpr
-          const dx = tx - this.joystickConfig.centerX
-          const dy = ty - this.joystickConfig.centerY
-          // 判断是否在摇杆底座范围内（宽松判定，1.5倍半径）
-          if (Math.sqrt(dx * dx + dy * dy) < this.joystickConfig.baseRadius * 1.5) {
-            this.joystick.active = true
-            this.joystick.touchId = t.identifier
-            this.joystick.currentX = tx
-            this.joystick.currentY = ty
-            break
-          }
+    // ★ 摇杆输入统一在 update() 中通过 this.game.input.touches 读取（与战斗一致，避免两套
+    // ★ 触摸 API 混用导致 touchId/坐标错配、摇杆无响应）。不再绑定 wx.onTouchStart。
+    this._joystickTouchId = null
+  }
+
+  // 每帧从 InputManager 读取实时触点驱动左下固定摇杆
+  _updateJoystickInput() {
+    if (!this.game || !this.game.input) return
+    const touches = this.game.input.touches || {}
+    const jc = this.joystickConfig
+    const joy = this.joystick
+
+    // 构造触点列表 [{id,x,y}]（InputManager.touches 按 identifier 索引，坐标已乘 dpr）
+    const points = Object.entries(touches).map(([id, p]) => ({ id: Number(id), x: p.x, y: p.y }))
+
+    if (!joy.active) {
+      // 寻找落在摇杆底座内的触点
+      for (const tp of points) {
+        const dx = tp.x - jc.centerX
+        const dy = tp.y - jc.centerY
+        if (Math.sqrt(dx * dx + dy * dy) < jc.baseRadius * 1.5) {
+          joy.active = true
+          joy.touchId = tp.id
+          joy.currentX = tp.x
+          joy.currentY = tp.y
+          this._joystickTouchId = tp.id
+          break
         }
       }
     }
 
-    this._onTouchMove = (e) => {
-      if (this.joystick.active && e.touches) {
-        for (const t of e.touches) {
-          if (t.identifier === this.joystick.touchId) {
-            this.joystick.currentX = t.clientX * this.dpr
-            this.joystick.currentY = t.clientY * this.dpr
-            break
-          }
-        }
+    if (joy.active) {
+      const tp = points.find(p => p.id === joy.touchId)
+      if (tp) {
+        joy.currentX = tp.x
+        joy.currentY = tp.y
+      } else {
+        // 触点已松开
+        joy.active = false
+        joy.touchId = null
+        this._joystickTouchId = null
       }
     }
-
-    this._onTouchEnd = (e) => {
-      if (this.joystick.active && e.changedTouches) {
-        for (const t of e.changedTouches) {
-          if (t.identifier === this.joystick.touchId) {
-            this.joystick.active = false
-            this.joystick.touchId = null
-            break
-          }
-        }
-      }
-    }
-
-    wx.onTouchStart(this._onTouchStart)
-    this.game.input.onMove(this._onTouchMove)
-    this.game.input.onEnd(this._onTouchEnd)
   }
 
   _checkBattleResult() {
@@ -742,10 +738,10 @@ export class FieldScene extends SceneBase {
     const charData = charStateManager.serialize()
     this.game.data.set('characterStates', charData)
 
-    // 清理事件监听
-    wx.offTouchStart(this._onTouchStart)
-    this.game.input.offMove(this._onTouchMove)
-    this.game.input.offEnd(this._onTouchEnd)
+    // 清理摇杆状态（输入统一由 InputManager 管理，场景无需解绑全局监听）
+    this.joystick.active = false
+    this.joystick.touchId = null
+    this._joystickTouchId = null
   }
   
   update(dt) {
@@ -753,6 +749,9 @@ export class FieldScene extends SceneBase {
 
     // 更新怪物移动
     this._updateMonsters(dt)
+
+    // 摇杆输入（每帧从 InputManager 读取触点）
+    this._updateJoystickInput()
 
     // 摇杆控制移动
     const wasMoving = this.isMoving
