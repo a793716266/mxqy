@@ -4,6 +4,29 @@
 
 ### 2026-08-02（更新）
 
+**fix: 野外战斗（阳光草原）技能按钮/攻击动画/目标选择修正**
+
+- **适用范围**：野外探索场景（`field-scene.js`）内嵌的 ARPG 战斗系统（`field-battle-system.js`，`areaId==='grassland'` 触发，不切换场景）。与独立 `battle-scene` 战斗是两个独立系统，不要混淆。
+- **问题 1（技能排列）**：技能按钮此前近似纵向堆叠（扇形张角仅 -100°~-80°，几乎垂直一列），不符合"王者荣耀式扇形"预期。
+  - **修复**：将扇形张角扩大为 **-150° ~ -30°**（左上方→正上方→右上方），以攻击键为圆心的弧形排布。半径随技能数递增避免重叠。同步修正 `field-scene.js` 与 `field-battle-system.js` 两份 `_initBattleUI`。
+- **问题 2（动画资源丢失）**：攻击/技能时主角只渲染 walk/idle 帧，从不播放攻击动画，看起来"没有攻击动作"。
+  - **修复**：
+    1. `_playerAttackMonster` 中设置 `this.battleSystem.playerAnim = { type:'attack'|'skill', timer, maxTimer, facing }`。
+    2. `_updateBattleSystem` 中递减 `playerAnim.timer`（结束清零）。
+    3. `_renderPlayer`（`field-scene.js`）接入该状态：臻宝播放 `HERO_ZHENBAO_SLASH_01~13` 攻击帧；其他英雄无 slash 资源则回退 idle 首帧（保持可见 + 朝向目标）。
+    4. 攻击期间主角朝向 `playerAnim.facing`（目标方向）覆盖移动朝向。
+- **问题 3（攻击判断不是最近的敌人）**：原 `_findNearestMonster` 取全局最近怪物，可能打到屏幕外/远处的怪。
+  - **修复**：`_findNearestMonster(maxRange)` 改为**攻击范围内最近**的怪物；优先选用已在攻击范围内的锁定目标 `battleTarget`；范围内无目标才退化为全局最近。攻击/技能按钮调用时传入对应 `attackRange`/`skill.range`。
+- **修改文件**：
+  - `scripts/scenes/field-scene.js`：`_initBattleUI`（扇形张角）、`_renderPlayer`（攻击动画帧 + 朝向）
+  - `scripts/systems/field-battle-system.js`：`_initBattleUI`（扇形张角）、`_playerAttackMonster`（动画状态）、`_updateBattleSystem`（动画计时）、`_findNearestMonster`（范围内最近）、`_handleBattleUITap`（范围筛选）
+- **测试说明**：微信开发者工具编译 → 阳光草原副本 → 技能键应呈弧形分布；点攻击/技能主角应有挥砍动作并朝向目标；优先攻击身边最近的怪。
+- **状态**：✅ 已修复并通过 Babel 语法检查
+
+---
+
+### 2026-08-02（更新）
+
 **fix: 战斗队长模式"点击没反应" + 实现王者荣耀式摇杆操作**
 
 - **问题**：战斗测试（队长模式）中，摇杆拖动角色不移动、普攻/技能按钮点击无任何反应；操作手感不符合"王者荣耀式"MOBA 体验预期。

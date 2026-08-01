@@ -91,38 +91,53 @@ export function installFieldBattleSystem(FieldSceneClass) {
   // 3. 战斗UI初始化
   // ==========================================================================
   proto._initBattleUI = function() {
-    const btnSize = 50 * this.dpr
-    const margin = 20 * this.dpr
+    const btnSize = 54 * this.dpr
+    const margin = 24 * this.dpr
 
-    // 攻击按钮（右下角）
+    // 攻击按钮（右下角，作为扇形圆心）
+    const attackX = this.width - btnSize - margin
+    const attackY = this.height - btnSize - margin
     this.battleSystem.attackButton = {
-      x: this.width - btnSize - margin,
-      y: this.height - btnSize - margin - 60 * this.dpr,
+      x: attackX,
+      y: attackY,
       width: btnSize,
       height: btnSize,
-      text: '⚔️',
+      text: 'ATK',
       cooldown: 0,
       active: true
     }
 
-    // 技能按钮（攻击按钮上方）
+    // 技能按钮（王者荣耀式：以攻击按钮为圆心，向上方张开的扇形弧形排布）
     this.battleSystem.skillButtons = []
     const skills = this.party[0]?.skills || []
-    skills.forEach((skill, index) => {
-      this.battleSystem.skillButtons.push({
-        x: this.width - btnSize - margin,
-        y: this.height - btnSize - margin - 60 * this.dpr - (index + 1) * (btnSize + 10 * this.dpr),
-        width: btnSize,
-        height: btnSize,
-        text: skill.name,
-        skill: skill,
-        cooldown: 0,
-        active: true,
-        index: index
+    const n = skills.length
+    if (n > 0) {
+      const startDeg = -150 // 左上方
+      const endDeg = -30    // 右上方
+      const radius = btnSize * 2.1 + (n > 1 ? (n - 1) * 14 * this.dpr : 0)
+      skills.forEach((skill, index) => {
+        const t = n === 1 ? 0.5 : index / (n - 1)
+        const deg = startDeg + (endDeg - startDeg) * t
+        const rad = (deg * Math.PI) / 180
+        const cx = attackX + btnSize / 2
+        const cy = attackY + btnSize / 2
+        const bx = cx + Math.cos(rad) * radius - btnSize / 2
+        const by = cy + Math.sin(rad) * radius - btnSize / 2
+        this.battleSystem.skillButtons.push({
+          x: bx,
+          y: by,
+          width: btnSize,
+          height: btnSize,
+          text: skill.name,
+          skill: skill,
+          cooldown: 0,
+          active: true,
+          index: index
+        })
       })
-    })
+    }
 
-    console.log(`[FieldBattle] 战斗UI初始化完成，技能数量: ${skills.length}`)
+    console.log(`[FieldBattle] 战斗UI初始化完成（扇形布局），技能数量: ${skills.length}`)
   }
 
   // ==========================================================================
@@ -134,6 +149,14 @@ export function installFieldBattleSystem(FieldSceneClass) {
     // 1. 更新玩家攻击冷却
     if (this.battleSystem.playerAttackCD > 0) {
       this.battleSystem.playerAttackCD -= dt * 1000
+    }
+
+    // 1.1 更新玩家攻击/技能动画计时
+    if (this.battleSystem.playerAnim) {
+      this.battleSystem.playerAnim.timer -= dt
+      if (this.battleSystem.playerAnim.timer <= 0) {
+        this.battleSystem.playerAnim = null
+      }
     }
 
     // 2. 更新伤害数字
@@ -167,6 +190,16 @@ export function installFieldBattleSystem(FieldSceneClass) {
 
     const mainHero = this.party[0]
     if (!mainHero) return
+
+    // ★ 触发主角攻击/技能动画（王者荣耀式：普攻挥砍 / 技能特效）
+    const animType = skill ? 'skill' : 'attack'
+    const animDur = skill ? 0.5 : 0.3 // 秒
+    this.battleSystem.playerAnim = {
+      type: animType,
+      timer: animDur,
+      maxTimer: animDur,
+      facing: Math.atan2(monster.y - mainHero.y, monster.x - mainHero.x)
+    }
 
     // 计算伤害
     let damage = 0
@@ -908,8 +941,9 @@ export function installFieldBattleSystem(FieldSceneClass) {
           tap.y >= btn.y && tap.y <= btn.y + btn.height) {
         console.log('[FieldBattle] 点击攻击按钮')
 
-        // 攻击当前目标或最近的怪物
-        const target = this.battleSystem.battleTarget || this._findNearestMonster()
+        // 攻击当前战斗目标，否则攻击范围内最近的怪物
+        const range = (this.battleSystem.attackRange || 80) * this.dpr
+        const target = this.battleSystem.battleTarget || this._findNearestMonster(range)
         if (target) {
           this._playerAttackMonster(target)
         }
@@ -924,8 +958,9 @@ export function installFieldBattleSystem(FieldSceneClass) {
             tap.y >= btn.y && tap.y <= btn.y + btn.height) {
           console.log(`[FieldBattle] 点击技能按钮: ${btn.text}`)
 
-          // 使用技能
-          const target = this.battleSystem.battleTarget || this._findNearestMonster()
+          // 使用技能（优先锁定目标，否则范围内最近怪物）
+          const range = (btn.skill.range || this.battleSystem.attackRange || 80) * this.dpr
+          const target = this.battleSystem.battleTarget || this._findNearestMonster(range)
           if (target) {
             this._playerAttackMonster(target, btn.skill)
           }
@@ -940,8 +975,10 @@ export function installFieldBattleSystem(FieldSceneClass) {
   // ==========================================================================
   // 14. 寻找最近的怪物
   // ==========================================================================
-  proto._findNearestMonster = function() {
+  // 在攻击范围内寻找最近的怪物（王者荣耀式：就近攻击，而非全局最近）
+  proto._findNearestMonster = function(maxRange) {
     if (!this.mapMonsters || !Array.isArray(this.mapMonsters)) return null
+    const range = maxRange != null ? maxRange : (this.battleSystem.attackRange || 80) * this.dpr
 
     let nearest = null
     let minDist = Infinity
@@ -953,9 +990,29 @@ export function installFieldBattleSystem(FieldSceneClass) {
         (this.playerX - monster.x) ** 2 + (this.playerY - monster.y) ** 2
       )
 
-      if (dist < minDist) {
+      // 优先：已锁定的目标若在攻击范围内直接选用
+      if (this.battleSystem.battleTarget === monster && dist <= range) {
+        return monster
+      }
+
+      if (dist <= range && dist < minDist) {
         minDist = dist
         nearest = monster
+      }
+    }
+
+    // 范围内无目标时，退而求其次返回全局最近（保证有目标可攻击）
+    if (!nearest) {
+      let gDist = Infinity
+      for (const monster of this.mapMonsters) {
+        if (!monster.alive) continue
+        const dist = Math.sqrt(
+          (this.playerX - monster.x) ** 2 + (this.playerY - monster.y) ** 2
+        )
+        if (dist < gDist) {
+          gDist = dist
+          nearest = monster
+        }
       }
     }
 

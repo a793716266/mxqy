@@ -1762,38 +1762,56 @@ export class FieldScene extends SceneBase {
    * ★ 新增：初始化战斗UI（攻击按钮、技能按钮等）
    */
   _initBattleUI() {
-    const btnSize = 50 * this.dpr
-    const margin = 20 * this.dpr
-    
-    // 攻击按钮（右下角）
+    const btnSize = 54 * this.dpr
+    const margin = 24 * this.dpr
+
+    // 攻击按钮（右下角，作为扇形圆心）
+    const attackX = this.width - btnSize - margin
+    const attackY = this.height - btnSize - margin
     this.battleSystem.attackButton = {
-      x: this.width - btnSize - margin,
-      y: this.height - btnSize - margin - 60 * this.dpr, // 在摇杆上方
+      x: attackX,
+      y: attackY,
       width: btnSize,
       height: btnSize,
       text: '⚔️',
       cooldown: 0,
       active: true
     }
-    
-    // 技能按钮（攻击按钮上方）
+
+    // 技能按钮（王者荣耀式：以攻击按钮为圆心，向上方张开的扇形弧形排布）
     this.battleSystem.skillButtons = []
     const skills = this.party[0]?.skills || []
-    skills.forEach((skill, index) => {
-      this.battleSystem.skillButtons.push({
-        x: this.width - btnSize - margin,
-        y: this.height - btnSize - margin - 60 * this.dpr - (index + 1) * (btnSize + 10 * this.dpr),
-        width: btnSize,
-        height: btnSize,
-        text: skill.name,
-        skill: skill,
-        cooldown: 0,
-        active: true,
-        index: index
+    const n = skills.length
+    if (n > 0) {
+      // 扇形张角：从 -150° 到 -30°（左上方 → 正上方 → 右上方），明显呈弧形排布
+      const startDeg = -150
+      const endDeg = -30
+      // 半径：随技能数略微增大，保证不重叠
+      const radius = btnSize * 2.1 + (n > 1 ? (n - 1) * 14 * this.dpr : 0)
+      skills.forEach((skill, index) => {
+        const t = n === 1 ? 0.5 : index / (n - 1)
+        const deg = startDeg + (endDeg - startDeg) * t
+        const rad = (deg * Math.PI) / 180
+        // 圆心取攻击按钮中心
+        const cx = attackX + btnSize / 2
+        const cy = attackY + btnSize / 2
+        const bx = cx + Math.cos(rad) * radius - btnSize / 2
+        const by = cy + Math.sin(rad) * radius - btnSize / 2
+        this.battleSystem.skillButtons.push({
+          x: bx,
+          y: by,
+          width: btnSize,
+          height: btnSize,
+          text: skill.name,
+          skill: skill,
+          cooldown: 0,
+          active: true,
+          index: index
+        })
       })
-    })
-    
-    console.log(`[Field-Battle] 战斗UI初始化完成，技能数量: ${skills.length}`)
+    }
+
+    console.log(`[Field-Battle] 战斗UI初始化完成（扇形布局），技能数量: ${skills.length}`)
   }
 
   /**
@@ -2605,6 +2623,32 @@ export class FieldScene extends SceneBase {
       }
     }
 
+    // ★ 王者荣耀式：攻击/技能时播放主角攻击动画帧（优先 SLASH 资源）
+    if (this.battleSystem && this.battleSystem.playerAnim) {
+      const pa = this.battleSystem.playerAnim
+      // 攻击进度 0~1
+      const prog = pa.maxTimer ? (1 - pa.timer / pa.maxTimer) : 0
+      // 攻击帧索引：在可用攻击帧中循环（约 8~13 帧）
+      const atkFrameBase = Math.floor(prog * 12) // 0~11
+      let atkImg = null
+      if (heroId === 'zhenbao') {
+        const idx = (atkFrameBase % 13) + 1
+        atkImg = this.game.assets.get(`HERO_ZHENBAO_SLASH_${idx.toString().padStart(2, '0')}`)
+      } else if (heroId === 'lixiaobao') {
+        // 李小宝暂无 slash 资源，回退到 idle 帧（至少保持角色可见+前冲反馈）
+        atkImg = this.game.assets.get(`HERO_LIXIAOBAO_IDLE_01`)
+      } else if (heroId === 'slime_cat') {
+        atkImg = this.game.assets.get(`SLIME_CAT_IDLE_1`)
+      } else if (heroId === 'shadow_mouse') {
+        atkImg = this.game.assets.get(`SHADOW_MOUSE_IDLE_01`)
+      } else if (isCat) {
+        atkImg = this.game.assets.get(`CAT_IDLE_01`)
+      } else {
+        atkImg = this.game.assets.get(`HERO_${heroId.toUpperCase()}_IDLE_0`)
+      }
+      if (atkImg) frameImg = atkImg
+    }
+
     // 如果动画帧不存在，fallback 到同类型第一帧（避免走路时闪到idle帧）
     if (!frameImg) {
       const fallbackType = this._effectiveMoving ? 'WALK' : 'IDLE'
@@ -2638,8 +2682,15 @@ export class FieldScene extends SceneBase {
 
       // ★ 统一翻转逻辑：从主角 renderConfig.flipRule 读取（与 CharacterSprite._shouldFlip 一致）
       // flipRule: 'same' = facingLeft 时翻转；'opposite' = !facingLeft 时翻转
+      // ★ 攻击/技能动画期间，主角朝向目标方向（覆盖移动朝向）
+      let facingLeftForRender = this.facingLeft
+      if (this.battleSystem && this.battleSystem.playerAnim && this.battleSystem.playerAnim.facing != null) {
+        // 资源默认朝右（正X方向），目标在左侧则翻转
+        facingLeftForRender = Math.cos(this.battleSystem.playerAnim.facing) < 0
+      }
+
       const mainFlipRule = this.mainCharacter?.renderConfig?.flipRule || 'opposite'
-      if (this._shouldFlipByRule(this.facingLeft, mainFlipRule)) {
+      if (this._shouldFlipByRule(facingLeftForRender, mainFlipRule)) {
         ctx.translate(screenX, screenY)
         ctx.scale(-1, 1)
         ctx.drawImage(
