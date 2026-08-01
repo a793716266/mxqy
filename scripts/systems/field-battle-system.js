@@ -112,17 +112,22 @@ export function installFieldBattleSystem(FieldSceneClass) {
     const skills = this.party[0]?.skills || []
     const n = skills.length
     if (n > 0) {
-      const startDeg = -150 // 左上方
-      const endDeg = -30    // 右上方
-      const radius = btnSize * 2.1 + (n > 1 ? (n - 1) * 14 * this.dpr : 0)
+      const startDeg = -120 // 紧凑扇面：集中在正上方
+      const endDeg = -60
+      // 半径固定且较小，保证整体不超出屏幕
+      const radius = btnSize * 1.5
       skills.forEach((skill, index) => {
         const t = n === 1 ? 0.5 : index / (n - 1)
         const deg = startDeg + (endDeg - startDeg) * t
         const rad = (deg * Math.PI) / 180
+        // 圆心取攻击按钮中心
         const cx = attackX + btnSize / 2
         const cy = attackY + btnSize / 2
-        const bx = cx + Math.cos(rad) * radius - btnSize / 2
-        const by = cy + Math.sin(rad) * radius - btnSize / 2
+        let bx = cx + Math.cos(rad) * radius - btnSize / 2
+        let by = cy + Math.sin(rad) * radius - btnSize / 2
+        // 钳制：保证按钮完整落在屏幕内
+        bx = Math.max(margin, Math.min(this.width - btnSize - margin, bx))
+        by = Math.max(margin, Math.min(this.height - btnSize - margin, by))
         this.battleSystem.skillButtons.push({
           x: bx,
           y: by,
