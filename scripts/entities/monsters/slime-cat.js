@@ -119,7 +119,7 @@ module.exports = {
       end: 80,
       path: 'images/characters_anim/transparent/slime_cat/skill/',
       frameList: [50, 53, 56, 59, 62, 65, 68, 71, 74, 77, 80],
-      framePad: 2,
+      framePad: 4,  // ★ 实际文件名 skill_0050.png ~ skill_0080.png 为4位补零（与 asset-manager 注册一致）
       frameDuration: 100
     }
   },
