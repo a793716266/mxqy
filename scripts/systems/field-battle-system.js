@@ -313,24 +313,27 @@ export function installFieldBattleSystem(FieldSceneClass) {
     const spd = monster.moveSpeed || 30
     let vx = 0, vy = 0
     const keep = attackRange * 0.75
+    // 注：巡逻基准速度为 spd*1，战斗追击略快于巡逻即可，避免速度突增数倍
     if (dist > attackRange) {
-      vx += nx * spd * 6
-      vy += ny * spd * 6
-      vx += px * monster.strafeDir * spd * 1.2
-      vy += py * monster.strafeDir * spd * 1.2
+      vx += nx * spd * 2.2
+      vy += ny * spd * 2.2
+      vx += px * monster.strafeDir * spd * 1.0
+      vy += py * monster.strafeDir * spd * 1.0
     } else if (dist < keep) {
-      vx -= nx * spd * 4
-      vy -= ny * spd * 4
-      vx += px * monster.strafeDir * spd * 2.0
-      vy += py * monster.strafeDir * spd * 2.0
+      vx -= nx * spd * 1.8
+      vy -= ny * spd * 1.8
+      vx += px * monster.strafeDir * spd * 1.6
+      vy += py * monster.strafeDir * spd * 1.6
     } else {
-      vx += px * monster.strafeDir * spd * 1.8
-      vy += py * monster.strafeDir * spd * 1.8
-      vx += nx * spd * 1.5
-      vy += ny * spd * 1.5
+      vx += px * monster.strafeDir * spd * 1.4
+      vy += py * monster.strafeDir * spd * 1.4
+      vx += nx * spd * 1.2
+      vy += ny * spd * 1.2
     }
     monster.x += vx * dt
     monster.y += vy * dt
+    // 标记移动状态，使渲染播放 walk 动画
+    monster.isMoving = (Math.abs(vx) + Math.abs(vy)) > 0.01
     monster.strafeTimer = (monster.strafeTimer || 0) + dt
     if (monster.strafeTimer > 1.2) {
       monster.strafeTimer = 0

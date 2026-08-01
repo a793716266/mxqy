@@ -3687,3 +3687,16 @@ _checkBattleEnd() {
 - **相关文件**：`scripts/systems/field-battle-system.js`（核心逻辑重写）、`scripts/scenes/field-scene.js`（skill 帧缺失渲染降级 + 一次性告警）。
 - **验证**：Babel 语法检查（`scripts/tools/check_syntax.js`）两文件均通过；日志确认 `史莱姆猫 施放技能: 跳跃攻击/黏液喷射`、`暗影鼠 施放技能: 暗影突袭` 正常触发，控制台无帧缺失刷屏。
 
+---
+
+## 🐛 修复：野外怪物攻击后移动速度突增 / 暗影鼠倒着走
+
+- **提交信息**：`fix: 野外怪物战斗移动速度-朝向-fix-倒走与速度突增`
+- **问题A（速度突增）**：进入战斗后怪物移动速度被放大数倍（`spd*6` 追击、`spd*4` 后退），而巡逻基准仅为 `spd*1`，导致"攻击后突然窜出去"。
+  - 修复（`scripts/systems/field-battle-system.js` 的 `_fieldMonsterCombatMove`）：系数降到贴近基准——追击 `spd*2.2`、后退 `spd*1.8`、甜区向心 `spd*1.2`、横向 `spd*1.0~1.6`；并补充 `monster.isMoving` 标记，使战斗中移动正确播放 walk 动画。`field-scene.js` 中被覆盖版本的对应系数同步修正。
+- **问题B（暗影鼠倒着走）**：
+  - 根因：各怪物素材固有朝向不同。渲染逻辑 `if(!facingLeft)翻转` 实际语义为"素材原样朝左时面向左不翻转"，史莱姆猫素材恰好朝左故正常；而暗影鼠素材**朝右**，沿用同一规则导致方向全反 → 倒走。此前用"相对玩家方向/位移方向"判断均无效，因为它们只决定应朝左/右，未解决素材本身朝向相反。
+  - 修复（`scripts/scenes/field-scene.js` 的 `_renderCatMonster`）：新增读取 `enemyConfig.renderConfig.assetFacing`（素材固有朝向）计算真正 `shouldFlip`——`assetFacing='left'`（默认，如史莱姆猫）面向左不翻转；`assetFacing='right'`（如暗影鼠）面向左需翻转。原 `if(!facingLeft)` 改为 `if(shouldFlip)`。`shadow-mouse.js` 加 `assetFacing: 'right'`。其余怪物保持默认 `'left'`（此前无倒走报告，避免误改）。
+- **相关文件**：`scripts/systems/field-battle-system.js`、`scripts/scenes/field-scene.js`、`scripts/entities/monsters/shadow-mouse.js`。
+- **验证**：Babel 语法检查通过；用户实测确认暗影鼠倒走问题已解决、怪物战斗移动速度正常。
+

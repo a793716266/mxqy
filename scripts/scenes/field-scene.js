@@ -1172,22 +1172,22 @@ export class FieldScene extends SceneBase {
     const spd = monster.moveSpeed || 60
     if (dist > attackRange) {
       // 太远：靠近（带一点横向偏移，避免直线愣头青）
-      vx += nx * spd * 6
-      vy += ny * spd * 6
-      vx += px * monster.strafeDir * spd * 1.2
-      vy += py * monster.strafeDir * spd * 1.2
+      vx += nx * spd * 2.2
+      vy += ny * spd * 2.2
+      vx += px * monster.strafeDir * spd * 1.0
+      vy += py * monster.strafeDir * spd * 1.0
     } else if (dist < keepDistance) {
       // 太近：后撤并横向绕，避免粘身
-      vx -= nx * spd * 4
-      vy -= ny * spd * 4
-      vx += px * monster.strafeDir * spd * 2.0
-      vy += py * monster.strafeDir * spd * 2.0
+      vx -= nx * spd * 1.8
+      vy -= ny * spd * 1.8
+      vx += px * monster.strafeDir * spd * 1.6
+      vy += py * monster.strafeDir * spd * 1.6
     } else {
       // 在攻击甜区内：横向绕圈 + 强制向心锁定，避免被玩家甩出攻击范围
-      vx += px * monster.strafeDir * spd * 1.8
-      vy += py * monster.strafeDir * spd * 1.8
-      vx += nx * spd * 1.5
-      vy += ny * spd * 1.5
+      vx += px * monster.strafeDir * spd * 1.4
+      vy += py * monster.strafeDir * spd * 1.4
+      vx += nx * spd * 1.2
+      vy += ny * spd * 1.2
     }
 
     monster.x += vx * dt
@@ -2817,8 +2817,22 @@ export class FieldScene extends SceneBase {
       const renderWidth = imgWidth * scale
       const renderHeight = targetHeight
 
-      // 根据移动方向决定朝向
-      const facingLeft = monster.moveAngle !== undefined ? Math.cos(monster.moveAngle) < 0 : true
+      // 根据移动方向决定"应面向左" (facingLeft=true 表示怪物应朝左)
+      // 优先用本帧实际位移方向，位移极小时用相对玩家方向兜底
+      let facingLeft
+      const dxMove = monster.x - (monster._prevRenderX !== undefined ? monster._prevRenderX : monster.x)
+      if (Math.abs(dxMove) > 0.05) {
+        facingLeft = dxMove < 0
+      } else if (monster.inCombat || monster.moveAngle === undefined) {
+        facingLeft = (this.playerX - monster.x) < 0
+      } else {
+        facingLeft = Math.cos(monster.moveAngle) < 0
+      }
+      monster._prevRenderX = monster.x
+
+      // 不同怪物素材固有朝向不同：'left' = 素材原样朝左(面向左时不翻转)，'right' = 素材原样朝右(面向左时需翻转)
+      const assetFacing = (enemyConfig.renderConfig && enemyConfig.renderConfig.assetFacing) || 'left'
+      const shouldFlip = assetFacing === 'left' ? !facingLeft : facingLeft
 
       ctx.save()
 
@@ -2830,8 +2844,8 @@ export class FieldScene extends SceneBase {
         ctx.fill()
       }
 
-      // 绘制猫咪（带方向翻转）
-      if (!facingLeft) {
+      // 绘制猫咪（带方向翻转，按素材固有朝向决定）
+      if (shouldFlip) {
         ctx.translate(screenX, screenY)
         ctx.scale(-1, 1)
         ctx.drawImage(
