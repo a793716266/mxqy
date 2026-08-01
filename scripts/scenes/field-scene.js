@@ -1783,11 +1783,11 @@ export class FieldScene extends SceneBase {
     const skills = this.party[0]?.skills || []
     const n = skills.length
     if (n > 0) {
-      // 紧凑扇面：从 -120° 到 -60°（集中在正上方偏左/右），避免过度分散
-      const startDeg = -120
-      const endDeg = -60
-      // 半径固定且较小，保证整体不超出屏幕
-      const radius = btnSize * 1.5
+      // 扇形：-135° ~ -45°（以正上方为中心，左右对称展开）
+      const startDeg = -135
+      const endDeg = -45
+      // 半径随技能数增大：保证按钮之间有足够间距不重叠
+      const radius = btnSize * (1.6 + n * 0.5)
       skills.forEach((skill, index) => {
         const t = n === 1 ? 0.5 : index / (n - 1)
         const deg = startDeg + (endDeg - startDeg) * t
