@@ -2329,20 +2329,30 @@ export class FieldScene extends SceneBase {
     if (this._monsterConfigCache[enemyId]) {
       return this._monsterConfigCache[enemyId]
     }
-    
-    // ★ 动态导入配置文件
+
+    // ★ 静态 require 映射：微信小游戏/原生环境不支持动态 require 字符串
+    // （require('../entities/monsters/' + id + '.js') 在真机必然抛
+    //  "module '...' is not defined"）。改为编译期静态可分析的映射，
+    //  彻底消除"无法加载怪物配置"报错。
+    const configMap = {
+      'slime_cat': require('../entities/monsters/slime-cat.js'),
+      'shadow_mouse': require('../entities/monsters/shadow-mouse.js'),
+      'lost_healer_cat': require('../entities/monsters/lost-healer-cat.js'),
+      'wild_cat': require('../entities/monsters/wild-cat.js')
+    }
+
     try {
-      const configModule = require(`../entities/monsters/${enemyId}.js`)
+      const configModule = configMap[enemyId]
+      if (!configModule) throw new Error(`未注册的怪物配置: ${enemyId}`)
       const config = configModule.default || configModule
-      
+
       // 缓存配置
       this._monsterConfigCache[enemyId] = config
-      
-      console.log(`[Field] 动态加载怪物配置: ${enemyId}`, config)
+
       return config
     } catch (err) {
       console.warn(`[Field] 无法加载怪物配置 ${enemyId}，使用默认配置`, err)
-      
+
       // 降级：返回默认配置（保持向后兼容）
       const defaultConfig = this._getDefaultMonsterConfig(enemyId)
       return defaultConfig

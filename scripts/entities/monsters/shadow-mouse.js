@@ -2,9 +2,9 @@
  * 暗影鼠 - 怪物配置
  * 属性 + AI行为 + 动画配置
  */
-import { ENEMIES_CH1 } from '../../data/enemies.js'
+const { ENEMIES_CH1 } = require('../../data/enemies.js')
 
-export default {
+module.exports = {
   // === 基础属性（从 enemies.js 迁移）===
   id: 'shadow_mouse',
   name: '暗影鼠',
@@ -37,6 +37,32 @@ export default {
     invisibleDuration: 5,   // 隐身持续时间
     invisibleCD: 20000      // 隐身CD
   },
+  
+  // === 技能定义（参考 heroes.js 的格式）===
+  skills: [
+    {
+      id: 'shadow_bite',
+      name: '暗影咬',
+      type: 'jump_attack',
+      power: 1.5,
+      cooldown: 25,  // 秒（提高CD时间）
+      desc: '跳跃到玩家位置，造成150%攻击力的暴击伤害',
+      range: 90,       // 降低攻击范围到合理值
+      dashDistance: 90  // 跳跃距离
+    },
+    {
+      id: 'shadow_raid',
+      name: '暗影突袭',
+      type: 'buff',
+      power: 0,
+      cooldown: 30,  // 秒（提高CD时间）
+      desc: '隐身5秒，提升30%攻击力，持续10秒',
+      range: 9999,    // 全场释放，不受距离限制
+      effect: 'atk_up',
+      value: 0.3,
+      duration: 10
+    }
+  ],
   
   // === 动画配置 ===
   animationConfig: {

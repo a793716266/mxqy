@@ -628,3 +628,10 @@ export const ENEMIES_CH2 = {
   }
 }
 
+// CommonJS 兼容导出：
+// field-scene.js 通过 require() 动态加载怪物配置（scripts/entities/monsters/*.js），
+// 而怪物文件再 require 本模块。为兼容 require 与 import 双模式，此处补充 CJS 导出。
+if (typeof module !== 'undefined' && module.exports) {
+  module.exports = { ENEMIES_CH1, ENEMIES_CH2, getEnemyByLevel }
+}
+

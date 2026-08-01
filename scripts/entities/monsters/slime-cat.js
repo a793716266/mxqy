@@ -2,9 +2,9 @@
  * 史莱姆猫 - 怪物配置
  * 属性 + AI行为 + 动画配置
  */
-import { ENEMIES_CH1 } from '../../data/enemies.js'
+const { ENEMIES_CH1 } = require('../../data/enemies.js')
 
-export default {
+module.exports = {
   // === 基础属性（从 enemies.js 迁移）===
   id: 'slime_cat',
   name: '史莱姆猫',
@@ -39,6 +39,43 @@ export default {
     splitHPThreshold: 0.5 // 分裂HP阈值（50%以下）
   },
   
+  // === 技能定义（参考 heroes.js 的格式）===
+  skills: [
+    {
+      id: 'slime_shot',
+      name: '黏液喷射',
+      type: 'attack',
+      power: 0.8,
+      cooldown: 8,  // 秒（提高CD时间）
+      desc: '远程喷射黏液，造成80%攻击力的伤害',
+      range: 150,    // 技能范围（像素）
+      projectile: true,  // 是否是抛射物
+      projectileSpeed: 200  // 抛射物速度
+    },
+    {
+      id: 'slime_wrap',
+      name: '黏液包裹',
+      type: 'debuff',
+      power: 0,
+      cooldown: 12,  // 秒（提高CD时间）
+      desc: '用黏液包裹玩家，降低移动速度30%，持续3秒',
+      range: 100,
+      effect: 'slow',
+      value: 0.3,
+      duration: 3
+    },
+    {
+      id: 'jump_attack',
+      name: '跳跃攻击',
+      type: 'jump_attack',
+      power: 1.5,
+      cooldown: 15,  // 秒（提高CD时间）
+      desc: '跳跃到玩家位置，造成150%攻击力的伤害',
+      range: 100,      // 降低攻击范围到合理值
+      dashDistance: 100  // 跳跃距离
+    }
+  ],
+  
   // === 动画配置 ===
   animationConfig: {
     idle: {
@@ -60,7 +97,7 @@ export default {
       end: 22,
       path: 'images/characters_anim/transparent/slime_cat/attack/',
       frameList: [8, 10, 12, 14, 16, 18, 20, 22],
-      framePad: 2,
+      framePad: 4,  // ★ 实际文件名 attack_0008.png ~ attack_0022.png 为4位补零
       frameDuration: 100
     },
     hurt: {
