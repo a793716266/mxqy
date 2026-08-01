@@ -77,6 +77,11 @@ export function installBattleAnimation(BattleSceneClass) {
     // ★ 队长模式：每帧读取统一输入（摇杆移动 + 点击触发技能）
     if (this._captainMode) {
       this._updateCaptainTouch(dt)
+      // 扇形 AOE 指示渐隐
+      if (this._aoeFx && this._aoeFx.life > 0) {
+        this._aoeFx.life -= dt
+        if (this._aoeFx.life <= 0) this._aoeFx = null
+      }
     }
 
     // ★ 调试日志（每3秒输出一次）

@@ -632,6 +632,13 @@ export function installBattleInput(BattleSceneClass) {
     const joy = this._joystick
     if (!cfg || !joy) return
 
+    // ★ 临时调试：确认输入是否进入（每5秒一次，确认后删除）
+    if (!this._capTouchDbg || this.time - this._capTouchDbg > 5) {
+      this._capTouchDbg = this.time
+      const tCount = input.touches ? Object.keys(input.touches).length : -1
+      console.log(`[CaptainInput][DEBUG] update每帧运行 touches=${tCount} captainMode=${this._captainMode} joyActive=${joy.active} attackBtn=${!!this._attackBtn} skillBtns=${this._skillBtns ? this._skillBtns.length : -1}`)
+    }
+
     // ---------- 1) 摇杆：读取当前活动触摸点 ----------
     // InputManager.touches 是按 identifier 索引的对象 { id: {x,y} }，坐标为画布像素(已乘dpr)
     const touchEntries = (input.touches && typeof input.touches === 'object')

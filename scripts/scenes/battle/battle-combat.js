@@ -849,10 +849,36 @@ export function installBattleCombat(BattleSceneClass) {
     if (enemyIdx < 0 || !enemyState) return
 
     // ★ 不检查距离，直接出手。命中/未命中在攻击帧结算时判断
+    // 扇形范围指示（王者荣耀式）：朝角色面向/摇杆方向显示 AOE
+    const range = (state.isRanged ? 260 : 150) * this.dpr
+    const half = state.isRanged ? (Math.PI / 6) : (Math.PI / 4)
+    this._spawnAoeFx(state, range, half, state.isRanged ? '74, 163, 255' : '255, 159, 67')
+
     if (state.isRanged) {
       this._captainRangedAttack(hero, state, this.enemies[enemyIdx], enemyIdx)
     } else {
       this._captainMeleeAttack(hero, state, this.enemies[enemyIdx], enemyIdx)
+    }
+  }
+
+  // 生成王者荣耀式扇形范围指示（释放普攻/技能时短暂显示）
+  proto._spawnAoeFx = function(state, range, halfAngle, color) {
+    if (!state) return
+    let angle
+    const joy = this._joystick
+    if (joy && (joy.dirX !== 0 || joy.dirY !== 0)) {
+      angle = Math.atan2(joy.dirY, joy.dirX)
+    } else if (state._captainMoveDir !== undefined && Math.abs(state._captainMoveDir) > 2 * this.dpr) {
+      angle = state._captainMoveDir > 0 ? 0 : Math.PI
+    } else {
+      const { state: eState } = this._findNearestAliveEnemy(state)
+      angle = eState ? Math.atan2(eState.y - state.y, eState.x - state.x) : 0
+    }
+    this._aoeFx = {
+      x: state.x, y: state.y,
+      angle, range, halfAngle,
+      color: color || '255, 159, 67',
+      life: 0.45, maxLife: 0.45,
     }
   }
 
@@ -1021,6 +1047,20 @@ export function installBattleCombat(BattleSceneClass) {
     const hasSpecial = !!(skill.effect || skill.target || skill.restrictChance || skill.statusEffect)
 
     this.activeAttackers.add(hero.id)
+
+    // 扇形范围指示（王者荣耀式）：朝目标方向显示 AOE
+    const tx = (target || this.enemies[0])
+    const tState = tx ? this.unitStates[tx.id] : null
+    const range = (skill.aoeRange || 200) * this.dpr
+    const half = (skill.aoeAngle || 90) * Math.PI / 180 / 2
+    if (tState) {
+      const ang = Math.atan2(tState.y - state.y, tState.x - state.x)
+      this._aoeFx = {
+        x: state.x, y: state.y, angle: ang, range, halfAngle: half,
+        color: skill.type === 'heal' || skill.type === 'heal_self' || skill.type === 'buff' ? '124, 255, 150' : '214, 51, 108',
+        life: 0.5, maxLife: 0.5,
+      }
+    }
 
     if (isMagicOrHeal || hasSpecial) {
       // 魔法/治疗/特殊：原地施法 + 特效

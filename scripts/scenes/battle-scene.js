@@ -163,6 +163,7 @@ export class BattleScene extends SceneBase {
     this._controlledHero = null         // 当前操控的角色对象（init时设置为party[0]）
     this._joystick = { active: false, touchId: null, currentX: 0, currentY: 0 }
     this._joystickConfig = null         // init时由 _initCaptainUI 填充
+    this._aoeFx = null                  // 扇形技能/攻击范围指示（王者荣耀式）
     this._attackBtn = null              // 普攻按钮区域 {x, y, radius}
     this.enemyIsAttacking = {}         // 敌人攻击状态标记（防止undefined错误）
     this._skillBtns = []                // 技能按钮 [{skill, x, y, radius, disabled}]

@@ -413,6 +413,9 @@ export function installBattleRenderer(BattleSceneClass) {
       this._renderCaptainSwitchBar(ctx)
     }
 
+    // 扇形技能/攻击范围指示（王者荣耀式）
+    if (this._aoeFx) this._renderSkillRange(ctx)
+
     if (this.shakeAmount > 0) {
       ctx.restore()
     }
@@ -1695,6 +1698,31 @@ export function installBattleRenderer(BattleSceneClass) {
         ctx.fillRect(sw.x, barY, sw.w * hpRatio, barH)
       }
     }
+  }
+
+  // 扇形技能/攻击范围指示（王者荣耀式 AOE 高亮）
+  proto._renderSkillRange = function(ctx) {
+    const fx = this._aoeFx
+    if (!fx || fx.life <= 0) return
+    const alpha = Math.min(1, fx.life / fx.maxLife) * 0.5
+    ctx.save()
+    ctx.translate(fx.x, fx.y)
+    ctx.rotate(fx.angle)
+    // 扇形（以 x 轴正方向为中线）
+    const grad = ctx.createRadialGradient(0, 0, fx.range * 0.15, 0, 0, fx.range)
+    grad.addColorStop(0, `rgba(${fx.color}, ${alpha * 0.75})`)
+    grad.addColorStop(1, `rgba(${fx.color}, 0)`)
+    ctx.fillStyle = grad
+    ctx.beginPath()
+    ctx.moveTo(0, 0)
+    ctx.arc(0, 0, fx.range, -fx.halfAngle, fx.halfAngle)
+    ctx.closePath()
+    ctx.fill()
+    // 扇形边缘描边
+    ctx.strokeStyle = `rgba(${fx.color}, ${Math.min(1, alpha + 0.35)})`
+    ctx.lineWidth = 2 * this.dpr
+    ctx.stroke()
+    ctx.restore()
   }
 
   // ======== 特殊伤害数字渲染 ========
