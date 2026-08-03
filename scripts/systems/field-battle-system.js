@@ -1031,9 +1031,6 @@ export function installFieldBattleSystem(FieldSceneClass) {
     return nearest
   }
 
-    return nearest
-  }
-
   // 标记已安装
   FieldSceneClass._battleSystemInstalled = true
 
