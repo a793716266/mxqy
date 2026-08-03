@@ -232,7 +232,7 @@ export function installFieldBattleSystem(FieldSceneClass) {
     }
     // 保留 playerAnim 用于 _renderPlayer 的朝向覆盖（如果 _renderPlayer 被调用）
     this.battleSystem.playerAnim = {
-      type: animType,
+      type: animState,
       timer: skill ? 1.0 : 0.6,
       maxTimer: skill ? 1.0 : 0.6,
       facing: Math.atan2(monster.y - mainHero.y, monster.x - mainHero.x)
