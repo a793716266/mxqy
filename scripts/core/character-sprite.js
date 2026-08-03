@@ -99,6 +99,15 @@ export class CharacterSprite {
     // ★ zhenbao 的 skill 用 ATTACK 帧（SLASH 已弃用），需修正帧数
     if (this.spriteType === 'zhenbao') {
       this._totalFramesMap.skill = 8
+      // 各动画图片高度比例（用于统一角色显示大小）
+      // idle/walk/attack=337px, shield=232px, buff=380px(角色仅占64%)
+      // scaleCompensation = idle高度 / 该动画角色实际高度
+      this._animScaleCompensation = {
+        idle: 1.0, walk: 1.0, attack: 1.0,
+        shield: 337 / 232,   // shield 图片矮，放大
+        skill: 1.0,
+        buff: 337 / (380 * 0.64),  // buff 角色仅占64%，补偿
+      }
     }
     this.onAnimationComplete = null  // 回调函数，参数是动画类型
   }
@@ -323,36 +332,32 @@ export class CharacterSprite {
   render(ctx, screenX, screenY) {
     const frameImg = this.getCurrentFrameImage()
     if (!frameImg) return
-    
-    const dpr = this.dpr
+
     const targetHeight = this.targetHeight
-    
-    // ★ 统一缩放基准：用 idle 第一帧的高度，保证所有动画显示大小一致
-    // （各动画帧原始尺寸不同，若按各自高度缩放会导致 shield 偏大、buff 偏小）
+
+    // ★ 统一显示大小：以 idle 图片高度为基准缩放，再用补偿系数修正各动画留白差异
     if (!this._baseImgHeight) {
       const idleKey = `${this.assetPrefix}_IDLE_${String(this.idleFrameOffset).padStart(this.idleFramePad, '0')}`
       const idleImg = this.game.assets?.get?.(idleKey)
       this._baseImgHeight = idleImg ? idleImg.height : frameImg.height
     }
-    
-    // 计算绘制尺寸（统一按基准高度缩放）
-    const imgWidth = frameImg.width
-    const imgHeight = frameImg.height
-    const scale = targetHeight / this._baseImgHeight
-    const renderWidth = imgWidth * scale
-    const renderHeight = imgHeight * scale  // 高度也按 scale，保持图片比例
-    
-    // 绘制阴影
+
+    // 补偿系数（默认 1.0，zhenbao 等有预设值）
+    const comp = (this._animScaleCompensation && this._animScaleCompensation[this.state]) || 1.0
+    const scale = (targetHeight / this._baseImgHeight) * comp
+    const renderWidth = frameImg.width * scale
+    const renderHeight = frameImg.height * scale
+
+    // 绘制阴影（用 targetHeight 定位）
     this._renderShadow(ctx, screenX, screenY, renderWidth)
-    
-    // 绘制角色（以脚部对齐 screenY + targetHeight/2，保证不同帧高度时脚部位置一致）
+
+    // 绘制角色：脚部对齐 screenY + targetHeight/2
     const footY = screenY + this.targetHeight / 2
-    const drawY = footY - renderHeight  // 角色顶部 Y
-    
+    const drawY = footY - renderHeight
+
     ctx.save()
-    
     const shouldFlip = this._shouldFlip()
-    
+
     if (shouldFlip) {
       ctx.translate(screenX, footY)
       ctx.scale(-1, 1)
@@ -360,7 +365,7 @@ export class CharacterSprite {
     } else {
       ctx.drawImage(frameImg, screenX - renderWidth / 2, drawY, renderWidth, renderHeight)
     }
-    
+
     ctx.restore()
   }
   
@@ -373,24 +378,21 @@ export class CharacterSprite {
   renderCharacterOnly(ctx, screenX, screenY) {
     const frameImg = this.getCurrentFrameImage()
     if (!frameImg) return
-    
+
     const targetHeight = this.targetHeight
-    
-    // ★ 统一缩放基准（与 render 一致）
+
+    // ★ 与 render 一致的缩放逻辑（含补偿系数）
     if (!this._baseImgHeight) {
       const idleKey = `${this.assetPrefix}_IDLE_${String(this.idleFrameOffset).padStart(this.idleFramePad, '0')}`
       const idleImg = this.game.assets?.get?.(idleKey)
       this._baseImgHeight = idleImg ? idleImg.height : frameImg.height
     }
-    
-    // 计算绘制尺寸（统一按基准高度缩放）
-    const imgWidth = frameImg.width
-    const imgHeight = frameImg.height
-    const scale = targetHeight / this._baseImgHeight
-    const renderWidth = imgWidth * scale
-    const renderHeight = imgHeight * scale
-    
-    // 绘制角色（以脚部对齐，与 render 一致）
+
+    const comp = (this._animScaleCompensation && this._animScaleCompensation[this.state]) || 1.0
+    const scale = (targetHeight / this._baseImgHeight) * comp
+    const renderWidth = frameImg.width * scale
+    const renderHeight = frameImg.height * scale
+
     const footY = screenY + this.targetHeight / 2
     const drawY = footY - renderHeight
     
