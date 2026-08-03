@@ -43,10 +43,10 @@ export const HEROES = [
       frameDuration: 0.15
     },
     skills: [
-      { id: 'slash', name: '斩击', type: 'attack', power: 1.2, mpCost: 0, desc: '基础物理攻击' },
-      { id: 'shield_bash', name: '盾击', type: 'attack', power: 0.8, mpCost: 5, desc: '附带眩晕效果，使敌人1秒无法行动', effect: 'stun', statusEffect: 'stunned' },
-      { id: 'war_cry', name: '战吼', type: 'buff', mpCost: 8, desc: '提升全体攻击力', effect: 'atk_up', turns: 3, value: 0.3 },
-      { id: 'berserk', name: '狂暴', type: 'buff', mpCost: 15, desc: '大幅提升自身攻击', effect: 'atk_up_self', turns: 3, value: 0.5 }
+      { id: 'slash', name: '斩击', type: 'attack', power: 1.2, mpCost: 0, range: 100, desc: '基础物理攻击' },
+      { id: 'shield_bash', name: '盾击', type: 'attack', power: 0.8, mpCost: 5, range: 80, desc: '附带眩晕效果，使敌人1秒无法行动', effect: 'stun', statusEffect: 'stunned' },
+      { id: 'war_cry', name: '战吼', type: 'buff', mpCost: 8, range: 0, desc: '提升全体攻击力', effect: 'atk_up', turns: 3, value: 0.3 },
+      { id: 'berserk', name: '狂暴', type: 'buff', mpCost: 15, range: 0, desc: '大幅提升自身攻击', effect: 'atk_up_self', turns: 3, value: 0.5 }
     ]
   },
   {

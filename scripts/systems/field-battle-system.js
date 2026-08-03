@@ -23,7 +23,7 @@ export function installFieldBattleSystem(FieldSceneClass) {
       playerAttackInterval: 800, // 玩家攻击间隔（毫秒）
       damageTexts: [],        // 伤害数字数组
       battleTarget: null,      // 当前战斗目标
-      attackRange: 80,        // 玩家攻击范围（像素）
+      attackRange: 100,       // 玩家普攻范围（逻辑像素）
       showBattleUI: false      // 是否显示战斗UI
     }
     console.log('[FieldBattle] 战斗系统初始化完成')
@@ -199,14 +199,15 @@ export function installFieldBattleSystem(FieldSceneClass) {
   // 5. 玩家攻击怪物
   // ==========================================================================
   proto._playerAttackMonster = function(monster, skill) {
-    if (!monster || !monster.alive) return
+    // buff类技能不需要目标（monster 可为 null）
+    const isBuff = skill && (skill.type === 'buff' || skill.type === 'heal' || skill.range === 0)
+    if (!isBuff && (!monster || !monster.alive)) return
     if (this.battleSystem.playerAttackCD > 0 && !skill) return
 
     const mainHero = this.party[0]
     if (!mainHero) return
 
     // ★ 触发主角攻击/技能动画（通过 CharacterSprite 的 state 切换）
-    // 普攻 → attack（ATTACK帧）；盾击 → shield（SHIELD帧）；攻击型技能 → skill（ATTACK帧）；增益 → buff（BUFF帧）
     let animState = 'attack'
     if (skill) {
       if (skill.id === 'shield_bash') {
@@ -219,10 +220,12 @@ export function installFieldBattleSystem(FieldSceneClass) {
     }
     if (this.mainCharacterSprite) {
       this.mainCharacterSprite.state = animState
-      this.mainCharacterSprite.animFrame = 0  // 从第 0 帧开始播放
+      this.mainCharacterSprite.animFrame = 0
       this.mainCharacterSprite.animTimer = 0
-      // 朝向目标
-      this.mainCharacterSprite.facingLeft = (monster.x < mainHero.x)
+      // 朝向目标（buff无目标时保持当前朝向）
+      if (monster) {
+        this.mainCharacterSprite.facingLeft = (monster.x < mainHero.x)
+      }
       // 动画完成后自动恢复 idle
       const sprite = this.mainCharacterSprite
       const prevCallback = sprite.onAnimationComplete
@@ -232,25 +235,38 @@ export function installFieldBattleSystem(FieldSceneClass) {
         sprite.onAnimationComplete = prevCallback
       }
     }
-    // 保留 playerAnim 用于 _renderPlayer 的朝向覆盖（如果 _renderPlayer 被调用）
+    // 保留 playerAnim 用于朝向覆盖
     this.battleSystem.playerAnim = {
       type: animState,
       timer: skill ? 1.0 : 0.6,
       maxTimer: skill ? 1.0 : 0.6,
-      facing: Math.atan2(monster.y - mainHero.y, monster.x - mainHero.x)
+      facing: monster ? Math.atan2(monster.y - mainHero.y, monster.x - mainHero.x) : 0
     }
 
+    // buff类技能（无目标）：只扣 MP + 播放动画，不造成伤害
+    if (isBuff) {
+      mainHero.mp = Math.max(0, mainHero.mp - (skill.mpCost || 0))
+      // ★ 技能释放后设置按钮冷却
+      if (this.battleSystem.skillButtons) {
+        const sb = this.battleSystem.skillButtons.find(b => b.skill === skill)
+        if (sb) {
+          const cdSec = skill.cooldown || 3
+          sb.cooldown = cdSec * 1000
+          sb.cooldownMax = sb.cooldown
+        }
+      }
+      // TODO: 这里可以应用 buff 效果（atk_up 等）
+      return
+    }
+
+    // 以下为有目标的攻击/技能逻辑
     // 计算伤害
     let damage = 0
     if (skill) {
-      // 使用技能
       damage = Math.max(1, mainHero.atk * (skill.power || 1.0) - Math.floor(monster.def * 0.5))
-      // 扣除MP
       mainHero.mp = Math.max(0, mainHero.mp - (skill.mpCost || 0))
     } else {
-      // 普通攻击
       damage = Math.max(1, mainHero.atk - Math.floor(monster.def * 0.5))
-      // 设置攻击冷却
       this.battleSystem.playerAttackCD = this.battleSystem.playerAttackInterval
     }
 
@@ -948,8 +964,8 @@ export function installFieldBattleSystem(FieldSceneClass) {
           tap.y >= btn.y && tap.y <= btn.y + btn.height) {
         console.log('[FieldBattle] 点击攻击按钮')
 
-        // 攻击范围内最近的怪物（范围外也允许，但优先范围内）
-        const range = (this.battleSystem.attackRange || 80) * this.dpr
+        // 普攻：范围内最近的怪物
+        const range = (this.battleSystem.attackRange || 100) * this.dpr
         const target = this._findNearestMonster(range)
         if (target) {
           this._playerAttackMonster(target)
@@ -979,11 +995,16 @@ export function installFieldBattleSystem(FieldSceneClass) {
 
           console.log(`[FieldBattle] 点击技能按钮: ${btn.text}`)
 
-          // 使用技能（范围内优先，范围外也允许）
-          const range = (btn.skill.range || this.battleSystem.attackRange || 80) * this.dpr
-          const target = this._findNearestMonster(range)
-          if (target) {
-            this._playerAttackMonster(target, btn.skill)
+          // 使用技能：buff类(range=0)不需要目标，攻击类需要范围内有目标
+          const skillRange = (btn.skill.range != null ? btn.skill.range : 100) * this.dpr
+          if (btn.skill.range === 0 || btn.skill.type === 'buff' || btn.skill.type === 'heal') {
+            // 自身增益/buff，不需要目标
+            this._playerAttackMonster(null, btn.skill)
+          } else {
+            const target = this._findNearestMonster(skillRange)
+            if (target) {
+              this._playerAttackMonster(target, btn.skill)
+            }
           }
           return true
         }
@@ -996,15 +1017,14 @@ export function installFieldBattleSystem(FieldSceneClass) {
   // ==========================================================================
   // 14. 寻找最近的怪物
   // ==========================================================================
-  // 寻找最近的怪物（优先范围内，范围外也允许攻击但不优先）
+  // 在攻击范围内寻找最近的怪物（严格限制范围，范围外返回 null）
   proto._findNearestMonster = function(maxRange) {
     if (!this.mapMonsters || !Array.isArray(this.mapMonsters)) return null
-    const range = maxRange != null ? maxRange : (this.battleSystem.attackRange || 80) * this.dpr
+    const range = maxRange != null ? maxRange : (this.battleSystem.attackRange || 100) * this.dpr
 
     let nearest = null
     let minDist = Infinity
 
-    // 第一轮：找范围内最近的
     for (const monster of this.mapMonsters) {
       if (!monster.alive) continue
       const dist = Math.sqrt(
@@ -1019,21 +1039,8 @@ export function installFieldBattleSystem(FieldSceneClass) {
         nearest = monster
       }
     }
-    if (nearest) return nearest
 
-    // 第二轮：范围内无目标，返回全局最近（不限制距离，保证随时能攻击）
-    let gDist = Infinity
-    for (const monster of this.mapMonsters) {
-      if (!monster.alive) continue
-      const dist = Math.sqrt(
-        (this.playerX - monster.x) ** 2 + (this.playerY - monster.y) ** 2
-      )
-      if (dist < gDist) {
-        gDist = dist
-        nearest = monster
-      }
-    }
-    return nearest
+    return nearest  // 范围内无目标返回 null，不打全屏
   }
 
   // 标记已安装
