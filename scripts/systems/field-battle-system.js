@@ -948,11 +948,14 @@ export function installFieldBattleSystem(FieldSceneClass) {
           tap.y >= btn.y && tap.y <= btn.y + btn.height) {
         console.log('[FieldBattle] 点击攻击按钮')
 
-        // 攻击当前战斗目标，否则攻击范围内最近的怪物
+        // 攻击范围内最近的怪物（battleTarget 也必须在范围内才生效）
         const range = (this.battleSystem.attackRange || 80) * this.dpr
-        const target = this.battleSystem.battleTarget || this._findNearestMonster(range)
+        const target = this._findNearestMonster(range)
         if (target) {
           this._playerAttackMonster(target)
+        } else {
+          // 范围内无目标，提示玩家靠近
+          if (this.game.showToast) this.game.showToast('目标太远，靠近再攻击')
         }
         return true
       }
@@ -979,11 +982,13 @@ export function installFieldBattleSystem(FieldSceneClass) {
 
           console.log(`[FieldBattle] 点击技能按钮: ${btn.text}`)
 
-          // 使用技能（优先锁定目标，否则范围内最近怪物）
+          // 使用技能（范围内最近怪物，battleTarget 也必须在范围内）
           const range = (btn.skill.range || this.battleSystem.attackRange || 80) * this.dpr
-          const target = this.battleSystem.battleTarget || this._findNearestMonster(range)
+          const target = this._findNearestMonster(range)
           if (target) {
             this._playerAttackMonster(target, btn.skill)
+          } else {
+            if (this.game.showToast) this.game.showToast('目标太远，靠近再释放')
           }
           return true
         }
@@ -996,7 +1001,7 @@ export function installFieldBattleSystem(FieldSceneClass) {
   // ==========================================================================
   // 14. 寻找最近的怪物
   // ==========================================================================
-  // 在攻击范围内寻找最近的怪物（王者荣耀式：就近攻击，而非全局最近）
+  // 在攻击范围内寻找最近的怪物（王者荣耀式：就近攻击，范围外打不到）
   proto._findNearestMonster = function(maxRange) {
     if (!this.mapMonsters || !Array.isArray(this.mapMonsters)) return null
     const range = maxRange != null ? maxRange : (this.battleSystem.attackRange || 80) * this.dpr
@@ -1022,20 +1027,9 @@ export function installFieldBattleSystem(FieldSceneClass) {
       }
     }
 
-    // 范围内无目标时，退而求其次返回全局最近（保证有目标可攻击）
-    if (!nearest) {
-      let gDist = Infinity
-      for (const monster of this.mapMonsters) {
-        if (!monster.alive) continue
-        const dist = Math.sqrt(
-          (this.playerX - monster.x) ** 2 + (this.playerY - monster.y) ** 2
-        )
-        if (dist < gDist) {
-          gDist = dist
-          nearest = monster
-        }
-      }
-    }
+    // ★ 范围内无目标时返回 null（打不到），不再退而求其次打全屏
+    return nearest
+  }
 
     return nearest
   }
