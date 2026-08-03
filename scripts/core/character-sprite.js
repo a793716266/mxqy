@@ -95,6 +95,10 @@ export class CharacterSprite {
       buff: config.totalBuffFrames || 8,
       support: config.totalSupportFrames || 8
     }
+    // ★ zhenbao 的 skill 用 SLASH（13帧），需修正帧数
+    if (this.spriteType === 'zhenbao') {
+      this._totalFramesMap.skill = 13
+    }
     this.onAnimationComplete = null  // 回调函数，参数是动画类型
   }
   
@@ -210,17 +214,21 @@ export class CharacterSprite {
 
     // ★ 战斗状态（attack/skill/buff）优先返回对应动画帧
     if (!this._effectiveMoving && (this.state === 'attack' || this.state === 'skill' || this.state === 'buff')) {
-      // 攻击/技能动画帧索引（从 offset 开始，循环播放）
-      const offset = 1  // 攻击帧从 01 开始
       const total = this._totalFramesMap[this.state] || 8
-      const frameNum = (this.animFrame % total) + offset
+      const frameNum = (this.animFrame % total) + 1  // 从 01 开始
       const frameStr = String(frameNum).padStart(2, '0')
 
-      // zhenbao 用 SLASH（13帧），其他角色用 ATTACK
+      // zhenbao 各状态对应的动画帧：
+      // - attack（普攻）→ ATTACK（8帧轻攻击）
+      // - skill（攻击型技能）→ SLASH（13帧重击挥砍）
+      // - buff（增益技能）→ BUFF（8帧）
       if (this.spriteType === 'zhenbao') {
-        return `${prefix}_SLASH_${frameStr}`
+        if (this.state === 'attack') return `${prefix}_ATTACK_${frameStr}`
+        if (this.state === 'skill') return `${prefix}_SLASH_${frameStr}`
+        if (this.state === 'buff') return `${prefix}_BUFF_${frameStr}`
       }
-      // 其他角色尝试 ATTACK 帧（若资源不存在 getCurrentFrameImage 会 fallback 到 idle）
+
+      // 其他角色：统一用 ATTACK 帧（无资源时 getCurrentFrameImage 会 fallback 到 idle）
       return `${prefix}_ATTACK_${frameStr}`
     }
 
