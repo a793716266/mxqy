@@ -164,6 +164,15 @@ export function installFieldBattleSystem(FieldSceneClass) {
       }
     }
 
+    // 1.2 更新技能按钮冷却（★ 修复：之前这里漏了递减，导致按钮永久灰色）
+    if (this.battleSystem.skillButtons && this.battleSystem.skillButtons.length > 0) {
+      for (const sb of this.battleSystem.skillButtons) {
+        if (sb.cooldown > 0) {
+          sb.cooldown = Math.max(0, sb.cooldown - dt * 1000)
+        }
+      }
+    }
+
     // 2. 更新伤害数字
     this._updateFieldDamageTexts(dt)
 
@@ -198,7 +207,7 @@ export function installFieldBattleSystem(FieldSceneClass) {
 
     // ★ 触发主角攻击/技能动画（王者荣耀式：普攻挥砍 / 技能特效）
     const animType = skill ? 'skill' : 'attack'
-    const animDur = skill ? 0.5 : 0.3 // 秒
+    const animDur = skill ? 1.0 : 0.6 // 秒（延长让玩家能看清挥砍动作）
     this.battleSystem.playerAnim = {
       type: animType,
       timer: animDur,
@@ -253,9 +262,14 @@ export function installFieldBattleSystem(FieldSceneClass) {
     }
 
     // ★ 技能释放后设置按钮冷却（避免无限释放且让冷却遮罩生效）
+    // 注意：skill.cooldown 单位是"秒"，需转换为毫秒
     if (skill && this.battleSystem.skillButtons) {
       const sb = this.battleSystem.skillButtons.find(b => b.skill === skill)
-      if (sb) sb.cooldown = (skill.cooldown || 3000)
+      if (sb) {
+        const cdSec = skill.cooldown || 3
+        sb.cooldown = cdSec * 1000   // 秒 → 毫秒
+        sb.cooldownMax = sb.cooldownMax || sb.cooldown  // 记录最大值用于渲染比例
+      }
     }
   }
 
@@ -787,7 +801,9 @@ export function installFieldBattleSystem(FieldSceneClass) {
 
       // 冷却遮罩
       if (btn.cooldown > 0) {
-        const cooldownRatio = btn.cooldown / (btn.skill.cooldown || 3000)
+        // 用 cooldownMax（毫秒）作为分母，避免 skill.cooldown 单位（秒）混乱
+        const max = btn.cooldownMax || (btn.skill.cooldown || 3) * 1000
+        const cooldownRatio = Math.min(1, btn.cooldown / max)
         ctx.fillStyle = 'rgba(0,0,0,0.5)'
         ctx.beginPath()
         this._roundRect(
@@ -922,6 +938,20 @@ export function installFieldBattleSystem(FieldSceneClass) {
       for (const btn of this.battleSystem.skillButtons) {
         if (tap.x >= btn.x && tap.x <= btn.x + btn.width &&
             tap.y >= btn.y && tap.y <= btn.y + btn.height) {
+          // ★ CD 中则不响应
+          if (btn.cooldown > 0) {
+            console.log(`[FieldBattle] 技能 ${btn.text} 冷却中: ${Math.ceil(btn.cooldown / 1000)}s`)
+            return true
+          }
+
+          // MP 不足也不响应
+          const mainHero = this.party[0]
+          if (mainHero && mainHero.mp < (btn.skill.mpCost || 0)) {
+            console.log(`[FieldBattle] 技能 ${btn.text} MP 不足`)
+            if (this.game.showToast) this.game.showToast('MP 不足！')
+            return true
+          }
+
           console.log(`[FieldBattle] 点击技能按钮: ${btn.text}`)
 
           // 使用技能（优先锁定目标，否则范围内最近怪物）
