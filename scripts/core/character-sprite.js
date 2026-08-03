@@ -327,27 +327,38 @@ export class CharacterSprite {
     const dpr = this.dpr
     const targetHeight = this.targetHeight
     
-    // 计算绘制尺寸
+    // ★ 统一缩放基准：用 idle 第一帧的高度，保证所有动画显示大小一致
+    // （各动画帧原始尺寸不同，若按各自高度缩放会导致 shield 偏大、buff 偏小）
+    if (!this._baseImgHeight) {
+      const idleKey = `${this.assetPrefix}_IDLE_${String(this.idleFrameOffset).padStart(this.idleFramePad, '0')}`
+      const idleImg = this.game.assets?.get?.(idleKey)
+      this._baseImgHeight = idleImg ? idleImg.height : frameImg.height
+    }
+    
+    // 计算绘制尺寸（统一按基准高度缩放）
     const imgWidth = frameImg.width
     const imgHeight = frameImg.height
-    const scale = targetHeight / imgHeight
+    const scale = targetHeight / this._baseImgHeight
     const renderWidth = imgWidth * scale
-    const renderHeight = targetHeight
+    const renderHeight = imgHeight * scale  // 高度也按 scale，保持图片比例
     
     // 绘制阴影
     this._renderShadow(ctx, screenX, screenY, renderWidth)
     
-    // 绘制角色
+    // 绘制角色（以脚部对齐 screenY + targetHeight/2，保证不同帧高度时脚部位置一致）
+    const footY = screenY + this.targetHeight / 2
+    const drawY = footY - renderHeight  // 角色顶部 Y
+    
     ctx.save()
     
     const shouldFlip = this._shouldFlip()
     
     if (shouldFlip) {
-      ctx.translate(screenX, screenY)
+      ctx.translate(screenX, footY)
       ctx.scale(-1, 1)
-      ctx.drawImage(frameImg, -renderWidth / 2, -renderHeight / 2, renderWidth, renderHeight)
+      ctx.drawImage(frameImg, -renderWidth / 2, -renderHeight, renderWidth, renderHeight)
     } else {
-      ctx.drawImage(frameImg, screenX - renderWidth / 2, screenY - renderHeight / 2, renderWidth, renderHeight)
+      ctx.drawImage(frameImg, screenX - renderWidth / 2, drawY, renderWidth, renderHeight)
     }
     
     ctx.restore()
@@ -365,24 +376,34 @@ export class CharacterSprite {
     
     const targetHeight = this.targetHeight
     
-    // 计算绘制尺寸
+    // ★ 统一缩放基准（与 render 一致）
+    if (!this._baseImgHeight) {
+      const idleKey = `${this.assetPrefix}_IDLE_${String(this.idleFrameOffset).padStart(this.idleFramePad, '0')}`
+      const idleImg = this.game.assets?.get?.(idleKey)
+      this._baseImgHeight = idleImg ? idleImg.height : frameImg.height
+    }
+    
+    // 计算绘制尺寸（统一按基准高度缩放）
     const imgWidth = frameImg.width
     const imgHeight = frameImg.height
-    const scale = targetHeight / imgHeight
+    const scale = targetHeight / this._baseImgHeight
     const renderWidth = imgWidth * scale
-    const renderHeight = targetHeight
+    const renderHeight = imgHeight * scale
     
-    // 绘制角色
+    // 绘制角色（以脚部对齐，与 render 一致）
+    const footY = screenY + this.targetHeight / 2
+    const drawY = footY - renderHeight
+    
     ctx.save()
     
     const shouldFlip = this._shouldFlip()
     
     if (shouldFlip) {
-      ctx.translate(screenX, screenY)
+      ctx.translate(screenX, footY)
       ctx.scale(-1, 1)
-      ctx.drawImage(frameImg, -renderWidth / 2, -renderHeight / 2, renderWidth, renderHeight)
+      ctx.drawImage(frameImg, -renderWidth / 2, -renderHeight, renderWidth, renderHeight)
     } else {
-      ctx.drawImage(frameImg, screenX - renderWidth / 2, screenY - renderHeight / 2, renderWidth, renderHeight)
+      ctx.drawImage(frameImg, screenX - renderWidth / 2, drawY, renderWidth, renderHeight)
     }
     
     ctx.restore()
