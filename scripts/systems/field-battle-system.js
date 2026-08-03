@@ -964,9 +964,9 @@ export function installFieldBattleSystem(FieldSceneClass) {
           tap.y >= btn.y && tap.y <= btn.y + btn.height) {
         console.log('[FieldBattle] 点击攻击按钮')
 
-        // 普攻：范围内最近的怪物
+        // 普攻：X轴范围内的最近怪物（近战横砍）
         const range = (this.battleSystem.attackRange || 100) * this.dpr
-        const target = this._findNearestMonster(range)
+        const target = this._findNearestMonster(range, 'x')
         if (target) {
           this._playerAttackMonster(target)
         }
@@ -997,11 +997,12 @@ export function installFieldBattleSystem(FieldSceneClass) {
 
           // 使用技能：buff类(range=0)不需要目标，攻击类需要范围内有目标
           const skillRange = (btn.skill.range != null ? btn.skill.range : 100) * this.dpr
+          const skillAxis = btn.skill.axis || 'x'  // 默认X轴，可配置'xy'
           if (btn.skill.range === 0 || btn.skill.type === 'buff' || btn.skill.type === 'heal') {
             // 自身增益/buff，不需要目标
             this._playerAttackMonster(null, btn.skill)
           } else {
-            const target = this._findNearestMonster(skillRange)
+            const target = this._findNearestMonster(skillRange, skillAxis)
             if (target) {
               this._playerAttackMonster(target, btn.skill)
             }
@@ -1017,19 +1018,27 @@ export function installFieldBattleSystem(FieldSceneClass) {
   // ==========================================================================
   // 14. 寻找最近的怪物
   // ==========================================================================
-  // 在攻击范围内寻找最近的怪物（严格限制范围，范围外返回 null）
-  proto._findNearestMonster = function(maxRange) {
+  // 在攻击范围内寻找最近的怪物
+  // axis: 'x' = 只按X轴距离判断（近战横砍），'xy' = X+Y距离（AOE/远程）
+  proto._findNearestMonster = function(maxRange, axis) {
     if (!this.mapMonsters || !Array.isArray(this.mapMonsters)) return null
     const range = maxRange != null ? maxRange : (this.battleSystem.attackRange || 100) * this.dpr
+    const useAxis = axis || 'x'  // 默认只按 X 轴
 
     let nearest = null
     let minDist = Infinity
 
     for (const monster of this.mapMonsters) {
       if (!monster.alive) continue
-      const dist = Math.sqrt(
-        (this.playerX - monster.x) ** 2 + (this.playerY - monster.y) ** 2
-      )
+      const dx = Math.abs(this.playerX - monster.x)
+      const dy = Math.abs(this.playerY - monster.y)
+      // X 轴距离必须InRange；Y 轴按配置决定是否判断
+      const dist = useAxis === 'xy' ? Math.sqrt(dx * dx + dy * dy) : dx
+      // Y 轴容差：近战允许一定Y偏差（角色身高的1.5倍），避免完全对齐才能打
+      const yTolerance = useAxis === 'xy' ? Infinity : (80 * this.dpr)
+
+      if (dy > yTolerance) continue  // Y 轴偏差太大，打不到
+
       // 优先：已锁定的目标若在范围内直接选用
       if (this.battleSystem.battleTarget === monster && dist <= range) {
         return monster
@@ -1040,7 +1049,7 @@ export function installFieldBattleSystem(FieldSceneClass) {
       }
     }
 
-    return nearest  // 范围内无目标返回 null，不打全屏
+    return nearest
   }
 
   // 标记已安装
