@@ -22,6 +22,7 @@ export function installFieldBattleSystem(FieldSceneClass) {
       playerAttackCD: 0,      // 玩家攻击冷却
       playerAttackInterval: 800, // 玩家攻击间隔（毫秒）
       damageTexts: [],        // 伤害数字数组
+      pendingDamages: [],     // 延迟伤害队列（动画命中帧时结算）
       battleTarget: null,      // 当前战斗目标
       attackRange: 100,       // 玩家普攻范围（逻辑像素）
       showBattleUI: false      // 是否显示战斗UI
@@ -173,6 +174,43 @@ export function installFieldBattleSystem(FieldSceneClass) {
       }
     }
 
+    // 1.3 延迟伤害结算（动画命中帧时才应用伤害）
+    if (this.battleSystem.pendingDamages && this.battleSystem.pendingDamages.length > 0) {
+      for (let i = this.battleSystem.pendingDamages.length - 1; i >= 0; i--) {
+        const pd = this.battleSystem.pendingDamages[i]
+        pd.timer -= dt
+        if (pd.timer <= 0) {
+          // 命中帧到达，结算伤害
+          const m = pd.monster
+          if (m && m.alive) {
+            m.hp = Math.max(0, m.hp - pd.damage)
+            // 添加伤害数字
+            const sx = m.x - this.cameraX
+            const sy = m.y - this.cameraY
+            this.battleSystem.damageTexts.push({
+              text: `-${pd.damage}${pd.isCrit ? '!' : ''}`,
+              x: sx,
+              y: sy - 40 * this.dpr,
+              color: pd.isCrit ? '#FFD700' : '#ff4757',
+              life: 1.0,
+              maxLife: 1.0,
+              _startY: sy - 40 * this.dpr,
+              isCrit: pd.isCrit
+            })
+            console.log(`[FieldBattle] ${pd.heroName} 命中 ${m.name}，造成 ${pd.damage} 点伤害${pd.isCrit ? '（暴击！）' : ''}，剩余HP: ${m.hp}`)
+            // 检查死亡
+            if (m.hp <= 0) {
+              m.alive = false
+              console.log(`[FieldBattle] ${m.name} 被击败！`)
+              this.battleSystem.battleTarget = null
+            }
+          }
+          // 移除已结算的
+          this.battleSystem.pendingDamages.splice(i, 1)
+        }
+      }
+    }
+
     // 2. 更新伤害数字
     this._updateFieldDamageTexts(dt)
 
@@ -279,7 +317,11 @@ export function installFieldBattleSystem(FieldSceneClass) {
       return
     }
 
-    // 计算伤害
+    // ★ 延迟伤害结算：动画播到命中帧时才造成伤害（而非动画开始就结算）
+    // 命中时机：普攻约40%动画进度（挥砍落下），技能约50%
+    const hitDelay = (skill ? 0.5 : 0.4) * (animState === 'shield' ? 0.8 : 1.0)  // 秒
+
+    // 预计算伤害（但不立即应用）
     let damage = 0
     if (skill) {
       damage = Math.max(1, mainHero.atk * (skill.power || 1.0) - Math.floor(monster.def * 0.5))
@@ -295,31 +337,15 @@ export function installFieldBattleSystem(FieldSceneClass) {
       damage = Math.floor(damage * 1.5)
     }
 
-    // 应用伤害
-    monster.hp = Math.max(0, monster.hp - damage)
-
-    // 添加伤害数字
-    const screenX = monster.x - this.cameraX
-    const screenY = monster.y - this.cameraY
-    this.battleSystem.damageTexts.push({
-      text: `-${damage}${isCrit ? '!' : ''}`,
-      x: screenX,
-      y: screenY - 40 * this.dpr,
-      color: isCrit ? '#FFD700' : '#ff4757',
-      life: 1.0,
-      maxLife: 1.0,
-      _startY: screenY - 40 * this.dpr,
-      isCrit: isCrit
+    // ★ 放入延迟伤害队列，动画命中帧时结算
+    if (!this.battleSystem.pendingDamages) this.battleSystem.pendingDamages = []
+    this.battleSystem.pendingDamages.push({
+      monster: monster,
+      damage: damage,
+      isCrit: isCrit,
+      timer: hitDelay,        // 倒计时（秒）
+      heroName: mainHero.name,
     })
-
-    console.log(`[FieldBattle] ${mainHero.name} 攻击 ${monster.name}，造成 ${damage} 点伤害${isCrit ? '（暴击！）' : ''}，剩余HP: ${monster.hp}`)
-
-    // 检查怪物是否死亡
-    if (monster.hp <= 0) {
-      monster.alive = false
-      console.log(`[FieldBattle] ${monster.name} 被击败！`)
-      this.battleSystem.battleTarget = null
-    }
 
     // ★ 技能释放后设置按钮冷却（避免无限释放且让冷却遮罩生效）
     // 注意：skill.cooldown 单位是"秒"，需转换为毫秒
