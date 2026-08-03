@@ -192,13 +192,17 @@ export class CharacterSprite {
     this.animTimer += dt
     if (this.animTimer >= this.frameDuration) {
       this.animTimer = 0
-      const totalFrames = this._effectiveMoving ? this.totalWalkFrames : this.totalIdleFrames
+
+      // ★ 战斗状态（attack/shield/skill/buff）期间强制不移动，保证动画正常播放完成
+      const battleStates = ['attack', 'shield', 'skill', 'buff', 'support']
+      const inBattleAnim = battleStates.includes(this.state)
+      const effectiveMoving = inBattleAnim ? false : this._effectiveMoving
+      const totalFrames = effectiveMoving ? this.totalWalkFrames : this.totalIdleFrames
       const nextFrame = (this.animFrame + 1) % totalFrames
 
-      // ★ 检测战斗动画完成（attack/shield/skill/buff/support）
-      if (!this._effectiveMoving) {
-        const battleStates = ['attack', 'shield', 'skill', 'buff', 'support']
-        if (battleStates.includes(this.state)) {
+      // ★ 检测战斗动画完成
+      if (!effectiveMoving) {
+        if (inBattleAnim) {
           const stateTotal = this._totalFramesMap[this.state] || 8
           // 当前帧是最后一帧，下一帧就是完成
           if (this.animFrame >= stateTotal - 1) {
