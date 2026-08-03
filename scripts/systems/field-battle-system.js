@@ -108,31 +108,31 @@ export function installFieldBattleSystem(FieldSceneClass) {
       active: true
     }
 
-    // 技能按钮：王者荣耀式固定相对布局（以 ATK 为基准向上/左右排布，绝不溢出）
+    // 技能按钮：王王者荣耀式均匀半圆弧形排布（无论几个技能都能均匀分布）
     this.battleSystem.skillButtons = []
     const skills = this.party[0]?.skills || []
     const n = skills.length
     if (n > 0) {
-      // 预定义位置模板（相对于 ATK 按钮左上角的偏移），按技能数量优化间距
-      // gap 已在上方定义为 12 * this.dpr
-      const layouts = [
-        // ── 1 个技能：正上方 ──
-        { dx: 0,                     dy: -(btnSize + gap) },
-        // ── 2 个技能：左右对称 ──
-        { dx: -(btnSize + gap * 1.2), dy: -(btnSize * 0.6 + gap) },
-        { dx: (btnSize + gap * 1.2),  dy: -(btnSize * 0.6 + gap) },
-        // ── 3 个技能：上 + 左下 + 右下（倒三角/扇形）──
-        { dx: -(btnSize + gap) * 1.5, dy: -gap },
-        { dx: (btnSize + gap) * 1.5,  dy: -gap },
-        // ─~ 4+ 技能：更外层 ─~
-        { dx: -(btnSize + gap) * 2.2, dy: btnSize * 0.2 },
-        { dx: (btnSize + gap) * 2.2,  dy: btnSize * 0.2 },
-      ]
+      // 半径：保证按钮之间有足够间距（btnSize + gap 确保不重叠）
+      // 距离 = 2*(btnSize+gap) * sin(π/n)，要求 >= btnSize+gap
+      // n=1: sin(π)=0 → 用固定距离；n=2: sin(π/2)=1 → 直径=2*(btnSize+gap)；
+      // n=3: sin(π/3)=0.866 → 弧半径=(btnSize+gap)/2/0.866≈0.58*(btnSize+gap)
+      // n=4: sin(π/4)=0.707 → 弧半径=0.71*(btnSize+gap)
+      const minStep = btnSize + gap // 相邻按钮中心最小距离
+      const arcR = Math.max(btnSize + gap, minStep / (2 * Math.sin(Math.PI / Math.max(n, 2))))
+      // 张角：从 -150° 到 -30°（120° 扇面，避免重叠到左/右极远方向）
+      const startDeg = -150
+      const endDeg = -30
       skills.forEach((skill, index) => {
-        const layout = layouts[Math.min(index, layouts.length - 1)]
-        let bx = attackX + layout.dx
-        let by = attackY + layout.dy
-        // 安全钳制（正常情况不会触发）
+        const t = n === 1 ? 0.5 : index / (n - 1)
+        const deg = startDeg + (endDeg - startDeg) * t
+        const rad = (deg * Math.PI) / 180
+        // 圆心取攻击按钮中心
+        const cx = attackX + btnSize / 2
+        const cy = attackY + btnSize / 2
+        let bx = cx + Math.cos(rad) * arcR - btnSize / 2
+        let by = cy + Math.sin(rad) * arcR - btnSize / 2
+        // 钳制：保证按钮完整落在屏幕内
         bx = Math.max(margin, Math.min(this.width - btnSize - margin, bx))
         by = Math.max(margin, Math.min(this.height - btnSize - margin, by))
         this.battleSystem.skillButtons.push({

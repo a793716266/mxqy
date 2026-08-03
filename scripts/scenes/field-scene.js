@@ -1779,24 +1779,25 @@ export class FieldScene extends SceneBase {
       active: true
     }
 
-    // 技能按钮：王者荣耀式固定相对布局（以 ATK 为基准向上/左右排布，绝不溢出）
+    // 技能按钮：王王者荣耀式均匀半圆弧形排布（无论几个技能都能均匀分布）
     this.battleSystem.skillButtons = []
     const skills = this.party[0]?.skills || []
     const n = skills.length
     if (n > 0) {
-      const layouts = [
-        { dx: 0,                     dy: -(btnSize + gap) },
-        { dx: -(btnSize + gap * 1.2), dy: -(btnSize * 0.6 + gap) },
-        { dx: (btnSize + gap * 1.2),  dy: -(btnSize * 0.6 + gap) },
-        { dx: -(btnSize + gap) * 1.5, dy: -gap },
-        { dx: (btnSize + gap) * 1.5,  dy: -gap },
-        { dx: -(btnSize + gap) * 2.2, dy: btnSize * 0.2 },
-        { dx: (btnSize + gap) * 2.2,  dy: btnSize * 0.2 },
-      ]
+      // 半径自适应：保证相邻按钮中心间距 ≥ btnSize+gap（不重叠）
+      const minStep = btnSize + gap
+      const arcR = Math.max(btnSize + gap, minStep / (2 * Math.sin(Math.PI / Math.max(n, 2))))
+      // 张角：从 -150° 到 -30°（120° 扇面）
+      const startDeg = -150
+      const endDeg = -30
       skills.forEach((skill, index) => {
-        const layout = layouts[Math.min(index, layouts.length - 1)]
-        let bx = attackX + layout.dx
-        let by = attackY + layout.dy
+        const t = n === 1 ? 0.5 : index / (n - 1)
+        const deg = startDeg + (endDeg - startDeg) * t
+        const rad = (deg * Math.PI) / 180
+        const cx = attackX + btnSize / 2
+        const cy = attackY + btnSize / 2
+        let bx = cx + Math.cos(rad) * arcR - btnSize / 2
+        let by = cy + Math.sin(rad) * arcR - btnSize / 2
         bx = Math.max(margin, Math.min(this.width - btnSize - margin, bx))
         by = Math.max(margin, Math.min(this.height - btnSize - margin, by))
         this.battleSystem.skillButtons.push({
