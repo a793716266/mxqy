@@ -1762,13 +1762,15 @@ baseRadius: 50 * this.dpr,    // 底座半径（缩小）
    * ★ 新增：初始化战斗UI（攻击按钮、技能按钮等）
    */
   _initBattleUI() {
-    const btnSize = 44 * this.dpr       // 缩小按钮，腾出空间
-    const gap = 10 * this.dpr           // 紧凑间距
-    const margin = 16 * this.dpr        // 紧凑边距
+    const btnSize = 42 * this.dpr       // 按钮尺寸（再缩小一点）
+    const gap = 8 * this.dpr            // 紧凑间距
+    const margin = 14 * this.dpr         // 紧凑边距
+    const cell = btnSize + gap
 
-    // 攻击按钮（右下角，作为十字布局中心）
-    const attackX = this.width - btnSize - margin
-    const attackY = this.height - btnSize - margin
+    // 攻击按钮：屏幕右下偏内（确保上下左右四个方向技能都有空间显示）
+    // 从右下角往左上各退一格，让 4 个方向的技能都完整可见
+    const attackX = this.width - btnSize * 2 - margin - gap
+    const attackY = this.height - btnSize * 2 - margin - gap
     this.battleSystem.attackButton = {
       x: attackX,
       y: attackY,

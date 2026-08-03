@@ -91,13 +91,15 @@ export function installFieldBattleSystem(FieldSceneClass) {
   // 3. 战斗UI初始化
   // ==========================================================================
   proto._initBattleUI = function() {
-    const btnSize = 44 * this.dpr       // 缩小按钮，腾出空间
-    const gap = 10 * this.dpr           // 紧凑间距
-    const margin = 16 * this.dpr        // 紧凑边距
+    const btnSize = 42 * this.dpr       // 按钮尺寸（再缩小一点）
+    const gap = 8 * this.dpr            // 紧凑间距
+    const margin = 14 * this.dpr         // 紧凑边距
+    const cell = btnSize + gap
 
-    // 攻击按钮（右下角，作为十字布局中心）
-    const attackX = this.width - btnSize - margin
-    const attackY = this.height - btnSize - margin
+    // 攻击按钮：屏幕右下偏内（确保上下左右四个方向技能都有空间显示）
+    // 从右下角往左上各退一格，让 4 个方向的技能都完整可见
+    const attackX = this.width - btnSize * 2 - margin - gap
+    const attackY = this.height - btnSize * 2 - margin - gap
     this.battleSystem.attackButton = {
       x: attackX,
       y: attackY,
@@ -113,7 +115,6 @@ export function installFieldBattleSystem(FieldSceneClass) {
     const skills = this.party[0]?.skills || []
     const n = skills.length
     if (n > 0) {
-      const cell = btnSize + gap
       const dirs = [
         { dx: 0,     dy: -cell, pos: 'top'    }, // 上
         { dx: cell,  dy: 0,     pos: 'right'  }, // 右
@@ -124,7 +125,7 @@ export function installFieldBattleSystem(FieldSceneClass) {
         const dir = dirs[index % dirs.length]
         let bx = attackX + dir.dx
         let by = attackY + dir.dy
-        // 软钳制：超出后回拉但不破坏布局（最多回拉到边缘）
+        // 钳制
         bx = Math.max(margin, Math.min(this.width - btnSize - margin, bx))
         by = Math.max(margin, Math.min(this.height - btnSize - margin, by))
         this.battleSystem.skillButtons.push({
