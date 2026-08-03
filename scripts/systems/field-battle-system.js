@@ -201,7 +201,8 @@ export function installFieldBattleSystem(FieldSceneClass) {
   proto._playerAttackMonster = function(monster, skill) {
     // buff类技能不需要目标（monster 可为 null）
     const isBuff = skill && (skill.type === 'buff' || skill.type === 'heal' || skill.range === 0)
-    if (!isBuff && (!monster || !monster.alive)) return
+    // monster 存在但已死亡则 return；monster 为 null 时允许继续（只播动画不造成伤害）
+    if (monster && !monster.alive) return
     if (this.battleSystem.playerAttackCD > 0 && !skill) return
 
     const mainHero = this.party[0]
@@ -260,6 +261,24 @@ export function installFieldBattleSystem(FieldSceneClass) {
     }
 
     // 以下为有目标的攻击/技能逻辑
+    // 无目标时只播动画，不造成伤害（普攻仍设 CD 防止连点）
+    if (!monster) {
+      if (!skill) {
+        this.battleSystem.playerAttackCD = this.battleSystem.playerAttackInterval
+      }
+      // 技能仍需设 CD 和扣 MP
+      if (skill && this.battleSystem.skillButtons) {
+        const sb = this.battleSystem.skillButtons.find(b => b.skill === skill)
+        if (sb) {
+          const cdSec = skill.cooldown || 3
+          sb.cooldown = cdSec * 1000
+          sb.cooldownMax = sb.cooldown
+        }
+        mainHero.mp = Math.max(0, mainHero.mp - (skill.mpCost || 0))
+      }
+      return
+    }
+
     // 计算伤害
     let damage = 0
     if (skill) {
@@ -964,12 +983,10 @@ export function installFieldBattleSystem(FieldSceneClass) {
           tap.y >= btn.y && tap.y <= btn.y + btn.height) {
         console.log('[FieldBattle] 点击攻击按钮')
 
-        // 普攻：X轴范围内的最近怪物（近战横砍）
+        // 普攻：先播动画，再判定范围内是否有目标
         const range = (this.battleSystem.attackRange || 100) * this.dpr
         const target = this._findNearestMonster(range, 'x')
-        if (target) {
-          this._playerAttackMonster(target)
-        }
+        this._playerAttackMonster(target)  // target 可为 null，null 时只播动画不造成伤害
         return true
       }
     }
@@ -995,17 +1012,16 @@ export function installFieldBattleSystem(FieldSceneClass) {
 
           console.log(`[FieldBattle] 点击技能按钮: ${btn.text}`)
 
-          // 使用技能：buff类(range=0)不需要目标，攻击类需要范围内有目标
+          // 使用技能：先播动画，再判定范围内是否有目标
           const skillRange = (btn.skill.range != null ? btn.skill.range : 100) * this.dpr
-          const skillAxis = btn.skill.axis || 'x'  // 默认X轴，可配置'xy'
+          const skillAxis = btn.skill.axis || 'x'
           if (btn.skill.range === 0 || btn.skill.type === 'buff' || btn.skill.type === 'heal') {
-            // 自身增益/buff，不需要目标
+            // buff类不需要目标
             this._playerAttackMonster(null, btn.skill)
           } else {
+            // 攻击类：先找目标，无论有没有都播动画（target 可为 null）
             const target = this._findNearestMonster(skillRange, skillAxis)
-            if (target) {
-              this._playerAttackMonster(target, btn.skill)
-            }
+            this._playerAttackMonster(target, btn.skill)
           }
           return true
         }
