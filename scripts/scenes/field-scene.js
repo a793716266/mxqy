@@ -1784,13 +1784,14 @@ export class FieldScene extends SceneBase {
     const skills = this.party[0]?.skills || []
     const n = skills.length
     if (n > 0) {
-      // 预定义位置模板（相对于 ATK 按钮左上角的偏移）
       const layouts = [
-        { dx: 0,            dy: -(btnSize + gap) },
-        { dx: -(btnSize + gap), dy: -(btnSize + gap * 0.4) },
-        { dx: (btnSize + gap),  dy: -(btnSize + gap * 0.4) },
-        { dx: -(btnSize + gap) * 1.6, dy: -(btnSize * 0.3) },
-        { dx: (btnSize + gap) * 1.6,  dy: -(btnSize * 0.3) },
+        { dx: 0,                     dy: -(btnSize + gap) },
+        { dx: -(btnSize + gap * 1.2), dy: -(btnSize * 0.6 + gap) },
+        { dx: (btnSize + gap * 1.2),  dy: -(btnSize * 0.6 + gap) },
+        { dx: -(btnSize + gap) * 1.5, dy: -gap },
+        { dx: (btnSize + gap) * 1.5,  dy: -gap },
+        { dx: -(btnSize + gap) * 2.2, dy: btnSize * 0.2 },
+        { dx: (btnSize + gap) * 2.2,  dy: btnSize * 0.2 },
       ]
       skills.forEach((skill, index) => {
         const layout = layouts[Math.min(index, layouts.length - 1)]

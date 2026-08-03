@@ -113,14 +113,20 @@ export function installFieldBattleSystem(FieldSceneClass) {
     const skills = this.party[0]?.skills || []
     const n = skills.length
     if (n > 0) {
-      // 预定义位置模板（相对于 ATK 按钮左上角的偏移）：最多支持 5 个技能
-      // 布局：ATK 正上方 → 左上 → 右上 → 更左上 → 更右上（呈扇形展开）
+      // 预定义位置模板（相对于 ATK 按钮左上角的偏移），按技能数量优化间距
+      // gap 已在上方定义为 12 * this.dpr
       const layouts = [
-        { dx: 0,            dy: -(btnSize + gap) },              // 1个：正上方
-        { dx: -(btnSize + gap), dy: -(btnSize + gap * 0.4) },   // 2个左：左上方
-        { dx: (btnSize + gap),  dy: -(btnSize + gap * 0.4) },   // 2个右：右上方
-        { dx: -(btnSize + gap) * 1.6, dy: -(btnSize * 0.3) },   // 4个更左
-        { dx: (btnSize + gap) * 1.6,  dy: -(btnSize * 0.3) },   // 5个更右
+        // ── 1 个技能：正上方 ──
+        { dx: 0,                     dy: -(btnSize + gap) },
+        // ── 2 个技能：左右对称 ──
+        { dx: -(btnSize + gap * 1.2), dy: -(btnSize * 0.6 + gap) },
+        { dx: (btnSize + gap * 1.2),  dy: -(btnSize * 0.6 + gap) },
+        // ── 3 个技能：上 + 左下 + 右下（倒三角/扇形）──
+        { dx: -(btnSize + gap) * 1.5, dy: -gap },
+        { dx: (btnSize + gap) * 1.5,  dy: -gap },
+        // ─~ 4+ 技能：更外层 ─~
+        { dx: -(btnSize + gap) * 2.2, dy: btnSize * 0.2 },
+        { dx: (btnSize + gap) * 2.2,  dy: btnSize * 0.2 },
       ]
       skills.forEach((skill, index) => {
         const layout = layouts[Math.min(index, layouts.length - 1)]
