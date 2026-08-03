@@ -91,13 +91,13 @@ export function installFieldBattleSystem(FieldSceneClass) {
   // 3. 战斗UI初始化
   // ==========================================================================
   proto._initBattleUI = function() {
-    const btnSize = 54 * this.dpr
-    const gap = 12 * this.dpr
-    const margin = 24 * this.dpr
+    const btnSize = 44 * this.dpr       // 缩小按钮，腾出空间
+    const gap = 10 * this.dpr           // 紧凑间距
+    const margin = 16 * this.dpr        // 紧凑边距
 
-    // 攻击按钮（右下角偏上，作为十字布局中心，给"下"方向技能腾出空间）
+    // 攻击按钮（右下角，作为十字布局中心）
     const attackX = this.width - btnSize - margin
-    const attackY = this.height - btnSize * 2 - margin - gap  // 上移一格，给下方技能留位置
+    const attackY = this.height - btnSize - margin
     this.battleSystem.attackButton = {
       x: attackX,
       y: attackY,
@@ -108,24 +108,23 @@ export function installFieldBattleSystem(FieldSceneClass) {
       active: true
     }
 
-    // 技能按钮：十字布局（普攻居中，技能按 上/右/下/左 顺时针填充）
+    // 技能按钮：十字布局（ATK 居中，技能按 上/右/下/左 顺时针填充）
     this.battleSystem.skillButtons = []
     const skills = this.party[0]?.skills || []
     const n = skills.length
     if (n > 0) {
-      // 十字四个方向偏移（dx/dy 为按钮左上角相对于 ATK 左上角的偏移）
       const cell = btnSize + gap
       const dirs = [
-        { dx: 0,           dy: -cell,    pos: 'top'    }, // 上
-        { dx: cell,        dy: 0,        pos: 'right'  }, // 右
-        { dx: 0,           dy: cell,     pos: 'bottom' }, // 下
-        { dx: -cell,       dy: 0,        pos: 'left'   }, // 左
+        { dx: 0,     dy: -cell, pos: 'top'    }, // 上
+        { dx: cell,  dy: 0,     pos: 'right'  }, // 右
+        { dx: 0,     dy: cell,  pos: 'bottom' }, // 下
+        { dx: -cell, dy: 0,     pos: 'left'   }, // 左
       ]
       skills.forEach((skill, index) => {
         const dir = dirs[index % dirs.length]
         let bx = attackX + dir.dx
         let by = attackY + dir.dy
-        // 钳制：保证在屏幕内
+        // 软钳制：超出后回拉但不破坏布局（最多回拉到边缘）
         bx = Math.max(margin, Math.min(this.width - btnSize - margin, bx))
         by = Math.max(margin, Math.min(this.height - btnSize - margin, by))
         this.battleSystem.skillButtons.push({
@@ -737,7 +736,7 @@ export function installFieldBattleSystem(FieldSceneClass) {
     ctx.stroke()
 
     // 按钮文字
-    ctx.font = `${20 * this.dpr}px sans-serif`
+    ctx.font = `${16 * this.dpr}px sans-serif`
     ctx.fillStyle = '#ffffff'
     ctx.textAlign = 'center'
     ctx.textBaseline = 'middle'

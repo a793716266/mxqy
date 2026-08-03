@@ -580,16 +580,16 @@ export class FieldScene extends SceneBase {
     // 初始化相机位置
     this._updateCamera()
 
-    // 固定摇杆配置（底座在左下角固定位置）
-    const joystickCenterX = 130 * this.dpr
-    const joystickCenterY = this.height - 130 * this.dpr
+    // 固定摇杆配置（底座在左下角固定位置，往左靠拢给右侧技能区腾出空间）
+    const joystickCenterX = 105 * this.dpr
+    const joystickCenterY = this.height - 105 * this.dpr
     this.joystickConfig = {
       centerX: joystickCenterX,     // 底座中心X（固定）
       centerY: joystickCenterY,     // 底座中心Y（固定）
-      baseRadius: 60 * this.dpr,    // 底座半径
-      handleRadius: 30 * this.dpr,  // 手柄半径
-      maxOffset: 50 * this.dpr,     // 手柄最大偏移
-      deadZone: 5 * this.dpr        // 死区阈值（降低提高灵敏度）
+baseRadius: 50 * this.dpr,    // 底座半径（缩小）
+    handleRadius: 25 * this.dpr,  // 手柄半径（缩小）
+    maxOffset: 45 * this.dpr,     // 手柄最大偏移
+    deadZone: 5 * this.dpr        // 死区阈值
     }
 
     // ★ 摇杆输入统一在 update() 中通过 this.game.input.touches 读取（与战斗一致，避免两套
@@ -1762,13 +1762,13 @@ export class FieldScene extends SceneBase {
    * ★ 新增：初始化战斗UI（攻击按钮、技能按钮等）
    */
   _initBattleUI() {
-    const btnSize = 54 * this.dpr
-    const gap = 12 * this.dpr
-    const margin = 24 * this.dpr
+    const btnSize = 44 * this.dpr       // 缩小按钮，腾出空间
+    const gap = 10 * this.dpr           // 紧凑间距
+    const margin = 16 * this.dpr        // 紧凑边距
 
-    // 攻击按钮（右下角偏上，作为十字布局中心，给"下"方向技能腾出空间）
+    // 攻击按钮（右下角，作为十字布局中心）
     const attackX = this.width - btnSize - margin
-    const attackY = this.height - btnSize * 2 - margin - gap  // 上移一格，给下方技能留位置
+    const attackY = this.height - btnSize - margin
     this.battleSystem.attackButton = {
       x: attackX,
       y: attackY,
