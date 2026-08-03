@@ -95,9 +95,9 @@ export function installFieldBattleSystem(FieldSceneClass) {
     const gap = 12 * this.dpr
     const margin = 24 * this.dpr
 
-    // 攻击按钮（右下角）
+    // 攻击按钮（右下角偏上，作为十字布局中心，给"下"方向技能腾出空间）
     const attackX = this.width - btnSize - margin
-    const attackY = this.height - btnSize - margin
+    const attackY = this.height - btnSize * 2 - margin - gap  // 上移一格，给下方技能留位置
     this.battleSystem.attackButton = {
       x: attackX,
       y: attackY,
@@ -108,32 +108,24 @@ export function installFieldBattleSystem(FieldSceneClass) {
       active: true
     }
 
-    // 技能按钮：固定网格布局（ATK 上方第一行最多3个，第二行剩余），永不重叠
+    // 技能按钮：十字布局（普攻居中，技能按 上/右/下/左 顺时针填充）
     this.battleSystem.skillButtons = []
     const skills = this.party[0]?.skills || []
     const n = skills.length
     if (n > 0) {
-      // 网格单元尺寸（含 gap）= btnSize + gap，确保相邻按钮间有 gap 间距
+      // 十字四个方向偏移（dx/dy 为按钮左上角相对于 ATK 左上角的偏移）
       const cell = btnSize + gap
-      // 第一行最多 3 个（ATK 正上方），剩余的放第二行（更上方）
-      const row1Count = Math.min(n, 3)
-      const row2Count = n - row1Count
-      // 第一行起点 X：从 ATK 中心向左偏移 row1Count/2 个单元，使第一行整体居中于 ATK 上方
-      const row1StartX = attackX + btnSize / 2 - (row1Count * cell - gap) / 2
-      const row1Y = attackY - cell  // ATK 正上方一行
-      const row2StartX = attackX + btnSize / 2 - (row2Count * cell - gap) / 2
-      const row2Y = attackY - cell * 2  // 第二行（仅当有超过3个技能时使用）
+      const dirs = [
+        { dx: 0,           dy: -cell,    pos: 'top'    }, // 上
+        { dx: cell,        dy: 0,        pos: 'right'  }, // 右
+        { dx: 0,           dy: cell,     pos: 'bottom' }, // 下
+        { dx: -cell,       dy: 0,        pos: 'left'   }, // 左
+      ]
       skills.forEach((skill, index) => {
-        let bx, by
-        if (index < row1Count) {
-          bx = row1StartX + index * cell
-          by = row1Y
-        } else {
-          const i = index - row1Count
-          bx = row2StartX + i * cell
-          by = row2Y
-        }
-        // 钳制
+        const dir = dirs[index % dirs.length]
+        let bx = attackX + dir.dx
+        let by = attackY + dir.dy
+        // 钳制：保证在屏幕内
         bx = Math.max(margin, Math.min(this.width - btnSize - margin, bx))
         by = Math.max(margin, Math.min(this.height - btnSize - margin, by))
         this.battleSystem.skillButtons.push({

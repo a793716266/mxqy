@@ -1766,9 +1766,9 @@ export class FieldScene extends SceneBase {
     const gap = 12 * this.dpr
     const margin = 24 * this.dpr
 
-    // 攻击按钮（右下角）
+    // 攻击按钮（右下角偏上，作为十字布局中心，给"下"方向技能腾出空间）
     const attackX = this.width - btnSize - margin
-    const attackY = this.height - btnSize - margin
+    const attackY = this.height - btnSize * 2 - margin - gap  // 上移一格，给下方技能留位置
     this.battleSystem.attackButton = {
       x: attackX,
       y: attackY,
@@ -1779,28 +1779,22 @@ export class FieldScene extends SceneBase {
       active: true
     }
 
-    // 技能按钮：固定网格布局（ATK 上方一行最多3个，超出放第二行），永不重叠
+    // 技能按钮：十字布局（普攻居中，技能按 上/右/下/左 顺时针填充）
     this.battleSystem.skillButtons = []
     const skills = this.party[0]?.skills || []
     const n = skills.length
     if (n > 0) {
       const cell = btnSize + gap
-      const row1Count = Math.min(n, 3)
-      const row2Count = n - row1Count
-      const row1StartX = attackX + btnSize / 2 - (row1Count * cell - gap) / 2
-      const row1Y = attackY - cell
-      const row2StartX = attackX + btnSize / 2 - (row2Count * cell - gap) / 2
-      const row2Y = attackY - cell * 2
+      const dirs = [
+        { dx: 0,     dy: -cell, pos: 'top'    },
+        { dx: cell,  dy: 0,     pos: 'right'  },
+        { dx: 0,     dy: cell,  pos: 'bottom' },
+        { dx: -cell, dy: 0,     pos: 'left'   },
+      ]
       skills.forEach((skill, index) => {
-        let bx, by
-        if (index < row1Count) {
-          bx = row1StartX + index * cell
-          by = row1Y
-        } else {
-          const i = index - row1Count
-          bx = row2StartX + i * cell
-          by = row2Y
-        }
+        const dir = dirs[index % dirs.length]
+        let bx = attackX + dir.dx
+        let by = attackY + dir.dy
         bx = Math.max(margin, Math.min(this.width - btnSize - margin, bx))
         by = Math.max(margin, Math.min(this.height - btnSize - margin, by))
         this.battleSystem.skillButtons.push({
