@@ -205,13 +205,28 @@ export function installFieldBattleSystem(FieldSceneClass) {
     const mainHero = this.party[0]
     if (!mainHero) return
 
-    // ★ 触发主角攻击/技能动画（王者荣耀式：普攻挥砍 / 技能特效）
+    // ★ 触发主角攻击/技能动画（通过 CharacterSprite 的 state 切换）
     const animType = skill ? 'skill' : 'attack'
-    const animDur = skill ? 1.0 : 0.6 // 秒（延长让玩家能看清挥砍动作）
+    if (this.mainCharacterSprite) {
+      this.mainCharacterSprite.state = animType
+      this.mainCharacterSprite.animFrame = 0  // 从第 0 帧开始播放
+      this.mainCharacterSprite.animTimer = 0
+      // 朝向目标
+      this.mainCharacterSprite.facingLeft = (monster.x < mainHero.x)
+      // 动画完成后自动恢复 idle
+      const sprite = this.mainCharacterSprite
+      const prevCallback = sprite.onAnimationComplete
+      sprite.onAnimationComplete = function(state) {
+        sprite.state = 'idle'
+        sprite.animFrame = 0
+        sprite.onAnimationComplete = prevCallback
+      }
+    }
+    // 保留 playerAnim 用于 _renderPlayer 的朝向覆盖（如果 _renderPlayer 被调用）
     this.battleSystem.playerAnim = {
       type: animType,
-      timer: animDur,
-      maxTimer: animDur,
+      timer: skill ? 1.0 : 0.6,
+      maxTimer: skill ? 1.0 : 0.6,
       facing: Math.atan2(monster.y - mainHero.y, monster.x - mainHero.x)
     }
 

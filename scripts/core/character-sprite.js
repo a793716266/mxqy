@@ -207,6 +207,23 @@ export class CharacterSprite {
    */
   getCurrentFrameKey() {
     const prefix = this.assetPrefix
+
+    // ★ 战斗状态（attack/skill/buff）优先返回对应动画帧
+    if (!this._effectiveMoving && (this.state === 'attack' || this.state === 'skill' || this.state === 'buff')) {
+      // 攻击/技能动画帧索引（从 offset 开始，循环播放）
+      const offset = 1  // 攻击帧从 01 开始
+      const total = this._totalFramesMap[this.state] || 8
+      const frameNum = (this.animFrame % total) + offset
+      const frameStr = String(frameNum).padStart(2, '0')
+
+      // zhenbao 用 SLASH（13帧），其他角色用 ATTACK
+      if (this.spriteType === 'zhenbao') {
+        return `${prefix}_SLASH_${frameStr}`
+      }
+      // 其他角色尝试 ATTACK 帧（若资源不存在 getCurrentFrameImage 会 fallback 到 idle）
+      return `${prefix}_ATTACK_${frameStr}`
+    }
+
     const frameNum = this.animFrame + (this._effectiveMoving ? this.walkFrameOffset : this.idleFrameOffset)
     
     if (this._effectiveMoving) {
