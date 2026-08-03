@@ -2616,19 +2616,18 @@ baseRadius: 50 * this.dpr,    // 底座半径（缩小）
       }
     }
 
-    // ★ 王者荣耀式：攻击/技能时播放主角攻击动画帧（优先 SLASH 资源）
+    // ★ 王者荣耀式：攻击/技能时播放主角攻击动画帧（ATTACK 资源；SLASH 已弃用）
     if (this.battleSystem && this.battleSystem.playerAnim) {
       const pa = this.battleSystem.playerAnim
       // 攻击进度 0~1
       const prog = pa.maxTimer ? (1 - pa.timer / pa.maxTimer) : 0
-      // 攻击帧索引：在可用攻击帧中循环（约 8~13 帧）
-      const atkFrameBase = Math.floor(prog * 12) // 0~11
+      // 攻击帧索引（8帧循环）
+      const atkFrameBase = Math.floor(prog * 8) // 0~7
       let atkImg = null
       if (heroId === 'zhenbao') {
-        const idx = (atkFrameBase % 13) + 1
-        atkImg = this.game.assets.get(`HERO_ZHENBAO_SLASH_${idx.toString().padStart(2, '0')}`)
+        const idx = (atkFrameBase % 8) + 1
+        atkImg = this.game.assets.get(`HERO_ZHENBAO_ATTACK_${idx.toString().padStart(2, '0')}`)
       } else if (heroId === 'lixiaobao') {
-        // 李小宝暂无 slash 资源，回退到 idle 帧（至少保持角色可见+前冲反馈）
         atkImg = this.game.assets.get(`HERO_LIXIAOBAO_IDLE_01`)
       } else if (heroId === 'slime_cat') {
         atkImg = this.game.assets.get(`SLIME_CAT_IDLE_1`)

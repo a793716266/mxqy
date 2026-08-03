@@ -87,11 +87,6 @@ const BATTLE_PKG = 'subpackages/battle/'
  *   buildFrames('HERO_ZHENBAO', 'images/characters_anim/transparent/zhenbao', [
  *     { action: 'walk', frames: 8 },
  *   ])
- *   // 自定义文件名：HERO_ZHENBAO_SLASH_01 ~ _13
- *   //             → 文件路径 slash/zhenbao_slash_01.png
- *   buildFrames('HERO_ZHENBAO', '...', [
- *     { action: 'slash', frames: 13, filePrefix: 'zhenbao_slash' },
- *   ])
  *   // 无 action：LXB_HIT_FIREBALL_01 ~ _24
  *   buildFrames('LXB_HIT_FIREBALL', '...', [
  *     { action: '', frames: 24, filePrefix: 'fireball_hit' },
@@ -317,10 +312,6 @@ export const ASSETS = {
     { action: 'attack', frames: 8 },
     { action: 'shield', frames: 8 },
     { action: 'buff',   frames: 8 },
-  ]),
-  // ★ slash 目录名(≠)文件前缀：slash/ 下是 zhenbao_slash_XX.png
-  ...buildFramesEx('HERO_ZHENBAO', 'images/characters_anim/transparent/zhenbao/slash', [
-    { action: 'slash', frames: 13, filePrefix: 'zhenbao_slash' },
   ]),
 
   // --- 李小宝动画帧 ---

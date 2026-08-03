@@ -91,13 +91,14 @@ export class CharacterSprite {
       idle: config.totalIdleFrames || 8,
       walk: config.totalWalkFrames || 8,
       attack: config.totalAttackFrames || 8,
+      shield: config.totalShieldFrames || 8,
       skill: config.totalSkillFrames || 8,
       buff: config.totalBuffFrames || 8,
       support: config.totalSupportFrames || 8
     }
-    // ★ zhenbao 的 skill 用 SLASH（13帧），需修正帧数
+    // ★ zhenbao 的 skill 用 ATTACK 帧（SLASH 已弃用），需修正帧数
     if (this.spriteType === 'zhenbao') {
-      this._totalFramesMap.skill = 13
+      this._totalFramesMap.skill = 8
     }
     this.onAnimationComplete = null  // 回调函数，参数是动画类型
   }
@@ -185,9 +186,9 @@ export class CharacterSprite {
       const totalFrames = this._effectiveMoving ? this.totalWalkFrames : this.totalIdleFrames
       const nextFrame = (this.animFrame + 1) % totalFrames
 
-      // ★ 检测战斗动画完成（attack/skill/buff/support）
+      // ★ 检测战斗动画完成（attack/shield/skill/buff/support）
       if (!this._effectiveMoving) {
-        const battleStates = ['attack', 'skill', 'buff', 'support']
+        const battleStates = ['attack', 'shield', 'skill', 'buff', 'support']
         if (battleStates.includes(this.state)) {
           const stateTotal = this._totalFramesMap[this.state] || 8
           // 当前帧是最后一帧，下一帧就是完成
@@ -212,20 +213,21 @@ export class CharacterSprite {
   getCurrentFrameKey() {
     const prefix = this.assetPrefix
 
-    // ★ 战斗状态（attack/skill/buff）优先返回对应动画帧
-    if (!this._effectiveMoving && (this.state === 'attack' || this.state === 'skill' || this.state === 'buff')) {
+    // ★ 战斗状态（attack/shield/skill/buff）优先返回对应动画帧
+    if (!this._effectiveMoving && (this.state === 'attack' || this.state === 'shield' || this.state === 'skill' || this.state === 'buff')) {
       const total = this._totalFramesMap[this.state] || 8
       const frameNum = (this.animFrame % total) + 1  // 从 01 开始
       const frameStr = String(frameNum).padStart(2, '0')
 
       // zhenbao 各状态对应的动画帧：
       // - attack（普攻）→ ATTACK（8帧轻攻击）
-      // - skill（攻击型技能）→ SLASH（13帧重击挥砍）
+      // - shield（盾击）→ SHIELD（8帧盾牌攻击）
+      // - skill（攻击型技能）→ ATTACK（8帧，SLASH 已弃用）
       // - buff（增益技能）→ BUFF（8帧）
       if (this.spriteType === 'zhenbao') {
-        if (this.state === 'attack') return `${prefix}_ATTACK_${frameStr}`
-        if (this.state === 'skill') return `${prefix}_SLASH_${frameStr}`
-        if (this.state === 'buff') return `${prefix}_BUFF_${frameStr}`
+        const actionMap = { attack: 'ATTACK', shield: 'SHIELD', skill: 'ATTACK', buff: 'BUFF' }
+        const action = actionMap[this.state]
+        if (action) return `${prefix}_${action}_${frameStr}`
       }
 
       // 其他角色：统一用 ATTACK 帧（无资源时 getCurrentFrameImage 会 fallback 到 idle）

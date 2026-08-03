@@ -206,10 +206,12 @@ export function installFieldBattleSystem(FieldSceneClass) {
     if (!mainHero) return
 
     // ★ 触发主角攻击/技能动画（通过 CharacterSprite 的 state 切换）
-    // 普攻 → attack（ATTACK 帧）；攻击型技能 → skill（SLASH 帧）；增益技能 → buff（BUFF 帧）
+    // 普攻 → attack（ATTACK帧）；盾击 → shield（SHIELD帧）；攻击型技能 → skill（ATTACK帧）；增益 → buff（BUFF帧）
     let animState = 'attack'
     if (skill) {
-      if (skill.type === 'buff' || skill.type === 'heal') {
+      if (skill.id === 'shield_bash') {
+        animState = 'shield'
+      } else if (skill.type === 'buff' || skill.type === 'heal') {
         animState = 'buff'
       } else {
         animState = 'skill'
@@ -752,7 +754,7 @@ export function installFieldBattleSystem(FieldSceneClass) {
     // 4. 渲染血条
     this._renderHealthBars(ctx)
 
-    // 5. 攻击/技能动画由主角 SLASH 帧体现，不再绘制场上级范围指示
+    // 5. 攻击/技能动画由主角 ATTACK/SHIELD/BUFF 帧体现，不再绘制场上范围指示
   }
 
   // ==========================================================================
