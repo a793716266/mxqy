@@ -108,31 +108,32 @@ export function installFieldBattleSystem(FieldSceneClass) {
       active: true
     }
 
-    // 技能按钮：王王者荣耀式均匀半圆弧形排布（无论几个技能都能均匀分布）
+    // 技能按钮：固定网格布局（ATK 上方第一行最多3个，第二行剩余），永不重叠
     this.battleSystem.skillButtons = []
     const skills = this.party[0]?.skills || []
     const n = skills.length
     if (n > 0) {
-      // 半径：保证按钮之间有足够间距（btnSize + gap 确保不重叠）
-      // 距离 = 2*(btnSize+gap) * sin(π/n)，要求 >= btnSize+gap
-      // n=1: sin(π)=0 → 用固定距离；n=2: sin(π/2)=1 → 直径=2*(btnSize+gap)；
-      // n=3: sin(π/3)=0.866 → 弧半径=(btnSize+gap)/2/0.866≈0.58*(btnSize+gap)
-      // n=4: sin(π/4)=0.707 → 弧半径=0.71*(btnSize+gap)
-      const minStep = btnSize + gap // 相邻按钮中心最小距离
-      const arcR = Math.max(btnSize + gap, minStep / (2 * Math.sin(Math.PI / Math.max(n, 2))))
-      // 张角：从 -150° 到 -30°（120° 扇面，避免重叠到左/右极远方向）
-      const startDeg = -150
-      const endDeg = -30
+      // 网格单元尺寸（含 gap）= btnSize + gap，确保相邻按钮间有 gap 间距
+      const cell = btnSize + gap
+      // 第一行最多 3 个（ATK 正上方），剩余的放第二行（更上方）
+      const row1Count = Math.min(n, 3)
+      const row2Count = n - row1Count
+      // 第一行起点 X：从 ATK 中心向左偏移 row1Count/2 个单元，使第一行整体居中于 ATK 上方
+      const row1StartX = attackX + btnSize / 2 - (row1Count * cell - gap) / 2
+      const row1Y = attackY - cell  // ATK 正上方一行
+      const row2StartX = attackX + btnSize / 2 - (row2Count * cell - gap) / 2
+      const row2Y = attackY - cell * 2  // 第二行（仅当有超过3个技能时使用）
       skills.forEach((skill, index) => {
-        const t = n === 1 ? 0.5 : index / (n - 1)
-        const deg = startDeg + (endDeg - startDeg) * t
-        const rad = (deg * Math.PI) / 180
-        // 圆心取攻击按钮中心
-        const cx = attackX + btnSize / 2
-        const cy = attackY + btnSize / 2
-        let bx = cx + Math.cos(rad) * arcR - btnSize / 2
-        let by = cy + Math.sin(rad) * arcR - btnSize / 2
-        // 钳制：保证按钮完整落在屏幕内
+        let bx, by
+        if (index < row1Count) {
+          bx = row1StartX + index * cell
+          by = row1Y
+        } else {
+          const i = index - row1Count
+          bx = row2StartX + i * cell
+          by = row2Y
+        }
+        // 钳制
         bx = Math.max(margin, Math.min(this.width - btnSize - margin, bx))
         by = Math.max(margin, Math.min(this.height - btnSize - margin, by))
         this.battleSystem.skillButtons.push({
