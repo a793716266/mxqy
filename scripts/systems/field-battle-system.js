@@ -72,6 +72,7 @@ export function installFieldBattleSystem(FieldSceneClass) {
     this._heroWorldPos = worldPos
     this.battleSystem.battleHeroes = list
     this.battleSystem.currentControlIndex = 0
+    console.log(`[FieldBattle][DIAG] _buildBattleHeroes 完成，参战英雄数量=${list.length}，名单=${list.map(h => h.hero && h.hero.name).join(',')}`)
     return list
   }
 
@@ -475,6 +476,12 @@ export function installFieldBattleSystem(FieldSceneClass) {
   // ==========================================================================
   proto._updateAllyAI = function(dt) {
     const heroes = this.battleSystem.battleHeroes
+    if (!this._allyAIDiagTick) this._allyAIDiagTick = 0
+    this._allyAIDiagTick += dt
+    if (this._allyAIDiagTick >= 2) {
+      this._allyAIDiagTick = 0
+      console.log(`[FieldBattle][DIAG] _updateAllyAI: active=${this.battleSystem.active}, battleHeroes长度=${heroes ? heroes.length : 'undefined/null'}, curIdx=${this.battleSystem.currentControlIndex}`)
+    }
     if (!heroes || !heroes.length) return
     const curIdx = this.battleSystem.currentControlIndex % heroes.length
 
