@@ -54,11 +54,13 @@ export function installFieldBattleSystem(FieldSceneClass) {
     if (this.followers && Array.isArray(this.followers)) {
       for (let fi = 0; fi < this.followers.length; fi++) {
         const f = this.followers[fi]
-        if (!f || !f.hero) continue
+        // ★ field-scene 的 follower 用 character 字段（不是 hero），两者兼容
+        const fHero = f.hero || f.character
+        if (!f || !fHero) continue
         const idx = list.length
         worldPos.push({ x: f.x, y: f.y })
         list.push({
-          hero: f.hero,
+          hero: fHero,
           sprite: f.sprite,
           isFollower: true,
           followerRef: f,

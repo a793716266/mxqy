@@ -22,6 +22,22 @@
   - `scripts/scenes/field-scene.js`：`_renderYSortedEntities` 的 `renderFn` 改为同时渲染主角 + 所有 followers
 - **状态**：✅ 已修改并通过 Babel 语法检查（待用户编译验证）
 
+### 2026-08-04（第三次更新）
+
+**fix: 阳光草原副本地图中李小宝 AI 未接管（不自动攻击怪物）**
+
+- **根因**：`field-battle-system._buildBattleHeroes` 在遍历 `this.followers` 构建参战英雄列表时，判断条件是 `if (!f || !f.hero) continue`。但 `field-scene._initFollowers` 创建的 follower 对象用的是 `character` 字段（不是 `hero`），导致李小宝始终被 `continue` 跳过、**根本没进入 `battleHeroes` 列表**。
+  - 后果：李小宝虽然地图上有行走/空闲精灵（上一次渲染修复），但战斗中既不参与、不会被 AI 自动攻击怪物，也不会被怪物锁定攻击，表现为"AI 没有接管"。
+- **修复**：`_buildBattleHeroes` 改为 `const fHero = f.hero || f.character`，兼容两种字段名，李小宝正确进入 `battleHeroes`，由 `_updateAllyAI` 接管自动寻敌、移动、攻击、释放技能、补位被控者。
+- **附带修复（攻击动画表现）**：李小宝此前没有 `attack` 动画资源，AI 攻击时 `sprite.state='attack'` 会 fallback 到 idle 帧（身体不动）。
+  1. 复制 `lixiaobao/walk/walk_01~08.png` 为 `lixiaobao/attack/attack_01~08.png`（无专门攻击素材时的合理动作兜底）。
+  2. `asset-manager.js` 为李小宝 `HERO_LIXIAOBAO` 注册 `attack` 帧（`buildFrames` 增加 `{ action: 'attack', frames: 8 }`），使 `HERO_LIXIAOBAO_ATTACK_01~08` 资源可加载，`CharacterSprite` 的 attack 状态能正常播放。
+- **修改文件**：
+  - `scripts/systems/field-battle-system.js`：`_buildBattleHeroes` 兼容 `f.hero || f.character`
+  - `subpackages/battle/images/characters_anim/transparent/lixiaobao/attack/attack_01~08.png`（新增）
+  - `scripts/core/asset-manager.js`：李小宝注册 attack 帧资源
+- **状态**：✅ 已修改并通过 Babel 语法检查（待用户编译验证）
+
 ---
 
 ### 2026-08-03（第二次更新）
