@@ -72,7 +72,6 @@ export function installFieldBattleSystem(FieldSceneClass) {
     this._heroWorldPos = worldPos
     this.battleSystem.battleHeroes = list
     this.battleSystem.currentControlIndex = 0
-    console.log(`[FieldBattle][DIAG] _buildBattleHeroes 完成，参战英雄数量=${list.length}，名单=${list.map(h => h.hero && h.hero.name).join(',')}`)
     return list
   }
 
@@ -476,26 +475,14 @@ export function installFieldBattleSystem(FieldSceneClass) {
   // ==========================================================================
   proto._updateAllyAI = function(dt) {
     const heroes = this.battleSystem.battleHeroes
-    if (!this._allyAIDiagTick) this._allyAIDiagTick = 0
-    this._allyAIDiagTick += dt
-    if (this._allyAIDiagTick >= 2) {
-      this._allyAIDiagTick = 0
-      console.log(`[FieldBattle][DIAG] _updateAllyAI: active=${this.battleSystem.active}, battleHeroes长度=${heroes ? heroes.length : 'undefined/null'}, curIdx=${this.battleSystem.currentControlIndex}`)
-      for (let di = 0; di < heroes.length; di++) {
-        const dbh = heroes[di]
-        const dpos = dbh.getPos()
-        const dstate = dbh.sprite ? dbh.sprite.state : 'NO_SPRITE'
-        const dmon = this._findNearestMonsterFromPos((this.battleSystem.attackRange || 100) * this.dpr, 'x', dpos.x, dpos.y)
-        console.log(`[FieldBattle][DIAG] 英雄[${di}] name=${dbh.hero && dbh.hero.name}, pos=(${Math.round(dpos.x)},${Math.round(dpos.y)}), state=${dstate}, hp=${dbh.hero && dbh.hero.hp}, 最近怪物距离=${dmon ? Math.round(Math.hypot(dmon.x-dpos.x, dmon.y-dpos.y)) : 'NULL(超出范围)'}`)
-      }
-    }
     if (!heroes || !heroes.length) return
     const curIdx = this.battleSystem.currentControlIndex % heroes.length
 
     for (let i = 0; i < heroes.length; i++) {
       if (i === curIdx) continue  // 当前被控制的英雄由玩家操作，不走 AI
       const bh = heroes[i]
-      if (!bh.hero || !bh.hero.alive || bh.hero.hp <= 0) continue
+      // ★ alive 字段可能未初始化(undefined)，undefined 应视为存活，不能用 !bh.hero.alive（会把 undefined 判成"死亡"而永久跳过）
+      if (!bh.hero || bh.hero.alive === false || bh.hero.hp <= 0) continue
       const pos = bh.getPos()
       const sprite = bh.sprite
       if (!sprite) continue
@@ -515,7 +502,10 @@ export function installFieldBattleSystem(FieldSceneClass) {
       //   因此队友用更大的搜索半径（约 1.8 倍），确保能锁定主角附近的怪物
       const baseRange = (this.battleSystem.attackRange || 100) * this.dpr
       const range = baseRange * 1.8
-      const monster = this._findNearestMonsterFromPos(range, 'x', pos.x, pos.y)
+      // ★ 队友 Y 轴容差放大：队友在主角身后跟随（间距约 followerDistance），Y 轴天然错位，
+      //    默认 80*dpr(=240) 的容差经常不够，导致队友永远找不到怪物。这里用 220*dpr 放宽。
+      const allyYTol = 220 * this.dpr
+      const monster = this._findNearestMonsterFromPos(range, 'x', pos.x, pos.y, allyYTol)
       if (!monster) continue
 
       // 普攻冷却控制（避免每帧触发）
@@ -1342,9 +1332,9 @@ export function installFieldBattleSystem(FieldSceneClass) {
       fromY != null ? fromY : this.playerY)
   }
 
-  proto._findNearestMonsterFromPos = function(maxRange, axis, originX, originY) {
+  proto._findNearestMonsterFromPos = function(maxRange, axis, originX, originY, yTol) {
     if (!this.mapMonsters || !Array.isArray(this.mapMonsters)) return null
-    const range = this.battleSystem.attackRange ? maxRange : maxRange
+    const range = maxRange
     const useAxis = axis || 'x'  // 默认只按 X 轴
 
     let nearest = null
@@ -1357,7 +1347,8 @@ export function installFieldBattleSystem(FieldSceneClass) {
       // X 轴距离必须InRange；Y 轴按配置决定是否判断
       const dist = useAxis === 'xy' ? Math.sqrt(dx * dx + dy * dy) : dx
       // Y 轴容差：近战允许一定Y偏差（角色身高的1.5倍），避免完全对齐才能打
-      const yTolerance = useAxis === 'xy' ? Infinity : (80 * this.dpr)
+      // 调用方可传入自定义 yTol 覆盖默认（队友AI需要更大容差，因为队友在主角身后跟随，Y轴天然错位）
+      const yTolerance = (yTol !== undefined) ? yTol : (useAxis === 'xy' ? Infinity : (80 * this.dpr))
 
       if (dy > yTolerance) continue  // Y 轴偏差太大，打不到
 

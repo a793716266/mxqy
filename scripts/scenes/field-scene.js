@@ -591,7 +591,6 @@ export class FieldScene extends SceneBase {
       console.log('[Field] 阳光草原副本模式：进入战斗状态')
       this.battleSystem.active = true
       this.battleSystem.showBattleUI = true
-      console.log(`[Field][DIAG] 副本分支：followers数量=${this.followers ? this.followers.length : 'undefined'}，是否在_buildBattleHeroes前`)
       // ★ 必须构建参战英雄列表（主角+跟随队友李小宝），否则 _updateAllyAI 遍历空数组，队友不会被AI接管
       this._buildBattleHeroes()
       this._initBattleUI()
