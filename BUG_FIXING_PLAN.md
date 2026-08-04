@@ -2,6 +2,28 @@
 
 ## 📅 更新日志
 
+### 2026-08-04（第二次更新）
+
+**fix: 阳光草原副本（dungeon 模式）李小宝无行走/空闲精灵（仅血条蓝条）**
+
+- **根因（关键）**：阳光草原副本地图走的是**程序化渲染 + Y 轴排序引擎**（`_renderProgrammaticMap` + `_renderYSortedEntities`），与野外地主地图（非副本）的 `_renderFollowers` 是**两条不同的渲染路径**。
+  - 在 `_renderYSortedEntities` 的 `engine.addPlayer(..., renderFn)` 回调里，原代码逻辑是：
+    ```js
+    if (self.renderCharacters) { self.renderCharacters(ctx) }   // ← FieldScene 不继承 FieldMovement，此方法为 undefined
+    else if (self.mainCharacterSprite) { self.mainCharacterSprite.render(ctx, ...) }  // ← 只渲染了主角臻宝！
+    ```
+  - `FieldScene extends SceneBase`，**根本没有** `renderCharacters` 方法，所以永远走 `else` 分支——**只渲染了主角臻宝，完全漏掉了 `this.followers`（李小宝等）**。李小宝的精灵因此不显示，而血条/蓝条由 `_renderWorldHealthBars` 单独绘制，所以表现为"只有血条蓝条、没有精灵"。
+  - 这正是主地图（非副本）已修复、但副本"就是没有"的根本差异：两条渲染路径，副本那条从未渲染 followers。
+- **修复**：重写 `_renderYSortedEntities` 里的 `renderFn`，移除失效的 `self.renderCharacters` 判断，统一用 `CharacterSprite` 渲染：
+  1. 主角（臻宝）：用 `self.mainCharacterSprite.render(ctx, screenX, screenY)`（与修复前行为一致）。
+  2. 跟随队友（李小宝等）：遍历 `self.followers`，每个 follower 用其 `follower.sprite.render(ctx, fScreenX, fScreenY)` 渲染（与主地图非副本 `_renderFollowers` 完全相同的、已验证可用的 `CharacterSprite` 路径）；`follower.sprite` 为 null 时再走旧版 `_renderFollower` 兜底。
+  3. 队友坐标优先取 `_heroWorldPos[fi+1]`（被控切换后也正确），缺失时回退 `follower.x/y`。
+- **修改文件**：
+  - `scripts/scenes/field-scene.js`：`_renderYSortedEntities` 的 `renderFn` 改为同时渲染主角 + 所有 followers
+- **状态**：✅ 已修改并通过 Babel 语法检查（待用户编译验证）
+
+---
+
 ### 2026-08-03（第二次更新）
 
 **fix: 血条/蓝条非战斗不显示回归 + 李小宝地图不出现兜底**

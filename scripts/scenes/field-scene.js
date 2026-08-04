@@ -2206,12 +2206,11 @@ baseRadius: 50 * this.dpr,    // 底座半径（缩小）
     // ── layer=2：主角+队友（作为整体参与Y排序）─
     if (typeof this.playerX === 'number') {
       engine.addPlayer(this.playerY / this.dpr + 50, function renderFn(ctx) {
-        // 优先使用 FieldMovement 的 renderCharacters（如果存在）
-        if (self.renderCharacters) {
-          self.renderCharacters(ctx)
-        } else if (self.mainCharacterSprite) {
-          // 使用 CharacterSprite 渲染主角（自动处理动画、翻转、阴影）
-          // ★ 战斗系统下，主角真实世界坐标存于 _heroWorldPos[0]（可能非被控者）
+        // ★ FieldScene 不继承 FieldMovement，没有 renderCharacters 方法，
+        //   这里统一用 CharacterSprite 渲染主角 + 所有跟随队友（与主地图非副本路径一致）。
+        // ── 主角（臻宝）──
+        if (self.mainCharacterSprite) {
+          // 战斗系统下，主角真实世界坐标存于 _heroWorldPos[0]（可能非被控者）
           const pPos = (self._heroWorldPos && self._heroWorldPos[0]) ? self._heroWorldPos[0] : { x: self.playerX, y: self.playerY }
           const screenX = pPos.x - self.cameraX
           const screenY = pPos.y - self.cameraY
@@ -2235,6 +2234,26 @@ baseRadius: 50 * this.dpr,    // 底座半径（缩小）
             ctx.arc(arrowX, arrowY, 5 * self.dpr, 0, Math.PI * 2)
             ctx.fillStyle = 'rgba(255,255,255,0.5)'
             ctx.fill()
+          }
+        }
+
+        // ── 跟随队友（李小宝等）──
+        // 副本模式原先只渲染了主角，导致队友只有血条蓝条、没有精灵动画。
+        if (self.followers && Array.isArray(self.followers)) {
+          for (let fi = 0; fi < self.followers.length; fi++) {
+            const follower = self.followers[fi]
+            // 优先用 CharacterSprite 渲染（与主角臻宝一致，已验证分包资源可加载）
+            if (follower.sprite) {
+              const fPos = (self._heroWorldPos && self._heroWorldPos[fi + 1])
+                ? self._heroWorldPos[fi + 1]
+                : { x: follower.x, y: follower.y }
+              const fScreenX = fPos.x - self.cameraX
+              const fScreenY = fPos.y - self.cameraY
+              follower.sprite.render(ctx, fScreenX, fScreenY)
+            } else if (typeof self._renderFollower === 'function') {
+              // 兜底：旧版手写渲染路径
+              self._renderFollower(ctx, follower, fi)
+            }
           }
         }
       })
