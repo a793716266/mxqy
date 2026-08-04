@@ -263,43 +263,55 @@ export class CharacterStateManager {
    * 初始化角色状态
    */
   init(savedData = null) {
-    if (this._initialized) return
-    
-    // 加载存档或创建新角色
+    // 单例只初始化一次（主菜单与野外场景共享同一实例）
+    if (this._initialized) {
+      return
+    }
+
+    // ★ 确保起始队伍（主角臻宝 + 队友李小宝）一开始就在
+    //   用户确认：李小宝与臻宝一同出场，一开始就应在队伍中
+    const ensureDefault = () => {
+      for (let i = 0; i < 2 && i < HEROES.length; i++) {
+        const heroData = HEROES[i]
+        if (!this.characters.has(heroData.id)) {
+          const state = new CharacterState(heroData)
+          this.characters.set(heroData.id, state)
+
+          if (heroData.id === 'zhenbao' && !this._startEquipAdded) {
+            const startEquipments = [
+              EQUIPMENT_CH1.sunlight_blade,   // 阳光之刃（武器）
+              EQUIPMENT_CH1.sunlight_armor,   // 阳光圣甲（防具）
+              EQUIPMENT_CH1.sunlight_pendant  // 阳光吊坠（饰品）
+            ]
+            for (const equip of startEquipments) {
+              equipmentManager.addItem(equip.id)
+            }
+            this._startEquipAdded = true
+            console.log(`[CharacterState] ${state.name} 背包已获得起始装备`)
+          }
+        }
+      }
+    }
+    ensureDefault()
+    // ============================================================
+
+    // 加载存档（覆盖已存在角色的属性/装备）
     if (savedData && savedData.characters) {
       for (const charData of savedData.characters) {
         const heroData = HEROES.find(h => h.id === charData.id)
-        if (heroData) {
+        if (heroData && this.characters.has(charData.id)) {
           const state = CharacterState.deserialize(charData, heroData)
           this.characters.set(charData.id, state)
         }
       }
-    } else {
-      // 默认解锁前两个角色
-      for (let i = 0; i < 2; i++) {
-        const heroData = HEROES[i]
-        const state = new CharacterState(heroData)
-        this.characters.set(heroData.id, state)
-        
-        // ========== 初始背包：给臻宝放入起始装备（未穿戴）==========
-        if (heroData.id === 'zhenbao') {
-          const startEquipments = [
-            EQUIPMENT_CH1.sunlight_blade,   // 阳光之刃（武器）
-            EQUIPMENT_CH1.sunlight_armor,   // 阳光圣甲（防具）
-            EQUIPMENT_CH1.sunlight_pendant  // 阳光吊坠（饰品）
-          ]
-
-          // 只添加到背包，不穿戴
-          for (const equip of startEquipments) {
-            equipmentManager.addItem(equip.id)
-          }
-
-          console.log(`[CharacterState] ${state.name} 背包已获得起始装备`)
-        }
-        // ============================================================
-      }
     }
-    
+
+    // ★ 野外战斗进入即满血满蓝（存档仅保存等级/装备，避免上次战斗后 hp=0 导致进场即阵亡）
+    for (const state of this.characters.values()) {
+      state.hp = state.maxHp
+      state.mp = state.maxMp
+    }
+
     this._initialized = true
     console.log(`[CharacterState] 初始化了 ${this.characters.size} 个角色`)
   }

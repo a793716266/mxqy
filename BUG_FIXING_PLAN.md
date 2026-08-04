@@ -2,6 +2,65 @@
 
 ## 📅 更新日志
 
+### 2026-08-03（第二次更新）
+
+**fix: 血条/蓝条非战斗不显示回归 + 李小宝地图不出现兜底**
+
+- **问题 1（血条蓝条"碰怪物才有"）**：`_renderPlayerHealthBar`（玩家血条/蓝条）原本放在 `_renderBattleUI` 内，而 `_renderBattleUI` 受 `this.battleSystem.showBattleUI` 门控，非战斗时不渲染 → 行走地图时主角/李小宝头顶无任何血条蓝条，进入战斗才出现（用户反馈"之前好好的"实为战斗前本就不显示）。
+  - **修复**：
+    1. `field-scene.js` 主渲染函数 `render(ctx)` 中**无条件**调用新加的 `this._renderWorldHealthBars(ctx)`（与战斗系统 `battleHeroes` 解耦）。
+    2. 新增 `_renderWorldHealthBars`：遍历 `this.party`（主角）+ `this.followers`（李小宝等），按各自实时世界坐标绘制 **HP 条（绿/橙/红）+ MP 蓝条（#1e90ff）**，被控制者名字高亮"控制中"。
+    3. `field-battle-system.js` 的 `_renderBattleUI` 改为只渲染怪物血条（`_renderMonsterHealthBars`），玩家血条/蓝条交由 `field-scene._renderWorldHealthBars` 统一绘制，避免重复绘制。
+- **问题 2（李小宝地图/战斗仍只有臻宝一人）**：单例 `charStateManager` 可能在 field-scene 之前被提前初始化且只含臻宝，导致 `getAllCharacters()` 返回 1 个角色、`followers` 为空。
+  - **修复**：`field-scene.js` 在 `charStateManager.init(savedCharData)` 之后新增**兜底逻辑**——若 `getAllCharacters().length < HEROES.length`，则按 `HEROES` 逐个补建缺失角色（`new CharacterState`，满血满蓝），确保臻宝 + 李小宝一定存在、一定进入队伍并跟随。
+- **修改文件**：
+  - `scripts/scenes/field-scene.js`：import `CharacterState`、init 后兜底补角色、`render` 无条件调用 `_renderWorldHealthBars`、新增 `_renderWorldHealthBars` 方法
+  - `scripts/systems/field-battle-system.js`：`_renderBattleUI` 改用 `_renderMonsterHealthBars`、`_renderHealthBars` 注释改为仅怪物
+- **状态**：✅ 已修改并通过 Babel 语法检查（待用户实际游戏验证）
+
+---
+
+### 2026-08-03（第三次更新）
+
+**fix: 李小宝一开始就在队伍 + 修复李小宝无行走/空闲精灵（只有血条蓝条）**
+
+- **根因（关键）**：李小宝的动画图片素材从未被拷贝进分包目录！`subpackages/battle/images/characters_anim/transparent/lixiaobao/` 下 `idle/` 与 `walk/` 目录**为空**，仅 `hit_*/` 和 `cast_universal.png` 存在。源素材 `_source_backup/lixiaobao/` 里有完整的 `IDLE_01~08`、`WALK_01~08`（大写命名），但 `asset-manager.js` 注册的 key（`HERO_LIXIAOBAO_IDLE_01`、`HERO_LIXIAOBAO_WALK_01`…）需要小写 `idle/idle_0N.png`、`walk/walk_0N.png`，二者因命名大小写 + 未拷贝而缺失 → `field-scene._renderFollowers` 取 `frameImg` 始终为 null → 李小宝只显示血条/蓝条，不显示精灵。
+  - **修复**：将 `_source_backup/lixiaobao/` 的 `IDLE_01~08`、`WALK_01~08` 重命名为小写并分别拷贝到 `subpackages/battle/images/characters_anim/transparent/lixiaobao/idle/`（idle_01~08.png）和 `/walk/`（walk_01~08.png）。素材就位后 `getImage` 即可取到帧，李小宝正常显示 walk/idle 动画。
+- **队伍逻辑澄清**：用户确认"李小宝和臻宝一起的，一开始就有"。因此恢复 `character-state.js` 的 `ensureDefault` 在初始化时即创建臻宝 + 李小宝两个默认角色；`field-scene.js` 保留 init 后的兜底（单例异常时补建李小宝），确保一开始就在队伍、立即跟随、参与战斗。
+- **修改文件**：
+  - `subpackages/battle/images/characters_anim/transparent/lixiaobao/idle/`（新增 idle_01~08.png）
+  - `subpackages/battle/images/characters_anim/transparent/lixiaobao/walk/`（新增 walk_01~08.png）
+  - `scripts/data/character-state.js`：恢复 ensureDefault 创建臻宝+李小宝
+  - `scripts/scenes/field-scene.js`：保留李小宝兜底创建 + import CharacterState + 主渲染无条件 `_renderWorldHealthBars`
+- **状态**：✅ 素材已拷贝、代码已恢复并通过 Babel 语法检查（待用户编译验证）
+
+---
+
+### 2026-08-03（更新）
+
+**fix: 野外战斗蓝条缺失 + 跟随角色（李小宝）完全参战 + 角色切换控制**
+
+- **适用范围**：野外 ARPG 战斗系统（`field-battle-system.js`）。战斗逻辑此前只围绕 `party[0]`（主角），跟随队友（李小宝）只渲染+跟随，不参与战斗；且主角的血条只画了 HP，没有 MP 蓝条。
+- **问题 1（蓝条缺失）**：`_renderPlayerHealthBar` 只渲染主角 HP 条，无 MP 蓝条。
+  - **修复**：改为遍历所有参战英雄，每个英雄绘制 **HP 条（绿/橙/红）+ MP 蓝条（#1e90ff）**，当前控制者名字高亮标注"控制中"。
+- **问题 2（李小宝不参与战斗）**：`party[0]` 是唯一战斗单位，怪物只攻击主角，李小宝不会攻击也不会受伤。
+  - **修复**：
+    1. 新增 `_buildBattleHeroes()`：构建参战英雄列表 `battleHeroes = [主角, ...followers]`，所有英雄世界坐标统一存于 `this._heroWorldPos[]`，`getPos()` 由此读取。
+    2. 新增 `_updateAllyAI(dt)`：非控制状态的队友（李小宝）自动找最近怪物（X 轴）、播放攻击动画、延迟伤害结算、自带普攻 CD，动画播放期间不被打断。
+    3. `_updateMonsterAttack` 改为**攻击最近的参战英雄**（遍历 battleHeroes 取最近者作为目标），伤害数字显示在被攻击英雄实际位置。
+    4. 死亡判定改为"所有参战英雄全部阵亡"才失败。
+- **问题 3（无法切换到李小宝控制）**：原本只能控制主角。
+  - **修复**：
+    1. `_initBattleUI` 新增角色切换按钮（右上角，多英雄时显示）。
+    2. 新增 `_switchControl()`：点击切换按钮，交换被控英雄（重排 `battleHeroes` 使被控者置于 index0），同步世界坐标与 `playerX/playerY`（被控者即镜头中心）。
+    3. 攻击/技能输入（`_handleBattleUITap`、`_playerAttackMonster`）改为基于**当前被控英雄**，移动同步回被控英雄世界坐标。
+    4. `field-scene.js` 主角精灵渲染改用 `_heroWorldPos[0]`（真实主角坐标，切换后仍正确）；`_updateFollowers` 同步队友世界坐标，并在控制非主角时让主角也跟随被控者。
+- **注意（已知简化）**：角色切换后技能按钮仍沿用主角技能配置（即李小宝也可释放主角技能做攻击/动画/伤害），未针对李小宝专属技能重建按钮列表；后续可优化为切换时重建技能按钮。
+- **修改文件**：
+  - `scripts/systems/field-battle-system.js`：`_buildBattleHeroes`、`_getCurrentControlHero`、`_switchControl`、`_updateAllyAI`、`_updateMonsterAttack`（最近英雄）、`_playerAttackMonster`（被控英雄）、`_handleBattleUITap`（被控英雄+切换按钮）、`_renderPlayerHealthBar`（全员血条+蓝条）、`_renderSwitchButton`、新增 `_findNearestMonsterFromPos`
+  - `scripts/scenes/field-scene.js`：移动同步 `_heroWorldPos`、主角精灵渲染用 `_heroWorldPos[0]`、`_updateFollowers` 同步世界坐标+主角跟随
+- **状态**：✅ 已修复并通过 Babel 语法检查（待用户实际游戏验证）
+
 ### 2026-08-02（更新）
 
 **fix: 野外战斗（阳光草原）技能按钮/攻击动画/目标选择修正**

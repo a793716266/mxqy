@@ -9,6 +9,7 @@ import { getMapCollisionsSync } from '../data/map_collisions.js'
 import { isPointInObstacle as _isPointInGrasslandObstacle, generateGrasslandCollisions as _genGrassCollisions, GRASSLAND_MAP_CONFIG, GRASSLAND_MAP_OBJECTS, GLAND_OBJ_TYPE } from '../data/grassland-map-data.js'
 import { RENDER_LAYER, getRenderLayer, isSortableLayer } from '../data/render-layer-config.js'
 import { charStateManager } from '../data/character-state.js'
+import { CharacterState } from '../data/character-state.js'
 import { CharacterInfoPanel } from '../ui/character-info-panel.js'
 import { equipmentManager } from '../managers/equipment-manager.js'
 import { getBossDrop, getRandomEquipment } from '../data/equipment.js'
@@ -60,6 +61,22 @@ export class FieldScene extends SceneBase {
     // 初始化角色状态（必须在队伍初始化之前）
     const savedCharData = this.game.data.get('characterStates')
     charStateManager.init(savedCharData)
+
+    // ★ 兜底：单例可能在 field-scene 之前（如主菜单）被提前初始化，
+    //   此时 ensureDefault 已执行，但若存档异常导致李小宝缺失，这里补建
+    {
+      const all = charStateManager.getAllCharacters()
+      if (all.length < 2 || !charStateManager.getCharacter('lixiaobao')) {
+        const heroData = HEROES.find(h => h.id === 'lixiaobao')
+        if (heroData && !charStateManager.getCharacter('lixiaobao')) {
+          const cs = new CharacterState(heroData)
+          cs.hp = cs.maxHp
+          cs.mp = cs.maxMp
+          charStateManager.characters.set('lixiaobao', cs)
+          console.warn('[Field] 兜底创建缺失角色: 李小宝')
+        }
+      }
+    }
     
     // 初始化装备管理器
     const savedEquipData = this.game.data.get('equipmentData')
@@ -792,6 +809,13 @@ baseRadius: 50 * this.dpr,    // 底座半径（缩小）
 
         this.playerX += moveX
         this.playerY += moveY
+
+        // ★ 同步被控英雄的世界坐标（战斗系统下，被控者即 playerX/playerY）
+        if (this._heroWorldPos && this.battleSystem.battleHeroes && this.battleSystem.battleHeroes[0]) {
+          const c = this.battleSystem.battleHeroes[0]
+          this._heroWorldPos[c.partyIndex].x = this.playerX
+          this._heroWorldPos[c.partyIndex].y = this.playerY
+        }
 
         // 边界限制（地图边界）
         const margin = 50 * this.dpr
@@ -1616,6 +1640,31 @@ baseRadius: 50 * this.dpr,    // 底座半径（缩小）
       if (follower.sprite) {
         follower.sprite.update(dt, follower.isMoving, follower.facingLeft)
       }
+
+      // ★ 同步队友世界坐标（供战斗系统AI/血条显示使用）
+      if (this._heroWorldPos && this._heroWorldPos[i + 1]) {
+        this._heroWorldPos[i + 1].x = follower.x
+        this._heroWorldPos[i + 1].y = follower.y
+      }
+    }
+
+    // ★ 当控制的不是主角时，让主角也跟随被控者（主角作为游离单位跟随）
+    if (this._heroWorldPos && this.battleSystem.battleHeroes && this.battleSystem.battleHeroes[0]) {
+      const ctrl = this.battleSystem.battleHeroes[0]
+      // 被控者不是主角（partyIndex !== 0），主角需要跟随
+      if (ctrl.partyIndex !== 0 && this.mainCharacterSprite) {
+        const px = this._heroWorldPos[0]
+        if (px) {
+          const dx = this.playerX - px.x
+          const dy = this.playerY - px.y
+          const dist = Math.sqrt(dx * dx + dy * dy)
+          if (dist > 10 * this.dpr) {
+            const speed = this.playerSpeed * 0.95
+            px.x += (dx / dist) * speed * dt
+            px.y += (dy / dist) * speed * dt
+          }
+        }
+      }
     }
   }
   
@@ -2162,8 +2211,10 @@ baseRadius: 50 * this.dpr,    // 底座半径（缩小）
           self.renderCharacters(ctx)
         } else if (self.mainCharacterSprite) {
           // 使用 CharacterSprite 渲染主角（自动处理动画、翻转、阴影）
-          const screenX = self.playerX - self.cameraX
-          const screenY = self.playerY - self.cameraY
+          // ★ 战斗系统下，主角真实世界坐标存于 _heroWorldPos[0]（可能非被控者）
+          const pPos = (self._heroWorldPos && self._heroWorldPos[0]) ? self._heroWorldPos[0] : { x: self.playerX, y: self.playerY }
+          const screenX = pPos.x - self.cameraX
+          const screenY = pPos.y - self.cameraY
           self.mainCharacterSprite.render(ctx, screenX, screenY)
 
           // 移动时添加轻微的方向指示器
@@ -2350,6 +2401,11 @@ baseRadius: 50 * this.dpr,    // 底座半径（缩小）
     // 调试：显示碰撞区域（临时开启用于排查问题）
     this._renderObstacles(ctx)
 
+    // ★ 新增：渲染世界血条/蓝条（主角+队友，非战斗也始终显示）
+    if (this.battleSystem) {
+      this._renderWorldHealthBars(ctx)
+    }
+
     // ★ 新增：渲染战斗UI
     if (this.battleSystem && this.battleSystem.showBattleUI) {
       this._renderBattleUI(ctx)
@@ -2398,6 +2454,74 @@ baseRadius: 50 * this.dpr,    // 底座半径（缩小）
         ctx.moveTo(sx, sy - curR); ctx.lineTo(sx, sy + curR)
         ctx.stroke()
         ctx.restore()
+      }
+    }
+  }
+
+  /**
+   * ★ 渲染世界血条/蓝条（主角+所有跟随队友），非战斗也始终显示
+   * 与战斗系统 battleHeroes 解耦，直接读取 party / followers 的实时世界坐标
+   */
+  _renderWorldHealthBars(ctx) {
+    if (!this.party || !this.party.length) return
+
+    const drawBar = (wx, wy, hero, isControlled) => {
+      const screenX = wx - this.cameraX
+      const screenY = wy - this.cameraY
+      const barWidth = 60 * this.dpr
+      const barHeight = 6 * this.dpr
+      const barX = screenX - barWidth / 2
+      const barY = screenY - 50 * this.dpr
+
+      // HP 背景
+      ctx.fillStyle = 'rgba(0,0,0,0.5)'
+      ctx.fillRect(barX, barY, barWidth, barHeight)
+
+      // HP 条
+      const hpRatio = Math.max(0, (hero.hp || 0) / (hero.maxHp || 1))
+      ctx.fillStyle = hpRatio > 0.5 ? '#2ed573' : (hpRatio > 0.25 ? '#ffa502' : '#ff4757')
+      ctx.fillRect(barX, barY, barWidth * hpRatio, barHeight)
+
+      // HP 边框
+      ctx.strokeStyle = '#ffffff'
+      ctx.lineWidth = 1
+      ctx.strokeRect(barX, barY, barWidth, barHeight)
+
+      // ★ MP 蓝条
+      const mpY = barY + barHeight + 2 * this.dpr
+      ctx.fillStyle = 'rgba(0,0,0,0.5)'
+      ctx.fillRect(barX, mpY, barWidth, barHeight)
+      const mpRatio = Math.max(0, (hero.mp || 0) / (hero.maxMp || 1))
+      ctx.fillStyle = '#1e90ff'
+      ctx.fillRect(barX, mpY, barWidth * mpRatio, barHeight)
+      ctx.strokeStyle = '#ffffff'
+      ctx.lineWidth = 1
+      ctx.strokeRect(barX, mpY, barWidth, barHeight)
+
+      // 名字（被控制者高亮）
+      ctx.fillStyle = isControlled ? '#FFD700' : '#ffffff'
+      ctx.font = `${10 * this.dpr}px sans-serif`
+      ctx.textAlign = 'center'
+      ctx.textBaseline = 'bottom'
+      ctx.fillText(hero.name + (isControlled ? '（控制中）' : ''), screenX, barY - 4 * this.dpr)
+      ctx.textAlign = 'left'
+    }
+
+    // 主角坐标（战斗中可能非被控者，但始终用真实位置）
+    const mainPos = (this._heroWorldPos && this._heroWorldPos[0])
+      ? this._heroWorldPos[0]
+      : { x: this.playerX, y: this.playerY }
+    const ctrlIdx = (this.battleSystem && this.battleSystem.battleHeroes && this.battleSystem.battleHeroes[0])
+      ? this.battleSystem.battleHeroes[0].partyIndex : 0
+    drawBar(mainPos.x, mainPos.y, this.party[0], ctrlIdx === 0)
+
+    // 跟随队友
+    if (this.followers && Array.isArray(this.followers)) {
+      for (let i = 0; i < this.followers.length; i++) {
+        const f = this.followers[i]
+        if (!f || !f.character) continue
+        const fPos = (this._heroWorldPos && this._heroWorldPos[i + 1]) ? this._heroWorldPos[i + 1] : { x: f.x, y: f.y }
+        drawBar(fPos.x, fPos.y, f.character, ctrlIdx === (i + 1))
       }
     }
   }

@@ -25,9 +25,83 @@ export function installFieldBattleSystem(FieldSceneClass) {
       pendingDamages: [],     // 延迟伤害队列（动画命中帧时结算）
       battleTarget: null,      // 当前战斗目标
       attackRange: 100,       // 玩家普攻范围（逻辑像素）
-      showBattleUI: false      // 是否显示战斗UI
+      showBattleUI: false,     // 是否显示战斗UI
+      switchButton: null,      // 角色切换按钮
+      currentControlIndex: 0,  // 当前被玩家控制的参战英雄索引（0=主角）
+      battleHeroes: []          // 参战英雄列表：[{hero, sprite, isFollower, getPos()}]
     }
     console.log('[FieldBattle] 战斗系统初始化完成')
+  }
+
+  /**
+   * ★ 构建参战英雄列表：主角 + 所有跟随队友（李小宝等）
+   * 所有英雄世界坐标统一存放在 this._heroWorldPos[]，便于切换控制与跟随
+   */
+  proto._buildBattleHeroes = function() {
+    const list = []
+    // 统一世界坐标数组（party 顺序，与 battleHeroes 一一对应）
+    const worldPos = []
+    // 主角（party[0]）
+    worldPos.push({ x: this.playerX, y: this.playerY })
+    list.push({
+      hero: this.party[0],
+      sprite: this.mainCharacterSprite,
+      isFollower: false,
+      partyIndex: 0,
+      getPos: () => worldPos[0]
+    })
+    // 跟随队友
+    if (this.followers && Array.isArray(this.followers)) {
+      for (let fi = 0; fi < this.followers.length; fi++) {
+        const f = this.followers[fi]
+        if (!f || !f.hero) continue
+        const idx = list.length
+        worldPos.push({ x: f.x, y: f.y })
+        list.push({
+          hero: f.hero,
+          sprite: f.sprite,
+          isFollower: true,
+          followerRef: f,
+          partyIndex: idx,
+          getPos: () => worldPos[idx]
+        })
+      }
+    }
+    this._heroWorldPos = worldPos
+    this.battleSystem.battleHeroes = list
+    this.battleSystem.currentControlIndex = 0
+    return list
+  }
+
+  /**
+   * ★ 获取当前被控制的参战英雄（始终为 battleHeroes[0]，切换时重排）
+   */
+  proto._getCurrentControlHero = function() {
+    const heroes = this.battleSystem.battleHeroes
+    if (!heroes || !heroes.length) return null
+    return heroes[0]
+  }
+
+  /**
+   * ★ 切换被控制的参战英雄（主角 <-> 李小宝等）
+   * 切换后：原被控者坐标存入 _heroWorldPos，新被控者坐标载入 playerX/playerY
+   */
+  proto._switchControl = function() {
+    const list = this.battleSystem.battleHeroes
+    if (!list || list.length < 2 || !this._heroWorldPos) return
+    const cur = list[0]
+    const nxt = list[1]
+    // 将原被控者坐标同步回其世界坐标
+    this._heroWorldPos[cur.partyIndex] = { x: this.playerX, y: this.playerY }
+    // 将新被控者世界坐标载入 playerX/playerY（被控者即镜头中心）
+    const np = this._heroWorldPos[nxt.partyIndex]
+    this.playerX = np.x
+    this.playerY = np.y
+    // 重排：新被控者置于 index0
+    list[0] = nxt
+    list[1] = cur
+    this.battleSystem.currentControlIndex = 0
+    console.log(`[FieldBattle] 切换控制：${nxt.hero.name}`)
   }
 
   // ==========================================================================
@@ -43,6 +117,9 @@ export function installFieldBattleSystem(FieldSceneClass) {
     this.battleSystem.battleTarget = monster
     this.battleSystem.active = true
     this.battleSystem.showBattleUI = true
+
+    // 构建参战英雄列表（主角 + 跟随队友）
+    this._buildBattleHeroes()
 
     // 初始化战斗UI
     this._initBattleUI()
@@ -143,6 +220,20 @@ export function installFieldBattleSystem(FieldSceneClass) {
       })
     }
 
+    // 角色切换按钮：仅在存在多个参战英雄时显示（主角右侧偏上）
+    this.battleSystem.switchButton = null
+    const heroCount = 1 + (this.followers ? this.followers.length : 0)
+    if (heroCount > 1) {
+      const swSize = 36 * this.dpr
+      this.battleSystem.switchButton = {
+        x: this.width - swSize - margin,
+        y: margin,
+        width: swSize,
+        height: swSize,
+        text: '切换'
+      }
+    }
+
     console.log(`[FieldBattle] 战斗UI初始化完成（王者荣耀式固定布局），技能数量: ${skills.length}`)
   }
 
@@ -221,15 +312,22 @@ export function installFieldBattleSystem(FieldSceneClass) {
       return
     }
 
-    // 4. 检查玩家是否死亡
-    const mainHero = this.party[0]
-    if (mainHero && mainHero.hp <= 0) {
-      console.log(`[FieldBattle] 玩家 ${mainHero.name} 已死亡`)
+    // 4. 检查参战英雄是否全部死亡
+    const battleHeroes = this.battleSystem.battleHeroes || []
+    let aliveCount = 0
+    for (const bh of battleHeroes) {
+      if (bh.hero && bh.hero.hp > 0) aliveCount++
+    }
+    if (aliveCount === 0) {
+      console.log(`[FieldBattle] 所有参战英雄已阵亡`)
       this._endFieldBattle(false)
       return
     }
 
-    // 5. 更新怪物攻击
+    // 4.1 ★ 队友（李小宝等）AI 自动战斗（非当前控制英雄）
+    this._updateAllyAI(dt)
+
+    // 5. 更新怪物攻击（攻击最近的参战英雄）
     this._updateMonsterAttack(dt)
   }
 
@@ -243,10 +341,20 @@ export function installFieldBattleSystem(FieldSceneClass) {
     if (monster && !monster.alive) return
     if (this.battleSystem.playerAttackCD > 0 && !skill) return
 
-    const mainHero = this.party[0]
-    if (!mainHero) return
+    // ★ 使用当前被控制的参战英雄（而非固定主角）
+    const ctrl = this._getCurrentControlHero()
+    if (!ctrl || !ctrl.hero) return
+    const mainHero = ctrl.hero
+    const attackerSprite = ctrl.sprite
 
-    // ★ 触发主角攻击/技能动画（通过 CharacterSprite 的 state 切换）
+    // ★ 正在播放攻击/技能动画时，忽略新的攻击/技能请求，避免动画被打断
+    const sprite = attackerSprite
+    const battleStates = ['attack', 'shield', 'skill', 'buff', 'support']
+    if (sprite && battleStates.includes(sprite.state)) {
+      return
+    }
+
+    // ★ 触发攻击/技能动画（通过 CharacterSprite 的 state 切换）
     let animState = 'attack'
     if (skill) {
       if (skill.id === 'shield_bash') {
@@ -257,16 +365,16 @@ export function installFieldBattleSystem(FieldSceneClass) {
         animState = 'skill'
       }
     }
-    if (this.mainCharacterSprite) {
-      this.mainCharacterSprite.state = animState
-      this.mainCharacterSprite.animFrame = 0
-      this.mainCharacterSprite.animTimer = 0
+    if (sprite) {
+      sprite.state = animState
+      sprite.animFrame = 0
+      sprite.animTimer = 0
       // 朝向目标（buff无目标时保持当前朝向）
       if (monster) {
-        this.mainCharacterSprite.facingLeft = (monster.x < mainHero.x)
+        const pos = ctrl.getPos()
+        sprite.facingLeft = (monster.x < pos.x)
       }
       // 动画完成后自动恢复 idle
-      const sprite = this.mainCharacterSprite
       const prevCallback = sprite.onAnimationComplete
       sprite.onAnimationComplete = function(state) {
         sprite.state = 'idle'
@@ -275,11 +383,12 @@ export function installFieldBattleSystem(FieldSceneClass) {
       }
     }
     // 保留 playerAnim 用于朝向覆盖
+    const pos0 = ctrl.getPos()
     this.battleSystem.playerAnim = {
       type: animState,
       timer: skill ? 1.0 : 0.6,
       maxTimer: skill ? 1.0 : 0.6,
-      facing: monster ? Math.atan2(monster.y - mainHero.y, monster.x - mainHero.x) : 0
+      facing: monster ? Math.atan2(monster.y - pos0.y, monster.x - pos0.x) : 0
     }
 
     // buff类技能（无目标）：只扣 MP + 播放动画，不造成伤害
@@ -360,6 +469,67 @@ export function installFieldBattleSystem(FieldSceneClass) {
   }
 
   // ==========================================================================
+  // 5.5 队友 AI 自动战斗
+  // ==========================================================================
+  proto._updateAllyAI = function(dt) {
+    const heroes = this.battleSystem.battleHeroes
+    if (!heroes || !heroes.length) return
+    const curIdx = this.battleSystem.currentControlIndex % heroes.length
+
+    for (let i = 0; i < heroes.length; i++) {
+      if (i === curIdx) continue  // 当前被控制的英雄由玩家操作，不走 AI
+      const bh = heroes[i]
+      if (!bh.hero || !bh.hero.alive || bh.hero.hp <= 0) continue
+      const pos = bh.getPos()
+      const sprite = bh.sprite
+      if (!sprite) continue
+
+      // 动画播放期间不打断
+      const battleStates = ['attack', 'shield', 'skill', 'buff', 'support']
+      if (battleStates.includes(sprite.state)) continue
+
+      // 找最近怪物（X轴）
+      const range = (this.battleSystem.attackRange || 100) * this.dpr
+      const monster = this._findNearestMonsterFromPos(range, 'x', pos.x, pos.y)
+      if (!monster) continue
+
+      // 普攻冷却控制（避免每帧触发）
+      if (!bh.hero._aiAttackCD) bh.hero._aiAttackCD = 0
+      bh.hero._aiAttackCD -= dt * 1000
+      if (bh.hero._aiAttackCD > 0) continue
+
+      // ★ 触发该队友攻击动画 + 延迟伤害
+      const animState = 'attack'
+      sprite.state = animState
+      sprite.animFrame = 0
+      sprite.animTimer = 0
+      sprite.facingLeft = (monster.x < pos.x)
+      const self = this
+      const prevCb = sprite.onAnimationComplete
+      sprite.onAnimationComplete = function(st) {
+        sprite.state = 'idle'
+        sprite.animFrame = 0
+        sprite.onAnimationComplete = prevCb
+      }
+
+      // 预计算伤害并入延迟队列
+      const hero = bh.hero
+      const damage = Math.max(1, hero.atk - Math.floor(monster.def * 0.5))
+      const isCrit = Math.random() < (hero.crit || 0.05)
+      const finalDmg = isCrit ? Math.floor(damage * 1.5) : damage
+      this.battleSystem.pendingDamages.push({
+        monster: monster,
+        damage: finalDmg,
+        isCrit: isCrit,
+        timer: 0.4,
+        heroName: hero.name
+      })
+      bh.hero._aiAttackCD = this.battleSystem.playerAttackInterval
+      console.log(`[FieldBattle] ${hero.name}（AI）攻击 ${monster.name}，伤害 ${finalDmg}`)
+    }
+  }
+
+  // ==========================================================================
   // 6. 怪物攻击玩家
   // ==========================================================================
   proto._updateMonsterAttack = function(dt) {
@@ -369,8 +539,9 @@ export function installFieldBattleSystem(FieldSceneClass) {
     this._fieldUpdateProjectiles(dt)
     this._fieldUpdateWarningZones(dt)
 
-    const mainHero = this.party[0]
-    if (!mainHero) return
+    // ★ 参战英雄列表（主角 + 跟随队友），怪物攻击其中最近者
+    const battleHeroes = this.battleSystem.battleHeroes || []
+    if (!battleHeroes.length) return
 
     // 1. 先递减所有怪物技能的冷却（单位：秒）
     for (const monster of this.mapMonsters) {
@@ -388,8 +559,27 @@ export function installFieldBattleSystem(FieldSceneClass) {
     for (const monster of this.mapMonsters) {
       if (!monster.alive) continue
 
-      const dx = this.playerX - monster.x
-      const dy = this.playerY - monster.y
+      // ★ 找最近的存活参战英雄作为攻击目标
+      let nearestHero = null
+      let nearestHeroPos = null
+      let minHDist = Infinity
+      for (const bh of battleHeroes) {
+        if (!bh.hero || bh.hero.hp <= 0) continue
+        const hp = bh.getPos()
+        const hdx = hp.x - monster.x
+        const hdy = hp.y - monster.y
+        const hdist = Math.sqrt(hdx * hdx + hdy * hdy)
+        if (hdist < minHDist) {
+          minHDist = hdist
+          nearestHero = bh.hero
+          nearestHeroPos = hp
+        }
+      }
+      if (!nearestHero || !nearestHeroPos) continue
+      const mainHero = nearestHero
+
+      const dx = nearestHeroPos.x - monster.x
+      const dy = nearestHeroPos.y - monster.y
       const dist = Math.sqrt(dx * dx + dy * dy)
       const attackRange = (monster.attackRange || 80) * this.dpr
 
@@ -747,9 +937,14 @@ export function installFieldBattleSystem(FieldSceneClass) {
     // 应用伤害
     hero.hp = Math.max(0, hero.hp - finalDamage)
 
-    // 添加伤害数字（显示在玩家位置）
-    const screenX = this.playerX - this.cameraX
-    const screenY = this.playerY - this.cameraY
+    // ★ 根据被攻击英雄的实际位置显示伤害数字
+    let hpos = { x: this.playerX, y: this.playerY }
+    const heroes = this.battleSystem.battleHeroes || []
+    for (const bh of heroes) {
+      if (bh.hero === hero) { hpos = bh.getPos(); break }
+    }
+    const screenX = hpos.x - this.cameraX
+    const screenY = hpos.y - this.cameraY
     this.battleSystem.damageTexts.push({
       text: `-${finalDamage}${isCrit ? '!' : ''}`,
       x: screenX,
@@ -812,10 +1007,32 @@ export function installFieldBattleSystem(FieldSceneClass) {
     // 3. 渲染伤害数字
     this._renderDamageTexts(ctx)
 
-    // 4. 渲染血条
-    this._renderHealthBars(ctx)
+    // 4. 渲染怪物血条（玩家血条/蓝条已移至 _renderWorldHealthBars，非战斗也显示）
+    this._renderMonsterHealthBars(ctx)
 
-    // 5. 攻击/技能动画由主角 ATTACK/SHIELD/BUFF 帧体现，不再绘制场上范围指示
+    // 5. 渲染角色切换按钮（多英雄时）
+    this._renderSwitchButton(ctx)
+
+    // 6. 攻击/技能动画由主角 ATTACK/SHIELD/BUFF 帧体现，不再绘制场上范围指示
+  }
+
+  proto._renderSwitchButton = function(ctx) {
+    const btn = this.battleSystem.switchButton
+    if (!btn) return
+    ctx.save()
+    ctx.fillStyle = 'rgba(255,165,2,0.85)'
+    ctx.beginPath()
+    this._roundRect(ctx, btn.x, btn.y, btn.width, btn.height, 8 * this.dpr)
+    ctx.fill()
+    ctx.strokeStyle = '#ffffff'
+    ctx.lineWidth = 2
+    ctx.stroke()
+    ctx.fillStyle = '#ffffff'
+    ctx.font = `${12 * this.dpr}px sans-serif`
+    ctx.textAlign = 'center'
+    ctx.textBaseline = 'middle'
+    ctx.fillText(btn.text, btn.x + btn.width / 2, btn.y + btn.height / 2)
+    ctx.restore()
   }
 
   // ==========================================================================
@@ -934,37 +1151,60 @@ export function installFieldBattleSystem(FieldSceneClass) {
   // 12. 渲染血条
   // ==========================================================================
   proto._renderHealthBars = function(ctx) {
-    // 渲染玩家血条
-    this._renderPlayerHealthBar(ctx)
-
-    // 渲染怪物血条
+    // 玩家血条/蓝条已移至 field-scene._renderWorldHealthBars（非战斗也显示）
+    // 此处仅渲染怪物血条
     this._renderMonsterHealthBars(ctx)
   }
 
   proto._renderPlayerHealthBar = function(ctx) {
-    const mainHero = this.party[0]
-    if (!mainHero) return
+    const heroes = this.battleSystem.battleHeroes
+    if (!heroes || !heroes.length) return
 
-    const screenX = this.playerX - this.cameraX
-    const screenY = this.playerY - this.cameraY
-    const barWidth = 60 * this.dpr
-    const barHeight = 6 * this.dpr
-    const barX = screenX - barWidth / 2
-    const barY = screenY - 50 * this.dpr
+    const curIdx = this.battleSystem.currentControlIndex % heroes.length
 
-    // 背景
-    ctx.fillStyle = 'rgba(0,0,0,0.5)'
-    ctx.fillRect(barX, barY, barWidth, barHeight)
+    for (let i = 0; i < heroes.length; i++) {
+      const bh = heroes[i]
+      if (!bh || !bh.hero) continue
+      const pos = bh.getPos()
+      const screenX = pos.x - this.cameraX
+      const screenY = pos.y - this.cameraY
+      const barWidth = 60 * this.dpr
+      const barHeight = 6 * this.dpr
+      const barX = screenX - barWidth / 2
+      const barY = screenY - 50 * this.dpr
 
-    // HP条
-    const hpRatio = Math.max(0, mainHero.hp / mainHero.maxHp)
-    ctx.fillStyle = hpRatio > 0.5 ? '#2ed573' : (hpRatio > 0.25 ? '#ffa502' : '#ff4757')
-    ctx.fillRect(barX, barY, barWidth * hpRatio, barHeight)
+      // 背景
+      ctx.fillStyle = 'rgba(0,0,0,0.5)'
+      ctx.fillRect(barX, barY, barWidth, barHeight)
 
-    // 边框
-    ctx.strokeStyle = '#ffffff'
-    ctx.lineWidth = 1
-    ctx.strokeRect(barX, barY, barWidth, barHeight)
+      // HP条
+      const hpRatio = Math.max(0, (bh.hero.hp || 0) / (bh.hero.maxHp || 1))
+      ctx.fillStyle = hpRatio > 0.5 ? '#2ed573' : (hpRatio > 0.25 ? '#ffa502' : '#ff4757')
+      ctx.fillRect(barX, barY, barWidth * hpRatio, barHeight)
+
+      // 边框
+      ctx.strokeStyle = '#ffffff'
+      ctx.lineWidth = 1
+      ctx.strokeRect(barX, barY, barWidth, barHeight)
+
+      // ★ MP（蓝条）
+      const mpY = barY + barHeight + 2 * this.dpr
+      ctx.fillStyle = 'rgba(0,0,0,0.5)'
+      ctx.fillRect(barX, mpY, barWidth, barHeight)
+      const mpRatio = Math.max(0, (bh.hero.mp || 0) / (bh.hero.maxMp || 1))
+      ctx.fillStyle = '#1e90ff'
+      ctx.fillRect(barX, mpY, barWidth * mpRatio, barHeight)
+      ctx.strokeStyle = '#ffffff'
+      ctx.lineWidth = 1
+      ctx.strokeRect(barX, mpY, barWidth, barHeight)
+
+      // 名字（当前控制者高亮）
+      ctx.fillStyle = (i === curIdx) ? '#FFD700' : '#ffffff'
+      ctx.font = `${10 * this.dpr}px sans-serif`
+      ctx.textAlign = 'center'
+      ctx.fillText(bh.hero.name + (i === curIdx ? '（控制中）' : ''), screenX, barY - 4 * this.dpr)
+      ctx.textAlign = 'left'
+    }
   }
 
   proto._renderMonsterHealthBars = function(ctx) {
@@ -1002,6 +1242,20 @@ export function installFieldBattleSystem(FieldSceneClass) {
   proto._handleBattleUITap = function(tap) {
     if (!this.battleSystem.active) return false
 
+    // ★ 检查是否点击了角色切换按钮
+    const swBtn = this.battleSystem.switchButton
+    if (swBtn) {
+      if (tap.x >= swBtn.x && tap.x <= swBtn.x + swBtn.width &&
+          tap.y >= swBtn.y && tap.y <= swBtn.y + swBtn.height) {
+        this._switchControl()
+        return true
+      }
+    }
+
+    // ★ 当前被控英雄（用于攻击原点与MP判定）
+    const ctrl = this._getCurrentControlHero()
+    const ctrlPos = ctrl ? ctrl.getPos() : { x: this.playerX, y: this.playerY }
+
     // 检查是否点击了攻击按钮
     if (this.battleSystem.attackButton) {
       const btn = this.battleSystem.attackButton
@@ -1011,7 +1265,7 @@ export function installFieldBattleSystem(FieldSceneClass) {
 
         // 普攻：先播动画，再判定范围内是否有目标
         const range = (this.battleSystem.attackRange || 100) * this.dpr
-        const target = this._findNearestMonster(range, 'x')
+        const target = this._findNearestMonster(range, 'x', ctrlPos.x, ctrlPos.y)
         this._playerAttackMonster(target)  // target 可为 null，null 时只播动画不造成伤害
         return true
       }
@@ -1029,7 +1283,7 @@ export function installFieldBattleSystem(FieldSceneClass) {
           }
 
           // MP 不足也不响应
-          const mainHero = this.party[0]
+          const mainHero = ctrl ? ctrl.hero : null
           if (mainHero && mainHero.mp < (btn.skill.mpCost || 0)) {
             console.log(`[FieldBattle] 技能 ${btn.text} MP 不足`)
             if (this.game.showToast) this.game.showToast('MP 不足！')
@@ -1046,7 +1300,7 @@ export function installFieldBattleSystem(FieldSceneClass) {
             this._playerAttackMonster(null, btn.skill)
           } else {
             // 攻击类：先找目标，无论有没有都播动画（target 可为 null）
-            const target = this._findNearestMonster(skillRange, skillAxis)
+            const target = this._findNearestMonster(skillRange, skillAxis, ctrlPos.x, ctrlPos.y)
             this._playerAttackMonster(target, btn.skill)
           }
           return true
@@ -1062,9 +1316,16 @@ export function installFieldBattleSystem(FieldSceneClass) {
   // ==========================================================================
   // 在攻击范围内寻找最近的怪物
   // axis: 'x' = 只按X轴距离判断（近战横砍），'xy' = X+Y距离（AOE/远程）
-  proto._findNearestMonster = function(maxRange, axis) {
+  // fromX/fromY: 可选，指定查询原点（用于队友AI；默认主角位置）
+  proto._findNearestMonster = function(maxRange, axis, fromX, fromY) {
+    return this._findNearestMonsterFromPos(maxRange, axis,
+      fromX != null ? fromX : this.playerX,
+      fromY != null ? fromY : this.playerY)
+  }
+
+  proto._findNearestMonsterFromPos = function(maxRange, axis, originX, originY) {
     if (!this.mapMonsters || !Array.isArray(this.mapMonsters)) return null
-    const range = maxRange != null ? maxRange : (this.battleSystem.attackRange || 100) * this.dpr
+    const range = this.battleSystem.attackRange ? maxRange : maxRange
     const useAxis = axis || 'x'  // 默认只按 X 轴
 
     let nearest = null
@@ -1072,8 +1333,8 @@ export function installFieldBattleSystem(FieldSceneClass) {
 
     for (const monster of this.mapMonsters) {
       if (!monster.alive) continue
-      const dx = Math.abs(this.playerX - monster.x)
-      const dy = Math.abs(this.playerY - monster.y)
+      const dx = Math.abs(originX - monster.x)
+      const dy = Math.abs(originY - monster.y)
       // X 轴距离必须InRange；Y 轴按配置决定是否判断
       const dist = useAxis === 'xy' ? Math.sqrt(dx * dx + dy * dy) : dx
       // Y 轴容差：近战允许一定Y偏差（角色身高的1.5倍），避免完全对齐才能打

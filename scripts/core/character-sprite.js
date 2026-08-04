@@ -226,8 +226,11 @@ export class CharacterSprite {
   getCurrentFrameKey() {
     const prefix = this.assetPrefix
 
-    // ★ 战斗状态（attack/shield/skill/buff）优先返回对应动画帧
-    if (!this._effectiveMoving && (this.state === 'attack' || this.state === 'shield' || this.state === 'skill' || this.state === 'buff')) {
+    // ★ 战斗状态（attack/shield/skill/buff）期间，即使移动也优先返回对应动画帧，
+    //    防止移动/其他动画改变正在播放的技能动画
+    const battleStates = ['attack', 'shield', 'skill', 'buff', 'support']
+    const inBattleAnim = battleStates.includes(this.state)
+    if (inBattleAnim || (!this._effectiveMoving && (this.state === 'attack' || this.state === 'shield' || this.state === 'skill' || this.state === 'buff'))) {
       const total = this._totalFramesMap[this.state] || 8
       const frameNum = (this.animFrame % total) + 1  // 从 01 开始
       const frameStr = String(frameNum).padStart(2, '0')
