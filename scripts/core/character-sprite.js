@@ -110,6 +110,35 @@ export class CharacterSprite {
       }
     }
     this.onAnimationComplete = null  // 回调函数，参数是动画类型
+
+    // ★ 李小宝 cast 精灵表（attack 普攻复用 cast_universal.png，8帧横排）
+    //   战斗场景已统一使用此精灵表，野外副本/主地图的 CharacterSprite 渲染也复用，
+    //   保证李小宝攻击动画与正规战斗一致（而非复用 walk/idle 帧）
+    //   注意：分包资源可能在构造时尚未加载，故延迟到首次渲染时再取（见 _getCastSheet）
+    this._castSheet = null
+    this._castSheetTried = false
+    this._castTotalFrames = 8
+    this._castFrameW = 0
+    this._castFrameH = 0
+  }
+
+  /**
+   * 延迟获取李小宝 cast 精灵表（分包资源可能晚于构造时加载）
+   * @returns {HTMLImageElement|null}
+   */
+  _getCastSheet() {
+    if (this._castSheetTried) return this._castSheet
+    this._castSheetTried = true
+    if (this.spriteType === 'lixiaobao') {
+      const sheet = this.game.assets?.get?.('LIXIAOBAO_CAST_SPRITESHEET') || null
+      if (sheet && sheet.width) {
+        this._castSheet = sheet
+        this._castTotalFrames = 8
+        this._castFrameW = Math.floor(sheet.width / this._castTotalFrames)
+        this._castFrameH = sheet.height
+      }
+    }
+    return this._castSheet
   }
   
   /**
@@ -267,9 +296,25 @@ export class CharacterSprite {
   
   /**
    * 获取当前动画帧图片
-   * @returns {HTMLImageElement|null}
+   * @returns {HTMLImageElement|Object|null} HTMLImageElement 或精灵表裁切对象（含 _isSpriteSheet）
    */
   getCurrentFrameImage() {
+    // ★ 李小宝 attack 普攻：使用 cast_universal.png 精灵表（8帧横排），与正规战斗一致
+    const castSheet = this._getCastSheet()
+    if (this.spriteType === 'lixiaobao' && this.state === 'attack' && castSheet) {
+      const idx = this.animFrame % this._castTotalFrames
+      return {
+        _isSpriteSheet: true,
+        _sheet: castSheet,
+        _sx: idx * this._castFrameW,
+        _sy: 0,
+        _sw: this._castFrameW,
+        _sh: this._castFrameH,
+        width: this._castFrameW,
+        height: this._castFrameH
+      }
+    }
+
     const key = this.getCurrentFrameKey()
     const img = this.game.assets?.get?.(key)
     
@@ -368,9 +413,17 @@ export class CharacterSprite {
     if (shouldFlip) {
       ctx.translate(screenX, footY)
       ctx.scale(-1, 1)
-      ctx.drawImage(frameImg, -renderWidth / 2, -renderHeight, renderWidth, renderHeight)
+      if (frameImg._isSpriteSheet) {
+        ctx.drawImage(frameImg._sheet, frameImg._sx, frameImg._sy, frameImg._sw, frameImg._sh, -renderWidth / 2, -renderHeight, renderWidth, renderHeight)
+      } else {
+        ctx.drawImage(frameImg, -renderWidth / 2, -renderHeight, renderWidth, renderHeight)
+      }
     } else {
-      ctx.drawImage(frameImg, screenX - renderWidth / 2, drawY, renderWidth, renderHeight)
+      if (frameImg._isSpriteSheet) {
+        ctx.drawImage(frameImg._sheet, frameImg._sx, frameImg._sy, frameImg._sw, frameImg._sh, screenX - renderWidth / 2, drawY, renderWidth, renderHeight)
+      } else {
+        ctx.drawImage(frameImg, screenX - renderWidth / 2, drawY, renderWidth, renderHeight)
+      }
     }
 
     ctx.restore()
@@ -410,9 +463,17 @@ export class CharacterSprite {
     if (shouldFlip) {
       ctx.translate(screenX, footY)
       ctx.scale(-1, 1)
-      ctx.drawImage(frameImg, -renderWidth / 2, -renderHeight, renderWidth, renderHeight)
+      if (frameImg._isSpriteSheet) {
+        ctx.drawImage(frameImg._sheet, frameImg._sx, frameImg._sy, frameImg._sw, frameImg._sh, -renderWidth / 2, -renderHeight, renderWidth, renderHeight)
+      } else {
+        ctx.drawImage(frameImg, -renderWidth / 2, -renderHeight, renderWidth, renderHeight)
+      }
     } else {
-      ctx.drawImage(frameImg, screenX - renderWidth / 2, drawY, renderWidth, renderHeight)
+      if (frameImg._isSpriteSheet) {
+        ctx.drawImage(frameImg._sheet, frameImg._sx, frameImg._sy, frameImg._sw, frameImg._sh, screenX - renderWidth / 2, drawY, renderWidth, renderHeight)
+      } else {
+        ctx.drawImage(frameImg, screenX - renderWidth / 2, drawY, renderWidth, renderHeight)
+      }
     }
     
     ctx.restore()

@@ -519,7 +519,8 @@ export function installFieldBattleSystem(FieldSceneClass) {
       sprite.animTimer = 0
       sprite.facingLeft = (monster.x < pos.x)
       bh.hero._aiAttacking = true
-      bh.hero._aiAttackTimer = 0.5  // 攻击动画持续 0.5 秒后自动恢复
+      // ★ cast_universal.png 精灵表 8 帧（每帧≈0.15s），攻击动画时长设为 0.8s 让施法动作播放约 5 帧更完整
+      bh.hero._aiAttackTimer = 0.8  // 攻击动画持续 0.8 秒后自动恢复
 
       // 预计算伤害并入延迟队列
       const hero = bh.hero

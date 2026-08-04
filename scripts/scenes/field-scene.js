@@ -2781,7 +2781,25 @@ baseRadius: 50 * this.dpr,    // 底座半径（缩小）
         const idx = (atkFrameBase % 8) + 1
         atkImg = this.game.assets.get(`HERO_ZHENBAO_ATTACK_${idx.toString().padStart(2, '0')}`)
       } else if (heroId === 'lixiaobao') {
-        atkImg = this.game.assets.get(`HERO_LIXIAOBAO_IDLE_01`)
+        // ★ 李小宝普攻：使用 cast_universal.png 精灵表（8帧横排），与正规战斗一致
+        const sheet = this.game.assets.get('LIXIAOBAO_CAST_SPRITESHEET')
+        if (sheet && sheet.width) {
+          const totalFrames = 8
+          const frameW = Math.floor(sheet.width / totalFrames)
+          const idx = atkFrameBase % totalFrames
+          atkImg = {
+            _isSpriteSheet: true,
+            _sheet: sheet,
+            _sx: idx * frameW,
+            _sy: 0,
+            _sw: frameW,
+            _sh: sheet.height,
+            width: frameW,
+            height: sheet.height
+          }
+        } else {
+          atkImg = this.game.assets.get('HERO_LIXIAOBAO_IDLE_01')
+        }
       } else if (heroId === 'slime_cat') {
         atkImg = this.game.assets.get(`SLIME_CAT_IDLE_1`)
       } else if (heroId === 'shadow_mouse') {
@@ -2838,21 +2856,29 @@ baseRadius: 50 * this.dpr,    // 底座半径（缩小）
       if (this._shouldFlipByRule(facingLeftForRender, mainFlipRule)) {
         ctx.translate(screenX, screenY)
         ctx.scale(-1, 1)
-        ctx.drawImage(
-          frameImg,
-          -renderWidth / 2,
-          -renderHeight / 2,
-          renderWidth,
-          renderHeight
-        )
+        if (frameImg._isSpriteSheet) {
+          ctx.drawImage(frameImg._sheet, frameImg._sx, frameImg._sy, frameImg._sw, frameImg._sh, -renderWidth / 2, -renderHeight / 2, renderWidth, renderHeight)
+        } else {
+          ctx.drawImage(
+            frameImg,
+            -renderWidth / 2,
+            -renderHeight / 2,
+            renderWidth,
+            renderHeight
+          )
+        }
       } else {
-        ctx.drawImage(
-          frameImg,
-          screenX - renderWidth / 2,
-          screenY - renderHeight / 2,
-          renderWidth,
-          renderHeight
-        )
+        if (frameImg._isSpriteSheet) {
+          ctx.drawImage(frameImg._sheet, frameImg._sx, frameImg._sy, frameImg._sw, frameImg._sh, screenX - renderWidth / 2, screenY - renderHeight / 2, renderWidth, renderHeight)
+        } else {
+          ctx.drawImage(
+            frameImg,
+            screenX - renderWidth / 2,
+            screenY - renderHeight / 2,
+            renderWidth,
+            renderHeight
+          )
+        }
       }
 
       // 恢复状态
