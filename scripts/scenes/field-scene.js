@@ -1583,30 +1583,49 @@ baseRadius: 50 * this.dpr,    // 底座半径（缩小）
       }
     }
 
-    // 每个队友跟随不同的历史位置
+    // 每个队友跟随不同的位置（战斗=分散阵型点 / 非战斗=主角移动轨迹历史点）
     for (let i = 0; i < this.followers.length; i++) {
       const follower = this.followers[i]
-      
-      // 计算队友应该在的历史位置索引
-      // 第1个队友延迟10个记录点，第2个延迟20个记录点，以此类推
-      // 每个记录点间隔3帧，所以实际延迟约30帧
-      const historyIndex = Math.min((i + 1) * 10, this.playerHistory.length - 1)
-      
-      if (historyIndex >= 0 && this.playerHistory.length > 0) {
-        const targetPos = this.playerHistory[historyIndex]
-        
+
+      // ★ 战斗激活时：队友保持分散阵型，相对【被控角色】侧后方固定偏移，不再贴脸跟随
+      //   被控角色始终同步到 playerX/playerY（镜头中心），故以此为阵型中心
+      let targetPos = null
+      if (this.battleSystem && this.battleSystem.active) {
+        const ctrlX = this.playerX
+        const ctrlY = this.playerY
+        const backDist = 60 * this.dpr   // 后退距离（主角身后）
+        // 左右交替分散：第0个偏一侧、第1个偏另一侧，半径随索引递增，避免重叠
+        const sideDir = (i % 2 === 0) ? 1 : -1
+        const sideDist = (55 + i * 14) * this.dpr
+        const backDir = this.facingLeft ? 1 : -1   // 主角面朝左 → 后方在右(+x)
+        targetPos = {
+          x: ctrlX + backDir * backDist,
+          y: ctrlY + sideDir * sideDist,
+          facingLeft: this.facingLeft
+        }
+      } else {
+        // 计算队友应该在的历史位置索引
+        // 第1个队友延迟10个记录点，第2个延迟20个记录点，以此类推
+        // 每个记录点间隔3帧，所以实际延迟约30帧
+        const historyIndex = Math.min((i + 1) * 10, this.playerHistory.length - 1)
+        if (historyIndex >= 0 && this.playerHistory.length > 0) {
+          targetPos = this.playerHistory[historyIndex]
+        }
+      }
+
+      if (targetPos) {
         // 平滑移动到目标位置
         const dx = targetPos.x - follower.x
         const dy = targetPos.y - follower.y
         const dist = Math.sqrt(dx * dx + dy * dy)
-        
+
         // 如果距离大于阈值，移动队友
         // 降低速度，避免追上主角
         if (dist > 10 * this.dpr) {
           const speed = this.playerSpeed * 0.95
           const moveX = (dx / dist) * speed * dt
           const moveY = (dy / dist) * speed * dt
-          
+
           follower.x += moveX
           follower.y += moveY
           follower.facingLeft = targetPos.facingLeft
@@ -1617,7 +1636,7 @@ baseRadius: 50 * this.dpr,    // 底座半径（缩小）
           if (!this._effectiveMoving) {
             const wasMoving = follower.isMoving
             follower.isMoving = false
-            
+
             if (wasMoving && !follower.isMoving) {
               follower.animFrame = 0
               follower.animTimer = 0
