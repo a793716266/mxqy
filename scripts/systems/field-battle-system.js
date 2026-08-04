@@ -481,6 +481,13 @@ export function installFieldBattleSystem(FieldSceneClass) {
     if (this._allyAIDiagTick >= 2) {
       this._allyAIDiagTick = 0
       console.log(`[FieldBattle][DIAG] _updateAllyAI: active=${this.battleSystem.active}, battleHeroes长度=${heroes ? heroes.length : 'undefined/null'}, curIdx=${this.battleSystem.currentControlIndex}`)
+      for (let di = 0; di < heroes.length; di++) {
+        const dbh = heroes[di]
+        const dpos = dbh.getPos()
+        const dstate = dbh.sprite ? dbh.sprite.state : 'NO_SPRITE'
+        const dmon = this._findNearestMonsterFromPos((this.battleSystem.attackRange || 100) * this.dpr, 'x', dpos.x, dpos.y)
+        console.log(`[FieldBattle][DIAG] 英雄[${di}] name=${dbh.hero && dbh.hero.name}, pos=(${Math.round(dpos.x)},${Math.round(dpos.y)}), state=${dstate}, hp=${dbh.hero && dbh.hero.hp}, 最近怪物距离=${dmon ? Math.round(Math.hypot(dmon.x-dpos.x, dmon.y-dpos.y)) : 'NULL(超出范围)'}`)
+      }
     }
     if (!heroes || !heroes.length) return
     const curIdx = this.battleSystem.currentControlIndex % heroes.length
@@ -493,12 +500,21 @@ export function installFieldBattleSystem(FieldSceneClass) {
       const sprite = bh.sprite
       if (!sprite) continue
 
-      // 动画播放期间不打断
-      const battleStates = ['attack', 'shield', 'skill', 'buff', 'support']
-      if (battleStates.includes(sprite.state)) continue
+      // ★ 用独立计时器管理 AI 攻击状态（不再依赖 CharacterSprite.onAnimationComplete，避免回调未触发导致 state 永久卡在 attack）
+      if (bh.hero._aiAttacking) {
+        bh.hero._aiAttackTimer -= dt
+        if (bh.hero._aiAttackTimer <= 0) {
+          bh.hero._aiAttacking = false
+          sprite.state = 'idle'
+          sprite.animFrame = 0
+        }
+        continue  // 攻击动画播放期间不再触发新攻击
+      }
 
-      // 找最近怪物（X轴）
-      const range = (this.battleSystem.attackRange || 100) * this.dpr
+      // ★ 队友搜索范围放大：队友在主角身后约 followerDistance，主角贴脸攻击时队友距离可能超出攻击范围，
+      //   因此队友用更大的搜索半径（约 1.8 倍），确保能锁定主角附近的怪物
+      const baseRange = (this.battleSystem.attackRange || 100) * this.dpr
+      const range = baseRange * 1.8
       const monster = this._findNearestMonsterFromPos(range, 'x', pos.x, pos.y)
       if (!monster) continue
 
@@ -508,18 +524,12 @@ export function installFieldBattleSystem(FieldSceneClass) {
       if (bh.hero._aiAttackCD > 0) continue
 
       // ★ 触发该队友攻击动画 + 延迟伤害
-      const animState = 'attack'
-      sprite.state = animState
+      sprite.state = 'attack'
       sprite.animFrame = 0
       sprite.animTimer = 0
       sprite.facingLeft = (monster.x < pos.x)
-      const self = this
-      const prevCb = sprite.onAnimationComplete
-      sprite.onAnimationComplete = function(st) {
-        sprite.state = 'idle'
-        sprite.animFrame = 0
-        sprite.onAnimationComplete = prevCb
-      }
+      bh.hero._aiAttacking = true
+      bh.hero._aiAttackTimer = 0.5  // 攻击动画持续 0.5 秒后自动恢复
 
       // 预计算伤害并入延迟队列
       const hero = bh.hero
