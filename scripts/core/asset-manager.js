@@ -315,12 +315,10 @@ export const ASSETS = {
   ]),
 
   // --- 李小宝动画帧 ---
-  // ★ 所有施法动画已统一为 cast_universal.png 精灵表（LIXIAOBAO_CAST_SPRITESHEET）
-  // ★ attack 帧暂无专门素材，复用 walk 帧（已复制为 attack_01~08.png）作为 AI 自动攻击时的动作表现
+  // ★ 所有施法/攻击动画已统一为 cast_universal.png 精灵表（LIXIAOBAO_CAST_SPRITESHEET），不使用单独的 attack 帧目录
   ...buildFrames('HERO_LIXIAOBAO', 'images/characters_anim/transparent/lixiaobao', [
     { action: 'walk',         frames: 8 },
     { action: 'idle',         frames: 8 },
-    { action: 'attack',       frames: 8 },
   ]),
 
   // --- 李小宝命中特效（key 前缀不含 action，目录名≠文件前缀）---

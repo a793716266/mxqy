@@ -120,6 +120,11 @@ export class CharacterSprite {
     this._castTotalFrames = 8
     this._castFrameW = 0
     this._castFrameH = 0
+    // ★ 李小宝 cast 精灵表单帧高(223)小于 idle 帧高(337)，若直接按比例缩放会显示变小，
+    //   故用补偿系数把 cast 动画显示高度拉回与 idle 一致（同 zhenbao shield 补偿机制）
+    this._animScaleCompensation = {
+      idle: 1.0, walk: 1.0, attack: 337 / 223, shield: 1.0, skill: 1.0, buff: 1.0, support: 1.0
+    }
   }
 
   /**
@@ -382,19 +387,19 @@ export class CharacterSprite {
    * @param {number} screenY - 屏幕Y坐标（角色中心点）
    */
   render(ctx, screenX, screenY) {
-    const frameImg = this.getCurrentFrameImage()
-    if (!frameImg) return
-
     const targetHeight = this.targetHeight
 
-    // ★ 统一显示大小：以 idle 图片高度为基准缩放，再用补偿系数修正各动画留白差异
+    // ★ 先初始化基准高度（idle 帧），再取当前帧图片，保证精灵表对象的逻辑尺寸一致
     if (!this._baseImgHeight) {
       const idleKey = `${this.assetPrefix}_IDLE_${String(this.idleFrameOffset).padStart(this.idleFramePad, '0')}`
       const idleImg = this.game.assets?.get?.(idleKey)
-      this._baseImgHeight = idleImg ? idleImg.height : frameImg.height
+      this._baseImgHeight = idleImg ? idleImg.height : 337
     }
 
-    // 补偿系数（默认 1.0，zhenbao 等有预设值）
+    const frameImg = this.getCurrentFrameImage()
+    if (!frameImg) return
+
+    // 补偿系数（默认 1.0，zhenbao/lixiaobao 等有预设值，用于修正动画留白差异导致的显示大小不一）
     const comp = (this._animScaleCompensation && this._animScaleCompensation[this.state]) || 1.0
     const scale = (targetHeight / this._baseImgHeight) * comp
     const renderWidth = frameImg.width * scale
