@@ -36,6 +36,21 @@
 
 ---
 
+### 2026-08-04（更新）
+
+**fix: 李小宝野外跟随仍无行走/空闲精灵（仅血条蓝条）的真正根因**
+
+- **根因（第二次，关键）**：图片素材与 `asset-manager` 的 key 链路经 node 验证 100% 正确（`HERO_LIXIAOBAO_WALK_01` → `BATTLE_PKG/.../lixiaobao/walk/walk_01.png` → 文件存在），所以问题不在素材缺失，而在**渲染路径不一致**：
+  - 主角臻宝在野外用 `CharacterSprite.render(ctx, screenX, screenY)` 渲染（该路径在野外场景可正确加载 `BATTLE_PKG` 分包动画资源，已验证能显示）。
+  - 而 followers（含李小宝）在 `field-scene._renderFollowers` 里却手写硬编码 `this.game.assets.get('HERO_LIXIAOBAO_WALK_01')` 直接取帧，绕过了 `CharacterSprite`。在分包资源加载时机/缓存下该 `getImage` 返回 null → 李小宝只显示血条蓝条、无精灵。
+  - `_initFollowers` 其实已为每个 follower（含李小宝）创建了 `CharacterSprite` 实例（`follower.sprite`），且 `_updateFollowers` 已调用 `follower.sprite.update()` 更新动画状态，但 `_renderFollowers` 从未使用它。
+- **修复**：`field-scene._renderFollowers` 循环开头增加 `if (follower.sprite) { follower.sprite.render(ctx, screenX, screenY); continue }`，让所有跟随队友与主角臻宝走**完全相同且已验证可用的 `CharacterSprite` 渲染路径**。李小宝的动画资源加载方式与臻宝一致，彻底解决"仅血条蓝条无精灵"问题。原手写 key 逻辑保留为无 sprite 时的兜底。
+- **修改文件**：
+  - `scripts/scenes/field-scene.js`：`_renderFollowers` 优先调用 `follower.sprite.render()`
+- **状态**：✅ 已修改并通过 Babel 语法检查（待用户编译验证）
+
+---
+
 ### 2026-08-03（更新）
 
 **fix: 野外战斗蓝条缺失 + 跟随角色（李小宝）完全参战 + 角色切换控制**

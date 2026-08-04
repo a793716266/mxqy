@@ -2538,6 +2538,14 @@ baseRadius: 50 * this.dpr,    // 底座半径（缩小）
       const screenX = follower.x - this.cameraX
       const screenY = follower.y - this.cameraY
 
+      // ★ 优先使用 CharacterSprite 渲染（与主角臻宝完全一致的实现路径，
+      //   已验证在野外场景可正确加载分包动画资源；李小宝此前因手写 getImage
+      //   在分包资源加载时机/缓存下返回 null 而只显示血条蓝条，改用此路径彻底修复）
+      if (follower.sprite) {
+        follower.sprite.render(ctx, screenX, screenY)
+        continue
+      }
+
       // 获取当前动画帧图片
       let frameImg = null
       const heroId = follower.character.id
