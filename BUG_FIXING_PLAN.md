@@ -38,6 +38,19 @@
   - `scripts/core/asset-manager.js`：李小宝注册 attack 帧资源
 - **状态**：✅ 已修改并通过 Babel 语法检查（待用户编译验证）
 
+### 2026-08-04（第四次更新）
+
+**fix: 阳光草原副本李小宝仍不自动攻击（AI 未接管，根因在战斗系统激活路径）**
+
+- **根因（真正根因）**：阳光草原副本（`areaId === 'grassland'`）的激活逻辑是"进入地图就直接激活战斗"（`field-scene.js` ~590行：`this.battleSystem.active = true; this._initBattleUI()`），它**绕过了 `_startFieldBattle`**。
+  - 而 `battleHeroes` 参战英雄列表（主角+跟随队友）是在 `_startFieldBattle` → `_buildBattleHeroes()` 里构建的。副本直接激活分支**从未调用 `_buildBattleHeroes`**，于是 `this.battleSystem.battleHeroes` 一直是初始化时的空数组 `[]`。
+  - `_updateAllyAI` 遍历的是 `battleSystem.battleHeroes`，空数组 → 李小宝（以及其他任何队友）根本不在参战列表，**AI 自然不会接管自动攻击**。主角能被玩家控制是因为玩家攻击走 `this.party[0]`、不依赖 `battleHeroes`。
+  - 这也解释了上一轮改 `_buildBattleHeroes` 的 `f.hero || f.character` 后仍无效——因为那个方法压根没被调用。
+- **修复**：在阳光草原副本直接进入战斗的分支里补上 `this._buildBattleHeroes()`，确保 `battleHeroes` 包含李小宝，后续 `_updateAllyAI` 才能正常接管自动寻敌/攻击/放技能。
+- **修改文件**：
+  - `scripts/scenes/field-scene.js`：grassland 副本激活分支调用 `_buildBattleHeroes()`
+- **状态**：✅ 已修改并通过 Babel 语法检查（待用户编译验证）
+
 ---
 
 ### 2026-08-03（第二次更新）
