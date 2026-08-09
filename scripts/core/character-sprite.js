@@ -96,18 +96,19 @@ export class CharacterSprite {
       buff: config.totalBuffFrames || 8,
       support: config.totalSupportFrames || 8
     }
+    // ★ 各动画图片高度比例（用于统一角色显示大小）
+    //   scaleCompensation = idle高度 / 该动画角色实际高度
+    //   默认全 1.0，各角色在下方按需覆盖【自己】的项（切勿整表重新赋值，会冲掉其他角色的补偿）
+    this._animScaleCompensation = {
+      idle: 1.0, walk: 1.0, attack: 1.0, shield: 1.0, skill: 1.0, buff: 1.0, support: 1.0
+    }
+
     // ★ zhenbao 的 skill 用 ATTACK 帧（SLASH 已弃用），需修正帧数
     if (this.spriteType === 'zhenbao') {
       this._totalFramesMap.skill = 8
-      // 各动画图片高度比例（用于统一角色显示大小）
       // idle/walk/attack=337px, shield=232px, buff=380px(角色仅占64%)
-      // scaleCompensation = idle高度 / 该动画角色实际高度
-      this._animScaleCompensation = {
-        idle: 1.0, walk: 1.0, attack: 1.0,
-        shield: 337 / 232,   // shield 图片矮，放大
-        skill: 1.0,
-        buff: 337 / (380 * 0.64),  // buff 角色仅占64%，补偿
-      }
+      this._animScaleCompensation.shield = 337 / 232        // shield 图片矮，放大
+      this._animScaleCompensation.buff = 337 / (380 * 0.64) // buff 角色仅占64%，补偿
     }
     this.onAnimationComplete = null  // 回调函数，参数是动画类型
 
@@ -120,10 +121,11 @@ export class CharacterSprite {
     this._castTotalFrames = 8
     this._castFrameW = 0
     this._castFrameH = 0
-    // ★ 李小宝 cast 精灵表单帧高(223)小于 idle 帧高(337)，若直接按比例缩放会显示变小，
-    //   故用补偿系数把 cast 动画显示高度拉回与 idle 一致（同 zhenbao shield 补偿机制）
-    this._animScaleCompensation = {
-      idle: 1.0, walk: 1.0, attack: 337 / 223, shield: 1.0, skill: 1.0, buff: 1.0, support: 1.0
+    if (this.spriteType === 'lixiaobao') {
+      // ★ 李小宝 cast 精灵表单帧高(223)小于 idle 帧高(337)，若直接按比例缩放会显示变小，
+      //   故用补偿系数把 cast 动画显示高度拉回与 idle 一致（同 zhenbao shield 补偿机制）
+      //   仅对李小宝生效，避免影响臻宝等其他角色的 attack 尺寸
+      this._animScaleCompensation.attack = 337 / 223
     }
   }
 
@@ -300,13 +302,35 @@ export class CharacterSprite {
   }
   
   /**
+   * 获取当前帧的缩放补偿系数
+   * ★ 补偿必须与"实际绘制的图"对应：李小宝的 attack 补偿(337/223)只在真正使用 cast 精灵表时才成立；
+   *   若精灵表未加载而回退到 idle/walk 帧(337px)，再乘补偿会导致显示过大，故此处按帧类型判定。
+   * @param {Object|HTMLImageElement} frameImg 当前帧
+   * @returns {number} 补偿系数
+   */
+  _getScaleCompensation(frameImg) {
+    if (!this._animScaleCompensation) return 1.0
+    // ★ 李小宝战斗施法状态都用 cast 精灵表（337/223 补偿）；
+    //   若精灵表未加载而回退到 idle/walk 帧(337px)，不套用补偿，避免显示过大
+    const lxbCastStates = ['attack', 'skill', 'buff', 'shield']
+    if (this.spriteType === 'lixiaobao' && lxbCastStates.includes(this.state)) {
+      return (frameImg && frameImg._isSpriteSheet) ? this._animScaleCompensation.attack : 1.0
+    }
+    return this._animScaleCompensation[this.state] || 1.0
+  }
+
+  /**
    * 获取当前动画帧图片
    * @returns {HTMLImageElement|Object|null} HTMLImageElement 或精灵表裁切对象（含 _isSpriteSheet）
    */
   getCurrentFrameImage() {
-    // ★ 李小宝 attack 普攻：使用 cast_universal.png 精灵表（8帧横排），与正规战斗一致
+    // ★ 李小宝所有战斗施法状态（普攻attack/技能skill/增益buff/盾击shield）统一使用
+    //   cast_universal.png 精灵表（8帧横排），与正规战斗一致。
+    //   否则 skill/buff/shield 会请求不存在的 HERO_LIXIAOBAO_ATTACK_XX 资源而 fallback 到 idle，
+    //   导致技能动画"丢失"（放技能时显示待机帧）。
     const castSheet = this._getCastSheet()
-    if (this.spriteType === 'lixiaobao' && this.state === 'attack' && castSheet) {
+    const lxbCastStates = ['attack', 'skill', 'buff', 'shield']
+    if (this.spriteType === 'lixiaobao' && lxbCastStates.includes(this.state) && castSheet) {
       const idx = this.animFrame % this._castTotalFrames
       return {
         _isSpriteSheet: true,
@@ -400,7 +424,7 @@ export class CharacterSprite {
     if (!frameImg) return
 
     // 补偿系数（默认 1.0，zhenbao/lixiaobao 等有预设值，用于修正动画留白差异导致的显示大小不一）
-    const comp = (this._animScaleCompensation && this._animScaleCompensation[this.state]) || 1.0
+    const comp = this._getScaleCompensation(frameImg)
     const scale = (targetHeight / this._baseImgHeight) * comp
     const renderWidth = frameImg.width * scale
     const renderHeight = frameImg.height * scale
@@ -453,7 +477,7 @@ export class CharacterSprite {
       this._baseImgHeight = idleImg ? idleImg.height : frameImg.height
     }
 
-    const comp = (this._animScaleCompensation && this._animScaleCompensation[this.state]) || 1.0
+    const comp = this._getScaleCompensation(frameImg)
     const scale = (targetHeight / this._baseImgHeight) * comp
     const renderWidth = frameImg.width * scale
     const renderHeight = frameImg.height * scale

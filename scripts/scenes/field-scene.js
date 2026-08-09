@@ -37,8 +37,9 @@ export class FieldScene extends SceneBase {
     this.cameraY = 0
     
     // 玩家位置（相对于地图）
-    this.playerX = this.mapWidth / 2
-    this.playerY = this.mapHeight / 2
+    // ★ 初始位置：阳光草原地图左下角（x=200, y=2900，逻辑像素，已避开障碍物）
+    this.playerX = 200 * this.dpr
+    this.playerY = 2900 * this.dpr
     this.playerSpeed = 150 * this.dpr
     this.playerDirection = 'down'
     this.facingLeft = false // 角色是否朝左（用于翻转）
@@ -834,8 +835,10 @@ baseRadius: 50 * this.dpr,    // 底座半径（缩小）
         // 更新相机位置（跟随玩家）
         this._updateCamera()
 
-        // 检查与怪物的碰撞
-        this._checkMonsterCollision()
+        // ★ 不再检查与怪物的碰撞（与AI角色行为一致：两个角色都不被怪物碰撞/阻挡）
+        // 之前只有被控者(摇杆移动)触发 _checkMonsterCollision，AI角色不走这里，
+        // 导致"臻宝不碰撞、李小宝碰撞"的差异；现统一移除，战斗由草地模式自动激活/其它入口触发
+        // this._checkMonsterCollision()
       }
     }
 
@@ -848,7 +851,12 @@ baseRadius: 50 * this.dpr,    // 底座半径（缩小）
     this._updateFollowers(dt)
 
     // 使用 CharacterSprite 更新主角动画
-    if (this.mainCharacterSprite) {
+    // ★ 战斗中被控者不是主角时，主角的动画由 _updateFollowers 尾部的主角AI站位逻辑维护，
+    //   这里不能用摇杆状态(this.isMoving)覆盖——否则主角会"原地播放走路动画"
+    const isHeroControlled = !(this.battleSystem && this.battleSystem.active &&
+      this.battleSystem.battleHeroes && this.battleSystem.battleHeroes[0] &&
+      this.battleSystem.battleHeroes[0].partyIndex !== 0)
+    if (this.mainCharacterSprite && isHeroControlled) {
       this.mainCharacterSprite.update(dt, this.isMoving, this.facingLeft)
     }
 
@@ -870,6 +878,150 @@ baseRadius: 50 * this.dpr,    // 底座半径（缩小）
         this.showSwitchTip = false
       }
     }
+
+    // ★ BUFF 粒子系统更新 + 持续喷发（真正的粒子效果）
+    this._updateBuffParticles(dt)
+  }
+
+  // ==========================================================================
+  // ★ BUFF 粒子系统（专业粒子：速度/方向/重力/衰减/寿命）
+  // ==========================================================================
+
+  /**
+   * 喷发粒子（释放 buff 瞬间：环形扩散 + 上升）
+   * @param {Object} hero 英雄
+   * @param {string} color 颜色
+   * @param {number} count 数量
+   */
+  _spawnBuffParticles(hero, color, count) {
+    if (!this.battleSystem.buffParticles) this.battleSystem.buffParticles = []
+    const bh = (this.battleSystem.battleHeroes || []).find(b => b.hero === hero)
+    const pos = bh && bh.getPos ? bh.getPos() : { x: this.playerX, y: this.playerY }
+    const x = pos.x
+    const y = pos.y
+    const dpr = this.dpr
+    const n = count || 24
+    for (let i = 0; i < n; i++) {
+      // 环形扩散（+随机）为主 + 部分上升粒子
+      let angle, spd
+      if (i < n * 0.7) {
+        // 环形扩散粒子：以角色为中心向四周喷出
+        angle = (i / (n * 0.7)) * Math.PI * 2 + (Math.random() - 0.5) * 0.4
+        spd = (60 + Math.random() * 90) * dpr
+      } else {
+        // 上升粒子
+        angle = -Math.PI / 2 + (Math.random() - 0.5) * 0.8
+        spd = (50 + Math.random() * 60) * dpr
+      }
+      this.battleSystem.buffParticles.push({
+        x: x + (Math.random() - 0.5) * 20 * dpr,
+        y: y + 20 * dpr + (Math.random() - 0.5) * 10 * dpr,
+        vx: Math.cos(angle) * spd,
+        vy: Math.sin(angle) * spd,
+        size: (2 + Math.random() * 4) * dpr,
+        color: color,
+        life: 1,
+        decay: 0.6 + Math.random() * 0.8,   // 每秒衰减，0.6~1.4秒存活
+        gravity: 40 * dpr,                   // 向下重力
+        glow: true
+      })
+    }
+    // 上限保护
+    if (this.battleSystem.buffParticles.length > 200) {
+      this.battleSystem.buffParticles.splice(0, this.battleSystem.buffParticles.length - 200)
+    }
+  }
+
+  /**
+   * 持续喷发（buff 持续期间每帧少量粒子，体现"生效中"）
+   */
+  _spawnBuffAuraParticles(hero, color) {
+    if (!this.battleSystem.buffParticles) this.battleSystem.buffParticles = []
+    if (this.battleSystem.buffParticles.length > 150) return
+    const bh = (this.battleSystem.battleHeroes || []).find(b => b.hero === hero)
+    const pos = bh && bh.getPos ? bh.getPos() : { x: this.playerX, y: this.playerY }
+    const dpr = this.dpr
+    // 每帧 2 个上升粒子（从脚下往头顶飘）
+    for (let i = 0; i < 2; i++) {
+      this.battleSystem.buffParticles.push({
+        x: pos.x + (Math.random() - 0.5) * 30 * dpr,
+        y: pos.y + 25 * dpr,
+        vx: (Math.random() - 0.5) * 30 * dpr,
+        vy: -(50 + Math.random() * 40) * dpr,   // 向上
+        size: (1.5 + Math.random() * 2.5) * dpr,
+        color: color,
+        life: 1,
+        decay: 0.5 + Math.random() * 0.5,
+        gravity: -8 * dpr,   // 微浮力，飘得更久
+        glow: true
+      })
+    }
+  }
+
+  /**
+   * 更新粒子（位置/衰减）
+   */
+  _updateBuffParticles(dt) {
+    if (!this.battleSystem || !this.battleSystem.buffParticles) return
+    const list = this.battleSystem.buffParticles
+    for (let i = list.length - 1; i >= 0; i--) {
+      const p = list[i]
+      p.life -= p.decay * dt
+      if (p.life <= 0) { list.splice(i, 1); continue }
+      p.x += p.vx * dt
+      p.y += p.vy * dt
+      p.vy += p.gravity * dt
+    }
+    // ★ 持续喷发：buff 存活期间每帧补充粒子
+    if (this.battleSystem.active && this.battleSystem.battleHeroes) {
+      for (const bh of this.battleSystem.battleHeroes) {
+        if (!bh.hero || bh.hero.hp <= 0) continue
+        const activeBuffs = (bh.hero._buffs || []).filter(b => b._active && b._remaining > 0)
+        for (const b of activeBuffs) {
+          this._spawnBuffAuraParticles(bh.hero, this._hexColorFromRgba(b._color) || '#7ab8ff')
+        }
+      }
+    }
+  }
+
+  /**
+   * 把 rgba(...) 前缀转成 hex（粒子用 hex 更好混色）
+   */
+  _hexColorFromRgba(c) {
+    if (!c) return '#7ab8ff'
+    const m = c.match(/rgba\((\d+),\s*(\d+),\s*(\d+)/)
+    if (!m) return c
+    const r = parseInt(m[1]), g = parseInt(m[2]), b = parseInt(m[3])
+    return '#' + [r, g, b].map(v => v.toString(16).padStart(2, '0')).join('')
+  }
+
+  /**
+   * 渲染粒子
+   */
+  _renderBuffParticles(ctx) {
+    if (!this.battleSystem || !this.battleSystem.buffParticles) return
+    const list = this.battleSystem.buffParticles
+    if (list.length === 0) return
+    const dpr = this.dpr
+    ctx.save()
+    for (const p of list) {
+      const alpha = Math.max(0, Math.min(1, p.life))
+      const sx = p.x - this.cameraX
+      const sy = p.y - this.cameraY
+      // 发光外圈
+      ctx.fillStyle = `rgba(255,255,255,${alpha * 0.25})`
+      ctx.beginPath()
+      ctx.arc(sx, sy, p.size * 1.8, 0, Math.PI * 2)
+      ctx.fill()
+      // 粒子核心（带颜色）
+      ctx.fillStyle = p.color.startsWith('#') ? p.color : p.color
+      ctx.globalAlpha = alpha * 0.9
+      ctx.beginPath()
+      ctx.arc(sx, sy, p.size, 0, Math.PI * 2)
+      ctx.fill()
+      ctx.globalAlpha = 1
+    }
+    ctx.restore()
   }
 
   _updateMonsters(dt) {
@@ -933,8 +1085,9 @@ baseRadius: 50 * this.dpr,    // 底座半径（缩小）
           // ★ 在攻击动画的 60% 进度时计算伤害（命中帧）
           const attackProgress = 1 - (monster.attackAnimTimer / 500)
           if (attackProgress >= 0.6 && !monster.hasDealtDamage) {
-            // 找到最近的英雄并造成伤害
-            const mainHero = this.party[0]
+            // ★ 找到最近的【参战英雄】并造成伤害（而非固定 party[0]）
+            //   切换控制后，怪物攻击的目标应是最近的英雄（可能不是主角）
+            const mainHero = this._findNearestBattleHero(monster)
             if (mainHero && mainHero.hp > 0) {
               this._dealMonsterDamage(monster, mainHero)
             }
@@ -981,6 +1134,12 @@ baseRadius: 50 * this.dpr,    // 底座半径（缩小）
             }
           }
         }
+      }
+
+      // ★ 冰冻状态：怪物无法移动/行动（由英雄技能冰晶术施加）
+      if (monster._frozen) {
+        monster.isMoving = false
+        continue
       }
 
       // ★ 处于战斗（inCombat）的怪物跳过巡逻移动，由 _updateMonsterAttack 控制走位
@@ -1587,23 +1746,32 @@ baseRadius: 50 * this.dpr,    // 底座半径（缩小）
     for (let i = 0; i < this.followers.length; i++) {
       const follower = this.followers[i]
 
-      // ★ 战斗激活时：队友保持分散阵型，相对【被控角色】侧后方固定偏移，不再贴脸跟随
-      //   被控角色始终同步到 playerX/playerY（镜头中心），故以此为阵型中心
-      let targetPos = null
-      if (this.battleSystem && this.battleSystem.active) {
-        const ctrlX = this.playerX
-        const ctrlY = this.playerY
-        const backDist = 60 * this.dpr   // 后退距离（主角身后）
-        // 左右交替分散：第0个偏一侧、第1个偏另一侧，半径随索引递增，避免重叠
-        const sideDir = (i % 2 === 0) ? 1 : -1
-        const sideDist = (55 + i * 14) * this.dpr
-        const backDir = this.facingLeft ? 1 : -1   // 主角面朝左 → 后方在右(+x)
-        targetPos = {
-          x: ctrlX + backDir * backDist,
-          y: ctrlY + sideDir * sideDist,
-          facingLeft: this.facingLeft
+      // ★ 当前被玩家控制的英雄（battleHeroes[0]）不再走 AI 站位/跟随逻辑，
+      //   否则会把被控角色强行拽回输出位，导致切换控制"看起来没反应"
+      const ctrlHero = (this.battleSystem && this.battleSystem.battleHeroes &&
+                        this.battleSystem.battleHeroes[0]) || null
+      const isControlled = ctrlHero && ctrlHero.partyIndex === (i + 1)
+      if (this.battleSystem && this.battleSystem.active && isControlled) {
+        // 被控角色：坐标由摇杆/切换逻辑维护，这里只同步到 follower 供渲染，不做 AI 移动
+        follower.x = this._heroWorldPos[i + 1] ? this._heroWorldPos[i + 1].x : follower.x
+        follower.y = this._heroWorldPos[i + 1] ? this._heroWorldPos[i + 1].y : follower.y
+        follower.isMoving = this.isMoving
+        follower.facingLeft = this.facingLeft
+        if (follower.sprite) {
+          follower.sprite.update(dt, follower.isMoving, follower.facingLeft)
         }
-      } else {
+        continue
+      }
+
+      // ★ 战斗激活时：队友独立行动 —— 自己找最近的怪物，走到怪物附近的输出位站桩，不跟随主角
+      let targetPos = null
+      let isCombatPos = false
+      if (this.battleSystem && this.battleSystem.active) {
+        targetPos = this._getAllyCombatTarget(follower, i)
+        isCombatPos = !!targetPos
+      }
+
+      if (!targetPos) {
         // 计算队友应该在的历史位置索引
         // 第1个队友延迟10个记录点，第2个延迟20个记录点，以此类推
         // 每个记录点间隔3帧，所以实际延迟约30帧
@@ -1619,9 +1787,12 @@ baseRadius: 50 * this.dpr,    // 底座半径（缩小）
         const dy = targetPos.y - follower.y
         const dist = Math.sqrt(dx * dx + dy * dy)
 
+        // 战斗中到位阈值放宽，避免在输出位上反复微调抖动
+        const arriveDist = isCombatPos ? 16 * this.dpr : 10 * this.dpr
+
         // 如果距离大于阈值，移动队友
         // 降低速度，避免追上主角
-        if (dist > 10 * this.dpr) {
+        if (dist > arriveDist) {
           const speed = this.playerSpeed * 0.95
           const moveX = (dx / dist) * speed * dt
           const moveY = (dy / dist) * speed * dt
@@ -1630,6 +1801,15 @@ baseRadius: 50 * this.dpr,    // 底座半径（缩小）
           follower.y += moveY
           follower.facingLeft = targetPos.facingLeft
           follower.isMoving = true
+        } else if (isCombatPos) {
+          // ★ 战斗站位：到位即停，朝向怪物，不受主角移动状态影响
+          follower.facingLeft = targetPos.facingLeft
+          const wasMoving = follower.isMoving
+          follower.isMoving = false
+          if (wasMoving) {
+            follower.animFrame = 0
+            follower.animTimer = 0
+          }
         } else {
           // 距离足够近，且主角已停止移动时，才让队友也停止
           // 使用主角的_effectiveMoving判断，避免循环依赖
@@ -1669,13 +1849,57 @@ baseRadius: 50 * this.dpr,    // 底座半径（缩小）
       }
     }
 
-    // ★ 当控制的不是主角时，让主角也跟随被控者（主角作为游离单位跟随）
-    if (this._heroWorldPos && this.battleSystem.battleHeroes && this.battleSystem.battleHeroes[0]) {
+    // ★ 当控制的不是主角时，主角作为"独立AI单位"也去怪物附近站位输出（不再贴被控者身上）
+    //   —— 与队友统一使用 _getAllyCombatTarget，保持一致的战斗站位行为
+    if (this._heroWorldPos && this.battleSystem && this.battleSystem.battleHeroes &&
+        this.battleSystem.battleHeroes[0]) {
       const ctrl = this.battleSystem.battleHeroes[0]
-      // 被控者不是主角（partyIndex !== 0），主角需要跟随
-      if (ctrl.partyIndex !== 0 && this.mainCharacterSprite) {
-        const px = this._heroWorldPos[0]
-        if (px) {
+      const px = this._heroWorldPos[0]
+      if (ctrl.partyIndex !== 0 && px) {
+        const inCombat = this.battleSystem.active
+        if (inCombat) {
+          // 主角 AI 站位：自己找怪输出（复用队友站位逻辑，i=-1 表示主角侧）
+          const targetPos = this._getAllyCombatTarget({
+            x: px.x, y: px.y, _aiTargetId: px._aiTargetId
+          }, -1)
+          px._aiTargetId = targetPos ? targetPos._targetId : null
+
+          // ★ 无怪可打时：回到被控者身边待命（保持队伍），不四处乱跑
+          let moveTarget = targetPos
+          if (!moveTarget) {
+            const backDist = 80 * this.dpr
+            const toPlayerDx = this.playerX - px.x
+            const toPlayerDy = this.playerY - px.y
+            const toPlayerDist = Math.sqrt(toPlayerDx * toPlayerDx + toPlayerDy * toPlayerDy)
+            if (toPlayerDist > backDist) {
+              moveTarget = {
+                x: this.playerX + (toPlayerDx / (toPlayerDist || 1)) * backDist,
+                y: this.playerY + (toPlayerDy / (toPlayerDist || 1)) * backDist,
+                facingLeft: this.facingLeft
+              }
+            }
+          }
+
+          if (moveTarget) {
+            const dx = moveTarget.x - px.x
+            const dy = moveTarget.y - px.y
+            const dist = Math.sqrt(dx * dx + dy * dy)
+            if (dist > 16 * this.dpr) {
+              const speed = this.playerSpeed * 0.95
+              px.x += (dx / dist) * speed * dt
+              px.y += (dy / dist) * speed * dt
+              this.mainCharacterSprite.facingLeft = moveTarget.facingLeft
+              this.mainCharacterSprite.isMoving = true
+            } else {
+              this.mainCharacterSprite.facingLeft = moveTarget.facingLeft
+              this.mainCharacterSprite.isMoving = false
+            }
+          } else {
+            // 已在被控者身边：静止待命
+            this.mainCharacterSprite.isMoving = false
+          }
+        } else if (this.mainCharacterSprite) {
+          // 非战斗：主角仍跟随被控者（保持队伍）
           const dx = this.playerX - px.x
           const dy = this.playerY - px.y
           const dist = Math.sqrt(dx * dx + dy * dy)
@@ -1683,12 +1907,289 @@ baseRadius: 50 * this.dpr,    // 底座半径（缩小）
             const speed = this.playerSpeed * 0.95
             px.x += (dx / dist) * speed * dt
             px.y += (dy / dist) * speed * dt
+            this.mainCharacterSprite.isMoving = true
+          } else {
+            this.mainCharacterSprite.isMoving = false
           }
+        }
+        if (this.mainCharacterSprite) {
+          this.mainCharacterSprite.update(dt, this.mainCharacterSprite.isMoving, this.mainCharacterSprite.facingLeft)
         }
       }
     }
   }
-  
+
+  /**
+   * ★ 查找离某怪物最近的【存活参战英雄】（用于怪物攻击动画命中结算）
+   * 注意：必须用 battleHeroes（含切换后的被控者），而非固定 party[0]
+   * @param {Object} monster 怪物
+   * @returns {Object|null} 英雄对象（.hp/.def 等），无存活英雄返回 null
+   */
+  _findNearestBattleHero(monster) {
+    const heroes = (this.battleSystem && this.battleSystem.battleHeroes) || []
+    let best = null
+    let bestD = Infinity
+    for (const bh of heroes) {
+      if (!bh.hero || bh.hero.hp <= 0) continue
+      const p = (typeof bh.getPos === 'function') ? bh.getPos() : null
+      if (!p) continue
+      const d = (p.x - monster.x) ** 2 + (p.y - monster.y) ** 2
+      if (d < bestD) { bestD = d; best = bh.hero }
+    }
+    return best
+  }
+
+  /**
+   * 战斗中队友的独立站位目标
+   * 队友不跟随主角，而是自己锁定最近的怪物，走到怪物侧边的输出位站桩输出
+   * @param {Object} follower 队友对象
+   * @param {number} i 队友索引（用于左右错开，避免多个队友重叠）
+   * @returns {{x:number,y:number,facingLeft:boolean}|null} 目标站位；无怪物时返回 null（回退为跟随主角）
+   */
+  _getAllyCombatTarget(follower, i) {
+    const monsters = this.mapMonsters
+    if (!monsters || !monsters.length) return null
+
+    // 1) 已锁定的怪物仍存活则继续输出，避免每帧切目标导致来回横跳
+    let target = null
+    if (follower._aiTargetId != null) {
+      for (const m of monsters) {
+        if (m.alive && m.id === follower._aiTargetId) { target = m; break }
+      }
+    }
+
+    // 2) 未锁定 / 目标已死：找离自己最近的存活怪物
+    if (!target) {
+      let minDist = Infinity
+      for (const m of monsters) {
+        if (!m.alive) continue
+        const dx = m.x - follower.x
+        const dy = m.y - follower.y
+        const d = Math.sqrt(dx * dx + dy * dy)
+        if (d < minDist) { minDist = d; target = m }
+      }
+      // 超出参战半径的怪物不主动脱队去打，避免队友跑丢
+      const engageRange = 520 * this.dpr
+      if (target && minDist > engageRange) target = null
+      follower._aiTargetId = target ? target.id : null
+    }
+
+    if (!target) {
+      follower._aiTargetId = null
+      return null   // 附近无怪物 → 回退跟随主角
+    }
+
+    // 3) 计算怪物侧边的输出位：从怪物当前所在侧靠近，多个队友左右错开站位
+    const attackDist = ((this.battleSystem && this.battleSystem.attackRange) || 100) * this.dpr * 0.75
+    // 队友从自己当前所在的一侧接近怪物（谁在左就站左边），减少绕路
+    const side = (follower.x <= target.x) ? -1 : 1
+    // 索引错开，避免多个队友挤在同一个点（i=-1 表示主角，放最外侧）
+    const idx = Math.max(0, i)
+    const yOffset = ((i % 2 === 0) ? 1 : -1) * (18 + idx * 10) * this.dpr
+
+    return {
+      x: target.x + side * attackDist,
+      y: target.y + yOffset,
+      facingLeft: (target.x < follower.x),
+      _targetId: target.id
+    }
+  }
+
+  /**
+   * 在被控角色脚下绘制高亮指示圈（脉冲动画），让玩家一眼看出当前控制的是谁
+   */
+  _renderControlIndicator(ctx, screenX, screenY) {
+    const t = Date.now() / 1000 * 4
+    const pulse = 0.5 + 0.5 * Math.sin(t)
+    const r = (24 + pulse * 4) * this.dpr
+    ctx.save()
+    ctx.strokeStyle = `rgba(74, 158, 255, ${0.6 + pulse * 0.4})`
+    ctx.lineWidth = 3 * this.dpr
+    ctx.translate(screenX, screenY + 30 * this.dpr)
+    ctx.scale(1, 0.4)
+    ctx.beginPath()
+    ctx.arc(0, 0, r, 0, Math.PI * 2)
+    ctx.stroke()
+    ctx.restore()
+  }
+
+  /**
+   * ★ 渲染英雄 BUFF 光环粒子（持续期间效果）
+   *   - 脚下光环（按 buff 类型配色，多层叠加）
+   *   - 上升粒子光点（体现"生效中"）
+   *   - 剩余时间数字（剩余 >0.5s 时显示）
+   *   - 即将消失（<1s）闪烁提示
+   * @param {Object} ctx 画布上下文
+   * @param {number} screenX 角色屏幕X
+   * @param {number} screenY 角色屏幕Y
+   * @param {Object} hero 英雄对象（含 _buffs）
+   */
+  _renderHeroBuffAura(ctx, screenX, screenY, hero) {
+    if (!hero || !hero._buffs || !this.battleSystem) return
+    const active = hero._buffs.filter(b => b._active && b._remaining > 0)
+    if (active.length === 0) return
+    const t = Date.now() / 1000
+    const dpr = this.dpr
+    ctx.save()
+    // 椭圆绘制（兼容微信小游戏：不用 ctx.ellipse）
+    const drawOval = (cx, cy, rx, ry) => {
+      ctx.save()
+      ctx.translate(cx, cy)
+      ctx.scale(1, ry / (rx || 1))
+      ctx.beginPath()
+      ctx.arc(0, 0, rx, 0, Math.PI * 2)
+      ctx.restore()
+    }
+    active.forEach((b, i) => {
+      const colorBase = b._color || 'rgba(200,200,255,'
+      const baseR = (32 + i * 10) * dpr
+      const warn = b._remaining <= 1.5
+      const flicker = b._remaining <= 1.0
+      // 呼吸/闪烁 alpha
+      let alpha
+      if (flicker) {
+        alpha = 0.5 + 0.5 * Math.abs(Math.sin(t * 10))
+      } else {
+        alpha = 0.65 + 0.35 * Math.sin(t * 2.5 + i)
+      }
+      const orbitR = baseR + 6 * Math.sin(t * 1.8 + i)
+      // ★ 三层光圈（从外到内逐渐变亮）
+      // 外光晕（大、淡）
+      ctx.strokeStyle = colorBase + (alpha * 0.2) + ')'
+      ctx.lineWidth = 6 * dpr
+      drawOval(screenX, screenY + 32 * dpr, orbitR + 14 * dpr, (orbitR + 14 * dpr) * 0.32)
+      ctx.stroke()
+      // 中圈
+      ctx.strokeStyle = colorBase + (alpha * 0.5) + ')'
+      ctx.lineWidth = 4 * dpr
+      drawOval(screenX, screenY + 32 * dpr, orbitR + 6 * dpr, (orbitR + 6 * dpr) * 0.32)
+      ctx.stroke()
+      // 内圈（最亮）
+      ctx.strokeStyle = colorBase + alpha + ')'
+      ctx.lineWidth = (flicker ? 5 : 3.5) * dpr
+      drawOval(screenX, screenY + 32 * dpr, orbitR, orbitR * 0.32)
+      ctx.stroke()
+      // ★ 底部发光底座（填充半透明椭圆，增加体积感）
+      ctx.fillStyle = colorBase + (alpha * 0.12) + ')'
+      drawOval(screenX, screenY + 32 * dpr, orbitR + 4 * dpr, (orbitR + 4 * dpr) * 0.32)
+      ctx.fill()
+      // ★ 环绕大光点（8个，旋转）
+      const n = 8
+      for (let p = 0; p < n; p++) {
+        const ang = t * 1.2 + (Math.PI * 2 * p) / n + i * 0.7
+        const px = screenX + Math.cos(ang) * orbitR
+        const py = screenY + 32 * dpr + Math.sin(ang) * orbitR * 0.32
+        const ps = 4 * dpr + 2 * dpr * Math.sin(t * 4 + p)
+        // 光点外发光
+        ctx.fillStyle = colorBase + (alpha * 0.25) + ')'
+        ctx.beginPath()
+        ctx.arc(px, py, ps * 2.2, 0, Math.PI * 2)
+        ctx.fill()
+        // 光点核心
+        ctx.fillStyle = colorBase + (0.85 + 0.15 * Math.sin(t * 6 + p)) + ')'
+        ctx.beginPath()
+        ctx.arc(px, py, ps, 0, Math.PI * 2)
+        ctx.fill()
+      }
+      // ★ 上升光柱粒子（6个，从脚下往上飘）
+      for (let p = 0; p < 6; p++) {
+        const ph = ((t * 0.7 + p / 6 + i * 0.3) % 1)
+        const ppx = screenX + Math.sin(t * 1.8 + p * 1.3 + i) * 16 * dpr
+        const ppy = screenY + 20 * dpr - ph * 70 * dpr
+        const pAlpha = 0.8 * (1 - ph)
+        // 尾迹
+        ctx.fillStyle = colorBase + (pAlpha * 0.3) + ')'
+        ctx.beginPath()
+        ctx.arc(ppx, ppy + 8 * dpr, 3 * dpr, 0, Math.PI * 2)
+        ctx.fill()
+        // 核心
+        ctx.fillStyle = colorBase + pAlpha + ')'
+        ctx.beginPath()
+        ctx.arc(ppx, ppy, 3.5 * dpr * (1 - ph * 0.5), 0, Math.PI * 2)
+        ctx.fill()
+      }
+      // ★ 剩余时间数字（大号、带阴影、持续显示）
+      if (i === active.length - 1) {
+        const secs = Math.ceil(b._remaining)
+        const numAlpha = flicker ? (0.5 + 0.5 * Math.abs(Math.sin(t * 10))) : 1.0
+        ctx.font = `bold ${16 * dpr}px sans-serif`
+        ctx.textAlign = 'center'
+        ctx.textBaseline = 'middle'
+        // 阴影
+        ctx.fillStyle = `rgba(0,0,0,${numAlpha * 0.6})`
+        ctx.fillText(secs, screenX + 1, screenY - 65 * dpr + 1)
+        // 主数字
+        ctx.fillStyle = colorBase + numAlpha + ')'
+        ctx.fillText(secs, screenX, screenY - 65 * dpr)
+        // buff 名称小字
+        const buffName = b.type === 'def_up' ? '防御' : b.type === 'def_up_self' ? '金盾' : b.type === 'atk_up' ? '战吼' : b.type === 'atk_up_self' ? '狂暴' : ''
+        if (buffName) {
+          ctx.font = `${10 * dpr}px sans-serif`
+          ctx.fillStyle = colorBase + (numAlpha * 0.8) + ')'
+          ctx.fillText(buffName, screenX, screenY - 80 * dpr)
+        }
+      }
+    })
+    ctx.restore()
+  }
+
+  /**
+   * ★ 渲染 buff 生效冲击波（释放瞬间扩散光圈）
+   */
+  _renderBuffShockwaves(ctx) {
+    const list = this.battleSystem && this.battleSystem.buffShockwaves
+    if (!list || list.length === 0) return
+    const dpr = this.dpr
+    ctx.save()
+    const drawOval = (cx, cy, rx, ry) => {
+      ctx.save()
+      ctx.translate(cx, cy)
+      ctx.scale(1, ry / (rx || 1))
+      ctx.beginPath()
+      ctx.arc(0, 0, rx, 0, Math.PI * 2)
+      ctx.restore()
+    }
+    for (const sw of list) {
+      const prog = sw._t / (sw._dur || 1)
+      if (prog >= 1) continue
+      const r = (25 + prog * 110) * dpr
+      const alpha = 0.9 * (1 - prog)
+      const cb = sw._color || 'rgba(200,200,255,'
+      const cx = sw.x - this.cameraX
+      const cy = sw.y - this.cameraY + 32 * dpr
+      // ★ 三层扩散圈
+      ctx.strokeStyle = cb + (alpha * 0.3) + ')'
+      ctx.lineWidth = (7 * (1 - prog) + 2) * dpr
+      drawOval(cx, cy, r + 15 * dpr, (r + 15 * dpr) * 0.3)
+      ctx.stroke()
+      ctx.strokeStyle = cb + (alpha * 0.6) + ')'
+      ctx.lineWidth = (5 * (1 - prog) + 2) * dpr
+      drawOval(cx, cy, r, r * 0.3)
+      ctx.stroke()
+      ctx.strokeStyle = cb + alpha + ')'
+      ctx.lineWidth = (4 * (1 - prog) + 1) * dpr
+      drawOval(cx, cy, r * 0.65, r * 0.65 * 0.3)
+      ctx.stroke()
+      // ★ 中心闪光球（释放瞬间，逐渐缩小消失）
+      const flashR = 14 * dpr * (1 - prog * 0.7)
+      if (flashR > 0) {
+        ctx.fillStyle = cb + (alpha * 0.35) + ')'
+        ctx.beginPath()
+        ctx.arc(cx, cy, flashR * 2.5, 0, Math.PI * 2)
+        ctx.fill()
+        ctx.fillStyle = cb + (alpha * 0.95) + ')'
+        ctx.beginPath()
+        ctx.arc(cx, cy, flashR, 0, Math.PI * 2)
+        ctx.fill()
+        ctx.fillStyle = `rgba(255,255,255,${alpha * 0.8})`
+        ctx.beginPath()
+        ctx.arc(cx, cy, flashR * 0.4, 0, Math.PI * 2)
+        ctx.fill()
+      }
+    }
+    ctx.restore()
+  }
+
   _handleTap(tap) {
     // ★ 战斗UI按钮（攻击/技能）优先处理（王者荣耀式操作）
     if (this.battleSystem && this.battleSystem.active && this._handleBattleUITap(tap)) return
@@ -1718,11 +2219,24 @@ baseRadius: 50 * this.dpr,    // 底座半径（缩小）
       const card = this.charInfoCardBounds
       if (tap.x >= card.x && tap.x <= card.x + card.width &&
           tap.y >= card.y && tap.y <= card.y + card.height) {
-        // 检查是否点击了切换按钮区域（右侧部分）
-        const isSwitchArea = tap.x > card.x + card.width - 40 * this.dpr
-        if (isSwitchArea) {
-          // 切换角色（已移除，改为跟随模式）
-          console.log('[Field] 已切换为跟随模式')
+        // 检查是否点击了切换按钮区域（右侧的 ↻ 圆形按钮）
+        // ★ 直接用卡片右下角区域判定，避免依赖 _charSwitchBtnBounds 可能未初始化的问题
+        const hitX0 = card.x + card.width - 50 * this.dpr
+        const hitY0 = card.y
+        const inSwitchBtn = tap.x >= hitX0 && tap.x <= card.x + card.width &&
+                                   tap.y >= hitY0 && tap.y <= card.y + 50 * this.dpr
+        if (inSwitchBtn) {
+          // ★ 复用已有的左上角切换按钮：战斗中对参战英雄进行控制权切换（主角 <-> 队友）
+          //   注意：_switchControl 挂在 FieldSceneClass.prototype 上（field-scene 实例方法），
+          //   直接 this._switchControl() 调用即可，this 即为 field-scene 实例
+          if (this.battleSystem && this.battleSystem.active && typeof this._switchControl === 'function') {
+            this._switchControl()
+            // ★ 显示切换提示（用当前被控角色名，而非固定的主角名）
+            const ctrl = this.battleSystem.battleHeroes && this.battleSystem.battleHeroes[0]
+            this.switchTipName = ctrl ? ctrl.hero.name : ''
+            this.showSwitchTip = true
+            this.switchTipTimer = 1.5
+          }
           return
         } else {
           // 打开详情面板
@@ -2226,6 +2740,10 @@ baseRadius: 50 * this.dpr,    // 底座半径（缩小）
 
     // ── layer=2：主角+队友（作为整体参与Y排序）─
     if (typeof this.playerX === 'number') {
+      // ★ 当前被控角色的 partyIndex（用于绘制控制指示标记）
+      const ctrlPartyIdx = (self.battleSystem && self.battleSystem.battleHeroes &&
+                            self.battleSystem.battleHeroes[0])
+        ? self.battleSystem.battleHeroes[0].partyIndex : 0
       engine.addPlayer(this.playerY / this.dpr + 50, function renderFn(ctx) {
         // ★ FieldScene 不继承 FieldMovement，没有 renderCharacters 方法，
         //   这里统一用 CharacterSprite 渲染主角 + 所有跟随队友（与主地图非副本路径一致）。
@@ -2235,7 +2753,12 @@ baseRadius: 50 * this.dpr,    // 底座半径（缩小）
           const pPos = (self._heroWorldPos && self._heroWorldPos[0]) ? self._heroWorldPos[0] : { x: self.playerX, y: self.playerY }
           const screenX = pPos.x - self.cameraX
           const screenY = pPos.y - self.cameraY
+          // ★ 被控角色脚下画高亮圈
+          if (self.battleSystem && self.battleSystem.active && ctrlPartyIdx === 0) {
+            self._renderControlIndicator(ctx, screenX, screenY)
+          }
           self.mainCharacterSprite.render(ctx, screenX, screenY)
+          // ★ 主角 BUFF 光环已移至 _renderWorldHealthBars 里统一渲染（确保每帧必调）
 
           // 移动时添加轻微的方向指示器
           if (self.mainCharacterSprite._effectiveMoving) {
@@ -2270,7 +2793,12 @@ baseRadius: 50 * this.dpr,    // 底座半径（缩小）
                 : { x: follower.x, y: follower.y }
               const fScreenX = fPos.x - self.cameraX
               const fScreenY = fPos.y - self.cameraY
+              // ★ 被控角色（队友）脚下画高亮圈
+              if (self.battleSystem && self.battleSystem.active && ctrlPartyIdx === (fi + 1)) {
+                self._renderControlIndicator(ctx, fScreenX, fScreenY)
+              }
               follower.sprite.render(ctx, fScreenX, fScreenY)
+              // ★ 队友 BUFF 光环已移至 _renderWorldHealthBars 里统一渲染
             } else if (typeof self._renderFollower === 'function') {
               // 兜底：旧版手写渲染路径
               self._renderFollower(ctx, follower, fi)
@@ -2279,6 +2807,8 @@ baseRadius: 50 * this.dpr,    // 底座半径（缩小）
         }
       })
     }
+
+    // ★ BUFF 生效冲击波已移至 _renderWorldHealthBars 里统一渲染
 
     // 排序 + 统一绘制（通过 hooks 处理特殊类型）
     engine.render(ctx, {
@@ -2384,18 +2914,31 @@ baseRadius: 50 * this.dpr,    // 底座半径（缩小）
 
       // 绘制角色切换按钮
       if (this.charInfoCardBounds) {
-        const btnX = this.charInfoCardBounds.x + this.charInfoCardBounds.width - 35 * this.dpr
-        const btnY = this.charInfoCardBounds.y + 10 * this.dpr
-        const btnSize = 25 * this.dpr
+        const btnSize = 32 * this.dpr
+        const btnX = this.charInfoCardBounds.x + this.charInfoCardBounds.width - btnSize - 8 * this.dpr
+        const btnY = this.charInfoCardBounds.y + 8 * this.dpr
 
-        // 按钮背景
-        ctx.fillStyle = 'rgba(74, 158, 255, 0.8)'
+        // 记录按钮命中区域（供点击切换控制使用），仅在多英雄参战时生效
+        // ★ 命中区扩大为卡片右上角整块（便于点击），圆形按钮仅作视觉提示
+        const hitMarginX = 50 * this.dpr
+        const hitMarginY = 50 * this.dpr
+        this._charSwitchBtnBounds = {
+          x: this.charInfoCardBounds.x + this.charInfoCardBounds.width - hitMarginX,
+          y: this.charInfoCardBounds.y,
+          width: hitMarginX,
+          height: hitMarginY,
+          enabled: !!(this.battleSystem && this.battleSystem.active &&
+                      this.battleSystem.battleHeroes && this.battleSystem.battleHeroes.length > 1)
+        }
+
+        // 按钮背景（战斗中可切换时高亮，否则变灰）
+        ctx.fillStyle = this._charSwitchBtnBounds.enabled ? 'rgba(74, 158, 255, 0.9)' : 'rgba(120, 120, 120, 0.6)'
         ctx.beginPath()
         ctx.arc(btnX + btnSize / 2, btnY + btnSize / 2, btnSize / 2, 0, Math.PI * 2)
         ctx.fill()
 
         // 切换图标
-        ctx.font = `${16 * this.dpr}px sans-serif`
+        ctx.font = `${18 * this.dpr}px sans-serif`
         ctx.fillStyle = '#ffffff'
         ctx.textAlign = 'center'
         ctx.textBaseline = 'middle'
@@ -2411,7 +2954,8 @@ baseRadius: 50 * this.dpr,    // 底座半径（缩小）
       ctx.textBaseline = 'middle'
 
       // 背景框
-      const tipText = `切换至 ${this.mainCharacter.name}`
+      const tipName = this.switchTipName || (this.mainCharacter && this.mainCharacter.name) || ''
+      const tipText = `切换至 ${tipName}`
       const tipWidth = ctx.measureText(tipText).width + 40 * this.dpr
       const tipHeight = 40 * this.dpr
       const tipX = (this.width - tipWidth) / 2
@@ -2545,6 +3089,9 @@ baseRadius: 50 * this.dpr,    // 底座半径（缩小）
       ctx.textBaseline = 'bottom'
       ctx.fillText(hero.name + (isControlled ? '（控制中）' : ''), screenX, barY - 4 * this.dpr)
       ctx.textAlign = 'left'
+
+      // ★ BUFF 光环粒子（在这里渲染，确保每帧血条渲染时一定被调用）
+      this._renderHeroBuffAura(ctx, screenX, screenY, hero)
     }
 
     // 主角坐标（战斗中可能非被控者，但始终用真实位置）
@@ -2564,6 +3111,12 @@ baseRadius: 50 * this.dpr,    // 底座半径（缩小）
         drawBar(fPos.x, fPos.y, f.character, ctrlIdx === (i + 1))
       }
     }
+
+    // ★ BUFF 生效冲击波（与血条在同一渲染层，确保每帧必调）
+    this._renderBuffShockwaves(ctx)
+
+    // ★ BUFF 粒子（专业粒子系统：速度/重力/衰减）
+    this._renderBuffParticles(ctx)
   }
 
   /**

@@ -2,6 +2,48 @@
 
 ## 📅 更新日志
 
+### 2026-08-09（更新）
+
+**feat: 野外战斗角色切换控制 + 李小宝技能体系 + BUFF 粒子效果（多项）**
+
+- **角色切换控制（主角 ↔ 李小宝）**：
+  - 左上角角色卡片 `↻` 按钮接入 `_switchControl()`，战斗中切换控制权
+  - `_switchControl` 挂在 FieldSceneClass.prototype（field-scene 实例方法），修复此前 `this.battleSystem._switchControl()` 调用方式错误（`_switchControl` 不在 battleSystem 对象上）
+  - 切换时重置双方角色战斗状态（`_aiAttacking`/`_aiAttackTimer`/`_aiAttackCD`/sprite.state→idle），否则被控者卡在 attack 状态导致技能/普攻被 `battleStates` 拦截（技能无效、动画丢失、伤害丢失）
+  - 被控英雄阵亡自动切换到下一个存活英雄
+  - 被控角色不再被 AI 站位逻辑拽走（`_updateFollowers` 跳过当前被控英雄）；原主角转 AI 后独立站位打怪（不粘人）
+  - 切换后技能按钮重建为新被控角色的技能（`_rebuildSkillButtons`）
+- **李小宝技能体系（fireball/ice_shard/thunder + mana_shield）**：
+  - 火球术：角色 X 轴脱手生成弹道，向前飞行命中第一个敌人 → 伤害 + 灼烧 DoT + 命中特效（修复：怪物弹道 `_fieldUpdateProjectiles` 误伤英雄弹道导致火球瞬间消失）
+  - 冰晶术：模仿 DNF 冰刃波动剑，冰刃沿 X 轴逐个生成延伸至边界再逐个消失，命中敌人冰冻（无法行动）
+  - 雷击术：300 范围无差别攻击，每个敌人最多 3 次雷击，挂感电状态（受击 +20%）
+  - 魔力护盾：全体参战英雄防御 +30%（此前 `_applyHeroBuff` 只有 TODO，buff 效果完全没实现）
+  - 臻宝战吼（atk_up 全体+30%）、狂暴（atk_up_self 自身+50%）补齐
+  - 新增 `_getHeroDef`/`_getHeroAtk`（含 buff 加成），怪物伤害/英雄攻击全部改用
+  - 怪物状态系统：灼烧 DoT / 冰冻 / 感电，`_updateMonsterStatusEffects` 每帧驱动，战斗结束清理
+- **BUFF 粒子效果（专业粒子系统）**：
+  - 参考 tower 的 `spawnParticles` 移植真粒子系统：速度/方向/重力/衰减/寿命
+  - 释放瞬间 24 粒子喷发（环形扩散+上升）+ 三层冲击波扩散圈 + 中心闪光球
+  - 持续期间每帧补充上升粒子 + 三层光圈 + 环绕光点 + 倒计时数字 + buff 名称
+  - 即将消失（<1.5s）闪烁提示
+  - **关键修复**：微信小游戏 Canvas2D 不支持 `ctx.ellipse()`，改用 `save+scale+arc` 兼容写法（此前调用 ellipse 静默失败导致效果完全看不到）
+- **技能按钮重叠 bug**：`_rebuildSkillButtons` 十字布局只有 4 个位置，李小宝 5 个技能导致第 5 个（魔力护盾）与第 1 个（法杖敲击）重叠。过滤掉普攻型技能（type:'attack' 且 mpCost:0，普攻已有专用 ATK 按钮）
+- **初始位置**：阳光草原进入时角色初始位置改为地图左下角 `(200, 2900)`（此前是地图中心）
+- **怪物碰撞统一**：移除被控者摇杆移动时的 `_checkMonsterCollision()`，两个角色（被控/AI）都不被怪物碰撞/阻挡（此前只有被控者触发，导致"臻宝不碰、李小宝碰"差异）
+- **李小宝动画资源**：skill/buff/shield 状态统一使用 cast_universal.png 精灵表（此前只有 attack 用，其它状态请求不存在的 HERO_LIXIAOBAO_ATTACK_XX 导致动画丢失）
+- **验证脚本（自动化回归，无需手动测试）**：
+  - `verify_switch_control.mjs`（23 项）：切换状态复位/技能/伤害/怪物目标
+  - `simulate_game.mjs`（23 项）：完整战斗/怪物攻击/阵亡自动切换/cast 精灵表
+  - `repro_switch_move.mjs`（7 项）："臻宝原地移动"复现验证
+  - `sequence_test.mjs`（21 项）：完整玩家操作序列
+  - `verify_skills.mjs`（55 项）：三技能+魔力护盾+粒子系统+渲染级验证
+- **修改文件**：
+  - `scripts/systems/field-battle-system.js`：切换控制/AOE技能/buff系统/怪物状态/技能按钮
+  - `scripts/scenes/field-scene.js`：渲染路径/粒子系统/buff光环/初始位置/碰撞移除
+  - `scripts/core/character-sprite.js`：李小宝 skill/buff/shield 用 cast 精灵表
+  - `scripts/data/heroes.js`：三技能 AOE 配置 + 魔力护盾/战吼/狂暴配置
+- **状态**：✅ 已通过 Babel 语法检查 + 129 项自动化断言（5 个验证脚本全绿）
+
 ### 2026-08-04（第二次更新）
 
 **fix: 阳光草原副本（dungeon 模式）李小宝无行走/空闲精灵（仅血条蓝条）**

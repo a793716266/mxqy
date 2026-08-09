@@ -28,7 +28,9 @@ export function installFieldBattleSystem(FieldSceneClass) {
       showBattleUI: false,     // 是否显示战斗UI
       switchButton: null,      // 角色切换按钮
       currentControlIndex: 0,  // 当前被玩家控制的参战英雄索引（0=主角）
-      battleHeroes: []          // 参战英雄列表：[{hero, sprite, isFollower, getPos()}]
+      battleHeroes: [],         // 参战英雄列表：[{hero, sprite, isFollower, getPos()}]
+      skillProcesses: [],       // 英雄AOE技能过程（冰刃/雷击）
+      buffShockwaves: []        // buff 生效冲击波（视觉粒子）
     }
     console.log('[FieldBattle] 战斗系统初始化完成')
   }
@@ -89,7 +91,11 @@ export function installFieldBattleSystem(FieldSceneClass) {
    * 切换后：原被控者坐标存入 _heroWorldPos，新被控者坐标载入 playerX/playerY
    */
   proto._switchControl = function() {
-    const list = this.battleSystem.battleHeroes
+    // ★ 本方法挂在 FieldSceneClass.prototype 上，this 即 field-scene 实例
+    //   battleHeroes/currentControlIndex 在 this.battleSystem 上，playerX/_heroWorldPos 在 scene 上
+    const sys = this.battleSystem
+    if (!sys) return
+    const list = sys.battleHeroes
     if (!list || list.length < 2 || !this._heroWorldPos) return
     const cur = list[0]
     const nxt = list[1]
@@ -102,7 +108,37 @@ export function installFieldBattleSystem(FieldSceneClass) {
     // 重排：新被控者置于 index0
     list[0] = nxt
     list[1] = cur
-    this.battleSystem.currentControlIndex = 0
+    sys.currentControlIndex = 0
+
+    // ★★ 关键：重置双方的 AI 攻击/动画状态
+    //   原被控者（cur）将转为 AI 角色：清掉残留的普攻 CD，让 AI 立即可攻击；
+    //   新被控者（nxt）原本是 AI 角色，可能正卡在 attack 状态（_aiAttacking=true 且不再被 AI 计时清理），
+    //   必须复位为 idle，否则 _playerAttackMonster 会因 battleStates.includes(sprite.state) 直接 return，
+    //   导致切换后技能无效、动画不播、伤害丢失。
+    const resetHeroCombatState = (bh) => {
+      if (!bh) return
+      if (bh.hero) {
+        bh.hero._aiAttacking = false
+        bh.hero._aiAttackTimer = 0
+        bh.hero._aiAttackCD = 0
+      }
+      if (bh.sprite) {
+        bh.sprite.state = 'idle'
+        bh.sprite.animFrame = 0
+        bh.sprite.animTimer = 0
+      }
+    }
+    resetHeroCombatState(cur)
+    resetHeroCombatState(nxt)
+
+    // ★ 重置普攻冷却，避免切换后仍受上个角色的普攻 CD 影响
+    sys.playerAttackCD = 0
+
+    // ★ 切换后：技能按钮重建为新被控角色的技能
+    if (sys.attackButton) {
+      this._rebuildSkillButtons(sys.attackButton.x, sys.attackButton.y, sys.attackButton.width, 14 * this.dpr)
+    }
+
     console.log(`[FieldBattle] 切换控制：${nxt.hero.name}`)
   }
 
@@ -162,6 +198,25 @@ export function installFieldBattleSystem(FieldSceneClass) {
     this.battleSystem.attackButton = null
     this.battleSystem.skillButtons = []
     this.battleSystem.damageTexts = []
+    this.battleSystem.pendingDamages = []
+    this.battleSystem.skillProcesses = []
+    this.battleSystem.buffShockwaves = []
+    this.battleSystem.buffParticles = []
+
+    // 清理怪物状态效果与冰冻标记
+    if (this.mapMonsters) {
+      for (const m of this.mapMonsters) {
+        m.statusEffects = []
+        m._frozen = false
+        m._strikeCount = 0
+      }
+    }
+    // 清理英雄 buff
+    if (this.battleSystem.battleHeroes) {
+      for (const bh of this.battleSystem.battleHeroes) {
+        if (bh.hero) bh.hero._buffs = []
+      }
+    }
 
     // 保存怪物状态
     this.game.data.set(`fieldMonsters_${this.areaId}`, this.mapMonsters)
@@ -190,53 +245,58 @@ export function installFieldBattleSystem(FieldSceneClass) {
       active: true
     }
 
-    // 技能按钮：十字布局（ATK 居中，技能按 上/右/下/左 顺时针填充）
-    this.battleSystem.skillButtons = []
-    const skills = this.party[0]?.skills || []
-    const n = skills.length
-    if (n > 0) {
-      const dirs = [
-        { dx: 0,     dy: -cell, pos: 'top'    }, // 上
-        { dx: cell,  dy: 0,     pos: 'right'  }, // 右
-        { dx: 0,     dy: cell,  pos: 'bottom' }, // 下
-        { dx: -cell, dy: 0,     pos: 'left'   }, // 左
-      ]
-      skills.forEach((skill, index) => {
-        const dir = dirs[index % dirs.length]
-        let bx = attackX + dir.dx
-        let by = attackY + dir.dy
-        // 钳制
-        bx = Math.max(margin, Math.min(this.width - btnSize - margin, bx))
-        by = Math.max(margin, Math.min(this.height - btnSize - margin, by))
-        this.battleSystem.skillButtons.push({
-          x: bx,
-          y: by,
-          width: btnSize,
-          height: btnSize,
-          text: skill.name,
-          skill: skill,
-          cooldown: 0,
-          active: true,
-          index: index
-        })
+    // 角色切换按钮已统一由 field-scene 左上角角色卡片的 ↻ 按钮承载，此处不再单独创建
+
+    // ★ 技能按钮：十字布局（ATK 居中，技能按 上/右/下/左 顺时针填充）
+    //   技能列表取【当前被控英雄】的技能，切换控制后需调用 _rebuildSkillButtons() 刷新
+    this._rebuildSkillButtons(attackX, attackY, btnSize, margin)
+
+    console.log(`[FieldBattle] 战斗UI初始化完成（王者荣耀式固定布局），技能数量: ${this.battleSystem.skillButtons.length}`)
+  }
+
+  /**
+   * ★ 重建技能按钮（切换控制角色后调用，让按钮对应新被控英雄的技能）
+   * @param {number} centerX 攻击按钮中心X
+   * @param {number} centerY 攻击按钮中心Y
+   * @param {number} btnSize 按钮尺寸
+   * @param {number} margin 边距
+   */
+  proto._rebuildSkillButtons = function(centerX, centerY, btnSize, margin) {
+    const sys = this.battleSystem
+    const ctrl = this._getCurrentControlHero()
+    const ctrlHero = ctrl ? ctrl.hero : null
+    // ★ 过滤掉普攻型技能（type:'attack' 且 mpCost:0）——普攻已有专用 ATK 按钮，
+    //   否则技能数>4时多余的技能会重叠到其它按钮位置（魔力护盾被法杖敲击覆盖就是这个 bug）
+    const allSkills = (ctrlHero && ctrlHero.skills) || []
+    const skills = allSkills.filter(s => !(s.type === 'attack' && (s.mpCost || 0) === 0))
+    const cell = btnSize + 8 * this.dpr
+
+    sys.skillButtons = []
+    const dirs = [
+      { dx: 0,     dy: -cell, pos: 'top'    }, // 上
+      { dx: cell,  dy: 0,     pos: 'right'  }, // 右
+      { dx: 0,     dy: cell,  pos: 'bottom' }, // 下
+      { dx: -cell, dy: 0,     pos: 'left'   }, // 左
+    ]
+    skills.forEach((skill, index) => {
+      const dir = dirs[index % dirs.length]
+      let bx = centerX + dir.dx
+      let by = centerY + dir.dy
+      // 钳制
+      bx = Math.max(margin, Math.min(this.width - btnSize - margin, bx))
+      by = Math.max(margin, Math.min(this.height - btnSize - margin, by))
+      sys.skillButtons.push({
+        x: bx,
+        y: by,
+        width: btnSize,
+        height: btnSize,
+        text: skill.name,
+        skill: skill,
+        cooldown: 0,
+        active: true,
+        index: index
       })
-    }
-
-    // 角色切换按钮：仅在存在多个参战英雄时显示（主角右侧偏上）
-    this.battleSystem.switchButton = null
-    const heroCount = 1 + (this.followers ? this.followers.length : 0)
-    if (heroCount > 1) {
-      const swSize = 36 * this.dpr
-      this.battleSystem.switchButton = {
-        x: this.width - swSize - margin,
-        y: margin,
-        width: swSize,
-        height: swSize,
-        text: '切换'
-      }
-    }
-
-    console.log(`[FieldBattle] 战斗UI初始化完成（王者荣耀式固定布局），技能数量: ${skills.length}`)
+    })
   }
 
   // ==========================================================================
@@ -326,8 +386,35 @@ export function installFieldBattleSystem(FieldSceneClass) {
       return
     }
 
+    // 4.01 ★ 当前被控英雄阵亡时，自动切换到下一个存活英雄
+    const ctrlHero0 = battleHeroes[0]
+    if (ctrlHero0 && (!ctrlHero0.hero || ctrlHero0.hero.hp <= 0)) {
+      for (let bi = 1; bi < battleHeroes.length; bi++) {
+        if (battleHeroes[bi].hero && battleHeroes[bi].hero.hp > 0) {
+          console.log(`[FieldBattle] 被控英雄阵亡，自动切换到 ${battleHeroes[bi].hero.name}`)
+          this._switchControl()
+          break
+        }
+      }
+    }
+
     // 4.1 ★ 队友（李小宝等）AI 自动战斗（非当前控制英雄）
     this._updateAllyAI(dt)
+
+    // 4.2 ★ 怪物状态效果更新（灼烧DoT / 冰冻 / 感电）
+    this._updateMonsterStatusEffects(dt)
+
+    // 4.21 ★ 英雄 BUFF 计时更新（魔力护盾防御提升等）
+    this._updateHeroBuffs(dt)
+
+    // 4.22 ★ buff 生效冲击波衰减更新
+    this._updateBuffShockwaves(dt)
+
+    // 4.3 ★ AOE技能过程更新（冰刃波动剑延伸、雷击连击）
+    this._updateHeroSkillProcesses(dt)
+
+    // 4.4 ★ 英雄弹道更新（火球术飞行命中）
+    this._updateHeroProjectiles(dt)
 
     // 5. 更新怪物攻击（攻击最近的参战英雄）
     this._updateMonsterAttack(dt)
@@ -347,14 +434,7 @@ export function installFieldBattleSystem(FieldSceneClass) {
     const ctrl = this._getCurrentControlHero()
     if (!ctrl || !ctrl.hero) return
     const mainHero = ctrl.hero
-    const attackerSprite = ctrl.sprite
-
-    // ★ 正在播放攻击/技能动画时，忽略新的攻击/技能请求，避免动画被打断
-    const sprite = attackerSprite
-    const battleStates = ['attack', 'shield', 'skill', 'buff', 'support']
-    if (sprite && battleStates.includes(sprite.state)) {
-      return
-    }
+    const sprite = ctrl.sprite
 
     // ★ 触发攻击/技能动画（通过 CharacterSprite 的 state 切换）
     let animState = 'attack'
@@ -367,6 +447,20 @@ export function installFieldBattleSystem(FieldSceneClass) {
         animState = 'skill'
       }
     }
+
+    // ★ 正在播放攻击/技能动画时，忽略新的普攻请求，避免动画被打断
+    //   —— 例外：技能可打断普攻/技能（skill !== null），否则普攻 8帧动画(约1.2s)期间无法放技能
+    const battleStates = ['attack', 'shield', 'skill', 'buff', 'support']
+    if (sprite && battleStates.includes(sprite.state)) {
+      if (!skill) return   // 普攻不能打断
+      // 技能打断：直接覆盖为技能动画（不 return，继续走下方统一逻辑）
+      if (animState === sprite.state) {
+        // 同状态技能（如连续普攻型技能）也允许重放
+        sprite.animFrame = 0
+        sprite.animTimer = 0
+      }
+    }
+
     if (sprite) {
       sprite.state = animState
       sprite.animFrame = 0
@@ -405,7 +499,34 @@ export function installFieldBattleSystem(FieldSceneClass) {
           sb.cooldownMax = sb.cooldown
         }
       }
-      // TODO: 这里可以应用 buff 效果（atk_up 等）
+      // ★ 应用 buff 效果（def_up / def_up_self 等）
+      this._applyHeroBuff(skill, mainHero)
+      return
+    }
+
+    // ★★★ AOE技能（火球/冰晶/雷击）：范围技能不依赖锁定目标，直接以施法者位置为基准作用
+    if (skill && skill.aoe && skill.aoe.enabled) {
+      const aoed = skill.aoe
+      mainHero.mp = Math.max(0, mainHero.mp - (skill.mpCost || 0))
+      // 技能释放后设置按钮冷却
+      if (this.battleSystem.skillButtons) {
+        const sb = this.battleSystem.skillButtons.find(b => b.skill === skill)
+        if (sb) {
+          const cdSec = skill.cooldown || 3
+          sb.cooldown = cdSec * 1000
+          sb.cooldownMax = sb.cooldown
+        }
+      }
+      // 计算施法者世界坐标（AOE 以施法位置为原点）
+      const cpos = ctrl.getPos()
+      const castDir = this.facingLeft ? -1 : 1   // 施法方向（X轴）
+      if (aoed.aoeType === 'lineX') {
+        this._castFireballAoE(skill, cpos, castDir, mainHero)
+      } else if (aoed.aoeType === 'iceWave') {
+        this._castIceWaveAoE(skill, cpos, castDir, mainHero)
+      } else if (aoed.aoeType === 'area') {
+        this._castThunderAoE(skill, cpos, mainHero)
+      }
       return
     }
 
@@ -435,10 +556,10 @@ export function installFieldBattleSystem(FieldSceneClass) {
     // 预计算伤害（但不立即应用）
     let damage = 0
     if (skill) {
-      damage = Math.max(1, mainHero.atk * (skill.power || 1.0) - Math.floor(monster.def * 0.5))
+      damage = Math.max(1, this._getHeroAtk(mainHero) * (skill.power || 1.0) - Math.floor(monster.def * 0.5))
       mainHero.mp = Math.max(0, mainHero.mp - (skill.mpCost || 0))
     } else {
-      damage = Math.max(1, mainHero.atk - Math.floor(monster.def * 0.5))
+      damage = Math.max(1, this._getHeroAtk(mainHero) - Math.floor(monster.def * 0.5))
       this.battleSystem.playerAttackCD = this.battleSystem.playerAttackInterval
     }
 
@@ -524,7 +645,7 @@ export function installFieldBattleSystem(FieldSceneClass) {
 
       // 预计算伤害并入延迟队列
       const hero = bh.hero
-      const damage = Math.max(1, hero.atk - Math.floor(monster.def * 0.5))
+      const damage = Math.max(1, this._getHeroAtk(hero) - Math.floor(monster.def * 0.5))
       const isCrit = Math.random() < (hero.crit || 0.05)
       const finalDmg = isCrit ? Math.floor(damage * 1.5) : damage
       this.battleSystem.pendingDamages.push({
@@ -537,6 +658,571 @@ export function installFieldBattleSystem(FieldSceneClass) {
       bh.hero._aiAttackCD = this.battleSystem.playerAttackInterval
       console.log(`[FieldBattle] ${hero.name}（AI）攻击 ${monster.name}，伤害 ${finalDmg}`)
     }
+  }
+
+  // ==========================================================================
+  // 5.6 ★ 英雄 AOE 技能（火球/冰晶/雷击）
+  // ==========================================================================
+
+  /**
+   * ★ 计算技能对怪物的伤害（含感电易伤加成）
+   */
+  proto._calcSkillDamageToMonster = function(monster, skill, hero, isCrit) {
+    const base = Math.max(1, this._getHeroAtk(hero) * (skill.power || 1.0) - Math.floor(monster.def * 0.5))
+    let dmg = base
+    // ★ 感电状态：受击额外伤害 +mult
+    if (monster.statusEffects) {
+      const elec = monster.statusEffects.find(e => e.type === 'electrify' && e._active)
+      if (elec) {
+        dmg = Math.floor(dmg * (1 + (elec.damageMult || 0)))
+      }
+    }
+    const crit = isCrit === undefined ? Math.random() < (hero.crit || 0.05) : isCrit
+    return crit ? Math.floor(dmg * 1.5) : Math.floor(dmg)
+  }
+
+  // ==========================================================================
+  // 5.5 ★ 英雄 BUFF 系统（魔力护盾 def_up 等）
+  // ==========================================================================
+
+  /**
+   * ★ 计算英雄实际防御（含 buff 加成）
+   */
+  proto._getHeroDef = function(hero) {
+    if (!hero) return 0
+    let def = hero.def || 0
+    const buffs = hero._buffs || []
+    for (const b of buffs) {
+      if (b._active && (b.type === 'def_up' || b.type === 'def_up_self')) {
+        def = def * (1 + (b.value || 0))
+      }
+    }
+    return Math.floor(def)
+  }
+
+  /**
+   * ★ 计算英雄实际攻击（含 buff 加成）
+   *   atk_up/atk_up_self 提升攻击力
+   */
+  proto._getHeroAtk = function(hero) {
+    if (!hero) return 0
+    // ★ 魔法类角色（有 matk）优先用 matk，物理类用 atk
+    let atk = hero.matk || hero.atk || 0
+    const buffs = hero._buffs || []
+    for (const b of buffs) {
+      if (b._active && (b.type === 'atk_up' || b.type === 'atk_up_self')) {
+        atk = atk * (1 + (b.value || 0))
+      }
+    }
+    return Math.floor(atk)
+  }
+
+  /**
+   * ★ 给英雄挂 buff（魔力护盾/金盾/铁壁等）
+   * @param {Object} skill 技能配置（effect/value/duration/turns）
+   * @param {Object} caster 施法者（buff 技能以施法者为基准）
+   */
+  proto._applyHeroBuff = function(skill, caster) {
+    if (!skill || !skill.effect || !this.battleSystem) return
+    const effect = skill.effect
+    const value = skill.value || 0
+    // 野外战斗 buff 时长：优先 duration（秒），否则 turns 按回合估算（回合≈2s）
+    const dur = skill.duration != null ? skill.duration : ((skill.turns || 1) * 2)
+
+    if (effect === 'def_up') {
+      // ★ 全体参战英雄防御提升（含施法者）
+      const targets = this.battleSystem.battleHeroes || []
+      for (const bh of targets) {
+        if (!bh.hero || bh.hero.hp <= 0) continue
+        this._addHeroBuff(bh.hero, { type: 'def_up', value: value, duration: dur })
+      }
+      console.log(`[FieldBattle] ${caster ? caster.name : ''} 施放${skill.name}：全体防御+${Math.round(value * 100)}%（持续${dur}s）`)
+    } else if (effect === 'def_up_self') {
+      // 仅自身
+      if (caster) {
+        this._addHeroBuff(caster, { type: 'def_up_self', value: value, duration: dur })
+        console.log(`[FieldBattle] ${caster.name} 施放${skill.name}：自身防御+${Math.round(value * 100)}%（持续${dur}s）`)
+      }
+    } else if (effect === 'atk_up') {
+      // ★ 臻宝战吼：全体参战英雄攻击力提升（含施法者）
+      const targets = this.battleSystem.battleHeroes || []
+      for (const bh of targets) {
+        if (!bh.hero || bh.hero.hp <= 0) continue
+        this._addHeroBuff(bh.hero, { type: 'atk_up', value: value, duration: dur })
+      }
+      console.log(`[FieldBattle] ${caster ? caster.name : ''} 施放${skill.name}：全体攻击+${Math.round(value * 100)}%（持续${dur}s）`)
+    } else if (effect === 'atk_up_self') {
+      // ★ 臻宝狂暴：仅自身攻击力大幅提升
+      if (caster) {
+        this._addHeroBuff(caster, { type: 'atk_up_self', value: value, duration: dur })
+        console.log(`[FieldBattle] ${caster.name} 施放${skill.name}：自身攻击+${Math.round(value * 100)}%（持续${dur}s）`)
+      }
+    }
+    // 其它 buff 类型（taunt/counter/guard/gold_up 等）暂未在野外战斗中实现，仅记录
+  }
+
+  /**
+   * ★ 给英雄添加/刷新 buff
+   */
+  proto._addHeroBuff = function(hero, buff) {
+    if (!hero._buffs) hero._buffs = []
+    const existing = hero._buffs.find(b => b.type === buff.type)
+    if (existing) {
+      existing.value = buff.value
+      existing.duration = buff.duration
+      existing._remaining = buff.duration
+      existing._active = true
+      // 刷新时也记录冲击波（视觉提示）
+      this._spawnBuffShockwave(hero)
+    } else {
+      hero._buffs.push({
+        type: buff.type,
+        value: buff.value,
+        duration: buff.duration,
+        _remaining: buff.duration,
+        _active: true,
+        _color: this._getBuffColor(buff.type)
+      })
+      // 生效冲击波
+      this._spawnBuffShockwave(hero)
+    }
+  }
+
+  /**
+   * ★ 生成 buff 生效冲击波（视觉：释放瞬间扩散光圈）
+   */
+  proto._spawnBuffShockwave = function(hero) {
+    if (!hero || !this.battleSystem) return
+    const bh = (this.battleSystem.battleHeroes || []).find(b => b.hero === hero)
+    const pos = bh && bh.getPos ? bh.getPos() : { x: this.playerX, y: this.playerY }
+    if (!this.battleSystem.buffShockwaves) this.battleSystem.buffShockwaves = []
+    const buffColor = this._getBuffColor((hero._buffs && hero._buffs.length && hero._buffs[hero._buffs.length - 1].type) || 'def_up')
+    this.battleSystem.buffShockwaves.push({
+      x: pos.x,
+      y: pos.y,
+      _t: 0,
+      _dur: 0.7,
+      _color: buffColor
+    })
+    // ★ 触发专业粒子喷发（环形扩散 + 上升）
+    if (this._spawnBuffParticles) {
+      const hex = this._hexColorFromRgba ? this._hexColorFromRgba(buffColor) : '#7ab8ff'
+      this._spawnBuffParticles(hero, hex, 24)
+    }
+  }
+
+  /**
+   * ★ buff 类型 → 视觉颜色
+   */
+  proto._getBuffColor = function(type) {
+    const map = {
+      def_up: 'rgba(95,159,255,',       // 蓝（护盾）
+      def_up_self: 'rgba(95,159,255,',  // 蓝
+      atk_up: 'rgba(255,165,2,',        // 橙（战吼）
+      atk_up_self: 'rgba(255,77,77,',   // 红（狂暴）
+      spd_up: 'rgba(0,230,118,',        // 绿
+      heal: 'rgba(0,230,118,',          // 绿
+    }
+    return map[type] || 'rgba(200,200,255,'
+  }
+
+  /**
+   * ★ 更新 buff 冲击波（衰减、移除）
+   */
+  proto._updateBuffShockwaves = function(dt) {
+    const list = this.battleSystem.buffShockwaves
+    if (!list || list.length === 0) return
+    for (let i = list.length - 1; i >= 0; i--) {
+      list[i]._t += dt
+      if (list[i]._t >= list[i]._dur) list.splice(i, 1)
+    }
+  }
+
+  /**
+   * ★ 更新英雄 buff 剩余时间（每帧调用）
+   */
+  proto._updateHeroBuffs = function(dt) {
+    const heroes = this.battleSystem.battleHeroes || []
+    for (const bh of heroes) {
+      const hero = bh.hero
+      if (!hero || !hero._buffs || hero._buffs.length === 0) continue
+      for (let i = hero._buffs.length - 1; i >= 0; i--) {
+        const b = hero._buffs[i]
+        b._remaining -= dt
+        if (b._remaining <= 0) {
+          hero._buffs.splice(i, 1)
+        }
+      }
+    }
+  }
+
+  /**
+   * ★ 给怪物挂状态效果（灼烧/冰冻/感电）
+   */
+  proto._applyMonsterStatus = function(monster, type, config, hero) {
+    if (!monster || !monster.alive || !config) return
+    if (!monster.statusEffects) monster.statusEffects = []
+    // 同类型状态刷新（不叠加，重置计时）
+    const existing = monster.statusEffects.find(e => e.type === type)
+    if (existing) {
+      existing.duration = config.duration || existing.duration
+      existing._remaining = config.duration || existing.duration
+      if (type === 'burn') existing.tickDamage = config.tickDamage || existing.tickDamage
+      if (type === 'electrify') existing.damageMult = config.damageMult || existing.damageMult
+      if (type === 'freeze') existing._frozen = true
+      return
+    }
+    monster.statusEffects.push({
+      type: type,
+      duration: config.duration || 1,
+      _remaining: config.duration || 1,
+      _lastTick: 0,
+      // burn
+      tickDamage: config.tickDamage || 0,
+      tickInterval: config.tickInterval || 0.5,
+      _tickAccum: 0,
+      // electrify
+      damageMult: config.damageMult || 0,
+      _active: true,
+      // freeze
+      _frozen: true,
+      _strikeCount: 0
+    })
+  }
+
+  /**
+   * ★ 火球术（优化）：从角色X轴脱手，生成向前方X轴飞行的火球弹道，
+   *   飞行途中命中路径上的第一个敌人 → 伤害 + 灼烧 + 命中特效，火球消失
+   */
+  proto._castFireballAoE = function(skill, cpos, castDir, hero) {
+    const cfg = skill.aoe
+    const burnCfg = cfg.burn || {}
+    const speed = (cfg.projectileSpeed || 320) * this.dpr   // 飞行速度（可配置）
+    const range = (cfg.range || 200) * this.dpr             // 最大飞行距离（X轴）
+    const fx = this.game && this.game.effects
+    if (!this.battleSystem.projectiles) this.battleSystem.projectiles = []
+    // 从角色X轴脱手：起点为角色脚底偏移，沿 facing 方向 X 轴飞行（vy=0 保持直线）
+    this.battleSystem.projectiles.push({
+      x: cpos.x,
+      y: cpos.y - 20 * this.dpr,
+      vx: castDir * speed,
+      vy: 0,
+      power: skill.power || 1,
+      atk: this._getHeroAtk(hero),
+      def: hero.def || 0,
+      life: range / (speed || 1),   // 到达最大射程后消失
+      maxLife: range / (speed || 1),
+      color: '#ff6b35',
+      owner: 'hero',
+      skill: skill,
+      hero: hero,
+      castDir: castDir,
+      burn: burnCfg.enabled ? {
+        duration: burnCfg.duration || 3,
+        tickDamage: burnCfg.tickDamage || 6,
+        tickInterval: burnCfg.tickInterval || 0.5
+      } : null,
+      _hitSet: new Set(),
+      _fx: fx
+    })
+    console.log(`[FieldBattle] ${hero.name} 发射火球（速度 ${speed}，射程 ${range}）`)
+  }
+
+  /**
+   * ★ 火球弹道命中结算：飞行中命中路径上第一个未命中过的敌人
+   */
+  proto._updateHeroProjectiles = function(dt) {
+    if (!this.battleSystem.projectiles) return
+    const list = this.battleSystem.projectiles
+    for (let i = list.length - 1; i >= 0; i--) {
+      const p = list[i]
+      if (p.owner !== 'hero') continue   // 只处理英雄弹道
+      p.x += p.vx * dt
+      p.y += p.vy * dt
+      p.life -= dt
+      // 命中判定：与怪物 X 轴带碰撞（火球Y固定，命中 Y 带内的敌人）
+      let hitMonster = null
+      for (const m of this.mapMonsters || []) {
+        if (!m.alive || p._hitSet.has(m.id)) continue
+        const dx = Math.abs(m.x - p.x)
+        const dy = Math.abs(m.y - p.y)
+        if (dx <= 30 * this.dpr && dy <= 100 * this.dpr) { hitMonster = m; break }
+      }
+      if (hitMonster) {
+        p._hitSet.add(hitMonster.id)
+        const isCrit = Math.random() < (p.hero.crit || 0.05)
+        const dmg = this._calcSkillDamageToMonster(hitMonster, p.skill, p.hero, isCrit)
+        hitMonster.hp = Math.max(0, hitMonster.hp - dmg)
+        // 灼烧状态
+        if (p.burn) this._applyMonsterStatus(hitMonster, 'burn', p.burn, p.hero)
+        this._pushDamageText(hitMonster, dmg, isCrit, '#ff6b35')
+        // 命中特效
+        if (p._fx && p._fx.playHitEffect) {
+          p._fx.playHitEffect('fire_impact', hitMonster.x - this.cameraX, hitMonster.y - this.cameraY - 30 * this.dpr, this.dpr)
+        }
+        console.log(`[FieldBattle] ${p.hero.name} 火球命中 ${hitMonster.name}，伤害 ${dmg}${isCrit ? '（暴击）' : ''}，剩余HP ${hitMonster.hp}`)
+        if (hitMonster.hp <= 0) {
+          hitMonster.alive = false
+          this.battleSystem.battleTarget = null
+        }
+        // 火球命中即消散（可穿透则移除 _hitSet 限制，默认单目标）
+        list.splice(i, 1)
+        continue
+      }
+      if (p.life <= 0) list.splice(i, 1)
+    }
+  }
+
+  /**
+   * ★ 冰晶术（冰刃波动剑）：X轴方向延伸生成冰刃序列，逐个生成再逐个消失
+   */
+  proto._castIceWaveAoE = function(skill, cpos, castDir, hero) {
+    const cfg = skill.aoe
+    const bladeCount = cfg.bladeCount || 8
+    const bladeGap = (cfg.bladeGap || 60) * this.dpr
+    const bladeWidth = (cfg.bladeWidth || 80) * this.dpr
+    const freezeCfg = cfg.freeze || {}
+    // 从施法位置沿 facing 方向生成冰刃，直到地图 X 边界
+    const mapEndX = castDir > 0 ? (this.mapWidth || 6000) : 0
+    const totalLen = Math.abs(mapEndX - cpos.x)
+    const count = Math.min(bladeCount, Math.max(1, Math.floor(totalLen / bladeGap)))
+    const blades = []
+    for (let i = 0; i < count; i++) {
+      const bx = cpos.x + castDir * (bladeWidth / 2 + i * bladeGap)
+      if (castDir > 0 && bx > mapEndX) break
+      if (castDir < 0 && bx < mapEndX) break
+      blades.push({
+        x: bx,
+        w: bladeWidth,
+        y: cpos.y,
+        _born: false,   // 是否已生成
+        _died: false,   // 是否已消失
+        _hitSet: new Set(),  // 已命中的怪物id
+        _delay: i * 0.25   // 逐个生成的延迟（秒）
+      })
+    }
+    // 注册到战斗过程，由 _updateHeroSkillProcesses 驱动
+    if (!this.battleSystem.skillProcesses) this.battleSystem.skillProcesses = []
+    this.battleSystem.skillProcesses.push({
+      type: 'iceWave',
+      skill: skill,
+      hero: hero,
+      blades: blades,
+      _timer: 0,
+      _phase: 'extend',     // extend: 逐个生成；retract: 逐个消失
+      _idx: 0,              // 当前生成/消失到第几个
+      _total: blades.length,
+      _extendDone: false,
+      _retractDone: false,
+      _elapsed: 0,
+      _fx: this.game && this.game.effects,
+      duration: 2.5,
+      freeze: freezeCfg.enabled !== false
+    })
+  }
+
+  /**
+   * ★ 雷击术：范围内敌人无差别攻击，每个敌人最多3次雷击（间隔触发）+ 感电
+   */
+  proto._castThunderAoE = function(skill, cpos, hero) {
+    const cfg = skill.aoe
+    const radius = (cfg.radius || 300) * this.dpr
+    const strikeCount = cfg.strikeCount || 3
+    const duration = cfg.duration || 5
+    const strikeInterval = cfg.strikeInterval || 0.8
+    const elecCfg = cfg.electrify || {}
+    const fx = this.game && this.game.effects
+    // 命中范围内的所有存活怪物
+    const targets = (this.mapMonsters || []).filter(m =>
+      m.alive && Math.hypot(m.x - cpos.x, m.y - cpos.y) <= radius
+    )
+    if (targets.length === 0) {
+      console.log(`[FieldBattle] ${hero.name} 雷击范围内无敌人`)
+      return
+    }
+    // 每个怪物：挂感电状态 + 注册雷击定时过程
+    if (elecCfg.enabled) {
+      for (const m of targets) {
+        this._applyMonsterStatus(m, 'electrify', { duration: duration, damageMult: elecCfg.damageMult || 0.2 }, hero)
+      }
+    }
+    if (!this.battleSystem.skillProcesses) this.battleSystem.skillProcesses = []
+    this.battleSystem.skillProcesses.push({
+      type: 'thunder',
+      skill: skill,
+      hero: hero,
+      targets: targets.map(m => m),
+      _timer: 0,
+      _strikeIndex: 0,
+      strikeCount: strikeCount,
+      strikeInterval: strikeInterval,
+      duration: duration,
+      _fx: fx,
+      _elapsed: 0
+    })
+  }
+
+  /**
+   * ★ 更新怪物状态效果（灼烧DoT / 冰冻 / 感电计时）
+   */
+  proto._updateMonsterStatusEffects = function(dt) {
+    if (!this.mapMonsters) return
+    for (const m of this.mapMonsters) {
+      if (!m.statusEffects || m.statusEffects.length === 0) continue
+      if (!m.alive) { m.statusEffects = []; continue }
+      for (let i = m.statusEffects.length - 1; i >= 0; i--) {
+        const e = m.statusEffects[i]
+        e._remaining -= dt
+        if (e._remaining <= 0) {
+          m.statusEffects.splice(i, 1)
+          continue
+        }
+        // 灼烧 DoT
+        if (e.type === 'burn' && e.tickDamage > 0) {
+          e._tickAccum = (e._tickAccum || 0) + dt
+          if (e._tickAccum >= (e.tickInterval || 0.5)) {
+            e._tickAccum = 0
+            m.hp = Math.max(0, m.hp - e.tickDamage)
+            this._pushDamageText(m, e.tickDamage, false, '#ff6600')
+            console.log(`[FieldBattle] ${m.name} 灼烧-${e.tickDamage}`)
+            if (m.hp <= 0) { m.alive = false; m.statusEffects = []; this.battleSystem.battleTarget = null }
+          }
+        }
+        // 冰冻：怪物无法行动（由 _updateMonsters 读取 m._frozen 跳过移动/攻击）
+        if (e.type === 'freeze') {
+          m._frozen = true
+        } else {
+          m._frozen = false
+        }
+      }
+    }
+  }
+
+  /**
+   * ★ 更新英雄技能过程（冰刃延伸/消失、雷击连击）
+   */
+  proto._updateHeroSkillProcesses = function(dt) {
+    const procs = this.battleSystem.skillProcesses
+    if (!procs || procs.length === 0) return
+    for (let i = procs.length - 1; i >= 0; i--) {
+      const p = procs[i]
+      p._elapsed = (p._elapsed || 0) + dt
+
+      if (p.type === 'iceWave') {
+        this._updateIceWaveProcess(p, dt)
+        if (p._retractDone || p._elapsed > (p.duration || 3)) procs.splice(i, 1)
+      } else if (p.type === 'thunder') {
+        this._updateThunderProcess(p, dt)
+        if (p._strikeIndex >= p.strikeCount || p._elapsed > (p.duration || 5)) procs.splice(i, 1)
+      }
+    }
+  }
+
+  /**
+   * ★ 冰刃波动剑过程：逐个生成（extend）→ 到达边界 → 逐个消失（retract）
+   */
+  proto._updateIceWaveProcess = function(p, dt) {
+    const fx = p._fx
+    if (!p._phase) p._phase = 'extend'
+    if (!p._idx) p._idx = 0
+
+    if (p._phase === 'extend') {
+      // 生成下一个冰刃（带延迟，逐个出现）
+      if (p._idx < p._total) {
+        const blade = p.blades[p._idx]
+        blade._born = true
+        // 冰刃命中判定（Y轴带内，X轴带内）
+        if (this.mapMonsters) {
+          for (const m of this.mapMonsters) {
+            if (!m.alive || blade._hitSet.has(m.id)) continue
+            const dx = Math.abs(m.x - blade.x)
+            const dy = Math.abs(m.y - blade.y)
+            if (dx <= blade.w / 2 && dy <= 100 * this.dpr) {
+              blade._hitSet.add(m.id)
+              const isCrit = Math.random() < (p.hero.crit || 0.05)
+              const dmg = this._calcSkillDamageToMonster(m, p.skill, p.hero, isCrit)
+              m.hp = Math.max(0, m.hp - dmg)
+              if (p.freeze) this._applyMonsterStatus(m, 'freeze', { duration: (p.skill.aoe && p.skill.aoe.freeze && p.skill.aoe.freeze.duration) || 2 }, p.hero)
+              this._pushDamageText(m, dmg, isCrit, '#66ddff')
+              if (fx && fx.playHitEffect) {
+                fx.playHitEffect('ice_impact', m.x - this.cameraX, m.y - this.cameraY - 30 * this.dpr, this.dpr)
+              }
+              console.log(`[FieldBattle] ${p.hero.name} 冰刃命中 ${m.name}，伤害 ${dmg}，已冰冻`)
+              if (m.hp <= 0) { m.alive = false; this.battleSystem.battleTarget = null }
+            }
+          }
+        }
+        // 生成冰刃视觉（用闪电命中帧近似冰刃，或按需扩展）
+        if (fx && fx.playHitEffect) {
+          const sx = blade.x - this.cameraX
+          const sy = blade.y - this.cameraY - 20 * this.dpr
+          // 冰刃延展视觉：在 blade 范围内播放一个小的 ice_hit
+          fx.playHitEffect('ice_impact', sx, sy, this.dpr)
+        }
+        p._idx++
+      } else {
+        p._phase = 'retract'
+        p._idx = 0
+      }
+    } else if (p._phase === 'retract') {
+      // 从起点逐个消失
+      if (p._idx < p._total) {
+        const blade = p.blades[p._idx]
+        blade._died = true
+        p._idx++
+      } else {
+        p._retractDone = true
+      }
+    }
+  }
+
+  /**
+   * ★ 雷击过程：范围内怪物随机逐个受击（每个最多 strikeCount 次）
+   */
+  proto._updateThunderProcess = function(p, dt) {
+    const fx = p._fx
+    if (!p._strikeIndex) p._strikeIndex = 0
+    p._strikeTimer = (p._strikeTimer || 0) + dt
+    const interval = p.strikeInterval || 0.8
+    // 每次间隔触发一轮雷击：对范围内存活怪物随机挑一只
+    while (p._strikeTimer >= interval && p._strikeIndex < p.strikeCount) {
+      p._strikeTimer -= interval
+      const alive = (p.targets || []).filter(m => m.alive)
+      if (alive.length === 0) { p._strikeIndex = p.strikeCount; break }
+      // 随机命中一只
+      const m = alive[Math.floor(Math.random() * alive.length)]
+      const isCrit = Math.random() < (p.hero.crit || 0.05)
+      const dmg = this._calcSkillDamageToMonster(m, p.skill, p.hero, isCrit)
+      m.hp = Math.max(0, m.hp - dmg)
+      this._pushDamageText(m, dmg, isCrit, '#ffe066')
+      if (fx && fx.playHitEffect) {
+        fx.playHitEffect('magic_impact', m.x - this.cameraX, m.y - this.cameraY - 30 * this.dpr, this.dpr)
+      }
+      console.log(`[FieldBattle] ${p.hero.name} 雷击命中 ${m.name}，伤害 ${dmg}${isCrit ? '（暴击）' : ''}，剩余HP ${m.hp}`)
+      if (m.hp <= 0) { m.alive = false; this.battleSystem.battleTarget = null }
+      // 记录该怪物累计命中次数（达到上限后不再被随机选中）
+      m._strikeCount = (m._strikeCount || 0) + 1
+      p._strikeIndex++
+    }
+  }
+
+  /**
+   * ★ 推送伤害飘字
+   */
+  proto._pushDamageText = function(m, dmg, isCrit, color) {
+    if (!this.battleSystem.damageTexts) this.battleSystem.damageTexts = []
+    const sx = m.x - this.cameraX
+    const sy = m.y - this.cameraY
+    this.battleSystem.damageTexts.push({
+      text: `-${dmg}${isCrit ? '!' : ''}`,
+      x: sx,
+      y: sy - 40 * this.dpr,
+      color: color || (isCrit ? '#FFD700' : '#ff4757'),
+      life: 1.0,
+      maxLife: 1.0,
+      _startY: sy - 40 * this.dpr,
+      isCrit: isCrit
+    })
   }
 
   // ==========================================================================
@@ -568,6 +1254,9 @@ export function installFieldBattleSystem(FieldSceneClass) {
 
     for (const monster of this.mapMonsters) {
       if (!monster.alive) continue
+
+      // ★ 冰冻状态：怪物无法行动（冰晶术施加），跳过移动/攻击/技能
+      if (monster._frozen) continue
 
       // ★ 找最近的存活参战英雄作为攻击目标
       let nearestHero = null
@@ -654,6 +1343,10 @@ export function installFieldBattleSystem(FieldSceneClass) {
    */
   proto._fieldMonsterCombatMove = function(monster, dx, dy, dist, attackRange, dt) {
     if (dist < 1) return
+    // ★ 兜底初始化：首次进入战斗时 strafeDir 可能未定义，
+    //   若直接用 px * undefined 会导致 vx=NaN → monster.x/y 变 NaN，怪物永久卡死
+    if (monster.strafeDir === undefined) monster.strafeDir = Math.random() > 0.5 ? 1 : -1
+    if (monster.strafeTimer === undefined) monster.strafeTimer = 0
     const nx = dx / dist, ny = dy / dist
     const px = -ny, py = nx // 垂直方向（横向）
     const spd = monster.moveSpeed || 30
@@ -775,7 +1468,7 @@ export function installFieldBattleSystem(FieldSceneClass) {
     }
 
     const doMelee = (mult) => {
-      const dmg = Math.max(1, Math.floor(monster.atk * (mult || skill.power || 1) - hero.def * 0.3))
+      const dmg = Math.max(1, Math.floor(monster.atk * (mult || skill.power || 1) - this._getHeroDef(hero) * 0.3))
       hero.hp = Math.max(0, hero.hp - dmg)
       this.battleSystem.damageTexts.push({
         text: `-${dmg}`,
@@ -848,9 +1541,14 @@ export function installFieldBattleSystem(FieldSceneClass) {
    */
   proto._fieldUpdateProjectiles = function(dt) {
     if (!this.battleSystem.projectiles) return
-    const hero = this.party[0]
+    // ★ 弹道命中的是当前被控者位置(playerX/Y)，应扣【被控者】的血，而非硬编码 party[0]
+    //   （切换控制后被控者可能是李小宝等队友）
+    const ctrl = this._getCurrentControlHero()
+    const hero = ctrl && ctrl.hero ? ctrl.hero : this.party[0]
     for (let i = this.battleSystem.projectiles.length - 1; i >= 0; i--) {
       const p = this.battleSystem.projectiles[i]
+      // ★ 英雄弹道（火球术等）由 _updateHeroProjectiles 处理，怪物弹道更新里跳过
+      if (p.owner === 'hero') continue
       p.x += p.vx * dt
       p.y += p.vy * dt
       p.life -= dt
@@ -858,7 +1556,7 @@ export function installFieldBattleSystem(FieldSceneClass) {
       const hdx = this.playerX - p.x
       const hdy = this.playerY - p.y
       if (hero && hero.hp > 0 && (hdx * hdx + hdy * hdy) < (40 * this.dpr) ** 2) {
-        const dmg = Math.max(1, Math.floor(p.atk * (p.power || 1) - hero.def * 0.3))
+        const dmg = Math.max(1, Math.floor(p.atk * (p.power || 1) - this._getHeroDef(hero) * 0.3))
         hero.hp = Math.max(0, hero.hp - dmg)
         this.battleSystem.damageTexts.push({
           text: `-${dmg}`,
@@ -894,12 +1592,14 @@ export function installFieldBattleSystem(FieldSceneClass) {
           z.monsterRef.skillAnimTimer = 450 // 落地攻击演出时长（毫秒）
           z.monsterRef._jumpWarn = true // 落地演出期间仍不黏住，停在落点
         }
-        const hero = this.party[0]
+        // ★ 预警命中区域是当前被控者位置(playerX/Y)，应扣【被控者】的血（切换控制后可能是队友）
+        const ctrl = this._getCurrentControlHero()
+        const hero = ctrl && ctrl.hero ? ctrl.hero : this.party[0]
         if (hero && hero.hp > 0) {
           const hdx = this.playerX - z.x
           const hdy = this.playerY - z.y
           if ((hdx * hdx + hdy * hdy) <= z.r * z.r) {
-            const dmg = Math.max(1, Math.floor(z.atk * (z.power || 1) - hero.def * 0.3))
+            const dmg = Math.max(1, Math.floor(z.atk * (z.power || 1) - this._getHeroDef(hero) * 0.3))
             hero.hp = Math.max(0, hero.hp - dmg)
             this.battleSystem.damageTexts.push({
               text: `-${dmg}`,
@@ -937,8 +1637,8 @@ export function installFieldBattleSystem(FieldSceneClass) {
     // 标记已造成伤害（防止同一攻击动画造成多次伤害）
     monster.hasDealtDamage = true
 
-    // 计算伤害
-    const damage = Math.max(1, monster.atk - Math.floor(hero.def * 0.4))
+    // 计算伤害（★ 使用含 buff 加成的实际防御）
+    const damage = Math.max(1, monster.atk - Math.floor(this._getHeroDef(hero) * 0.4))
 
     // 暴击判定
     const isCrit = Math.random() < (monster.crit || 0.05)
@@ -1020,29 +1720,9 @@ export function installFieldBattleSystem(FieldSceneClass) {
     // 4. 渲染怪物血条（玩家血条/蓝条已移至 _renderWorldHealthBars，非战斗也显示）
     this._renderMonsterHealthBars(ctx)
 
-    // 5. 渲染角色切换按钮（多英雄时）
-    this._renderSwitchButton(ctx)
+    // 5. 角色切换按钮已统一由 field-scene 左上角角色卡片的 ↻ 按钮承载，此处不再单独绘制
 
     // 6. 攻击/技能动画由主角 ATTACK/SHIELD/BUFF 帧体现，不再绘制场上范围指示
-  }
-
-  proto._renderSwitchButton = function(ctx) {
-    const btn = this.battleSystem.switchButton
-    if (!btn) return
-    ctx.save()
-    ctx.fillStyle = 'rgba(255,165,2,0.85)'
-    ctx.beginPath()
-    this._roundRect(ctx, btn.x, btn.y, btn.width, btn.height, 8 * this.dpr)
-    ctx.fill()
-    ctx.strokeStyle = '#ffffff'
-    ctx.lineWidth = 2
-    ctx.stroke()
-    ctx.fillStyle = '#ffffff'
-    ctx.font = `${12 * this.dpr}px sans-serif`
-    ctx.textAlign = 'center'
-    ctx.textBaseline = 'middle'
-    ctx.fillText(btn.text, btn.x + btn.width / 2, btn.y + btn.height / 2)
-    ctx.restore()
   }
 
   // ==========================================================================
@@ -1252,15 +1932,7 @@ export function installFieldBattleSystem(FieldSceneClass) {
   proto._handleBattleUITap = function(tap) {
     if (!this.battleSystem.active) return false
 
-    // ★ 检查是否点击了角色切换按钮
-    const swBtn = this.battleSystem.switchButton
-    if (swBtn) {
-      if (tap.x >= swBtn.x && tap.x <= swBtn.x + swBtn.width &&
-          tap.y >= swBtn.y && tap.y <= swBtn.y + swBtn.height) {
-        this._switchControl()
-        return true
-      }
-    }
+    // ★ 角色切换按钮已移至 field-scene 左上角卡片，由那里点击后调用 _switchControl()
 
     // ★ 当前被控英雄（用于攻击原点与MP判定）
     const ctrl = this._getCurrentControlHero()

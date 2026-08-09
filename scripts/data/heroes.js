@@ -84,7 +84,20 @@ export const HEROES = [
         type: 'magic',
         power: 1.5,
         mpCost: 8,
-        desc: '强力火焰魔法，灼烧敌人3回合',
+        desc: '向前方X轴200距离释放火球，命中敌人造成火焰伤害并灼烧',
+        // ★ 野外战斗AOE配置（可调）：X轴直线范围灼烧
+        aoe: {
+          enabled: true,
+          aoeType: 'lineX',        // X轴直线（弹道飞行）
+          range: 200,              // X轴最大飞行距离（逻辑像素）
+          projectileSpeed: 320,    // 火球飞行速度（逻辑像素/秒）
+          burn: {
+            enabled: true,
+            tickDamage: 6,         // 每跳灼烧伤害
+            duration: 3,           // 灼烧持续（秒）
+            tickInterval: 0.5      // 跳间隔（秒）
+          }
+        },
         statusEffect: {
           type: 'burn',
           duration: 3,
@@ -97,13 +110,47 @@ export const HEROES = [
         type: 'magic',
         power: 1.0,
         mpCost: 6,
-        desc: '冰系攻击，30%概率冻结敌人1回合',
+        desc: '模仿DNF冰刃波动剑，向前方X轴延伸至边界生成冰刃，命中敌人冻结',
+        // ★ 野外战斗AOE配置（可调）：冰刃波动剑，冰刃从起点逐个生成、向X轴边界延伸，再由起点逐个消失
+        aoe: {
+          enabled: true,
+          aoeType: 'iceWave',      // 冰刃波动剑
+          bladeCount: 8,           // 冰刃数量
+          bladeGap: 60,            // 冰刃间距（逻辑像素）
+          bladeWidth: 80,          // 冰刃宽度
+          extendSpeed: 1.0,        // 生成/消失速度倍率（1.0=每 bladeAnimDur 生成一个）
+          freeze: {
+            enabled: true,
+            duration: 2            // 冰冻持续（秒）
+          }
+        },
         statusEffect: {
           type: 'freeze',
           probability: 0.3
         }
       },
-      { id: 'thunder', name: '雷击', type: 'magic', power: 2.0, mpCost: 15, desc: '强力雷电攻击全体', target: 'all' },
+      {
+        id: 'thunder',
+        name: '雷击',
+        type: 'magic',
+        power: 2.0,
+        mpCost: 15,
+        desc: '雷云降下闪电，对范围内敌人无差别攻击，每个敌人最多承受3次雷击并进入感电状态（受击伤害+20%）',
+        // ★ 野外战斗AOE配置（可调）：范围雷击，多次命中 + 感电易伤
+        aoe: {
+          enabled: true,
+          aoeType: 'area',         // 圆形范围
+          radius: 300,             // 作用半径（逻辑像素）
+          strikeCount: 3,          // 每个敌人最多雷击次数
+          duration: 5,             // 雷击持续（秒）
+          strikeInterval: 0.8,     // 每次雷击间隔（秒）
+          electrify: {
+            enabled: true,
+            damageMult: 0.2        // 感电易伤：受击额外伤害比例
+          }
+        },
+        target: 'all'
+      },
       { id: 'mana_shield', name: '魔力护盾', type: 'buff', mpCost: 10, desc: '提升全体防御', effect: 'def_up', turns: 3, value: 0.3 }
     ]
   },
