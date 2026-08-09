@@ -127,6 +127,9 @@ scene._switchControl()
 assert(sys.battleHeroes[0].hero.name === '李小宝', '被控者=李小宝')
 assert(sys.battleHeroes[0].sprite.state === 'idle', '李小宝动画复位 idle')
 assert(sys.battleHeroes[0].hero._aiAttacking === false, '李小宝 AI 标记清除')
+// ★ 角色卡 + 头像同步切换
+assert(scene.charInfoPanel && scene.charInfoPanel.character.id === sys.battleHeroes[0].hero.id,
+  '角色卡切换到李小宝', `卡片显示: ${scene.charInfoPanel && scene.charInfoPanel.character && scene.charInfoPanel.character.name}`)
 
 console.log('\n=== [2] 李小宝移动 ===')
 const lxb0x = scene.playerX, lxb0y = scene.playerY
@@ -223,6 +226,10 @@ for (let i = 0; i < 3; i++) {
   scene._switchControl()
 }
 assert(allOk, '3 次来回切换状态不残留')
+// ★ 3次来回切换后角色卡与当前被控者一致（3次为偶数，回到臻宝）
+//   注意：角色卡显示的是 CharacterState 实例（_refreshCharCard 转换），与 party 普通对象引用不同，比较 id
+assert(scene.charInfoPanel.character.id === sys.battleHeroes[0].hero.id,
+  '来回切换后角色卡同步', `被控=${sys.battleHeroes[0].hero.name} 卡片=${scene.charInfoPanel.character.name}`)
 
 console.log('\n=== [9] 被控者普攻时朝向目标 ===')
 const ctrlNow = sys.battleHeroes[0]

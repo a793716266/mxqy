@@ -25,6 +25,13 @@ export class CharacterInfoPanel {
   show() {
     this.visible = true
   }
+
+  /**
+   * ★ 切换面板显示的角色（角色切换控制后更新卡片/头像）
+   */
+  setCharacter(character) {
+    this.character = character
+  }
   
   /**
    * 隐藏面板
@@ -49,26 +56,26 @@ export class CharacterInfoPanel {
     
     const cardWidth = 180 * this.dpr
     const cardHeight = 100 * this.dpr
-    
+
     // 背景
     this.ctx.fillStyle = 'rgba(0, 0, 0, 0.75)'
     this._roundRect(x, y, cardWidth, cardHeight, 10 * this.dpr)
     this.ctx.fill()
-    
+
     // 边框
     this.ctx.strokeStyle = 'rgba(255, 255, 255, 0.3)'
     this.ctx.lineWidth = 2
     this._roundRect(x, y, cardWidth, cardHeight, 10 * this.dpr)
     this.ctx.stroke()
-    
+
     // 角色头像框
     const avatarSize = 60 * this.dpr
     const avatarX = x + 15 * this.dpr
     const avatarY = y + 20 * this.dpr
-    
+
     this.ctx.fillStyle = 'rgba(255, 255, 255, 0.2)'
     this.ctx.fillRect(avatarX, avatarY, avatarSize, avatarSize)
-    
+
     // 角色头像（如果有）
     const avatarImg = this.game.assets.get(`HERO_${char.id.toUpperCase()}`)
     if (avatarImg) {
@@ -80,34 +87,34 @@ export class CharacterInfoPanel {
       this.ctx.textBaseline = 'middle'
       this.ctx.fillText('🐱', avatarX + avatarSize / 2, avatarY + avatarSize / 2)
     }
-    
+
     // 角色名称和等级
     this.ctx.font = `bold ${16 * this.dpr}px sans-serif`
     this.ctx.fillStyle = '#ffffff'
     this.ctx.textAlign = 'left'
     this.ctx.textBaseline = 'top'
     this.ctx.fillText(char.name, avatarX + avatarSize + 10 * this.dpr, avatarY)
-    
+
     // 等级
     this.ctx.font = `${14 * this.dpr}px sans-serif`
     this.ctx.fillStyle = '#ffd700'
     this.ctx.fillText(`Lv.${char.level}`, avatarX + avatarSize + 10 * this.dpr, avatarY + 22 * this.dpr)
-    
+
     // 经验条
     const expBarX = avatarX + avatarSize + 10 * this.dpr
     const expBarY = avatarY + 44 * this.dpr
     const expBarWidth = 85 * this.dpr
     const expBarHeight = 8 * this.dpr
-    
+
     // 经验条背景
     this.ctx.fillStyle = 'rgba(0, 0, 0, 0.5)'
     this.ctx.fillRect(expBarX, expBarY, expBarWidth, expBarHeight)
-    
-    // 经验条进度
-    const expProgress = char.getExpProgress()
+
+    // 经验条进度（★ 防御：char 可能是 party 普通对象无 getExpProgress 方法）
+    const expProgress = (typeof char.getExpProgress === 'function') ? char.getExpProgress() : 0
     this.ctx.fillStyle = '#4caf50'
     this.ctx.fillRect(expBarX, expBarY, expBarWidth * expProgress, expBarHeight)
-    
+
     // 经验文字
     this.ctx.font = `${10 * this.dpr}px sans-serif`
     this.ctx.fillStyle = 'rgba(255, 255, 255, 0.8)'
@@ -117,22 +124,22 @@ export class CharacterInfoPanel {
       expBarX + expBarWidth / 2,
       expBarY + expBarHeight + 2 * this.dpr
     )
-    
+
     // HP条
     const hpBarX = x + 15 * this.dpr
     const hpBarY = y + cardHeight - 25 * this.dpr
     const hpBarWidth = cardWidth - 30 * this.dpr
     const hpBarHeight = 10 * this.dpr
-    
+
     // HP条背景
     this.ctx.fillStyle = 'rgba(0, 0, 0, 0.5)'
     this.ctx.fillRect(hpBarX, hpBarY, hpBarWidth, hpBarHeight)
-    
+
     // HP条进度
     const hpProgress = char.hp / char.maxHp
     this.ctx.fillStyle = this._getHpColor(hpProgress)
     this.ctx.fillRect(hpBarX, hpBarY, hpBarWidth * hpProgress, hpBarHeight)
-    
+
     // HP文字
     this.ctx.font = `${10 * this.dpr}px sans-serif`
     this.ctx.fillStyle = '#ffffff'
@@ -142,7 +149,7 @@ export class CharacterInfoPanel {
       hpBarX + hpBarWidth / 2,
       hpBarY + hpBarHeight / 2 + 3 * this.dpr
     )
-    
+
     return { x, y, width: cardWidth, height: cardHeight }
   }
   
@@ -160,7 +167,7 @@ export class CharacterInfoPanel {
     
     // 面板尺寸
     const panelWidth = 280 * this.dpr
-    const panelHeight = 400 * this.dpr
+    const panelHeight = 440 * this.dpr   // 含 BUFF 状态列表
     const panelX = (screenWidth - panelWidth) / 2
     const panelY = (screenHeight - panelHeight) / 2
     
@@ -219,7 +226,8 @@ export class CharacterInfoPanel {
     this.ctx.fillStyle = 'rgba(0, 0, 0, 0.5)'
     this.ctx.fillRect(leftMargin, offsetY, expBarWidth, expBarHeight)
     
-    const expProgress = char.getExpProgress()
+    // ★ 防御：char 可能是 party 普通对象无 getExpProgress 方法
+    const expProgress = (typeof char.getExpProgress === 'function') ? char.getExpProgress() : 0
     this.ctx.fillStyle = '#4caf50'
     this.ctx.fillRect(leftMargin, offsetY, expBarWidth * expProgress, expBarHeight)
     offsetY += lineHeight
@@ -232,27 +240,36 @@ export class CharacterInfoPanel {
     this.ctx.stroke()
     offsetY += 15 * this.dpr
     
-    // 属性列表
+    // 属性列表（★ 攻击/防御显示含 BUFF 加成后的数值，有 BUFF 时金色高亮）
     this.ctx.font = `bold ${16 * this.dpr}px sans-serif`
     this.ctx.fillStyle = '#ffffff'
     this.ctx.fillText('属性', leftMargin, offsetY)
     offsetY += lineHeight
-    
+
+    const buffs = (char._buffs || []).filter(b => b._active && b._remaining > 0)
+    const hasAtkBuff = buffs.some(b => b.type === 'atk_up' || b.type === 'atk_up_self')
+    const hasDefBuff = buffs.some(b => b.type === 'def_up' || b.type === 'def_up_self')
+    let atkVal = char.atk || 0
+    let defVal = char.def || 0
+    if (typeof char._getAtkWithBuff === 'function') atkVal = char._getAtkWithBuff()
+    if (typeof char._getDefWithBuff === 'function') defVal = char._getDefWithBuff()
+
     const stats = [
-      { name: '生命值', value: char.maxHp, icon: '❤️', color: '#ff5555' },
-      { name: '魔法值', value: char.maxMp, icon: '💙', color: '#5555ff' },
-      { name: '攻击力', value: char.atk, icon: '⚔️', color: '#ff8800' },
-      { name: '防御力', value: char.def, icon: '🛡️', color: '#00aaff' },
-      { name: '速度', value: char.spd, icon: '⚡', color: '#ffdd00' }
+      { name: '生命值', value: char.maxHp, icon: '❤️', color: '#ff5555', buffed: false },
+      { name: '魔法值', value: char.maxMp, icon: '💙', color: '#5555ff', buffed: false },
+      { name: '攻击力', value: atkVal, icon: '⚔️', color: '#ff8800', buffed: hasAtkBuff },
+      { name: '防御力', value: defVal, icon: '🛡️', color: '#00aaff', buffed: hasDefBuff },
+      { name: '速度', value: char.spd, icon: '⚡', color: '#ffdd00', buffed: false }
     ]
     
     this.ctx.font = `${14 * this.dpr}px sans-serif`
     for (const stat of stats) {
       this.ctx.fillStyle = '#a0a0a0'
       this.ctx.fillText(`${stat.icon} ${stat.name}`, leftMargin, offsetY)
-      this.ctx.fillStyle = stat.color
+      // 有 BUFF 时数值金色 + ▲ 标记
+      this.ctx.fillStyle = stat.buffed ? '#ffd700' : stat.color
       this.ctx.textAlign = 'right'
-      this.ctx.fillText(stat.value.toString(), panelX + panelWidth - 20 * this.dpr, offsetY)
+      this.ctx.fillText(stat.value.toString() + (stat.buffed ? '▲' : ''), panelX + panelWidth - 20 * this.dpr, offsetY)
       this.ctx.textAlign = 'left'
       offsetY += lineHeight * 0.9
     }
@@ -280,6 +297,28 @@ export class CharacterInfoPanel {
     
     this.ctx.fillStyle = '#5555ff'
     this.ctx.fillText(`💙 MP: ${char.mp} / ${char.maxMp}`, leftMargin, offsetY)
+    offsetY += lineHeight * 0.9
+
+    // ★ BUFF 状态列表（开 BUFF 后显示：名称 + 效果 + 剩余秒数）
+    if (buffs.length > 0) {
+      this.ctx.font = `${14 * this.dpr}px sans-serif`
+      for (const b of buffs) {
+        const hex = this._rgbaToHex(b._color)
+        const buffLabel = b.type === 'def_up' ? '防御提升' :
+                          b.type === 'def_up_self' ? '金盾防御' :
+                          b.type === 'atk_up' ? '攻击提升' :
+                          b.type === 'atk_up_self' ? '狂暴攻击' :
+                          b.type === 'spd_up' ? '速度提升' : '增益'
+        this.ctx.fillStyle = hex
+        this.ctx.fillText(`✦ ${buffLabel}`, leftMargin, offsetY)
+        // 剩余秒数（右侧）
+        this.ctx.textAlign = 'right'
+        this.ctx.fillStyle = '#ffffff'
+        this.ctx.fillText(`${Math.ceil(b._remaining)}s`, panelX + panelWidth - 20 * this.dpr, offsetY)
+        this.ctx.textAlign = 'left'
+        offsetY += lineHeight * 0.9
+      }
+    }
     
     return {
       x: panelX,
@@ -302,6 +341,17 @@ export class CharacterInfoPanel {
     if (progress > 0.6) return '#4caf50'
     if (progress > 0.3) return '#ff9800'
     return '#f44336'
+  }
+
+  /**
+   * 把 rgba(...) 转成 hex（用于 buff 图标颜色）
+   */
+  _rgbaToHex(c) {
+    if (!c) return '#5f9fff'
+    const m = c.match(/rgba\((\d+),\s*(\d+),\s*(\d+)/)
+    if (!m) return c
+    const r = parseInt(m[1]), g = parseInt(m[2]), b = parseInt(m[3])
+    return '#' + [r, g, b].map(v => v.toString(16).padStart(2, '0')).join('')
   }
   
   /**

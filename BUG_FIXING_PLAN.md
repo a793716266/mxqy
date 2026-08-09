@@ -2,6 +2,26 @@
 
 ## 📅 更新日志
 
+### 2026-08-09（更新2）
+
+**fix: 角色卡/信息面板 BUFF 显示、切换崩溃、清理调试代码**
+
+- **切换角色后角色卡 + 头像跟随切换**：`charInfoPanel` 新增 `setCharacter()`；`_switchControl` 切换（手动+阵亡自动）后调用 `_refreshCharCard` 刷新卡片
+- **修复多切换崩溃**（`TypeError: char.getExpProgress is not a function`）：`battleHeroes` 里的 hero 是 party 普通对象（无方法），`_refreshCharCard` 按 id 从 `charStateManager` 取 CharacterState 实例传给面板；`renderMiniCard`/`renderDetailPanel` 的 `getExpProgress` 加防御（`typeof === 'function'` 判断）
+- **BUFF 增益显示在角色信息面板**（点击角色卡弹出的 `renderDetailPanel`）：
+  - 属性列表攻击力/防御力显示含 BUFF 加成后的实际值（`_getAtkWithBuff`/`_getDefWithBuff`），有 BUFF 时金色 + ▲
+  - 状态区域新增 BUFF 列表（名称 + 剩余秒数倒计时）
+  - 面板高度 400→440 容纳 BUFF 列表
+  - 左上角小卡片（renderMiniCard）保持原样，不显示 BUFF（按用户要求）
+- **清除调试代码**：删除进地图时 `game.data.remove()` 强制清存档的临时代码（`game.data` 无 `remove` 方法导致报错 `_this.game.data.remove is not a function`）
+- **关闭碰撞红色区域调试显示**：注释掉 `_renderObstacles(ctx)` 调用
+- **验证脚本**：`repro_switch_crash.mjs`（多次切换崩溃回归）、`sequence_test.mjs` 增加角色卡同步断言、`verify_skills.mjs` 增加角色信息面板 BUFF 显示 + 攻防数值随 BUFF 提升断言
+- **修改文件**：
+  - `scripts/scenes/field-scene.js`：`_refreshCharCard`（CharacterState 转换 + buffs 同步 + 攻防计算挂载）、碰撞调试关闭、清存档调试删除
+  - `scripts/systems/field-battle-system.js`：`_switchControl` 切换后刷新角色卡、buff 释放后刷新角色卡
+  - `scripts/ui/character-info-panel.js`：`setCharacter`、`renderDetailPanel` BUFF 列表 + 攻防数值含 BUFF、`getExpProgress` 防御
+- **状态**：✅ 已通过 Babel 语法检查 + 139 项自动化断言（5 个验证脚本全绿）
+
 ### 2026-08-09（更新）
 
 **feat: 野外战斗角色切换控制 + 李小宝技能体系 + BUFF 粒子效果（多项）**

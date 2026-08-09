@@ -229,7 +229,8 @@ scene._playerAttackMonster(null, thunder)
 assert(sys.skillProcesses.length === 1 && sys.skillProcesses[0].type === 'thunder', '雷击注册过程')
 // 感电状态立即挂上
 const elecMonsters = scene.mapMonsters.filter(m => m.statusEffects && m.statusEffects.some(e => e.type === 'electrify'))
-assert(elecMonsters.length === 3, '3只怪都挂上感电状态')
+console.log(`  [diag] mapMonsters=${scene.mapMonsters.length}, 感电=${elecMonsters.length}, alive=${scene.mapMonsters.filter(m=>m.alive).length}`)
+assert(elecMonsters.length === 3, '3只怪都挂上感电状态', `感电=${elecMonsters.length}`)
 // 驱动雷击（3次 * 0.8s = 2.4s）
 for (let f = 0; f < 180; f++) scene.update(1/60)   // 3s
 const aliveMonsters = scene.mapMonsters.filter(m => m.alive)
@@ -428,6 +429,76 @@ for (let f = 0; f < 500; f++) scene.update(1/60)
 const finalParticles = sys.buffParticles.filter(p => p.life > 0).length
 console.log(`  buff到期后剩余粒子: ${finalParticles}`)
 assert(finalParticles < 10, 'buff到期后粒子基本消失', `剩余=${finalParticles}`)
+
+// ==================== 测试9：角色卡 BUFF 状态显示 ====================
+console.log('\n=== 测试9: 角色卡 BUFF 状态显示 ===')
+// 释放魔力护盾后，角色卡应显示 BUFF（_refreshCharCard 被调用，CharacterState 挂上 _buffs）
+sys.battleHeroes.forEach(bh => { bh.hero._buffs = []; bh.hero.def = 10 })
+scene._refreshCharCard(sys.battleHeroes[0].hero)   // 重置角色卡
+assert(!scene.charInfoPanel.character._buffs || scene.charInfoPanel.character._buffs.length === 0,
+  '前置: 角色卡无BUFF')
+scene._playerAttackMonster(null, manaShield)
+// _refreshCharCard 应把 buffs 同步到角色卡显示对象
+assert(scene.charInfoPanel.character._buffs && scene.charInfoPanel.character._buffs.length > 0,
+  '开BUFF后角色卡显示BUFF状态', `buffs=${scene.charInfoPanel.character._buffs.length}`)
+assert(scene.charInfoPanel.character._buffs[0].type === 'def_up', '角色卡BUFF类型正确')
+assert(scene.charInfoPanel.character._buffs[0]._color && scene.charInfoPanel.character._buffs[0]._color.includes('rgba'),
+  '角色卡BUFF带颜色（图标可着色）')
+// 渲染卡片不崩溃 + 绘制了BUFF图标（fillText）
+const cardCtxCalls = []
+const cardCtx = new Proxy({}, {
+  get(t, p) {
+    if (p === 'canvas' || p === 'measureText') return undefined
+    if (p === 'createLinearGradient' || p === 'createRadialGradient') return () => ({ addColorStop() {} })
+    return (...a) => { cardCtxCalls.push(p); if (p === 'fillText') cardCtxCalls.push(a[0]) }
+  },
+  set() { return true }
+})
+scene.charInfoPanel.ctx = cardCtx
+scene.charInfoPanel.renderMiniCard(cardCtx, 20, 80)
+assert(cardCtxCalls.includes('fillText'), '角色卡绘制了文字')
+// ★ 卡片本身不显示 BUFF（用户要求：BUFF 显示在弹出角色信息面板 renderDetailPanel）
+
+// ★ 弹出的角色信息面板（renderDetailPanel）：显示 BUFF 状态 + 攻防数值随 BUFF 提升
+scene.charInfoPanel.visible = true
+const panelCtxCalls = []
+const panelCtx = new Proxy({}, {
+  get(t, p) {
+    if (p === 'canvas' || p === 'measureText') return undefined
+    if (p === 'createLinearGradient' || p === 'createRadialGradient') return () => ({ addColorStop() {} })
+    return (...a) => { panelCtxCalls.push(p); if (p === 'fillText') panelCtxCalls.push(a[0]) }
+  },
+  set() { return true }
+})
+scene.charInfoPanel.ctx = panelCtx
+scene.charInfoPanel.renderDetailPanel()
+// BUFF 状态文字（防御提升/攻击提升）
+const hasBuffLabel = panelCtxCalls.some(c => typeof c === 'string' && (c.includes('防御提升') || c.includes('攻击提升') || c.includes('金盾') || c.includes('狂暴')))
+assert(hasBuffLabel, '角色信息面板显示BUFF状态', `文字: ${panelCtxCalls.filter(c => typeof c === 'string').filter(s => s.includes('提升') || s.includes('金盾') || s.includes('狂暴')).join(',')}`)
+
+// ★ 攻防数值随 BUFF 提升（用户核心诉求：BUFF 增益体现在角色卡数值上）
+const bhHero0 = sys.battleHeroes[0].hero
+bhHero0.def = 10
+bhHero0._buffs = []
+scene._refreshCharCard(bhHero0)
+const defBefore = scene.charInfoPanel.character._getDefWithBuff()
+assert(defBefore === 10, '前置: 无BUFF时防御10', `实际: ${defBefore}`)
+// 释放魔力护盾（全体防御+30%）
+scene._playerAttackMonster(null, manaShield)
+const defAfter = scene.charInfoPanel.character._getDefWithBuff()
+assert(defAfter === 13, '魔力护盾后角色卡防御提升 10→13', `实际: ${defAfter}`)
+// 战吼（攻击+30%）
+const warCrySkill = lixiaobaoCfg.skills.find(s => s.id === 'war_cry')
+if (warCrySkill) {
+  sys.battleHeroes.forEach(bh => { bh.hero._buffs = []; bh.hero.def = 10 })
+  bhHero0.atk = 20
+  bhHero0._buffs = []
+  scene._refreshCharCard(bhHero0)
+  const atkBefore = scene.charInfoPanel.character._getAtkWithBuff()
+  scene._playerAttackMonster(null, warCrySkill)
+  const atkAfter = scene.charInfoPanel.character._getAtkWithBuff()
+  assert(atkBefore === 20 && atkAfter === 26, '战吼后角色卡攻击提升 20→26', `实际: ${atkBefore}→${atkAfter}`)
+}
 
 console.log(`\n=== 结果: ${passed} 通过, ${failed} 失败 ===`)
 process.exit(failed === 0 ? 0 : 1)

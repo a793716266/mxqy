@@ -135,18 +135,6 @@ export class FieldScene extends SceneBase {
       showBattleUI: false     // 是否显示战斗UI
     }
 
-    // ★ 强制清除旧存档（避免 NaN 数据影响测试）
-    // TODO: 测试通过后删除此代码
-    try {
-      const saved = this.game.data.get(`fieldMonsters_${this.areaId}`)
-      if (saved && Array.isArray(saved)) {
-        this.game.data.remove(`fieldMonsters_${this.areaId}`)
-        console.warn(`[Field] 已强制清除旧存档: fieldMonsters_${this.areaId}`)
-      }
-    } catch (e) {
-      console.error('[Field] 清除旧存档失败:', e)
-    }
-
     // 地图怪物（尝试恢复保存的状态，每个副本独立保存）
     const savedMonsters = this.game.data.get(`fieldMonsters_${this.areaId}`)
     console.log(`[Field] 尝试恢复区域 ${this.areaId} 的怪物状态, 已保存: ${!!savedMonsters}`)
@@ -2231,7 +2219,7 @@ baseRadius: 50 * this.dpr,    // 底座半径（缩小）
           //   直接 this._switchControl() 调用即可，this 即为 field-scene 实例
           if (this.battleSystem && this.battleSystem.active && typeof this._switchControl === 'function') {
             this._switchControl()
-            // ★ 显示切换提示（用当前被控角色名，而非固定的主角名）
+            // ★ 显示切换提示（用当前被控角色名；角色卡/头像已在 _switchControl 内同步更新）
             const ctrl = this.battleSystem.battleHeroes && this.battleSystem.battleHeroes[0]
             this.switchTipName = ctrl ? ctrl.hero.name : ''
             this.showSwitchTip = true
@@ -2247,7 +2235,7 @@ baseRadius: 50 * this.dpr,    // 底座半径（缩小）
         }
       }
     }
-    
+
     // 返回按钮（左上角）
     const backBtn = { x: 20 * this.dpr, y: 20 * this.dpr, w: 90 * this.dpr, h: 40 * this.dpr }
     if (tap.x >= backBtn.x && tap.x <= backBtn.x + backBtn.w &&
@@ -2287,6 +2275,34 @@ baseRadius: 50 * this.dpr,    // 底座半径（缩小）
    * 碰撞检测 — 使用 CollisionEngine（统一脚底碰撞）
    * 所有地图场景共用同一套碰撞参数，不再各自实现
    */
+  /**
+   * ★ 切换控制后刷新左上角角色卡（由 _switchControl 调用，手动切换和阵亡自动切换都走这里）
+   * 注意：hero 可能是 party 里的普通对象（无 getExpProgress），
+   * 必须转成 CharacterState 实例传给面板，否则 renderMiniCard 崩溃
+   */
+  _refreshCharCard(hero) {
+    if (!hero || !this.charInfoPanel) return
+    // 按 id 从角色状态管理器取 CharacterState 实例
+    const cs = charStateManager.getAllCharacters().find(c => c.id === hero.id)
+    const target = cs || hero
+    // ★ BUFF 挂在 battleHeroes 的 hero（party 普通对象）上，需同步到卡片显示对象，
+    //   否则角色卡看不到 BUFF 状态
+    if (cs) {
+      if (cs._buffs !== hero._buffs) {
+        cs._buffs = hero._buffs || []
+      }
+    } else {
+      if (target._buffs !== hero._buffs) {
+        target._buffs = hero._buffs || []
+      }
+    }
+    // ★ 挂载含 BUFF 加成的攻防计算（角色卡数值随 BUFF 提升）
+    const self = this
+    target._getAtkWithBuff = function() { return self._getHeroAtk(hero) }
+    target._getDefWithBuff = function() { return self._getHeroDef(hero) }
+    this.charInfoPanel.setCharacter(target)
+  }
+
   _checkObstacleCollision() {
     return this._collisionEngine.checkStaticCollision(this.playerX, this.playerY)
   }
@@ -2982,8 +2998,8 @@ baseRadius: 50 * this.dpr,    // 底座半径（缩小）
       this._renderMinimap(ctx)
     }
 
-    // 调试：显示碰撞区域（临时开启用于排查问题）
-    this._renderObstacles(ctx)
+    // 调试：显示碰撞区域（临时开启用于排查问题）——已按需求关闭
+    // this._renderObstacles(ctx)
 
     // ★ 新增：渲染世界血条/蓝条（主角+队友，非战斗也始终显示）
     if (this.battleSystem) {

@@ -139,6 +139,13 @@ export function installFieldBattleSystem(FieldSceneClass) {
       this._rebuildSkillButtons(sys.attackButton.x, sys.attackButton.y, sys.attackButton.width, 14 * this.dpr)
     }
 
+    // ★ 左上角角色卡 + 头像同步切换为当前被控英雄
+    //   注意：角色卡由 field-scene 的 tap 处理统一更新（那里能拿到 CharacterState 实例），
+    //   阵亡自动切换路径则通过 this._refreshCharCard 钩子触发（field-scene 实现）
+    if (nxt && nxt.hero && typeof this._refreshCharCard === 'function') {
+      this._refreshCharCard(nxt.hero)
+    }
+
     console.log(`[FieldBattle] 切换控制：${nxt.hero.name}`)
   }
 
@@ -501,6 +508,10 @@ export function installFieldBattleSystem(FieldSceneClass) {
       }
       // ★ 应用 buff 效果（def_up / def_up_self 等）
       this._applyHeroBuff(skill, mainHero)
+      // ★ 刷新左上角角色卡，立即显示 BUFF 状态
+      if (typeof this._refreshCharCard === 'function') {
+        this._refreshCharCard(mainHero)
+      }
       return
     }
 
