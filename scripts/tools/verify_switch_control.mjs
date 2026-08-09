@@ -182,12 +182,24 @@ scene._fieldUpdateProjectiles(1/60)
 assert(newCtrl.hero.hp < zhenbaoLixiaobaoHp, '弹道命中扣被控者(李小宝)的血', `实际: ${newCtrl.hero.hp} (前 ${zhenbaoLixiaobaoHp})`)
 assert(sys.projectiles.length === 0, '弹道命中后被移除')
 
-// ============ 预警区域命中扣被控者血 ============
+// ============ 预警区域命中扣被控者血（跳跃落地结算） ============
 console.log('\n[实战] 预警区域命中扣被控者血：')
 const hpBeforeZone = newCtrl.hero.hp
-sys.warningZones = [{ x: 800, y: 700, r: 60, atk: 10, power: 1, life: 1, timer: 0 }]
+// 预警到点（timer=0）→ 设置怪物跳跃 → 跳跃落地时结算伤害
+const jumpMonster = {
+  id: 'jz1', name: '跳怪', enemyId: 'wild_cat', alive: true,
+  x: 100, y: 100, hp: 500, maxHp: 500, def: 5, atk: 10, level: 1,
+  attackCDTimer: 0, attackInterval: 2000, skillCDs: {},
+  _jumpWarn: true
+}
+scene.mapMonsters = [jumpMonster]
+sys.warningZones = [{ x: 800, y: 700, r: 60, atk: 10, power: 1, life: 1, timer: 0, monsterRef: jumpMonster }]
 scene._fieldUpdateWarningZones(1/60)
-assert(newCtrl.hero.hp < hpBeforeZone, '预警命中扣被控者(李小宝)的血', `实际: ${newCtrl.hero.hp} (前 ${hpBeforeZone})`)
+// zone 到点后怪物应进入跳跃状态（非瞬移）
+assert(jumpMonster._jumpState !== null, '预警到点设置跳跃状态（非瞬移）')
+// 落点在玩家位置（被控者），跳完后结算伤害
+for (let f = 0; f < 40; f++) scene._updateMonsterJumps(1/60)
+assert(newCtrl.hero.hp < hpBeforeZone, '跳跃落地命中扣被控者(李小宝)的血', `实际: ${newCtrl.hero.hp} (前 ${hpBeforeZone})`)
 
 console.log(`\n结果: ${passed} 通过, ${failed} 失败`)
 process.exit(failed === 0 ? 0 : 1)

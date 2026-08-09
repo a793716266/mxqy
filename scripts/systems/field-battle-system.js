@@ -30,7 +30,10 @@ export function installFieldBattleSystem(FieldSceneClass) {
       currentControlIndex: 0,  // 当前被玩家控制的参战英雄索引（0=主角）
       battleHeroes: [],         // 参战英雄列表：[{hero, sprite, isFollower, getPos()}]
       skillProcesses: [],       // 英雄AOE技能过程（冰刃/雷击）
-      buffShockwaves: []        // buff 生效冲击波（视觉粒子）
+      buffShockwaves: [],       // buff 生效冲击波（视觉粒子）
+      castLockTimer: 0,         // 施法锁定计时（BUFF释放期间锁摇杆）
+      castAxisLockTimer: 0,     // 施法轴锁定计时（普攻/伤害技能期间限制Y轴移动）
+      pendingProjectiles: []    // 待发射投射物（延迟到攻击动画完成后才真正飞出）
     }
     console.log('[FieldBattle] 战斗系统初始化完成')
   }
@@ -188,14 +191,22 @@ export function installFieldBattleSystem(FieldSceneClass) {
         this.game.showToast('战斗胜利！')
       }
     } else {
-      // 战斗失败，玩家死亡
-      // 重置玩家HP
-      this.party.forEach(hero => {
-        hero.hp = hero.maxHp
-      })
+      // 战斗失败，全部英雄阵亡 → 回城镇（★ 保持死亡状态返回，到城镇后再复活）
       if (this.game.showToast) {
-        this.game.showToast('战斗失败，已恢复HP')
+        this.game.showToast('战斗失败，返回城镇')
       }
+      // ★ 标记：到城镇后需要复活全队（不在野外先复活，否则回城前角色就已站起）
+      if (this.game && this.game.data && typeof this.game.data.set === 'function') {
+        this.game.data.set('needReviveOnTown', true)
+      }
+      // ★ 全部阵亡后回到城镇（保持死亡状态）
+      setTimeout(() => {
+        if (this.game && this.game.changeScene) {
+          this.game.changeScene('town')
+        } else if (this.game && this.game.sceneManager) {
+          this.game.sceneManager.changeScene('town')
+        }
+      }, 800)
     }
 
     // 重置战斗系统
@@ -209,6 +220,9 @@ export function installFieldBattleSystem(FieldSceneClass) {
     this.battleSystem.skillProcesses = []
     this.battleSystem.buffShockwaves = []
     this.battleSystem.buffParticles = []
+    this.battleSystem.castLockTimer = 0
+    this.battleSystem.castAxisLockTimer = 0
+    this.battleSystem.pendingProjectiles = []
 
     // 清理怪物状态效果与冰冻标记
     if (this.mapMonsters) {
@@ -300,6 +314,7 @@ export function installFieldBattleSystem(FieldSceneClass) {
         text: skill.name,
         skill: skill,
         cooldown: 0,
+        cooldownDelay: 0,   // ★ BUFF 技能延迟冷却（等 BUFF 消失后开始计 CD）
         active: true,
         index: index
       })
@@ -328,6 +343,15 @@ export function installFieldBattleSystem(FieldSceneClass) {
     // 1.2 更新技能按钮冷却（★ 修复：之前这里漏了递减，导致按钮永久灰色）
     if (this.battleSystem.skillButtons && this.battleSystem.skillButtons.length > 0) {
       for (const sb of this.battleSystem.skillButtons) {
+        // ★ BUFF 技能：先递减 cooldownDelay（=BUFF 持续时长），BUFF 消失后才开始计冷却
+        if (sb.cooldownDelay > 0) {
+          sb.cooldownDelay = Math.max(0, sb.cooldownDelay - dt)
+          // delay 刚归 0：此刻 BUFF 消失，正式开始冷却（cooldown = cooldownMax 开始递减）
+          if (sb.cooldownDelay === 0 && sb.cooldown === 0) {
+            sb.cooldown = sb.cooldownMax || ((sb.skill.cooldown || 3) * 1000)
+          }
+          continue
+        }
         if (sb.cooldown > 0) {
           sb.cooldown = Math.max(0, sb.cooldown - dt * 1000)
         }
@@ -414,6 +438,18 @@ export function installFieldBattleSystem(FieldSceneClass) {
     // 4.21 ★ 英雄 BUFF 计时更新（魔力护盾防御提升等）
     this._updateHeroBuffs(dt)
 
+    // 4.212 ★ MP 不足抖动提示更新
+    this._updateMpShake(dt)
+
+    // 4.211 ★ 施法锁定计时（BUFF 释放期间锁摇杆）
+    if (this.battleSystem.castLockTimer > 0) {
+      this.battleSystem.castLockTimer -= dt
+    }
+    // 4.212 ★ 施法轴锁定计时（普攻/伤害技能释放期间限制 Y 轴移动）
+    if (this.battleSystem.castAxisLockTimer > 0) {
+      this.battleSystem.castAxisLockTimer -= dt
+    }
+
     // 4.22 ★ buff 生效冲击波衰减更新
     this._updateBuffShockwaves(dt)
 
@@ -422,6 +458,12 @@ export function installFieldBattleSystem(FieldSceneClass) {
 
     // 4.4 ★ 英雄弹道更新（火球术飞行命中）
     this._updateHeroProjectiles(dt)
+
+    // 4.41 ★ 待发射投射物更新（攻击动画完成后才真正飞出）
+    this._updatePendingProjectiles(dt)
+
+    // 4.5 ★ 怪物跳跃动画更新（抛物线飞行 + 落地伤害）
+    this._updateMonsterJumps(dt)
 
     // 5. 更新怪物攻击（攻击最近的参战英雄）
     this._updateMonsterAttack(dt)
@@ -468,7 +510,23 @@ export function installFieldBattleSystem(FieldSceneClass) {
       }
     }
 
+    // ★★ MP 不足检查：技能需要 MP 但不够时，提示 + 角色抖动，不释放技能
+    if (skill && (skill.mpCost || 0) > 0 && (mainHero.mp || 0) < (skill.mpCost || 0)) {
+      if (this.game && this.game.showToast) {
+        this.game.showToast('MP不足')
+      }
+      // 角色抖动提示
+      if (typeof this._triggerMpShake === 'function') {
+        this._triggerMpShake(ctrl)
+      }
+      return
+    }
+
     if (sprite) {
+      // ★ 普攻/伤害技能释放：施法期间（0.7s）移动限制为 X 轴（Y 锁定）
+      if (!isBuff) {
+        this.battleSystem.castAxisLockTimer = 0.7
+      }
       sprite.state = animState
       sprite.animFrame = 0
       sprite.animTimer = 0
@@ -496,14 +554,20 @@ export function installFieldBattleSystem(FieldSceneClass) {
 
     // buff类技能（无目标）：只扣 MP + 播放动画，不造成伤害
     if (isBuff) {
+      // ★ 施法锁定：BUFF 释放期间（0.8s）锁定摇杆移动（不能移动）
+      this.battleSystem.castLockTimer = 0.8
       mainHero.mp = Math.max(0, mainHero.mp - (skill.mpCost || 0))
-      // ★ 技能释放后设置按钮冷却
+      // ★ BUFF 技能：不立即进入冷却，等 BUFF 效果消失后才开始计冷却
+      //   释放时记录 BUFF 持续时长 → cooldownDelay（递减完成后才开始 cooldown）
+      const cdSec = skill.cooldown || 3
+      const buffDur = (skill.duration != null) ? skill.duration : ((skill.turns || 1) * 2)
       if (this.battleSystem.skillButtons) {
         const sb = this.battleSystem.skillButtons.find(b => b.skill === skill)
         if (sb) {
-          const cdSec = skill.cooldown || 3
-          sb.cooldown = cdSec * 1000
-          sb.cooldownMax = sb.cooldown
+          sb.cooldown = 0
+          sb.cooldownMax = cdSec * 1000
+          sb.cooldownDelay = buffDur   // ★ 先等 BUFF 结束（delay 递减），之后才开始 cooldown
+          sb.cooldownDelayMax = buffDur  // ★ 记录 delay 上限，用于渲染剩余比例
         }
       }
       // ★ 应用 buff 效果（def_up / def_up_self 等）
@@ -532,7 +596,16 @@ export function installFieldBattleSystem(FieldSceneClass) {
       const cpos = ctrl.getPos()
       const castDir = this.facingLeft ? -1 : 1   // 施法方向（X轴）
       if (aoed.aoeType === 'lineX') {
-        this._castFireballAoE(skill, cpos, castDir, mainHero)
+        // ★ 火球延迟发射：等攻击动画（1.0s）中后段（0.55s）才真正生成弹道，动作与飞出协调
+        this._scheduleProjectile({
+          delay: 0.55,
+          spawn: () => {
+            // 重新取施法者当前坐标（延迟后角色可能已微动）
+            const c2 = this._getCurrentControlHero()
+            const p2 = c2 ? c2.getPos() : cpos
+            this._castFireballAoE(skill, { x: p2.x, y: p2.y }, this.facingLeft ? -1 : 1, mainHero)
+          }
+        })
       } else if (aoed.aoeType === 'iceWave') {
         this._castIceWaveAoE(skill, cpos, castDir, mainHero)
       } else if (aoed.aoeType === 'area') {
@@ -541,13 +614,73 @@ export function installFieldBattleSystem(FieldSceneClass) {
       return
     }
 
-    // 以下为有目标的攻击/技能逻辑
-    // 无目标时只播动画，不造成伤害（普攻仍设 CD 防止连点）
-    if (!monster) {
-      if (!skill) {
-        this.battleSystem.playerAttackCD = this.battleSystem.playerAttackInterval
+    // ★ 普攻（无技能）：按角色类型区分
+    //   - 近战（warrior 臻宝）：即时近战伤害（挥砍命中，不发射投射物）
+    //   - 远程（mage 李小宝）：发射法杖冲击波投射物，且等抬手动作完成（0.5s）后才飞出
+    if (!skill) {
+      this.battleSystem.playerAttackCD = this.battleSystem.playerAttackInterval
+      const isRanged = (mainHero.role === 'mage') || (mainHero.role === 'archer') || (mainHero.role === 'assassin')
+      if (!isRanged) {
+        // ── 近战普攻：目标在攻击距离内则即时结算伤害（延迟到挥砍命中帧） ──
+        if (!monster) return   // 近战无目标只播动画
+        // 预计算伤害 + 延迟命中（挥砍动画中段 0.25s 结算）
+        const baseDmg = Math.max(1, this._getHeroAtk(mainHero) - Math.floor(monster.def * 0.5))
+        const meleeCrit = Math.random() < (mainHero.crit || 0.05)
+        const finalDmg = meleeCrit ? Math.floor(baseDmg * 1.5) : baseDmg
+        if (!this.battleSystem.pendingDamages) this.battleSystem.pendingDamages = []
+        this.battleSystem.pendingDamages.push({
+          timer: 0.25,
+          monster: monster,
+          damage: finalDmg,
+          heroName: mainHero.name,
+          isCrit: meleeCrit
+        })
+        return
       }
-      // 技能仍需设 CD 和扣 MP
+      // ── 远程普攻：发射投射物，等抬手动作完成（0.5s）后才真正飞出 ──
+      const cpos0 = ctrl.getPos()
+      this._scheduleProjectile({
+        delay: 0.5,   // ★ 加长延迟：抬手动作做完才飞
+        spawn: () => {
+          const c2 = this._getCurrentControlHero()
+          const p2 = c2 ? c2.getPos() : cpos0
+          const dir2 = this.facingLeft ? -1 : 1
+          // 若目标仍存活且同方向则朝目标，否则沿朝向
+          let td = dir2
+          if (monster && monster.alive) {
+            td = (monster.x >= p2.x) ? 1 : -1
+          }
+          if (!this.battleSystem.projectiles) this.battleSystem.projectiles = []
+          const projSpeed = (320 * this.dpr)
+          const range = (this.battleSystem.attackRange || 100) * this.dpr * 2   // 普攻射程（X轴）
+          this.battleSystem.projectiles.push({
+            x: p2.x + td * 20 * this.dpr,
+            y: p2.y - 20 * this.dpr,
+            vx: td * projSpeed,
+            vy: 0,
+            power: 1,
+            atk: mainHero.atk || mainHero.matk || 0,
+            def: mainHero.def || 0,
+            life: range / projSpeed,
+            maxLife: range / projSpeed,
+            color: '#9acdff',
+            owner: 'hero',
+            skill: null,          // null = 普攻
+            hero: mainHero,
+            castDir: td,
+            burn: null,
+            isBasicAttack: true,  // ★ 标记普攻投射物（伤害用 _calcBasicAttackDamage）
+            _hitSet: new Set(),
+            _fx: this.game && this.game.effects
+          })
+        }
+      })
+      return
+    }
+
+    // 以下为有目标的技能逻辑
+    // 无目标时只播动画，不造成伤害（技能仍设 CD 防止连点）
+    if (!monster) {
       if (skill && this.battleSystem.skillButtons) {
         const sb = this.battleSystem.skillButtons.find(b => b.skill === skill)
         if (sb) {
@@ -561,7 +694,7 @@ export function installFieldBattleSystem(FieldSceneClass) {
     }
 
     // ★ 延迟伤害结算：动画播到命中帧时才造成伤害（而非动画开始就结算）
-    // 命中时机：普攻约40%动画进度（挥砍落下），技能约50%
+    // 命中时机：技能约50%
     const hitDelay = (skill ? 0.5 : 0.4) * (animState === 'shield' ? 0.8 : 1.0)  // 秒
 
     // 预计算伤害（但不立即应用）
@@ -709,6 +842,43 @@ export function installFieldBattleSystem(FieldSceneClass) {
       }
     }
     return Math.floor(def)
+  }
+
+  /**
+   * ★ MP 不足时角色抖动提示
+   */
+  proto._triggerMpShake = function(ctrl) {
+    if (!ctrl) return
+    if (ctrl.sprite) {
+      ctrl.sprite._shakeTimer = 0.3
+      ctrl.sprite._shakeAmp = 6 * this.dpr
+    }
+    // 也同步到英雄对象（渲染可读）
+    if (ctrl.hero) {
+      ctrl.hero._shakeTimer = 0.3
+    }
+  }
+
+  /**
+   * ★ 更新角色抖动计时
+   */
+  proto._updateMpShake = function(dt) {
+    const heroes = this.battleSystem.battleHeroes || []
+    for (const bh of heroes) {
+      if (!bh.sprite) continue
+      if (bh.sprite._shakeTimer > 0) {
+        bh.sprite._shakeTimer -= dt
+        if (bh.sprite._shakeTimer <= 0) {
+          bh.sprite._shakeTimer = 0
+          bh.sprite._shakeOffsetX = 0
+          bh.sprite._shakeOffsetY = 0
+        } else {
+          // 每帧随机抖动偏移
+          bh.sprite._shakeOffsetX = (Math.random() * 2 - 1) * bh.sprite._shakeAmp
+          bh.sprite._shakeOffsetY = (Math.random() * 2 - 1) * bh.sprite._shakeAmp
+        }
+      }
+    }
   }
 
   /**
@@ -962,25 +1132,69 @@ export function installFieldBattleSystem(FieldSceneClass) {
       if (hitMonster) {
         p._hitSet.add(hitMonster.id)
         const isCrit = Math.random() < (p.hero.crit || 0.05)
-        const dmg = this._calcSkillDamageToMonster(hitMonster, p.skill, p.hero, isCrit)
-        hitMonster.hp = Math.max(0, hitMonster.hp - dmg)
-        // 灼烧状态
-        if (p.burn) this._applyMonsterStatus(hitMonster, 'burn', p.burn, p.hero)
-        this._pushDamageText(hitMonster, dmg, isCrit, '#ff6b35')
-        // 命中特效
-        if (p._fx && p._fx.playHitEffect) {
-          p._fx.playHitEffect('fire_impact', hitMonster.x - this.cameraX, hitMonster.y - this.cameraY - 30 * this.dpr, this.dpr)
+        // ★ 普攻弹道：用普攻伤害公式；技能弹道：用技能伤害公式
+        let dmg
+        if (p.isBasicAttack) {
+          dmg = Math.max(1, this._getHeroAtk(p.hero) - Math.floor(hitMonster.def * 0.5))
+          if (isCrit) dmg = Math.floor(dmg * 1.5)
+          dmg = Math.max(1, dmg)
+        } else {
+          dmg = this._calcSkillDamageToMonster(hitMonster, p.skill, p.hero, isCrit)
         }
-        console.log(`[FieldBattle] ${p.hero.name} 火球命中 ${hitMonster.name}，伤害 ${dmg}${isCrit ? '（暴击）' : ''}，剩余HP ${hitMonster.hp}`)
+        hitMonster.hp = Math.max(0, hitMonster.hp - dmg)
+        // 灼烧状态（仅技能火球）
+        if (p.burn) this._applyMonsterStatus(hitMonster, 'burn', p.burn, p.hero)
+        this._pushDamageText(hitMonster, dmg, isCrit, p.isBasicAttack ? '#ffffff' : '#ff6b35')
+        // 命中特效（普攻=冲击波命中，技能火球=火焰命中）
+        if (p._fx && p._fx.playHitEffect) {
+          if (p.isBasicAttack) {
+            p._fx.playHitEffect('magic_impact', hitMonster.x - this.cameraX, hitMonster.y - this.cameraY - 30 * this.dpr, this.dpr)
+          } else {
+            p._fx.playHitEffect('fire_impact', hitMonster.x - this.cameraX, hitMonster.y - this.cameraY - 30 * this.dpr, this.dpr)
+          }
+        }
+        console.log(`[FieldBattle] ${p.hero.name} ${p.isBasicAttack ? '普攻' : '火球'}命中 ${hitMonster.name}，伤害 ${dmg}${isCrit ? '（暴击）' : ''}，剩余HP ${hitMonster.hp}`)
         if (hitMonster.hp <= 0) {
           hitMonster.alive = false
           this.battleSystem.battleTarget = null
         }
-        // 火球命中即消散（可穿透则移除 _hitSet 限制，默认单目标）
+        // 弹道命中即消散（可穿透则移除 _hitSet 限制，默认单目标）
         list.splice(i, 1)
         continue
       }
       if (p.life <= 0) list.splice(i, 1)
+    }
+  }
+
+  /**
+   * ★ 注册延迟发射的投射物（攻击动画完成后才真正生成弹道）
+   * @param {Object} spawnCfg 延迟发射配置（delay 秒 + 生成投射物的回调参数）
+   */
+  proto._scheduleProjectile = function(spawnCfg) {
+    if (!this.battleSystem.pendingProjectiles) this.battleSystem.pendingProjectiles = []
+    this.battleSystem.pendingProjectiles.push({
+      _delay: spawnCfg.delay || 0,
+      spawn: spawnCfg.spawn
+    })
+  }
+
+  /**
+   * ★ 更新待发射投射物：计时结束（攻击动画完成）后真正生成弹道
+   */
+  proto._updatePendingProjectiles = function(dt) {
+    const list = this.battleSystem.pendingProjectiles
+    if (!list || list.length === 0) return
+    for (let i = list.length - 1; i >= 0; i--) {
+      const pp = list[i]
+      pp._delay -= dt
+      if (pp._delay <= 0) {
+        try {
+          pp.spawn()
+        } catch (e) {
+          console.error('[FieldBattle] 延迟投射物生成失败:', e)
+        }
+        list.splice(i, 1)
+      }
     }
   }
 
@@ -1593,36 +1807,74 @@ export function installFieldBattleSystem(FieldSceneClass) {
     for (let i = list.length - 1; i >= 0; i--) {
       const z = list[i]
       z.timer -= dt
-      // 到点（预警消失瞬间）：怪物跳跃落至红圈中心，再对"此刻仍在区域内"的玩家结算伤害
+      // 到点（预警消失瞬间）：怪物开始跳跃动画飞向落点（不再瞬移）
       if (z.timer <= 0) {
-        // 怪物落地：重新进入短暂"技能攻击状态"（砸地演出），避免落地瞬间直接普攻
+        // ★ 跳跃动画：从怪物当前位置抛物线飞到预警落点
         if (z.monsterRef && z.monsterRef.hp > 0) {
-          z.monsterRef.x = z.x
-          z.monsterRef.y = z.y - 6 * this.dpr
-          z.monsterRef.isCastingSkill = true
-          z.monsterRef.skillAnimTimer = 450 // 落地攻击演出时长（毫秒）
-          z.monsterRef._jumpWarn = true // 落地演出期间仍不黏住，停在落点
-        }
-        // ★ 预警命中区域是当前被控者位置(playerX/Y)，应扣【被控者】的血（切换控制后可能是队友）
-        const ctrl = this._getCurrentControlHero()
-        const hero = ctrl && ctrl.hero ? ctrl.hero : this.party[0]
-        if (hero && hero.hp > 0) {
-          const hdx = this.playerX - z.x
-          const hdy = this.playerY - z.y
-          if ((hdx * hdx + hdy * hdy) <= z.r * z.r) {
-            const dmg = Math.max(1, Math.floor(z.atk * (z.power || 1) - this._getHeroDef(hero) * 0.3))
-            hero.hp = Math.max(0, hero.hp - dmg)
-            this.battleSystem.damageTexts.push({
-              text: `-${dmg}`,
-              x: this.playerX - this.cameraX,
-              y: this.playerY - this.cameraY - 60 * this.dpr,
-              color: '#ff4757',
-              life: 1.0, maxLife: 1.0,
-              _startY: this.playerY - this.cameraY - 60 * this.dpr
-            })
+          z.monsterRef._jumpState = {
+            fromX: z.monsterRef.x,
+            fromY: z.monsterRef.y,
+            toX: z.x,
+            toY: z.y,
+            progress: 0,
+            duration: 0.45,                          // 跳跃时长（秒）
+            height: 160 * this.dpr,                  // 抛物线最高点高度
+            zone: z                                 // 落地后结算伤害的预警区
           }
+          z.monsterRef.isCastingSkill = true
+          z.monsterRef.skillAnimTimer = 450          // 落地攻击演出时长（毫秒）
+          z.monsterRef._jumpWarn = true              // 跳跃期间不黏住
         }
         list.splice(i, 1)
+      }
+    }
+  }
+
+  /**
+   * ★ 怪物跳跃动画更新：抛物线飞行，落地时结算预警区伤害
+   */
+  proto._updateMonsterJumps = function(dt) {
+    if (!this.mapMonsters) return
+    for (const monster of this.mapMonsters) {
+      const j = monster._jumpState
+      if (!j) continue
+      j.progress = Math.min(1, j.progress + dt / (j.duration || 1))
+      const p = j.progress
+      // 位置插值（X/Y 线性，高度抛物线）
+      monster.x = j.fromX + (j.toX - j.fromX) * p
+      monster.y = j.fromY + (j.toY - j.fromY) * p
+      monster._jumpOffsetY = -Math.sin(Math.PI * p) * (j.height || 0)   // 渲染高度偏移（负数=向上）
+      if (p >= 1) {
+        // 落地：清除跳跃状态，结算伤害
+        monster._jumpState = null
+        monster._jumpOffsetY = 0
+        monster.y = j.toY - 6 * this.dpr
+        this._settleJumpDamage(j.zone, monster)
+      }
+    }
+  }
+
+  /**
+   * ★ 跳跃落地伤害结算（玩家仍在预警区域则受伤）
+   */
+  proto._settleJumpDamage = function(z, monster) {
+    if (!z || !monster || monster.hp <= 0) return
+    const ctrl = this._getCurrentControlHero()
+    const hero = ctrl && ctrl.hero ? ctrl.hero : this.party[0]
+    if (hero && hero.hp > 0) {
+      const hdx = this.playerX - z.x
+      const hdy = this.playerY - z.y
+      if ((hdx * hdx + hdy * hdy) <= z.r * z.r) {
+        const dmg = Math.max(1, Math.floor(z.atk * (z.power || 1) - this._getHeroDef(hero) * 0.3))
+        hero.hp = Math.max(0, hero.hp - dmg)
+        this.battleSystem.damageTexts.push({
+          text: `-${dmg}`,
+          x: this.playerX - this.cameraX,
+          y: this.playerY - this.cameraY - 60 * this.dpr,
+          color: '#ff4757',
+          life: 1.0, maxLife: 1.0,
+          _startY: this.playerY - this.cameraY - 60 * this.dpr
+        })
       }
     }
   }
@@ -1657,6 +1909,11 @@ export function installFieldBattleSystem(FieldSceneClass) {
 
     // 应用伤害
     hero.hp = Math.max(0, hero.hp - finalDamage)
+    // ★ 阵亡标记：hp<=0 时同步 hero.alive（否则 AI 角色死亡后不会消失）
+    if (hero.hp <= 0 && hero.alive !== false) {
+      hero.alive = false
+      console.log(`[FieldBattle] ${hero.name} 被击败！`)
+    }
 
     // ★ 根据被攻击英雄的实际位置显示伤害数字
     let hpos = { x: this.playerX, y: this.playerY }
@@ -1785,8 +2042,10 @@ export function installFieldBattleSystem(FieldSceneClass) {
     if (!this.battleSystem.skillButtons || !Array.isArray(this.battleSystem.skillButtons)) return
 
     for (const btn of this.battleSystem.skillButtons) {
+      // ★ BUFF 持续期间（cooldownDelay 递减中）按钮同样视为不可用
+      const disabled = btn.cooldown > 0 || btn.cooldownDelay > 0
       // 按钮背景
-      ctx.fillStyle = btn.cooldown > 0 ? 'rgba(128,128,128,0.8)' : 'rgba(74,158,255,0.8)'
+      ctx.fillStyle = disabled ? 'rgba(128,128,128,0.8)' : 'rgba(74,158,255,0.8)'
       ctx.beginPath()
       this._roundRect(ctx, btn.x, btn.y, btn.width, btn.height, 10 * this.dpr)
       ctx.fill()
@@ -1803,11 +2062,17 @@ export function installFieldBattleSystem(FieldSceneClass) {
       ctx.textBaseline = 'middle'
       ctx.fillText(btn.text, btn.x + btn.width / 2, btn.y + btn.height / 2)
 
-      // 冷却遮罩
-      if (btn.cooldown > 0) {
-        // 用 cooldownMax（毫秒）作为分母，避免 skill.cooldown 单位（秒）混乱
-        const max = btn.cooldownMax || (btn.skill.cooldown || 3) * 1000
-        const cooldownRatio = Math.min(1, btn.cooldown / max)
+      // 冷却遮罩（BUFF 持续期间按 delay 剩余比例显示，之后按 cooldown 比例显示）
+      if (disabled) {
+        let cooldownRatio
+        if (btn.cooldownDelay > 0) {
+          const max = btn.cooldownDelayMax || (btn.skill.duration != null ? btn.skill.duration : ((btn.skill.turns || 1) * 2))
+          cooldownRatio = Math.min(1, btn.cooldownDelay / max)
+        } else {
+          // 用 cooldownMax（毫秒）作为分母，避免 skill.cooldown 单位（秒）混乱
+          const max = btn.cooldownMax || (btn.skill.cooldown || 3) * 1000
+          cooldownRatio = Math.min(1, btn.cooldown / max)
+        }
         ctx.fillStyle = 'rgba(0,0,0,0.5)'
         ctx.beginPath()
         this._roundRect(
@@ -1969,9 +2234,13 @@ export function installFieldBattleSystem(FieldSceneClass) {
       for (const btn of this.battleSystem.skillButtons) {
         if (tap.x >= btn.x && tap.x <= btn.x + btn.width &&
             tap.y >= btn.y && tap.y <= btn.y + btn.height) {
-          // ★ CD 中则不响应
-          if (btn.cooldown > 0) {
-            console.log(`[FieldBattle] 技能 ${btn.text} 冷却中: ${Math.ceil(btn.cooldown / 1000)}s`)
+          // ★ CD 中则不响应；BUFF 持续期间（cooldownDelay 递减中）也不可重复释放
+          if (btn.cooldown > 0 || btn.cooldownDelay > 0) {
+            if (btn.cooldownDelay > 0) {
+              console.log(`[FieldBattle] 技能 ${btn.text} BUFF 持续中: ${Math.ceil(btn.cooldownDelay)}s`)
+            } else {
+              console.log(`[FieldBattle] 技能 ${btn.text} 冷却中: ${Math.ceil(btn.cooldown / 1000)}s`)
+            }
             return true
           }
 

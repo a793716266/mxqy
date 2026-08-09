@@ -181,6 +181,8 @@ export class SkillEffectManager {
       if (!effect.images || effect.images.length === 0) continue
       // ★ 已被角色绑定的特效不再重复绘制（避免两套画面）
       if (effect._consumedByChar) continue
+      // ★ 已被场景 2.5D Y 排序渲染的特效不再重复绘制（避免两套画面）
+      if (effect._ySorted) continue
 
       const currentImage = effect.images[effect.currentFrame]
       if (!currentImage) continue

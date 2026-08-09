@@ -145,14 +145,17 @@ sys.playerAnim = null
 scene._playerAttackMonster(m0, null)
 assert(sys.playerAnim && sys.playerAnim.type === 'attack', '李小宝普攻播动画')
 assert(sys.battleHeroes[0].sprite.state === 'attack', '李小宝 sprite 进入 attack')
-assert(sys.pendingDamages.length === 1, '伤害进入结算队列', `实际: ${sys.pendingDamages.length}`)
-// 跑几帧结算伤害 + 动画
+// ★ 普攻延迟发射：动画期间先注册，0.3s 后弹道才飞出（不再走 pendingDamages 即时结算）
+assert(sys.pendingProjectiles.length === 1, '普攻注册延迟发射', `待发射=${sys.pendingProjectiles.length}`)
+// 跑几帧结算伤害 + 动画（0.3s=18帧延迟 → 弹道生成并飞行 → 命中）
 const lxbSprite = sys.battleHeroes[0].sprite
 console.log(`  普攻后 state=${lxbSprite.state}, animFrame=${lxbSprite.animFrame}, animTimer=${lxbSprite.animTimer.toFixed(3)}, frameDur=${lxbSprite.frameDuration}, totalFrames=${lxbSprite._totalFramesMap['attack']}`)
-// 普攻动画 8帧×frameDuration(0.15s)=1.2s=72帧，跑够 80 帧让动画播完
+// 普攻动画 8帧×frameDuration(0.15s)=1.2s=72帧，跑够 80 帧让动画播完 + 弹道命中
 for (let f = 0; f < 80; f++) {
   scene.update(1/60)
 }
+assert(sys.projectiles.length === 0 && sys.pendingProjectiles.length === 0,
+  '普攻弹道发射并命中后消散', `投射物=${sys.projectiles.length} 待发射=${sys.pendingProjectiles.length}`)
 // ★ 伤害结算的验证：m0.hp 必须下降（普攻伤害已结算到怪物身上）
 //   注意：AI 队友可能也加入攻击，pendingDamages 数量会动态变化，不能断言必须为0
 console.log(`  80帧后 state=${lxbSprite.state}, m0.hp=${m0.hp}, pending=${sys.pendingDamages.length}`)
@@ -211,9 +214,12 @@ console.log('\n=== [7] 臻宝普攻 ===')
 const zbHero = sys.battleHeroes[0].hero
 sys.pendingDamages = []
 sys.playerAnim = null
+sys.pendingDamages = []
 scene._playerAttackMonster(m0, null)
 assert(sys.playerAnim && sys.playerAnim.type === 'attack', '臻宝普攻播动画')
-assert(sys.pendingDamages.length === 1, '臻宝伤害入队')
+// ★ 臻宝是近战（warrior）：普攻不发射投射物，走即时近战伤害（延迟到挥砍命中帧结算）
+assert(sys.pendingProjectiles.length === 0, '臻宝(近战)普攻不发射投射物')
+assert(sys.pendingDamages.length === 1, '臻宝普攻进入近战伤害结算队列', `pending=${sys.pendingDamages.length}`)
 
 console.log('\n=== [8] 来回切换 3 次（检查状态不累积残留） ===')
 let allOk = true
@@ -246,6 +252,48 @@ sys.playerAttackCD = 0
 scene._playerAttackMonster({ id: 'm3', name: '怪3', alive: true, x: scene.playerX - 200, y: scene.playerY, hp: 500, maxHp: 500, def: 5 }, null)
 console.log(`  普攻后 facingLeft=${ctrlNow.sprite.facingLeft} (怪在左侧, 应为true)`)
 assert(ctrlNow.sprite.facingLeft === true, '被控者面对左侧怪物(facingLeft=true)', `实际 facingLeft=${ctrlNow.sprite.facingLeft}`)
+
+// ==================== [10] 施法移动锁验证 ====================
+console.log('\n=== [10] 施法移动锁（BUFF锁摇杆 / 普攻X轴锁定） ===')
+// 确保战斗激活且被控者是臻宝（partyIndex=0，走摇杆）
+sys.battleHeroes.forEach(bh => { if (bh.partyIndex !== 0) scene._switchControl() })
+// 准备怪物
+scene.mapMonsters = [{ id:'m10', name:'怪', enemyId:'wild_cat', alive:true, x: scene.playerX+200, y: scene.playerY, hp:500, maxHp:500, def:5, atk:10, level:1, attackCDTimer:0, attackInterval:2000, skillCDs:{} }]
+// 1) BUFF锁：设 castLockTimer，模拟摇杆向右下推，断言位置不动
+sys.castLockTimer = 0.8
+const posLock0 = { x: scene.playerX, y: scene.playerY }
+moveJoystick(80, 60, 10)
+console.log(`  BUFF锁后位移: (${Math.round(scene.playerX-posLock0.x)}, ${Math.round(scene.playerY-posLock0.y)})`)
+assert(Math.abs(scene.playerX-posLock0.x) < 1 && Math.abs(scene.playerY-posLock0.y) < 1,
+  'BUFF释放期间完全锁移动', `位移 ${Math.round(scene.playerX-posLock0.x)},${Math.round(scene.playerY-posLock0.y)}`)
+sys.castLockTimer = 0
+releaseJoystick(5)
+
+// 2) X轴锁定：设 castAxisLockTimer，推摇杆斜向（x+y），断言只动X不动Y
+// ★ 数据层面验证（移动锁逻辑：axisLock 时 dy 清零、moveY=0；已在 verify_skills 覆盖）
+//   这里验证：castAxisLockTimer 设置后随时间递减、且移动期间 X 仍能前进（Y 由锁逻辑保证为 0）
+sys.castAxisLockTimer = 0.7
+const ctrlBhL = sys.battleHeroes[0]
+if (scene._heroWorldPos && ctrlBhL) {
+  scene._heroWorldPos[ctrlBhL.partyIndex].x = scene.playerX
+  scene._heroWorldPos[ctrlBhL.partyIndex].y = scene.playerY
+}
+const posLock1 = { x: scene.playerX, y: scene.playerY }
+const jcL = scene.joystickConfig
+game.input.touches = { 1: { x: jcL.centerX, y: jcL.centerY } }
+scene.update(1/60)
+game.input.touches = { 1: { x: jcL.centerX + 80, y: jcL.centerY + 60 } }
+for (let f = 0; f < 10; f++) scene.update(1/60)
+const dxLock = scene.playerX - posLock1.x
+const timerAfter = sys.castAxisLockTimer
+console.log(`  X轴锁后位移: X=${Math.round(dxLock)}, 锁剩余=${timerAfter.toFixed(2)}`)
+// ★ 核心：X 能移动（摇杆的 X 分量未被锁死）+ 锁计时递减（0.7 → <0.7）
+assert(Math.abs(dxLock) > 1, 'X轴锁定时可以X方向移动', `X位移=${Math.round(dxLock)}`)
+assert(timerAfter < 0.7 && timerAfter > 0, 'castAxisLockTimer 随时间递减', `剩余=${timerAfter}`)
+// 清理锁
+sys.castAxisLockTimer = 0
+releaseJoystick(5)
+releaseJoystick(5)
 
 console.log(`\n=== 结果: ${passed} 通过, ${failed} 失败 ===`)
 process.exit(failed === 0 ? 0 : 1)

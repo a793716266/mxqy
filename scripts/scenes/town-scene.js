@@ -62,6 +62,19 @@ export class TownScene {
     
     // 初始化队伍
     this.party = charStateManager.getAllCharacters()
+
+    // ★ 从野外战斗失败返回：复活全队（保持死亡状态回城，到城镇后再复活）
+    //   复活后仅恢复 10% HP/MP（死亡代价）
+    if (this.game.data.get('needReviveOnTown')) {
+      for (const char of this.party) {
+        if (char) {
+          char.hp = Math.max(1, Math.floor(char.maxHp * 0.1))
+          char.mp = Math.max(0, Math.floor(char.maxMp * 0.1))
+        }
+      }
+      this.game.data.delete('needReviveOnTown')
+      console.log('[Town] 战斗失败返回，全队以10%血量复活')
+    }
     
     // 装备面板
     this.equipmentPanel = new EquipmentPanel(game, this.party[0])

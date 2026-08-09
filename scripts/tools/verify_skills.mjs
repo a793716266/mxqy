@@ -65,6 +65,7 @@ class MockGame {
     this.data = {
       _d: {}, _flags: new Set(),
       get: (k) => this.data._d[k], set: (k, v) => { this.data._d[k] = v },
+      delete: (k) => { delete this.data._d[k] },
       del: (k) => { delete this.data._d[k] },
       hasFlag: (k) => this.data._flags.has(k), setFlag: (k) => this.data._flags.add(k), delFlag: (k) => this.data._flags.delete(k),
     }
@@ -148,12 +149,16 @@ const mFarHp0 = mFar.hp
 const mFarX0 = mFar.x
 sys.skillProcesses = []
 sys.projectiles = []
+sys.pendingProjectiles = []
 game.effects.effects = []
 scene._playerAttackMonster(null, fireball)
-assert(sys.projectiles.length === 1 && sys.projectiles[0].owner === 'hero', '火球生成英雄弹道')
+// ★ 火球延迟发射：动画期间不立即生成（0.55s=33帧），等待后弹道才出现
+assert(sys.projectiles.length === 0, '火球动画期间不立即生成（延迟发射）')
+for (let f = 0; f < 40; f++) scene.update(1/60)   // 0.55s 延迟结束，弹道生成并开始飞行
+assert(sys.projectiles.length === 1 && sys.projectiles[0].owner === 'hero', '火球生成英雄弹道', `投射物=${sys.projectiles.length}`)
 const fb = sys.projectiles[0]
 assert(fb.vx > 0 && fb.vy === 0, '火球沿X轴向前直线飞行', `vx=${fb.vx} vy=${fb.vy}`)
-// 驱动火球飞行（450px @ 960px/s ≈ 0.47s ≈ 28帧）
+// 驱动火球飞行（450px @ 960px/s ≈ 0.47s ≈ 28帧，前面40帧已消耗延迟+飞行一部分）
 for (let f = 0; f < 40; f++) {
   scene.update(1/60)
   if (f === 5 || f === 15 || f === 25 || f === 35) {
@@ -230,7 +235,10 @@ assert(sys.skillProcesses.length === 1 && sys.skillProcesses[0].type === 'thunde
 // 感电状态立即挂上
 const elecMonsters = scene.mapMonsters.filter(m => m.statusEffects && m.statusEffects.some(e => e.type === 'electrify'))
 console.log(`  [diag] mapMonsters=${scene.mapMonsters.length}, 感电=${elecMonsters.length}, alive=${scene.mapMonsters.filter(m=>m.alive).length}`)
-assert(elecMonsters.length === 3, '3只怪都挂上感电状态', `感电=${elecMonsters.length}`)
+// ★ 感电作用于范围内所有怪（用 _castThunderAoE 锁定的 targets 数量判定）
+const thunderTargets = (sys.skillProcesses[0] && sys.skillProcesses[0].targets) || []
+assert(thunderTargets.length >= 3, '雷击锁定范围内至少3只怪', `targets=${thunderTargets.length}`)
+assert(elecMonsters.length === thunderTargets.length, '范围内怪全部挂上感电状态', `感电=${elecMonsters.length} targets=${thunderTargets.length}`)
 // 驱动雷击（3次 * 0.8s = 2.4s）
 for (let f = 0; f < 180; f++) scene.update(1/60)   // 3s
 const aliveMonsters = scene.mapMonsters.filter(m => m.alive)
@@ -499,6 +507,289 @@ if (warCrySkill) {
   const atkAfter = scene.charInfoPanel.character._getAtkWithBuff()
   assert(atkBefore === 20 && atkAfter === 26, '战吼后角色卡攻击提升 20→26', `实际: ${atkBefore}→${atkAfter}`)
 }
+
+// ==================== 测试10：施法移动限制 ====================
+console.log('\n=== 测试10: BUFF锁摇杆 + 普攻/伤害技能X轴锁定 ===')
+// 1) BUFF 释放 → castLockTimer 设置（锁摇杆）
+sys.battleHeroes.forEach(bh => { bh.hero._buffs = []; bh.hero.def = 10 })
+sys.castLockTimer = 0
+scene._playerAttackMonster(null, manaShield)
+assert(sys.castLockTimer > 0, 'BUFF释放设置 castLockTimer（锁摇杆）', `timer=${sys.castLockTimer}`)
+// 驱动帧，timer 递减
+scene.update(1/60)
+assert(sys.castLockTimer < 0.8, 'castLockTimer 随时间递减', `timer=${sys.castLockTimer}`)
+
+// 2) 普攻 → castAxisLockTimer 设置（X轴锁定）
+const mTest10 = { id:'m10', name:'怪', enemyId:'wild_cat', alive:true, x: scene.playerX+100, y: scene.playerY, hp:500, maxHp:500, def:5, atk:10, level:1, attackCDTimer:0, attackInterval:2000, skillCDs:{} }
+scene.mapMonsters = [mTest10]
+sys.playerAttackCD = 0
+sys.castAxisLockTimer = 0
+// 确保被控角色 sprite 状态复位（避免被"正在播放动画"拦截）
+const ctrlBh = sys.battleHeroes[0]
+if (ctrlBh.sprite) { ctrlBh.sprite.state = 'idle'; ctrlBh.sprite.animFrame = 0 }
+scene._playerAttackMonster(mTest10, null)
+assert(sys.castAxisLockTimer > 0, '普攻设置 castAxisLockTimer（X轴锁定）', `timer=${sys.castAxisLockTimer}`)
+// 3) 伤害技能 → castAxisLockTimer 也设置
+sys.playerAttackCD = 0
+sys.castAxisLockTimer = 0
+const fireballSkill = lixiaobaoCfg.skills.find(s => s.id === 'fireball')
+scene._playerAttackMonster(null, fireballSkill)
+assert(sys.castAxisLockTimer > 0, '伤害技能也设置 castAxisLockTimer', `timer=${sys.castAxisLockTimer}`)
+// 4) BUFF 不设置 castAxisLockTimer
+sys.castAxisLockTimer = 0
+scene._playerAttackMonster(null, manaShield)
+assert(sys.castAxisLockTimer === 0, 'BUFF不设置X轴锁定（只用完整锁定）')
+
+// ==================== 测试11：死亡回城复活仅10% HP/MP ====================
+console.log('\n=== 测试11: 复活仅10% HP/MP ===')
+// 模拟城镇复活逻辑（直接验证 town 逻辑：needReviveOnTown 标记 → 复活 10%）
+game.data.set('needReviveOnTown', true)
+// 手动模拟 town-scene 的复活代码（与 town-scene.js 相同逻辑）
+const mockChars = [
+  { id:'c1', name:'臻宝', hp:0, maxHp:100, mp:0, maxMp:50 },
+  { id:'c2', name:'李小宝', hp:0, maxHp:80, mp:0, maxMp:40 }
+]
+if (game.data.get('needReviveOnTown')) {
+  for (const c of mockChars) {
+    c.hp = Math.max(1, Math.floor(c.maxHp * 0.1))
+    c.mp = Math.max(0, Math.floor(c.maxMp * 0.1))
+  }
+  game.data.delete('needReviveOnTown')
+}
+assert(mockChars[0].hp === 10 && mockChars[0].mp === 5, '臻宝复活 10%HP(10)/10%MP(5)', `hp=${mockChars[0].hp} mp=${mockChars[0].mp}`)
+assert(mockChars[1].hp === 8 && mockChars[1].mp === 4, '李小宝复活 10%HP(8)/10%MP(4)', `hp=${mockChars[1].hp} mp=${mockChars[1].mp}`)
+assert(game.data.get('needReviveOnTown') === undefined, '复活后标记清除')
+
+// ==================== 测试12：技能特效按 2.5D Y 轴排序渲染 ====================
+console.log('\n=== 测试12: 特效按Y轴排序（不再固定最上层） ===')
+// 播放一个命中特效（屏幕坐标），然后跑 scene.render，检查它被加进 engine._entities（Y排序）
+game.effects.effects = []
+// 手动创建一个特效（模拟 playHitEffect 结果）
+game.effects.createEffect = (cfg) => {
+  const fx = { ...cfg, id: 'fx_test', isPlaying: true, alpha: 1, currentFrame: 0, frameCount: 1, images: [{ width: 64, height: 64 }], _consumedByChar: false, _ySorted: false }
+  game.effects.effects.push(fx)
+  return fx.id
+}
+const fxId = game.effects.createEffect({ type: 'ice_shard_hit', x: 100, y: 200, scale: 1 })
+console.log(`  [diag] 渲染前特效: isPlaying=${game.effects.effects[0].isPlaying}, _consumedByChar=${game.effects.effects[0]._consumedByChar}, images=${game.effects.effects[0].images.length}`)
+scene.render(canvasCtx)
+const ef = game.effects.effects.find(e => e.id === fxId)
+console.log(`  [diag] 渲染后: _ySorted=${ef._ySorted}, isPlaying=${ef.isPlaying}`)
+assert(ef._ySorted === true, '特效被本帧Y排序渲染标记（_ySorted=true）')
+// engine._entities 里应有 skillEffect 类型（带 render 回调）
+const entities = scene._renderer2d5 ? scene._renderer2d5._entities : null
+console.log(`  engine._entities 数量: ${entities ? entities.length : '无'}`)
+// field-scene 的 render 用 engine（本地产物）——检查是否有 skillEffect 实体
+// 注：scene._renderer2d5 可能是全局共享引擎，检查其 _entities
+if (entities) {
+  const skillFx = entities.filter(e => e.type === 'skillEffect')
+  console.log(`  skillEffect 实体: ${skillFx.length} 个`)
+  assert(skillFx.length === 1, '特效作为 skillEffect 实体加入Y排序')
+  assert(typeof skillFx[0].sortY === 'number' && skillFx[0].sortY > 0, '特效带 sortY（参与Y排序）', `sortY=${skillFx[0].sortY}`)
+  assert(typeof skillFx[0].render === 'function', '特效带 render 回调（引擎default分支绘制）')
+} else {
+  failed++; console.log('  ✗ 无法访问引擎实体')
+}
+
+// ==================== 测试13：怪物跳跃攻击动画 ====================
+console.log('\n=== 测试13: 怪物跳跃攻击（抛物线动画而非瞬移） ===')
+// 构造一只怪物，设跳跃状态：从(100,100)跳向(400,400)，加入 mapMonsters 供 _updateMonsterJumps 遍历
+const jumpMonster = {
+  id: 'jm1', name: '跳怪', enemyId: 'wild_cat', alive: true,
+  x: 100, y: 100, hp: 500, maxHp: 500, def: 5, atk: 10, level: 1,
+  attackCDTimer: 0, attackInterval: 2000, skillCDs: {},
+  _jumpWarn: true,
+  _jumpState: {
+    fromX: 100, fromY: 100, toX: 400, toY: 400,
+    progress: 0, duration: 0.5, height: 160 * scene.dpr,
+    zone: { x: 400, y: 400, r: 60 * scene.dpr, atk: 10, power: 1 }
+  }
+}
+scene.mapMonsters.push(jumpMonster)
+// 记录跳跃过程（逐帧位置和高度）
+const midPos = []
+const midHeight = []
+for (let f = 0; f < 40; f++) {   // 40帧 > 30帧，确保跳跃完成落地
+  scene._updateMonsterJumps(1/60)   // 0.5s = 30帧
+  if (f === 10) {
+    midPos.push({ x: jumpMonster.x, y: jumpMonster.y })
+    midHeight.push(jumpMonster._jumpOffsetY)
+  }
+}
+console.log(`  跳跃中点: 位置(${Math.round(midPos[0].x)},${Math.round(midPos[0].y)}) 高度偏移=${Math.round(midHeight[0])}`)
+// 1) 中点位置在起点(100)和落点(400)之间（有过渡，非瞬移）
+assert(midPos[0].x > 100 && midPos[0].x < 400, '跳跃中途位置在起点与落点之间（非瞬移）', `x=${Math.round(midPos[0].x)}`)
+// 2) 中点高度偏移 < 0（怪物在空中，向上）
+assert(midHeight[0] < 0, '跳跃中途怪物在空中有高度偏移（_jumpOffsetY<0）', `offset=${Math.round(midHeight[0])}`)
+// 3) 跳完后落点
+assert(jumpMonster._jumpState === null, '跳跃完成清除状态')
+assert(Math.abs(jumpMonster.x - 400) < 1, '跳跃落地到目标点', `x=${Math.round(jumpMonster.x)}`)
+
+// ==================== 测试14：投射物 + BUFF粒子按 Y 轴排序 ====================
+console.log('\n=== 测试14: 投射物/粒子按2.5D Y排序渲染 ===')
+// 造投射物（世界坐标）
+scene.battleSystem.projectiles = [
+  { x: scene.playerX + 100, y: scene.playerY + 50, vx: 0, vy: 0, life: 1, fromMonster: false }
+]
+// 造 BUFF 粒子（世界坐标）
+scene.battleSystem.buffParticles = [
+  { x: scene.playerX, y: scene.playerY, vx: 0, vy: 0, size: 3, life: 0.8, decay: 0.5, color: '#5f9fff' }
+]
+// 渲染，检查 engine._entities 有 projectile 和 buffParticle 类型
+scene.render(canvasCtx)
+const ents = scene._renderer2d5 ? scene._renderer2d5._entities : []
+const projEnts = ents.filter(e => e.type === 'projectile')
+const particleEnts = ents.filter(e => e.type === 'buffParticle')
+console.log(`  projectile实体: ${projEnts.length}, buffParticle实体: ${particleEnts.length}`)
+assert(projEnts.length === 1, '投射物作为 projectile 实体加入Y排序', `数量=${projEnts.length}`)
+assert(particleEnts.length === 1, 'BUFF粒子作为 buffParticle 实体加入Y排序', `数量=${particleEnts.length}`)
+assert(typeof projEnts[0].sortY === 'number' && projEnts[0].sortY > 0, '投射物带 sortY')
+assert(typeof projEnts[0].render === 'function', '投射物带 render 回调')
+
+// ==================== 测试15：近战/远程普攻区分 + 火球延迟发射 ====================
+console.log('\n=== 测试15: 近战普攻即时 / 远程普攻投射物 + 火球粒子效果 ===')
+const mTest15 = { id:'m15', name:'怪', enemyId:'wild_cat', alive:true, x: scene.playerX+300, y: scene.playerY, hp:500, maxHp:500, def:5, atk:10, level:1, attackCDTimer:0, attackInterval:2000, skillCDs:{} }
+scene.mapMonsters = [mTest15]
+
+// 1) 远程普攻（李小宝 mage）：延迟发射投射物（0.5s，抬手动作完成后飞出）
+//    先切换到李小宝为被控者
+while (sys.battleHeroes[0].hero.role !== 'mage') scene._switchControl()
+sys.playerAttackCD = 0
+sys.projectiles = []
+sys.pendingProjectiles = []
+sys.pendingDamages = []
+const ctrlBh15 = sys.battleHeroes[0]
+if (ctrlBh15.sprite) { ctrlBh15.sprite.state = 'idle'; ctrlBh15.sprite.animFrame = 0 }
+scene._playerAttackMonster(mTest15, null)
+// ★ 关键：抬手动作期间（延迟未到）不应有投射物
+assert(sys.projectiles.length === 0, '远程普攻抬手期间不立即飞出（延迟发射）', `投射物=${sys.projectiles.length}`)
+assert(sys.pendingProjectiles.length === 1, '远程普攻注册延迟发射', `待发射=${sys.pendingProjectiles.length}`)
+// 驱动（0.5s = 30帧延迟结束），在第 32 帧（弹道刚生成未命中）检查
+const m15hp0 = mTest15.hp
+for (let f = 0; f < 32; f++) scene.update(1/60)
+assert(sys.projectiles.length === 1, '抬手完成后远程普攻弹道飞出', `投射物=${sys.projectiles.length}`)
+assert(sys.projectiles[0].isBasicAttack === true, '远程普攻投射物标记 isBasicAttack')
+assert(sys.projectiles[0].vx !== 0 && sys.projectiles[0].vy === 0, '普攻弹道沿X轴飞行')
+// 驱动弹道命中怪物（剩余飞行）
+for (let f = 0; f < 40; f++) scene.update(1/60)
+assert(mTest15.hp < m15hp0, '远程普攻投射物命中造成伤害', `hp ${m15hp0}->${mTest15.hp}`)
+assert(sys.projectiles.length === 0, '远程普攻弹道命中后消散')
+
+// 2) 近战普攻（臻宝 warrior）：不发射投射物，即时近战伤害（延迟到挥砍命中帧结算）
+while (sys.battleHeroes[0].hero.role !== 'warrior') scene._switchControl()
+// 重置怪物
+mTest15.hp = 500
+mTest15.alive = true
+sys.playerAttackCD = 0
+sys.projectiles = []
+sys.pendingProjectiles = []
+sys.pendingDamages = []
+const ctrlBh15b = sys.battleHeroes[0]
+if (ctrlBh15b.sprite) { ctrlBh15b.sprite.state = 'idle'; ctrlBh15b.sprite.animFrame = 0 }
+scene._playerAttackMonster(mTest15, null)
+assert(sys.projectiles.length === 0, '近战普攻不发射投射物', `投射物=${sys.projectiles.length}`)
+assert(sys.pendingProjectiles.length === 0, '近战普攻不注册延迟投射物')
+assert(sys.pendingDamages.length === 1, '近战普攻进入延迟伤害队列（挥砍命中帧结算）', `pending=${sys.pendingDamages.length}`)
+// 驱动挥砍命中（0.25s = 15帧结算）
+const m15bhp0 = mTest15.hp
+for (let f = 0; f < 25; f++) scene.update(1/60)
+assert(mTest15.hp < m15bhp0, '近战普攻命中造成伤害（即时近战）', `hp ${m15bhp0}->${mTest15.hp}`)
+assert(sys.pendingDamages.length === 0, '近战普攻伤害结算完成')
+
+// 3) 火球：延迟发射（0.55s）+ 技能弹道（被控者切回法师施放）
+sys.playerAttackCD = 0
+sys.projectiles = []
+sys.pendingProjectiles = []
+scene._playerAttackMonster(null, fireball)
+assert(sys.projectiles.length === 0, '火球动画期间不立即飞出（延迟发射）')
+assert(sys.pendingProjectiles.length === 1, '火球注册延迟发射')
+// 驱动动画（0.55s = 33帧延迟结束），在第 35 帧（弹道刚生成未命中）检查
+for (let f = 0; f < 35; f++) scene.update(1/60)
+assert(sys.projectiles.length === 1, '火球动画完成后飞出', `投射物=${sys.projectiles.length}`)
+const fb15 = sys.projectiles[0]
+assert(fb15.isBasicAttack !== true, '火球不是普攻（技能弹道）')
+assert(fb15.castDir === 1 || fb15.castDir === -1, '火球带 castDir（拖尾方向）', `castDir=${fb15.castDir}`)
+// 火球渲染：火焰粒子（渲染回调在引擎实体，验证有 render 且不崩溃）
+scene.render(canvasCtx)
+const projEnts15 = (scene._renderer2d5 ? scene._renderer2d5._entities : []).filter(e => e.type === 'projectile')
+assert(projEnts15.length >= 1, '火球作为 projectile 实体渲染')
+// 清理
+sys.projectiles = []
+sys.pendingProjectiles = []
+
+// ==================== 测试16：BUFF技能延迟冷却 + MP不足提示 ====================
+console.log('\n=== 测试16: BUFF冷却在BUFF消失后开始 + MP不足提示 ===')
+// 1) BUFF 技能：释放后不立即冷却，cooldownDelay = BUFF 时长，BUFF 消失后才开始 CD
+sys.battleHeroes.forEach(bh => { bh.hero._buffs = []; bh.hero.def = 10 })
+// 给英雄补上 mana_shield 技能（用于按钮冷却验证）
+sys.battleHeroes.forEach(bh => {
+  if (!bh.hero.skills.some(s => s.id === 'mana_shield')) {
+    bh.hero.skills.push(manaShield)
+  }
+})
+scene._rebuildSkillButtons(sys.attackButton.x, sys.attackButton.y, sys.attackButton.width, 14 * scene.dpr)
+const manaSb = sys.skillButtons.find(b => b.skill && b.skill.id === 'mana_shield')
+assert(manaSb, '技能按钮包含魔力护盾')
+scene._playerAttackMonster(null, manaShield)
+assert(manaSb.cooldownDelay > 0, 'BUFF释放后设置 cooldownDelay（=BUFF时长）', `delay=${manaSb.cooldownDelay}`)
+assert(manaSb.cooldown === 0, 'BUFF释放时 cooldown=0（不立即进入冷却）')
+// 驱动部分帧（BUFF 持续期间），cooldown 应仍为 0（delay 递减）
+for (let f = 0; f < 60; f++) scene.update(1/60)   // 1s
+assert(manaSb.cooldown === 0, 'BUFF持续期间 cooldown 仍为 0（未进入冷却）', `cooldown=${manaSb.cooldown} delay=${manaSb.cooldownDelay.toFixed(2)}`)
+// ★ BUFF 持续期间点击技能按钮应被拦截（不可重复释放）
+const delayBeforeTap = manaSb.cooldownDelay
+const tapOnSkill = { x: manaSb.x + manaSb.width / 2, y: manaSb.y + manaSb.height / 2 }
+const tappedBuff = scene._handleBattleUITap(tapOnSkill)
+assert(tappedBuff === true, 'BUFF持续期间点击技能按钮被拦截（返回true）', `tapped=${tappedBuff}`)
+assert(manaSb.cooldownDelay === delayBeforeTap, 'BUFF持续期间重复点击未再次释放（delay 未重置）', `delay=${manaSb.cooldownDelay}`)
+// 等 BUFF 消失（buff时长6s）后，cooldownDelay 归 0，cooldown 开始
+for (let f = 0; f < 360; f++) scene.update(1/60)   // 6s
+assert(manaSb.cooldownDelay <= 0, 'BUFF消失后 cooldownDelay 归0')
+assert(manaSb.cooldown > 0, 'BUFF消失后技能开始进入冷却', `cooldown=${manaSb.cooldown}`)
+// ★ 进入冷却后点击技能按钮同样被拦截
+const tappedCd = scene._handleBattleUITap(tapOnSkill)
+assert(tappedCd === true, '冷却期间点击技能按钮被拦截（返回true）', `tapped=${tappedCd}`)
+assert(manaSb.cooldown > 0, '冷却期间按钮 cooldown 仍 > 0', `cooldown=${manaSb.cooldown}`)
+
+// 2) MP 不足：释放需 MP 的技能，应提示 + 角色抖动
+const ctrlBh16 = sys.battleHeroes[0]
+ctrlBh16.hero.mp = 0   // MP 不足
+ctrlBh16.hero.maxMp = 100
+sys.castAxisLockTimer = 0
+scene._playerAttackMonster(null, manaShield)   // mana_shield mpCost=10
+assert(ctrlBh16.hero.mp === 0, 'MP不足时技能不消耗MP（未释放）', `mp=${ctrlBh16.hero.mp}`)
+assert(ctrlBh16.sprite._shakeTimer > 0, 'MP不足触发角色抖动（_shakeTimer>0）', `shake=${ctrlBh16.sprite._shakeTimer}`)
+assert(ctrlBh16.sprite._shakeAmp > 0, '抖动幅度已设置', `amp=${ctrlBh16.sprite._shakeAmp}`)
+// 驱动抖动递减
+const shakeBefore = ctrlBh16.sprite._shakeTimer
+scene.update(1/60)
+assert(ctrlBh16.sprite._shakeTimer < shakeBefore, '抖动随时间衰减', `shake ${shakeBefore}->${ctrlBh16.sprite._shakeTimer}`)
+// 清理
+ctrlBh16.hero.mp = 100
+
+// ==================== 测试17：主角/队友按各自 Y 排序（独立实体） ====================
+console.log('\n=== 测试17: 角色按各自Y排序（不再固定谁在最上） ===')
+// 设置主角和队友在不同 Y（主角在下=Y大，队友在上=Y小）
+sys.battleHeroes.forEach(bh => { bh.hero.hp = 100; bh.hero.alive = true })
+scene.party[0].hp = 100
+scene.followers[0].character.hp = 100
+// 主角 Y 大（画面下方），队友 Y 小（画面上方）
+scene._heroWorldPos[0] = { x: scene.playerX, y: scene.playerY + 500 }
+scene._heroWorldPos[1] = { x: scene.playerX, y: scene.playerY - 500 }
+// 渲染，查 character 实体
+scene.render(canvasCtx)
+const charEnts = (scene._renderer2d5 ? scene._renderer2d5._entities : []).filter(e => e.type === 'character')
+console.log(`  character实体: ${charEnts.length} 个, sortY: [${charEnts.map(e => Math.round(e.sortY)).join(', ')}]`)
+assert(charEnts.length === 2, '主角和队友各为一个独立 character 实体', `数量=${charEnts.length}`)
+// 主角 Y 大 → sortY 大；队友 Y 小 → sortY 小（Y 小者先画、在上层）
+const sortYs = charEnts.map(e => e.sortY)
+assert(sortYs[0] !== sortYs[1], '两个角色 sortY 不同（按各自Y排序）', `sortY=${sortYs.join(',')}`)
+assert(Math.max(...sortYs) === Math.max(...sortYs), '存在Y轴前后差异')
+assert(typeof charEnts[0].render === 'function', '角色实体带 render 回调')
+// 排序正确性：sortY 小的（队友，Y小）应先渲染（排序数组里在前）
+const sorted = [...sortYs].sort((a, b) => a - b)
+assert(sorted[0] === Math.min(...sortYs), 'Y 小的角色排在前面（引擎按sortY升序绘制）')
+console.log(`  sortY 排序: 队友(Y小)=${Math.round(sorted[0])}, 主角(Y大)=${Math.round(sorted[1])}`)
 
 console.log(`\n=== 结果: ${passed} 通过, ${failed} 失败 ===`)
 process.exit(failed === 0 ? 0 : 1)

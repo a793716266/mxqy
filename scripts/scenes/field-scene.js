@@ -766,67 +766,83 @@ baseRadius: 50 * this.dpr,    // 底座半径（缩小）
     this.isMoving = false
 
     if (this.joystick.active) {
-      const dx = this.joystick.currentX - this.joystickConfig.centerX
-      const dy = this.joystick.currentY - this.joystickConfig.centerY
-      const dist = Math.sqrt(dx * dx + dy * dy)
+      // ★ 施法锁定：BUFF 释放期间完全锁定摇杆移动（跳过整个移动逻辑）
+      const castLock = this.battleSystem && this.battleSystem.castLockTimer > 0
+      if (castLock) {
+        this.isMoving = false
+      } else {
+        const jx = this.joystick.currentX - this.joystickConfig.centerX
+        let dy = this.joystick.currentY - this.joystickConfig.centerY
+        let dist = Math.sqrt(jx * jx + dy * dy)
+        let dx = jx
 
-      // 更新方向（偏移 > 死区）
-      if (dist > this.joystickConfig.deadZone) {
-        // 根据水平移动分量更新朝向
-        if (Math.abs(dx) > Math.abs(dy)) {
-          this.playerDirection = dx > 0 ? 'right' : 'left'
-          this.facingLeft = dx < 0 // 向左移动时 facingLeft 为 true
-        } else {
-          this.playerDirection = dy > 0 ? 'down' : 'up'
-          // 上下移动时不改变水平朝向
+        // ★ 伤害技能/普攻施法期间：只允许 X 轴移动（Y 分量被限制为 0）
+        //   对应 castAxisLockTimer（field-battle-system 在普攻/伤害技能释放时设置）
+        const axisLock = this.battleSystem && this.battleSystem.castAxisLockTimer > 0
+        if (axisLock) {
+          dy = 0
+          dist = Math.abs(jx)
+          if (dist < 1) dist = 0
         }
-      }
 
-      if (dist > this.joystickConfig.deadZone) {
-        this.isMoving = true
-        // 应用怪物减速 debuff（黏液包裹等）
-        let speedFactor = 1
-        if (this.battleSystem.playerDebuffs && this.battleSystem.playerDebuffs.length > 0) {
-          for (const d of this.battleSystem.playerDebuffs) {
-            if (d.effect === 'slow') speedFactor *= (1 - d.value)
+        // 更新方向（偏移 > 死区）
+        if (dist > this.joystickConfig.deadZone) {
+          // 根据水平移动分量更新朝向
+          if (Math.abs(dx) > Math.abs(dy)) {
+            this.playerDirection = dx > 0 ? 'right' : 'left'
+            this.facingLeft = dx < 0 // 向左移动时 facingLeft 为 true
+          } else {
+            this.playerDirection = dy > 0 ? 'down' : 'up'
+            // 上下移动时不改变水平朝向
           }
         }
-        const moveX = (dx / dist) * this.playerSpeed * speedFactor * dt
-        const moveY = (dy / dist) * this.playerSpeed * speedFactor * dt
 
-        // 保存旧位置（用于碰撞回退）
-        const oldX = this.playerX
-        const oldY = this.playerY
+        if (dist > this.joystickConfig.deadZone) {
+          this.isMoving = true
+          // 应用怪物减速 debuff（黏液包裹等）
+          let speedFactor = 1
+          if (this.battleSystem.playerDebuffs && this.battleSystem.playerDebuffs.length > 0) {
+            for (const d of this.battleSystem.playerDebuffs) {
+              if (d.effect === 'slow') speedFactor *= (1 - d.value)
+            }
+          }
+          const moveX = (dx / dist) * this.playerSpeed * speedFactor * dt
+          const moveY = (dy / dist) * this.playerSpeed * speedFactor * dt
 
-        this.playerX += moveX
-        this.playerY += moveY
+          // 保存旧位置（用于碰撞回退）
+          const oldX = this.playerX
+          const oldY = this.playerY
 
-        // ★ 同步被控英雄的世界坐标（战斗系统下，被控者即 playerX/playerY）
-        if (this._heroWorldPos && this.battleSystem.battleHeroes && this.battleSystem.battleHeroes[0]) {
-          const c = this.battleSystem.battleHeroes[0]
-          this._heroWorldPos[c.partyIndex].x = this.playerX
-          this._heroWorldPos[c.partyIndex].y = this.playerY
+          this.playerX += moveX
+          this.playerY += moveY
+
+          // ★ 同步被控英雄的世界坐标（战斗系统下，被控者即 playerX/playerY）
+          if (this._heroWorldPos && this.battleSystem.battleHeroes && this.battleSystem.battleHeroes[0]) {
+            const c = this.battleSystem.battleHeroes[0]
+            this._heroWorldPos[c.partyIndex].x = this.playerX
+            this._heroWorldPos[c.partyIndex].y = this.playerY
+          }
+
+          // 边界限制（地图边界）
+          const margin = 50 * this.dpr
+          this.playerX = Math.max(margin, Math.min(this.mapWidth - margin, this.playerX))
+          this.playerY = Math.max(margin, Math.min(this.mapHeight - margin, this.playerY))
+
+          // 检查与障碍物的碰撞
+          if (this._checkObstacleCollision()) {
+            // 碰撞了障碍物，退回原位置
+            this.playerX = oldX
+            this.playerY = oldY
+          }
+
+          // 更新相机位置（跟随玩家）
+          this._updateCamera()
+
+          // ★ 不再检查与怪物的碰撞（与AI角色行为一致：两个角色都不被怪物碰撞/阻挡）
+          // 之前只有被控者(摇杆移动)触发 _checkMonsterCollision，AI角色不走这里，
+          // 导致"臻宝不碰撞、李小宝碰撞"的差异；现统一移除，战斗由草地模式自动激活/其它入口触发
+          // this._checkMonsterCollision()
         }
-
-        // 边界限制（地图边界）
-        const margin = 50 * this.dpr
-        this.playerX = Math.max(margin, Math.min(this.mapWidth - margin, this.playerX))
-        this.playerY = Math.max(margin, Math.min(this.mapHeight - margin, this.playerY))
-
-        // 检查与障碍物的碰撞
-        if (this._checkObstacleCollision()) {
-          // 碰撞了障碍物，退回原位置
-          this.playerX = oldX
-          this.playerY = oldY
-        }
-
-        // 更新相机位置（跟随玩家）
-        this._updateCamera()
-
-        // ★ 不再检查与怪物的碰撞（与AI角色行为一致：两个角色都不被怪物碰撞/阻挡）
-        // 之前只有被控者(摇杆移动)触发 _checkMonsterCollision，AI角色不走这里，
-        // 导致"臻宝不碰撞、李小宝碰撞"的差异；现统一移除，战斗由草地模式自动激活/其它入口触发
-        // this._checkMonsterCollision()
       }
     }
 
@@ -1733,6 +1749,12 @@ baseRadius: 50 * this.dpr,    // 底座半径（缩小）
     // 每个队友跟随不同的位置（战斗=分散阵型点 / 非战斗=主角移动轨迹历史点）
     for (let i = 0; i < this.followers.length; i++) {
       const follower = this.followers[i]
+
+      // ★ 战斗中阵亡的队友不再移动/站位（死亡消失）
+      if (this.battleSystem && this.battleSystem.active && follower.character && follower.character.hp <= 0) {
+        follower.isMoving = false
+        continue
+      }
 
       // ★ 当前被玩家控制的英雄（battleHeroes[0]）不再走 AI 站位/跟随逻辑，
       //   否则会把被控角色强行拽回输出位，导致切换控制"看起来没反应"
@@ -2754,26 +2776,184 @@ baseRadius: 50 * this.dpr,    // 底座半径（缩小）
       }
     }
 
-    // ── layer=2：主角+队友（作为整体参与Y排序）─
+    // ── layer=2：技能命中特效（按 2.5D Y 轴排序，随单位前后遮挡）─
+    //   只处理未被角色绑定消费的特效（_consumedByChar=true 的由角色渲染管线绘制）
+    //   effect.x/y 是屏幕坐标（playHitEffect 传入时已减 camera），sortY 用世界坐标换算
+    if (this.game && this.game.effects && this.game.effects.effects) {
+      for (const ef of this.game.effects.effects) {
+        if (!ef.isPlaying || !ef.images || ef.images.length === 0) continue
+        if (ef._consumedByChar) continue
+        const currentImage = ef.images[ef.currentFrame]
+        if (!currentImage) continue
+        const efW = currentImage.width * (ef.scale || 1)
+        const efH = currentImage.height * (ef.scale || 1)
+        // 特效屏幕坐标（已是屏幕坐标）+ 世界坐标Y用于排序
+        const sx = ef.x
+        const sy = ef.y
+        ef._ySorted = true   // ★ 本帧已由 Y 排序渲染，防止 effects.render() 重复绘制
+        engine.addEntity({
+          layer: 2,
+          sortY: (ef.y + this.cameraY) / this.dpr + efH / (2 * this.dpr),
+          type: 'skillEffect',
+          render: (ctx) => {
+            ctx.save()
+            ctx.globalAlpha = ef.alpha
+            ctx.drawImage(currentImage, sx - efW / 2, sy - efH / 2, efW, efH)
+            ctx.restore()
+          }
+        })
+      }
+    }
+
+    // ── layer=2：投射物（火球弹道/普攻冲击波，按世界Y排序随单位遮挡）─
+    if (this.battleSystem && this.battleSystem.projectiles && this.battleSystem.projectiles.length > 0) {
+      const now = Date.now() / 1000
+      for (const p of this.battleSystem.projectiles) {
+        const sx = p.x - this.cameraX
+        const sy = p.y - this.cameraY
+        const isBasic = !!p.isBasicAttack
+        engine.addEntity({
+          layer: 2,
+          sortY: p.y / this.dpr,
+          type: 'projectile',
+          render: (ctx) => {
+            ctx.save()
+            ctx.translate(sx, sy)
+            if (isBasic) {
+              // ★ 普攻冲击波：蓝白色能量弹 + 环绕粒子
+              // 核心
+              const pulse = 0.8 + 0.2 * Math.sin(now * 10)
+              ctx.fillStyle = 'rgba(150, 210, 255, 0.9)'
+              ctx.beginPath()
+              ctx.arc(0, 0, 7 * this.dpr * pulse, 0, Math.PI * 2)
+              ctx.fill()
+              // 白色核心
+              ctx.fillStyle = 'rgba(255, 255, 255, 0.85)'
+              ctx.beginPath()
+              ctx.arc(0, 0, 3.5 * this.dpr, 0, Math.PI * 2)
+              ctx.fill()
+              // 外发光
+              ctx.fillStyle = 'rgba(150, 210, 255, 0.25)'
+              ctx.beginPath()
+              ctx.arc(0, 0, 12 * this.dpr, 0, Math.PI * 2)
+              ctx.fill()
+              // 环绕小粒子
+              for (let k = 0; k < 3; k++) {
+                const ang = now * 6 + (Math.PI * 2 * k) / 3
+                ctx.fillStyle = 'rgba(200, 235, 255, 0.6)'
+                ctx.beginPath()
+                ctx.arc(Math.cos(ang) * 10 * this.dpr, Math.sin(ang) * 4 * this.dpr, 2 * this.dpr, 0, Math.PI * 2)
+                ctx.fill()
+              }
+            } else {
+              // ★ 火球：火焰粒子效果（核心亮球 + 多层火焰粒子 + 拖尾）
+              // 外层火焰（橙红扩散）
+              for (let k = 0; k < 6; k++) {
+                const ang = now * 8 + (Math.PI * 2 * k) / 6
+                const rr = (7 + 3 * Math.sin(now * 5 + k)) * this.dpr
+                const fx = Math.cos(ang) * rr
+                const fy = Math.sin(ang) * rr * 0.7
+                ctx.fillStyle = `rgba(255, 140, 40, ${0.35 + 0.3 * Math.abs(Math.sin(now * 5 + k))})`
+                ctx.beginPath()
+                ctx.arc(fx, fy, 3.5 * this.dpr, 0, Math.PI * 2)
+                ctx.fill()
+              }
+              // 内层火焰（黄）
+              ctx.fillStyle = 'rgba(255, 200, 60, 0.85)'
+              ctx.beginPath()
+              ctx.arc(0, 0, 6 * this.dpr, 0, Math.PI * 2)
+              ctx.fill()
+              // 核心（白热）
+              ctx.fillStyle = 'rgba(255, 255, 230, 0.95)'
+              ctx.beginPath()
+              ctx.arc(0, 0, 3 * this.dpr, 0, Math.PI * 2)
+              ctx.fill()
+              // 大光晕
+              ctx.fillStyle = 'rgba(255, 120, 30, 0.25)'
+              ctx.beginPath()
+              ctx.arc(0, 0, 14 * this.dpr, 0, Math.PI * 2)
+              ctx.fill()
+              // 火焰拖尾（向左后方 = 运动反方向）
+              ctx.fillStyle = 'rgba(255, 100, 30, 0.4)'
+              ctx.beginPath()
+              ctx.arc(-p.castDir * 10 * this.dpr, 0, 4 * this.dpr, 0, Math.PI * 2)
+              ctx.fill()
+              ctx.fillStyle = 'rgba(255, 80, 20, 0.25)'
+              ctx.beginPath()
+              ctx.arc(-p.castDir * 16 * this.dpr, 0, 3 * this.dpr, 0, Math.PI * 2)
+              ctx.fill()
+            }
+            ctx.restore()
+          }
+        })
+      }
+    }
+
+    // ── layer=2：BUFF 粒子（按世界Y排序，被角色正确遮挡）─
+    if (this.battleSystem && this.battleSystem.buffParticles && this.battleSystem.buffParticles.length > 0) {
+      for (const pt of this.battleSystem.buffParticles) {
+        const sx = pt.x - this.cameraX
+        const sy = pt.y - this.cameraY
+        const pAlpha = Math.max(0, Math.min(1, pt.life))
+        engine.addEntity({
+          layer: 2,
+          sortY: pt.y / this.dpr,
+          type: 'buffParticle',
+          render: (ctx) => {
+            ctx.save()
+            // 发光外圈
+            ctx.fillStyle = `rgba(255, 255, 255, ${pAlpha * 0.25})`
+            ctx.beginPath()
+            ctx.arc(sx, sy, pt.size * 1.8, 0, Math.PI * 2)
+            ctx.fill()
+            // 核心
+            ctx.fillStyle = pt.color.startsWith('#') ? pt.color : pt.color
+            ctx.globalAlpha = pAlpha * 0.9
+            ctx.beginPath()
+            ctx.arc(sx, sy, pt.size, 0, Math.PI * 2)
+            ctx.fill()
+            ctx.restore()
+          }
+        })
+      }
+    }
+
+    // ── layer=2：主角 + 队友（各自独立参与Y排序，互不遮挡错乱）─
+    // ★ 修复：之前所有角色画在一个 renderFn 里，主角和队友不按各自 Y 排序，
+    //   导致队友（李小宝）永远画在主角（臻宝）上面。现改为每个角色一个 Y 排序实体。
     if (typeof this.playerX === 'number') {
       // ★ 当前被控角色的 partyIndex（用于绘制控制指示标记）
       const ctrlPartyIdx = (self.battleSystem && self.battleSystem.battleHeroes &&
                             self.battleSystem.battleHeroes[0])
         ? self.battleSystem.battleHeroes[0].partyIndex : 0
-      engine.addPlayer(this.playerY / this.dpr + 50, function renderFn(ctx) {
-        // ★ FieldScene 不继承 FieldMovement，没有 renderCharacters 方法，
-        //   这里统一用 CharacterSprite 渲染主角 + 所有跟随队友（与主地图非副本路径一致）。
-        // ── 主角（臻宝）──
-        if (self.mainCharacterSprite) {
-          // 战斗系统下，主角真实世界坐标存于 _heroWorldPos[0]（可能非被控者）
-          const pPos = (self._heroWorldPos && self._heroWorldPos[0]) ? self._heroWorldPos[0] : { x: self.playerX, y: self.playerY }
-          const screenX = pPos.x - self.cameraX
-          const screenY = pPos.y - self.cameraY
+      // ★ 角色渲染辅助：按角色世界坐标创建独立 Y 排序实体
+      const addCharEntity = (sortY, drawFn) => {
+        engine.addEntity({
+          layer: 2,
+          sortY: sortY,
+          type: 'character',
+          render: (ctx) => drawFn(ctx)
+        })
+      }
+
+      // ── 主角（臻宝）独立实体 ──
+      // ★ 战斗中被击杀（hp<=0）的主角不渲染（死亡消失）
+      const mainBhAlive = !(self.battleSystem && self.battleSystem.active) ||
+        !(self.party && self.party[0] && self.party[0].hp <= 0)
+      if (self.mainCharacterSprite && mainBhAlive) {
+        // 战斗系统下，主角真实世界坐标存于 _heroWorldPos[0]（可能非被控者）
+        const pPos = (self._heroWorldPos && self._heroWorldPos[0]) ? self._heroWorldPos[0] : { x: self.playerX, y: self.playerY }
+        const screenX = pPos.x - self.cameraX
+        const screenY = pPos.y - self.cameraY
+        addCharEntity(pPos.y / self.dpr, function mainRender(ctx) {
           // ★ 被控角色脚下画高亮圈
           if (self.battleSystem && self.battleSystem.active && ctrlPartyIdx === 0) {
             self._renderControlIndicator(ctx, screenX, screenY)
           }
-          self.mainCharacterSprite.render(ctx, screenX, screenY)
+          // ★ MP不足抖动：应用抖动偏移
+          const mainShakeX = self.mainCharacterSprite._shakeOffsetX || 0
+          const mainShakeY = self.mainCharacterSprite._shakeOffsetY || 0
+          self.mainCharacterSprite.render(ctx, screenX + mainShakeX, screenY + mainShakeY)
           // ★ 主角 BUFF 光环已移至 _renderWorldHealthBars 里统一渲染（确保每帧必调）
 
           // 移动时添加轻微的方向指示器
@@ -2795,33 +2975,45 @@ baseRadius: 50 * this.dpr,    // 底座半径（缩小）
             ctx.fillStyle = 'rgba(255,255,255,0.5)'
             ctx.fill()
           }
-        }
+        })
+      }
 
-        // ── 跟随队友（李小宝等）──
-        // 副本模式原先只渲染了主角，导致队友只有血条蓝条、没有精灵动画。
-        if (self.followers && Array.isArray(self.followers)) {
-          for (let fi = 0; fi < self.followers.length; fi++) {
-            const follower = self.followers[fi]
-            // 优先用 CharacterSprite 渲染（与主角臻宝一致，已验证分包资源可加载）
-            if (follower.sprite) {
-              const fPos = (self._heroWorldPos && self._heroWorldPos[fi + 1])
-                ? self._heroWorldPos[fi + 1]
-                : { x: follower.x, y: follower.y }
-              const fScreenX = fPos.x - self.cameraX
-              const fScreenY = fPos.y - self.cameraY
+      // ── 跟随队友（李小宝等）各自独立实体，按各自 Y 排序 ──
+      if (self.followers && Array.isArray(self.followers)) {
+        for (let fi = 0; fi < self.followers.length; fi++) {
+          const follower = self.followers[fi]
+          // 优先用 CharacterSprite 渲染（与主角臻宝一致，已验证分包资源可加载）
+          if (follower.sprite) {
+            const fPos = (self._heroWorldPos && self._heroWorldPos[fi + 1])
+              ? self._heroWorldPos[fi + 1]
+              : { x: follower.x, y: follower.y }
+            const fScreenX = fPos.x - self.cameraX
+            const fScreenY = fPos.y - self.cameraY
+            // ★ 被击杀的队友（hp<=0）不渲染（死亡消失）
+            const fAlive = !(self.battleSystem && self.battleSystem.active) ||
+              !(follower.character && follower.character.hp <= 0)
+            if (!fAlive) continue
+            const fSortY = fPos.y / self.dpr
+            addCharEntity(fSortY, function followerRender(ctx) {
               // ★ 被控角色（队友）脚下画高亮圈
               if (self.battleSystem && self.battleSystem.active && ctrlPartyIdx === (fi + 1)) {
                 self._renderControlIndicator(ctx, fScreenX, fScreenY)
               }
-              follower.sprite.render(ctx, fScreenX, fScreenY)
+              // ★ MP不足抖动：应用抖动偏移
+              const fShakeX = follower.sprite._shakeOffsetX || 0
+              const fShakeY = follower.sprite._shakeOffsetY || 0
+              follower.sprite.render(ctx, fScreenX + fShakeX, fScreenY + fShakeY)
               // ★ 队友 BUFF 光环已移至 _renderWorldHealthBars 里统一渲染
-            } else if (typeof self._renderFollower === 'function') {
-              // 兜底：旧版手写渲染路径
+            })
+          } else if (typeof self._renderFollower === 'function') {
+            // 兜底：旧版手写渲染路径（作为独立实体）
+            const fPos = { x: follower.x, y: follower.y }
+            addCharEntity(fPos.y / self.dpr, function followerRender(ctx) {
               self._renderFollower(ctx, follower, fi)
-            }
+            })
           }
         }
-      })
+      }
     }
 
     // ★ BUFF 生效冲击波已移至 _renderWorldHealthBars 里统一渲染
@@ -2831,10 +3023,12 @@ baseRadius: 50 * this.dpr,    // 底座半径（缩小）
       renderMonster: (ctx, monster, sx, sy) => {
         // ★ 修复：所有有动画资源的怪物都使用猫咪动画
         const useCatAnim = ['slime_cat', 'shadow_mouse', 'wild_cat', 'lost_healer_cat', 'flame_slime', 'aqua_slime', 'violet_slime', 'shadow_mouse_smooth'].includes(monster.enemyId)
+        // ★ 跳跃攻击动画：按抛物线高度上移渲染（跳跃期间怪物在空中）
+        const jumpY = sy + (monster._jumpOffsetY || 0)
         if (useCatAnim) {
-          self._renderCatMonster(ctx, monster, sx, sy)
+          self._renderCatMonster(ctx, monster, sx, jumpY)
         } else {
-          self._renderEmojiMonster(ctx, monster, sx, sy)
+          self._renderEmojiMonster(ctx, monster, sx, jumpY)
         }
       },
     })
@@ -2869,6 +3063,12 @@ baseRadius: 50 * this.dpr,    // 底座半径（缩小）
   }
   
   render(ctx) {
+    // ★ 每帧重置技能特效的 Y 排序标记（本帧已被 2.5D 引擎排序渲染，避免重复绘制）
+    if (this.game && this.game.effects && this.game.effects.effects) {
+      for (const ef of this.game.effects.effects) {
+        ef._ySorted = false
+      }
+    }
     // 地图背景（程序化渲染只画草地纹理）
     if (this.areaInfo.fieldBg) {
       const bgImage = this.game.assets.get(this.areaInfo.fieldBg)
@@ -3011,19 +3211,7 @@ baseRadius: 50 * this.dpr,    // 底座半径（缩小）
       this._renderBattleUI(ctx)
     }
 
-    // ★ 新增：渲染怪物抛射物（远程技能飞弹）
-    if (this.battleSystem && this.battleSystem.projectiles && this.battleSystem.projectiles.length > 0) {
-      for (const p of this.battleSystem.projectiles) {
-        const sx = p.x - this.cameraX
-        const sy = p.y - this.cameraY
-        ctx.save()
-        ctx.fillStyle = p.fromMonster ? 'rgba(120, 220, 120, 0.85)' : 'rgba(255, 120, 80, 0.85)'
-        ctx.beginPath()
-        ctx.arc(sx, sy, 8 * this.dpr, 0, Math.PI * 2)
-        ctx.fill()
-        ctx.restore()
-      }
-    }
+    // ★ 投射物已改为按 2.5D Y 轴排序渲染（在 _renderYSortedEntities 中），此处不再重复绘制
 
     // ★ 新增：渲染跳跃攻击预警区域（红色警示圈，收缩+闪烁，1秒后爆发）
     if (this.battleSystem && this.battleSystem.warningZones && this.battleSystem.warningZones.length > 0) {
@@ -3116,13 +3304,18 @@ baseRadius: 50 * this.dpr,    // 底座半径（缩小）
       : { x: this.playerX, y: this.playerY }
     const ctrlIdx = (this.battleSystem && this.battleSystem.battleHeroes && this.battleSystem.battleHeroes[0])
       ? this.battleSystem.battleHeroes[0].partyIndex : 0
-    drawBar(mainPos.x, mainPos.y, this.party[0], ctrlIdx === 0)
+    // ★ 战斗中阵亡的角色不显示血条
+    if (!(this.battleSystem && this.battleSystem.active && this.party[0] && this.party[0].hp <= 0)) {
+      drawBar(mainPos.x, mainPos.y, this.party[0], ctrlIdx === 0)
+    }
 
     // 跟随队友
     if (this.followers && Array.isArray(this.followers)) {
       for (let i = 0; i < this.followers.length; i++) {
         const f = this.followers[i]
         if (!f || !f.character) continue
+        // ★ 战斗中阵亡的队友不显示血条
+        if (this.battleSystem && this.battleSystem.active && f.character.hp <= 0) continue
         const fPos = (this._heroWorldPos && this._heroWorldPos[i + 1]) ? this._heroWorldPos[i + 1] : { x: f.x, y: f.y }
         drawBar(fPos.x, fPos.y, f.character, ctrlIdx === (i + 1))
       }
@@ -3131,8 +3324,7 @@ baseRadius: 50 * this.dpr,    // 底座半径（缩小）
     // ★ BUFF 生效冲击波（与血条在同一渲染层，确保每帧必调）
     this._renderBuffShockwaves(ctx)
 
-    // ★ BUFF 粒子（专业粒子系统：速度/重力/衰减）
-    this._renderBuffParticles(ctx)
+    // ★ BUFF 粒子已改为按 2.5D Y 轴排序渲染（在 _renderYSortedEntities 中），此处不再重复绘制
   }
 
   /**
