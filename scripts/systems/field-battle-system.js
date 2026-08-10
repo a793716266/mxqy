@@ -343,16 +343,20 @@ export function installFieldBattleSystem(FieldSceneClass) {
     // 1.1 更新玩家攻击/技能动画计时
     if (this.battleSystem.playerAnim) {
       const pa = this.battleSystem.playerAnim
-      pa.timer -= dt
       // ★ 剑气风暴（自定义斩击大招）：分阶段状态机推进（前摇→突刺→收尾）
       if (pa.type === 'blade_storm') {
+        // 状态机自己用 chargeTimer/dashTimer/finishTimer 推进，
+        // 这里只保留一个总时长兜底（只递减一次，避免被双重递减提前清零）
         this._updateBladeStorm(pa, dt)
         pa.timer -= dt
         if (pa.timer <= 0 && pa.phase !== 'finish') {
           // 兜底：异常超时也清理
           this.battleSystem.playerAnim = null
+          const sp0 = this.mainCharacterSprite
+          if (sp0) { sp0.state = 'idle'; sp0.animFrame = 0; sp0.animTimer = 0 }
         }
       } else {
+        pa.timer -= dt
       // ★ 近战攻击位移（lunge）：身体跟随挥砍前冲后回弹
       if (this.battleSystem._attackLunge) {
         const ln = this.battleSystem._attackLunge
@@ -815,11 +819,49 @@ export function installFieldBattleSystem(FieldSceneClass) {
   // ==========================================================================
   proto._castBladeStorm = function(skill, ctrl) {
     const sys = this.battleSystem
-    const dir = ctrl.facingLeft ? -1 : 1
+    // ★ 用玩家真实朝向（this.facingLeft 由摇杆实时更新），避免 sprite.facingLeft 过期
+    //   导致吸附/攻击方向反向（怪物被拉到身后）
+    const dir = this.facingLeft ? -1 : 1
+    // 同步主角精灵朝向，保证出剑姿态与吸附方向一致
+    const ms = this.mainCharacterSprite
+    if (ms) ms.facingLeft = this.facingLeft
+    const mainHero = ctrl.hero
+
+    // ★★ MP 检查与扣除（剑气风暴是消耗型大招，必须扣蓝）
+    if ((skill.mpCost || 0) > 0 && (mainHero.mp || 0) < (skill.mpCost || 0)) {
+      if (this.game && this.game.showToast) this.game.showToast('MP不足')
+      if (typeof this._triggerMpShake === 'function') this._triggerMpShake(ctrl)
+      return
+    }
+    if ((skill.mpCost || 0) > 0) {
+      mainHero.mp = Math.max(0, mainHero.mp - (skill.mpCost || 0))
+    }
+    // ★ 设置技能按钮冷却（蓝量扣了，冷却也要算）
+    if (this.battleSystem.skillButtons) {
+      const sb = this.battleSystem.skillButtons.find(b => b.skill === skill)
+      if (sb) {
+        const cdSec = skill.cooldown || 8
+        sb.cooldown = cdSec * 1000
+        sb.cooldownMax = sb.cooldownMax || sb.cooldown
+      }
+    }
 
     // ★ 锁 Y 轴（整个技能期间：蓄力1s + 突刺 + 收尾）
-    const total = 1.0 + (skill.combo || 5) * 0.12 + 0.4
+    const dashTotal = (skill.combo || 5) * 0.18
+    const finishTotal = 0.5
+    const total = 1.0 + dashTotal + finishTotal
     sys.castAxisLockTimer = Math.max(sys.castAxisLockTimer, total)
+
+    // ★ 进入攻击渲染态（主角由 CharacterSprite 渲染，zhenbao 的 attack 状态会映射到
+    //   HERO_ZHENBAO_ATTACK_XX 帧；下面每帧直接控制 animFrame 指定具体帧 02/03/07）
+    //   注意：ctrl.hero 是 party[0] 数据对象，没有 .sprite 字段；主角 sprite 直接用
+    //   this.mainCharacterSprite（FieldScene 实例上即为主角精灵）。
+    const mainSprite = this.mainCharacterSprite
+    if (mainSprite) {
+      mainSprite.state = 'attack'
+      mainSprite.animTimer = 0
+      mainSprite.animFrame = 1   // 0-based：第 1 帧 = attack_02.png
+    }
 
     // 记录蓄力范围内（世界坐标）的存活怪物，供吸附
     const pos = ctrl.getPos()
@@ -835,17 +877,21 @@ export function installFieldBattleSystem(FieldSceneClass) {
       phase: 'charge',          // charge → dash → finish
       chargeMax: 1.0,
       chargeTimer: 1.0,         // 前摇蓄力 1 秒
-      dashMax: 0.12,            // 单次突刺时长
+      dashMax: 0.18,            // 单次突刺时长（放慢，看得清 02/03 反复）
       dashTimer: 0,
+      dashT: 0,                 // 当前突刺步内进度 0~1
       dashStep: 0,
       combo: skill.combo || 5,
+      finishMax: 0.5,           // 收尾阶段（03→07）时长，确保两帧都清晰停留
+      finishTimer: 0,
       skill: skill,
       dir: dir,
       pulled: pulled,
       frame: 2,                 // ★ 蓄力用 02 帧
       maxTimer: total,
       timer: total,             // 总时长兜底
-      facing: Math.atan2(0, dir)
+      facing: Math.atan2(0, dir),
+      _dashHitPending: true
     }
 
     // 赛亚人式蓄力粒子初喷
@@ -873,21 +919,22 @@ export function installFieldBattleSystem(FieldSceneClass) {
     if (pa.phase === 'charge') {
       // 蓄力阶段：赛亚人金色光环持续喷发 + 02 帧
       this._spawnBuffAuraParticles(ctrl.hero, '#FFD700')
-      pa.frame = 2
+      this._bladeStormSetFrame(ctrl, 2, pa)   // ★ attack_02.png
       pa.chargeTimer -= dt
       if (pa.chargeTimer <= 0) {
         pa.phase = 'dash'
         pa.dashTimer = pa.dashMax
+        pa.dashT = 0
         pa.dashStep = 0
         pa._dashHitPending = true
-        this._bladeStormLunge(ctrl, dir)   // 第一次突刺前冲
       }
     } else if (pa.phase === 'dash') {
       pa.dashTimer -= dt
-      // ★ 02/03 帧反复播放
-      pa.frame = (pa.dashStep % 2 === 0) ? 2 : 3
-      // 前冲瞬间结算一次伤害（X 轴正前方所有敌人）
-      if (pa._dashHitPending) {
+      pa.dashT = Math.min(1, Math.max(0, 1 - pa.dashTimer / pa.dashMax))  // 当前突刺步内进度
+      // ★ 02/03 帧反复播放（奇数步用03更显"反手"，偶数步用02），原地出剑不位移
+      this._bladeStormSetFrame(ctrl, (pa.dashStep % 2 === 0) ? 2 : 3, pa)
+      // 突刺最前端（dashT≈0.5）结算一次伤害（X 轴正前方所有敌人）
+      if (pa._dashHitPending && pa.dashT >= 0.45) {
         this._bladeStormHit(ctrl, dir, pa.skill)
         pa._dashHitPending = false
       }
@@ -895,37 +942,39 @@ export function installFieldBattleSystem(FieldSceneClass) {
         pa.dashStep++
         if (pa.dashStep >= pa.combo) {
           pa.phase = 'finish'
-          pa.finishTimer = 0.3
-          pa.frame = 3          // ★ 收尾用 03 帧
+          pa.finishTimer = pa.finishMax   // 收尾阶段（03 → 07）
+          this._bladeStormSetFrame(ctrl, 3, pa)   // ★ 收尾起手用 03 帧
         } else {
           pa.dashTimer = pa.dashMax
+          pa.dashT = 0
           pa._dashHitPending = true
-          this._bladeStormLunge(ctrl, dir)   // 下一次突刺前冲
         }
       }
     } else if (pa.phase === 'finish') {
       pa.finishTimer -= dt
-      // ★ 03 帧 → 07 帧
-      pa.frame = pa.finishTimer > 0.15 ? 3 : 7
+      // ★ 03 帧 → 07 帧（收尾挥砍），两帧都清晰停留，最后才发剑气
+      this._bladeStormSetFrame(ctrl, pa.finishTimer > pa.finishMax * 0.5 ? 3 : 7, pa)
       if (pa.finishTimer <= 0) {
-        // ★ 向前方发送剑气投射物（X 轴伤害）
+        // ★ 向前方发送剑气投射物（X 轴伤害）—— 必须在 03/07 收尾播放完之后
         this._spawnBladeStormProjectile(ctrl, dir, pa.skill)
         this.battleSystem.playerAnim = null
+        // ★ 动画结束恢复 idle
+        const sp = this.mainCharacterSprite
+        if (sp) { sp.state = 'idle'; sp.animFrame = 0; sp.animTimer = 0 }
       }
     }
   }
 
-  // ★ 突刺前冲位移（复用 lunge 机制）
-  proto._bladeStormLunge = function(ctrl, dir) {
-    const amount = 30 * this.dpr
-    // 先归位上一突刺残留偏移
-    if (this.battleSystem._attackLunge && this.battleSystem._attackLunge.last) {
-      const ln0 = this.battleSystem._attackLunge
-      const lp = ctrl.getPos()
-      lp.x -= ln0.last
-      if (ctrl.partyIndex === 0) this.playerX -= ln0.last
+  // ★ 直接指定主角当前显示的攻击帧（1-based 帧号，如 2=attack_02）
+  //   zhenbao 在 attack 状态下映射到 HERO_ZHENBAO_ATTACK_XX；
+  //   每帧把 animTimer 归零以冻结 CharacterSprite 的自动推进，确保精确停在指定帧。
+  proto._bladeStormSetFrame = function(ctrl, frameNum, pa) {
+    pa.frame = frameNum
+    const sp = this.mainCharacterSprite
+    if (sp) {
+      sp.animFrame = frameNum - 1   // 0-based
+      sp.animTimer = 0
     }
-    this.battleSystem._attackLunge = { dir: dir, amount: amount, last: 0 }
   }
 
   // ★ 单次突刺伤害：玩家正前方 X 轴（吸附来的 + 范围内）所有敌人各造成 1 次

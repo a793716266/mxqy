@@ -4137,3 +4137,15 @@ _checkBattleEnd() {
     - 投射物渲染：新增剑气视觉（朝飞行方向的横向发光刃 + 剑尖 + 流动微光）。
 - **状态**：✅ 已通过 Babel 语法检查；待用户实机验证蓄力/吸附/突刺/剑气全套表现
 - **修改文件**：`scripts/data/heroes.js`、`scripts/systems/field-battle-system.js`、`scripts/scenes/field-scene.js`
+
+## 2026-08-11 更新：剑气风暴实机修复（动画/位移/吸附方向）
+
+### fix: 剑气风暴主角动画不播放 + 突刺滑步 + 吸附反向
+
+- **问题 1（无出剑动画，只有左右移动）**：`_castBladeStorm` 与 `_bladeStormSetFrame` 通过 `ctrl.hero.sprite` 设置主角 `state/animFrame`，但 `ctrl.hero` 是 `party[0]` 纯数据对象，**没有 `.sprite` 字段**，导致设置被全部跳过，主角 `state` 一直是 walk/idle。表现即"人物左右疯狂移动、看不到出剑"。
+  - **修复**：改用 `this.mainCharacterSprite`（FieldScene 实例上即主角精灵）设置攻击渲染态与逐帧锁定；收尾恢复 idle、超时兜底清理同步修正。
+- **问题 2（突刺前后滑步没必要）**：移除 `_bladeStormApplyLunge` / `_bladeStormResetLunge` 两个 sin 曲线位移方法及其全部调用点、`_lungeLast`/`_lungeDir` 残留字段。主角改为**原地出剑**，仅靠 02↔03 帧表达突刺，伤害判定保留。
+- **问题 3（怪物吸附到身后）**：吸附方向 `dir` 原用 `ctrl.facingLeft`（= `sprite.facingLeft`），该字段仅在近战攻击时更新，释放技能时多为过期旧值，导致吸附目标点算反。
+  - **修复**：`dir` 改用玩家真实朝向 `this.facingLeft`（摇杆实时更新），并在释放瞬间同步给 `mainCharacterSprite.facingLeft`，保证出剑姿态/吸附/突刺伤害/剑气发射方向一致（均走 `pa.dir`）。
+- **状态**：✅ 已通过 Babel 语法检查；用户确认动画/位移/吸附均已正常，剑气视觉后续继续优化
+- **修改文件**：`scripts/data/heroes.js`、`scripts/systems/field-battle-system.js`、`scripts/scenes/field-scene.js`

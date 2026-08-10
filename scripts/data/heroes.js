@@ -53,8 +53,10 @@ export const HEROES = [
         type: 'blade_storm',   // ★ 自定义斩击大招：前摇蓄力→吸附→5次突刺→剑气收尾
         mpCost: 25,
         range: 0,
+        cooldown: 10,          // 冷却（秒）
         combo: 5,              // 突刺次数
         power: 0.85,           // 单次突刺伤害系数
+        lungeDist: 46,         // 每次突刺前冲距离（像素，明显可见）
         pullRange: 220,        // 吸附范围（像素，世界坐标）
         pullDist: 70,          // 吸附到玩家正前方的距离
         projectile: {
