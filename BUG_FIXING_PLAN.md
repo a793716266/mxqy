@@ -4079,3 +4079,20 @@ _checkBattleEnd() {
   - 同步修正法杖敲击/火球等技能投射物发射点：`y: cpos.y - 20*dpr → -15*dpr`，加 `x: cpos.x + castDir * 20*dpr` 外移。
 - **状态**：✅ 已通过 Babel 语法检查；实机确认时机协调、发射点从手部/法杖位置出
 - **修改文件**：`scripts/systems/field-battle-system.js`
+
+## 2026-08-10 更新：普攻/技能 Y 轴锁定时长对齐动画真实时长
+
+### fix: 普攻未播完就能移动 Y 轴（角色"在飘"）
+
+- **现象**：普攻/伤害技能动画尚未播放完毕（约第 4 帧后，用户感知 attack_07 帧附近）Y 轴即解锁，角色可在 Y 方向自由移动，表现为"在飘"。
+- **根因**：Y 轴锁定完全依赖 `castAxisLockTimer > 0`（`field-scene.js` 第 781 行 `dy=0`）。该计时旧值：
+  - 普攻释放时初始 `castAxisLockTimer = 0.7`（`_playerAttackMonster`）；
+  - 每帧被 `_updateBattle` 重设为 `playerAnim.timer`（旧硬编码普攻 `0.6`、技能 `1.0`）。
+  - 而玩家 attack/skill 动画**真实渲染时长 = 8 帧 × `CharacterSprite.frameDuration(0.15s)` = 1.2s**。
+  - 锁定时长（0.6~0.7s）只有动画真实时长的一半，故动画播到一半 Y 轴就解锁。
+- **修复**：将锁定时长与真实动画时长对齐，且动态跟随帧率/攻速：
+  - `playerAnim.timer/maxTimer` 由硬编码 `0.6`/`1.0` 改为 `8 * frameDuration`（普攻/技能统一 8 帧，约 1.2s）。
+  - `_playerAttackMonster` 中 `castAxisLockTimer` 初始值由 `0.7` 改为 `8 * frameDuration`。
+  - `_updateBattle` 每帧 `castAxisLockTimer = playerAnim.timer` 跟随递减不变，确保 Y 轴锁到动画真正最后一帧才解锁。
+- **状态**：✅ 已通过 Babel 语法检查；用户实机确认普攻完整播放完毕前不再能移动 Y 轴
+- **修改文件**：`scripts/systems/field-battle-system.js`

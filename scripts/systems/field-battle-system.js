@@ -334,8 +334,39 @@ export function installFieldBattleSystem(FieldSceneClass) {
 
     // 1.1 更新玩家攻击/技能动画计时
     if (this.battleSystem.playerAnim) {
-      this.battleSystem.playerAnim.timer -= dt
-      if (this.battleSystem.playerAnim.timer <= 0) {
+      const pa = this.battleSystem.playerAnim
+      pa.timer -= dt
+      // ★ 近战攻击位移（lunge）：身体跟随挥砍前冲后回弹
+      if (this.battleSystem._attackLunge) {
+        const ln = this.battleSystem._attackLunge
+        const ctrl = this._getCurrentControlHero()
+        if (ctrl) {
+          const lpos = ctrl.getPos()
+          // 先撤销上一帧偏移
+          if (ln.last) {
+            lpos.x -= ln.last
+            if (ctrl.partyIndex === 0) this.playerX -= ln.last
+          }
+          const prog = pa.maxTimer ? Math.min(1, Math.max(0, 1 - pa.timer / pa.maxTimer)) : 0
+          // sin 曲线：0→0.5 前冲、0.5→1 回弹归位
+          const off = Math.sin(prog * Math.PI) * ln.amount * ln.dir
+          lpos.x += off
+          if (ctrl.partyIndex === 0) this.playerX += off
+          ln.last = off
+        }
+      }
+      if (pa.timer <= 0) {
+        // 攻击结束：归位偏移并清除 lunge
+        if (this.battleSystem._attackLunge) {
+          const ln = this.battleSystem._attackLunge
+          const ctrl = this._getCurrentControlHero()
+          if (ctrl && ln.last) {
+            const lpos = ctrl.getPos()
+            lpos.x -= ln.last
+            if (ctrl.partyIndex === 0) this.playerX -= ln.last
+          }
+          this.battleSystem._attackLunge = null
+        }
         this.battleSystem.playerAnim = null
       }
     }
@@ -446,7 +477,11 @@ export function installFieldBattleSystem(FieldSceneClass) {
       this.battleSystem.castLockTimer -= dt
     }
     // 4.212 ★ 施法轴锁定计时（普攻/伤害技能释放期间限制 Y 轴移动）
-    if (this.battleSystem.castAxisLockTimer > 0) {
+    //   ★ 直接跟随玩家攻击/技能动画：只要 playerAnim 在播放就锁 Y 轴，
+    //     避免固定 0.7s 与动画时长(普攻0.6s/技能1.0s)不一致导致"动画未播完就能移动Y"
+    if (this.battleSystem.playerAnim && this.battleSystem.playerAnim.timer > 0) {
+      this.battleSystem.castAxisLockTimer = this.battleSystem.playerAnim.timer
+    } else if (this.battleSystem.castAxisLockTimer > 0) {
       this.battleSystem.castAxisLockTimer -= dt
     }
 
@@ -523,9 +558,11 @@ export function installFieldBattleSystem(FieldSceneClass) {
     }
 
     if (sprite) {
-      // ★ 普攻/伤害技能释放：施法期间（0.7s）移动限制为 X 轴（Y 锁定）
+      // ★ 普攻/伤害技能释放：施法期间移动限制为 X 轴（Y 锁定）
+      //   时长对齐真实动画(8帧×frameDuration)，由 _updateBattle 跟随 playerAnim.timer 维持
       if (!isBuff) {
-        this.battleSystem.castAxisLockTimer = 0.7
+        const fd = (this.frameDuration || 0.15)
+        this.battleSystem.castAxisLockTimer = 8 * fd
       }
       sprite.state = animState
       sprite.animFrame = 0
@@ -545,10 +582,14 @@ export function installFieldBattleSystem(FieldSceneClass) {
     }
     // 保留 playerAnim 用于朝向覆盖
     const pos0 = ctrl.getPos()
+    // ★ 攻击/技能动画时长对齐真实渲染时长（8帧 × frameDuration = 1.2s @150ms），
+    //   避免锁定时长(旧0.6/0.7s)比动画短一半导致"动画未播完Y轴就解锁、角色在飘"
+    const frameDur = (this.frameDuration || 0.15)
+    const animLen = (8 * frameDur) // 普攻/技能统一8帧
     this.battleSystem.playerAnim = {
       type: animState,
-      timer: skill ? 1.0 : 0.6,
-      maxTimer: skill ? 1.0 : 0.6,
+      timer: animLen,
+      maxTimer: animLen,
       facing: monster ? Math.atan2(monster.y - pos0.y, monster.x - pos0.x) : 0
     }
 
@@ -623,13 +664,18 @@ export function installFieldBattleSystem(FieldSceneClass) {
       if (!isRanged) {
         // ── 近战普攻：目标在攻击距离内则即时结算伤害（延迟到挥砍命中帧） ──
         if (!monster) return   // 近战无目标只播动画
-        // 预计算伤害 + 延迟命中（挥砍动画中段 0.25s 结算）
+        // ★ 攻击位移（lunge）：让身体跟随挥砍动画前冲后回弹，解决"剑出去人不动"的僵硬感
+        //   playerAnim 共 0.6s/8帧，第4帧(0.3s)为挥砍最猛瞬间；
+        //   位移曲线用 sin(prog*PI)：0→0.5前冲、0.5→1回弹归位
+        const lungeDir = sprite.facingLeft ? -1 : 1
+        this.battleSystem._attackLunge = { dir: lungeDir, amount: 26 * this.dpr, last: 0 }
+        // 预计算伤害 + 延迟命中（对齐第4帧挥砍最猛瞬间 = 0.3s 结算）
         const baseDmg = Math.max(1, this._getHeroAtk(mainHero) - Math.floor(monster.def * 0.5))
         const meleeCrit = Math.random() < (mainHero.crit || 0.05)
         const finalDmg = meleeCrit ? Math.floor(baseDmg * 1.5) : baseDmg
         if (!this.battleSystem.pendingDamages) this.battleSystem.pendingDamages = []
         this.battleSystem.pendingDamages.push({
-          timer: 0.25,
+          timer: 0.3,
           monster: monster,
           damage: finalDmg,
           heroName: mainHero.name,
