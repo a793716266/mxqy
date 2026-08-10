@@ -4063,3 +4063,19 @@ _checkBattleEnd() {
 - **状态**：✅ 已通过 Babel 语法检查 + 222 项自动化断言（0 失败）
 - **修改文件**：`scripts/scenes/field-scene.js`、`scripts/systems/field-battle-system.js`、`scripts/tools/verify_skills.mjs`
 - **验证脚本**：`verify_skills.mjs` 测试18（12 条断言：四种状态挂接、冲击波生成、aura/particle/shockwave 实体注册、`_frozen/_rooted` 标记、到期自动清除）
+
+---
+
+## 2026-08-10 更新：李小宝普攻动画与投射物时机/发射点优化
+
+### fix/feat: 普攻投射物与抬手动画协调 + 发射点对齐手部
+
+- **投射物飞出时机**：原 `delay: 0.5s`（≈第3.3帧）抬手未做完就飞出，不协调。
+  - 先调到 `0.6s`（≈第4帧）仍偏快，最终按用户确认的第6帧释放点对齐。
+  - 改为**动态计算**：`delay = 6 * frameDuration`，不再写死秒数。`cast_universal.png` 共8帧，第6帧为释放动作（法杖前指/发光）。后期帧率/攻速变化（`frameDuration` 改变）时延迟自动跟随，不会失准。
+- **发射点高度修正**：原 `y: p2.y - 20*dpr` 视觉上从头部飞出。
+  - 经排查 `getPos().y`（`playerY`）为**角色中心锚点**（相机以它为屏幕中心，脚底在中心下方 `targetHeight/2≈40*dpr`，头顶在上方同值），非脚底。
+  - 手/法杖位置在中心略偏上，发射点改为 `y: p2.y - 15*dpr`；X 轴外移 `td * 24*dpr` 到法杖尖端侧。
+  - 同步修正法杖敲击/火球等技能投射物发射点：`y: cpos.y - 20*dpr → -15*dpr`，加 `x: cpos.x + castDir * 20*dpr` 外移。
+- **状态**：✅ 已通过 Babel 语法检查；实机确认时机协调、发射点从手部/法杖位置出
+- **修改文件**：`scripts/systems/field-battle-system.js`

@@ -637,10 +637,14 @@ export function installFieldBattleSystem(FieldSceneClass) {
         })
         return
       }
-      // ── 远程普攻：发射投射物，等抬手动作完成（0.5s）后才真正飞出 ──
+      // ── 远程普攻：发射投射物，等释放动作完成才真正飞出 ──
+      //   cast_universal.png 8帧，第6帧为释放点（法杖前指/发光）
+      //   延迟按当前帧率动态计算（第6帧 = 6 × frameDuration），
+      //   后期若动画倍率/攻速变化（frameDuration 改变），延迟自动跟随
+      const frameDur = (this.frameDuration || 0.15)
       const cpos0 = ctrl.getPos()
       this._scheduleProjectile({
-        delay: 0.5,   // ★ 加长延迟：抬手动作做完才飞
+        delay: 6 * frameDur,  // ★ 第6帧释放点飞出，随帧率动态对齐
         spawn: () => {
           const c2 = this._getCurrentControlHero()
           const p2 = c2 ? c2.getPos() : cpos0
@@ -654,8 +658,9 @@ export function installFieldBattleSystem(FieldSceneClass) {
           const projSpeed = (320 * this.dpr)
           const range = (this.battleSystem.attackRange || 100) * this.dpr * 2   // 普攻射程（X轴）
           this.battleSystem.projectiles.push({
-            x: p2.x + td * 20 * this.dpr,
-            y: p2.y - 20 * this.dpr,
+            // ★ getPos().y 为角色中心锚点，手部/法杖在中心略偏上(~15px)，避免从头部/脚部飞出
+            x: p2.x + td * 24 * this.dpr,
+            y: p2.y - 15 * this.dpr,
             vx: td * projSpeed,
             vy: 0,
             power: 1,
@@ -1119,10 +1124,10 @@ export function installFieldBattleSystem(FieldSceneClass) {
     const range = (cfg.range || 200) * this.dpr             // 最大飞行距离（X轴）
     const fx = this.game && this.game.effects
     if (!this.battleSystem.projectiles) this.battleSystem.projectiles = []
-    // 从角色X轴脱手：起点为角色脚底偏移，沿 facing 方向 X 轴飞行（vy=0 保持直线）
+    // 从角色手部/武器脱手：起点为脚底往上约 60% 身高处，沿 facing 方向 X 轴飞行（vy=0 保持直线）
     this.battleSystem.projectiles.push({
-      x: cpos.x,
-      y: cpos.y - 20 * this.dpr,
+      x: cpos.x + castDir * 20 * this.dpr,
+      y: cpos.y - 15 * this.dpr,
       vx: castDir * speed,
       vy: 0,
       power: skill.power || 1,
