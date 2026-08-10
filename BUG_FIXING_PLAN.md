@@ -4108,9 +4108,9 @@ _checkBattleEnd() {
   3. 运行时实际调用的是 `field-scene.js._initBattleUI`（之前只改了 `field-battle-system.js` 那份同名的旧实现，等于未生效）。
 - **修复**：
   - **尺寸自适应**：`btnSize = clamp(短边 * 0.13, 48*dpr, 72*dpr)`，不同分辨率按比例缩放且设上下限；
-  - **布局改为左上扇形**：技能环向 ATK 的【上/左/左上/左下】聚拢，避开右侧与底部边界；
-  - **ATK 内缩**：从"退两格"改为退一个按钮+边距，整体更紧凑；
-  - **严格钳制**：所有按钮位置 `clamp(margin, width/height - btnSize - margin)` 保证完整在屏内；
+  - **恢复原有四向十字布局**：技能按【上/右/下/左】顺时针填充（保留 4 个技能位，避免改用扇形后丢技能）；
+  - **ATK 退两格**：ATK 从右下角往左上各退一格（`btnSize*2+margin+gap`），使右侧/底部技能正好贴边不溢出；
+  - **严格钳制**：所有按钮位置 `clamp(margin, width/height - btnSize - margin)` 兜底保证完整在屏内；
   - **字号自适应**：ATK 字号 `btn.height*0.32`，技能名按字数 `0.34/0.26/0.2` 缩放避免溢出；
   - 同步修复了 `field-scene.js._initBattleUI`（真身）与切换英雄时的 `_rebuildSkillButtons` 调用参数。
 - **状态**：✅ 已通过 Babel 语法检查；待用户实机确认不同分辨率下按钮大小合适且不溢出

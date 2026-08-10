@@ -259,10 +259,10 @@ export function installFieldBattleSystem(FieldSceneClass) {
     const margin = Math.max(10 * this.dpr, btnSize * 0.25)
     const cell = btnSize + gap
 
-    // ATK 放在右下角内侧；内缩一个按钮+边距即可（技能环朝左上聚拢，不再需要退两格）
+    // ATK 放在右下角内侧；从右下角往左上各退一格，给四向（上/右/下/左）技能留出空间
     // 钳制保证完整在屏内
-    let attackX = this.width - btnSize - margin
-    let attackY = this.height - btnSize - margin
+    let attackX = this.width - btnSize * 2 - margin - gap
+    let attackY = this.height - btnSize * 2 - margin - gap
     this.battleSystem.attackButton = {
       x: attackX,
       y: attackY,
@@ -275,7 +275,7 @@ export function installFieldBattleSystem(FieldSceneClass) {
 
     // 角色切换按钮已统一由 field-scene 左上角角色卡片的 ↻ 按钮承载，此处不再单独创建
 
-    // ★ 技能按钮：环形布局（ATK 在右下角，技能按 上/左/左上/左下 聚拢，避免右侧/底部溢出）
+    // ★ 技能按钮：四向十字布局（ATK 居中，技能按 上/右/下/左 顺时针填充，沿用原有方式）
     //   技能列表取【当前被控英雄】的技能，切换控制后需调用 _rebuildSkillButtons() 刷新
     this._rebuildSkillButtons(attackX, attackY, btnSize, margin, gap)
 
@@ -300,13 +300,12 @@ export function installFieldBattleSystem(FieldSceneClass) {
     const cell = btnSize + (gap != null ? gap : 8 * this.dpr)
 
     sys.skillButtons = []
-    // ★ 按钮整体在屏幕右下角，为避免右侧/底部溢出，技能环向 ATK 的【上/左/左上/左下】聚拢
-    //   （优先朝上、朝左，不朝右/朝正下），各分辨率下均不越界
+    // ★ 四向十字（上/右/下/左），沿用原有布局方式，可容纳最多 4 个技能
     const dirs = [
-      { dx: 0,      dy: -cell, pos: 'top'     }, // 上
-      { dx: -cell,  dy: 0,     pos: 'left'    }, // 左
-      { dx: -cell,  dy: -cell, pos: 'topleft' }, // 左上
-      { dx: -cell,  dy: cell,  pos: 'botleft' }, // 左下
+      { dx: 0,     dy: -cell, pos: 'top'    }, // 上
+      { dx: cell,  dy: 0,     pos: 'right'  }, // 右
+      { dx: 0,     dy: cell,  pos: 'bottom' }, // 下
+      { dx: -cell, dy: 0,     pos: 'left'   }, // 左
     ]
     skills.forEach((skill, index) => {
       const dir = dirs[index % dirs.length]

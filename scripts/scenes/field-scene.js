@@ -2676,10 +2676,10 @@ baseRadius: 50 * this.dpr,    // 底座半径（缩小）
     const gap = Math.max(6 * this.dpr, btnSize * 0.18)
     const margin = Math.max(10 * this.dpr, btnSize * 0.25)
 
-    // ATK 放在右下角内侧；内缩一个按钮+边距即可（技能环朝左上聚拢，不再需要退两格）
+    // ATK 放在右下角内侧；从右下角往左上各退一格，给四向（上/右/下/左）技能留出空间
     // 钳制保证完整在屏内
-    let attackX = this.width - btnSize - margin
-    let attackY = this.height - btnSize - margin
+    let attackX = this.width - btnSize * 2 - margin - gap
+    let attackY = this.height - btnSize * 2 - margin - gap
     this.battleSystem.attackButton = {
       x: attackX,
       y: attackY,
@@ -2690,17 +2690,16 @@ baseRadius: 50 * this.dpr,    // 底座半径（缩小）
       active: true
     }
 
-    // 技能按钮：环形布局（ATK 在右下角，技能按 上/左/左上/左下 聚拢，避免右侧/底部溢出）
+    // 技能按钮：四向十字布局（ATK 居中，技能按 上/右/下/左 顺时针填充，沿用原有方式）
     this.battleSystem.skillButtons = []
     const skills = this.party[0]?.skills || []
     if (skills.length > 0) {
       const cell = btnSize + gap
-      // ★ 按钮整体在屏幕右下角，为避免右侧/底部溢出，技能环向 ATK 的【上/左/左上/左下】聚拢
       const dirs = [
-        { dx: 0,      dy: -cell, pos: 'top'     }, // 上
-        { dx: -cell,  dy: 0,     pos: 'left'    }, // 左
-        { dx: -cell,  dy: -cell, pos: 'topleft' }, // 左上
-        { dx: -cell,  dy: cell,  pos: 'botleft' }, // 左下
+        { dx: 0,     dy: -cell, pos: 'top'    }, // 上
+        { dx: cell,  dy: 0,     pos: 'right'  }, // 右
+        { dx: 0,     dy: cell,  pos: 'bottom' }, // 下
+        { dx: -cell, dy: 0,     pos: 'left'   }, // 左
       ]
       skills.forEach((skill, index) => {
         const dir = dirs[index % dirs.length]
