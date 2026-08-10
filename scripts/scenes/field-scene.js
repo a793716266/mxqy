@@ -2668,15 +2668,18 @@ baseRadius: 50 * this.dpr,    // 底座半径（缩小）
    * ★ 新增：初始化战斗UI（攻击按钮、技能按钮等）
    */
   _initBattleUI() {
-    const btnSize = 42 * this.dpr       // 按钮尺寸（再缩小一点）
-    const gap = 8 * this.dpr            // 紧凑间距
-    const margin = 14 * this.dpr         // 紧凑边距
-    const cell = btnSize + gap
+    // ★ 按钮尺寸自适应屏幕短边，保证不同分辨率手机都好按且不溢出
+    //   基准取短边的 13%，并限制在 [48, 72] * dpr 之间
+    const shortSide = Math.min(this.width, this.height)
+    let btnSize = shortSide * 0.13
+    btnSize = Math.max(48 * this.dpr, Math.min(72 * this.dpr, btnSize))
+    const gap = Math.max(6 * this.dpr, btnSize * 0.18)
+    const margin = Math.max(10 * this.dpr, btnSize * 0.25)
 
-    // 攻击按钮：屏幕右下偏内（确保上下左右四个方向技能都有空间显示）
-    // 从右下角往左上各退一格，让 4 个方向的技能都完整可见
-    const attackX = this.width - btnSize * 2 - margin - gap
-    const attackY = this.height - btnSize * 2 - margin - gap
+    // ATK 放在右下角内侧；内缩一个按钮+边距即可（技能环朝左上聚拢，不再需要退两格）
+    // 钳制保证完整在屏内
+    let attackX = this.width - btnSize - margin
+    let attackY = this.height - btnSize - margin
     this.battleSystem.attackButton = {
       x: attackX,
       y: attackY,
@@ -2687,22 +2690,23 @@ baseRadius: 50 * this.dpr,    // 底座半径（缩小）
       active: true
     }
 
-    // 技能按钮：十字布局（普攻居中，技能按 上/右/下/左 顺时针填充）
+    // 技能按钮：环形布局（ATK 在右下角，技能按 上/左/左上/左下 聚拢，避免右侧/底部溢出）
     this.battleSystem.skillButtons = []
     const skills = this.party[0]?.skills || []
-    const n = skills.length
-    if (n > 0) {
+    if (skills.length > 0) {
       const cell = btnSize + gap
+      // ★ 按钮整体在屏幕右下角，为避免右侧/底部溢出，技能环向 ATK 的【上/左/左上/左下】聚拢
       const dirs = [
-        { dx: 0,     dy: -cell, pos: 'top'    },
-        { dx: cell,  dy: 0,     pos: 'right'  },
-        { dx: 0,     dy: cell,  pos: 'bottom' },
-        { dx: -cell, dy: 0,     pos: 'left'   },
+        { dx: 0,      dy: -cell, pos: 'top'     }, // 上
+        { dx: -cell,  dy: 0,     pos: 'left'    }, // 左
+        { dx: -cell,  dy: -cell, pos: 'topleft' }, // 左上
+        { dx: -cell,  dy: cell,  pos: 'botleft' }, // 左下
       ]
       skills.forEach((skill, index) => {
         const dir = dirs[index % dirs.length]
         let bx = attackX + dir.dx
         let by = attackY + dir.dy
+        // ★ 严格钳制：保证按钮完整落在屏幕内（不同分辨率都适用）
         bx = Math.max(margin, Math.min(this.width - btnSize - margin, bx))
         by = Math.max(margin, Math.min(this.height - btnSize - margin, by))
         this.battleSystem.skillButtons.push({
@@ -2713,13 +2717,14 @@ baseRadius: 50 * this.dpr,    // 底座半径（缩小）
           text: skill.name,
           skill: skill,
           cooldown: 0,
+          cooldownDelay: 0,
           active: true,
           index: index
         })
       })
     }
 
-    console.log(`[Field-Battle] 战斗UI初始化完成（王者荣耀式固定布局），技能数量: ${skills.length}`)
+    console.log(`[Field-Battle] 战斗UI初始化完成（自适应布局 btnSize=${Math.round(btnSize)}），技能数量: ${skills.length}`)
   }
 
   /**

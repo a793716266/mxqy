@@ -139,7 +139,10 @@ export function installFieldBattleSystem(FieldSceneClass) {
 
     // ★ 切换后：技能按钮重建为新被控角色的技能
     if (sys.attackButton) {
-      this._rebuildSkillButtons(sys.attackButton.x, sys.attackButton.y, sys.attackButton.width, 14 * this.dpr)
+      const b = sys.attackButton
+      const gap = Math.max(6 * this.dpr, b.width * 0.18)
+      const margin = Math.max(10 * this.dpr, b.width * 0.25)
+      this._rebuildSkillButtons(b.x, b.y, b.width, margin, gap)
     }
 
     // ★ 左上角角色卡 + 头像同步切换为当前被控英雄
@@ -247,15 +250,19 @@ export function installFieldBattleSystem(FieldSceneClass) {
   // 3. 战斗UI初始化
   // ==========================================================================
   proto._initBattleUI = function() {
-    const btnSize = 42 * this.dpr       // 按钮尺寸（再缩小一点）
-    const gap = 8 * this.dpr            // 紧凑间距
-    const margin = 14 * this.dpr         // 紧凑边距
+    // ★ 按钮尺寸自适应屏幕短边，保证不同分辨率手机都好按且不溢出
+    //   基准取短边的 13%，并限制在 [48, 72] * dpr 之间
+    const shortSide = Math.min(this.width, this.height)
+    let btnSize = shortSide * 0.13
+    btnSize = Math.max(48 * this.dpr, Math.min(72 * this.dpr, btnSize))
+    const gap = Math.max(6 * this.dpr, btnSize * 0.18)   // 间距按按钮比例
+    const margin = Math.max(10 * this.dpr, btnSize * 0.25)
     const cell = btnSize + gap
 
-    // 攻击按钮：屏幕右下偏内（确保上下左右四个方向技能都有空间显示）
-    // 从右下角往左上各退一格，让 4 个方向的技能都完整可见
-    const attackX = this.width - btnSize * 2 - margin - gap
-    const attackY = this.height - btnSize * 2 - margin - gap
+    // ATK 放在右下角内侧；内缩一个按钮+边距即可（技能环朝左上聚拢，不再需要退两格）
+    // 钳制保证完整在屏内
+    let attackX = this.width - btnSize - margin
+    let attackY = this.height - btnSize - margin
     this.battleSystem.attackButton = {
       x: attackX,
       y: attackY,
@@ -268,11 +275,11 @@ export function installFieldBattleSystem(FieldSceneClass) {
 
     // 角色切换按钮已统一由 field-scene 左上角角色卡片的 ↻ 按钮承载，此处不再单独创建
 
-    // ★ 技能按钮：十字布局（ATK 居中，技能按 上/右/下/左 顺时针填充）
+    // ★ 技能按钮：环形布局（ATK 在右下角，技能按 上/左/左上/左下 聚拢，避免右侧/底部溢出）
     //   技能列表取【当前被控英雄】的技能，切换控制后需调用 _rebuildSkillButtons() 刷新
-    this._rebuildSkillButtons(attackX, attackY, btnSize, margin)
+    this._rebuildSkillButtons(attackX, attackY, btnSize, margin, gap)
 
-    console.log(`[FieldBattle] 战斗UI初始化完成（王者荣耀式固定布局），技能数量: ${this.battleSystem.skillButtons.length}`)
+    console.log(`[FieldBattle] 战斗UI初始化完成（自适应布局 btnSize=${Math.round(btnSize)}），技能数量: ${this.battleSystem.skillButtons.length}`)
   }
 
   /**
@@ -282,7 +289,7 @@ export function installFieldBattleSystem(FieldSceneClass) {
    * @param {number} btnSize 按钮尺寸
    * @param {number} margin 边距
    */
-  proto._rebuildSkillButtons = function(centerX, centerY, btnSize, margin) {
+  proto._rebuildSkillButtons = function(centerX, centerY, btnSize, margin, gap) {
     const sys = this.battleSystem
     const ctrl = this._getCurrentControlHero()
     const ctrlHero = ctrl ? ctrl.hero : null
@@ -290,20 +297,22 @@ export function installFieldBattleSystem(FieldSceneClass) {
     //   否则技能数>4时多余的技能会重叠到其它按钮位置（魔力护盾被法杖敲击覆盖就是这个 bug）
     const allSkills = (ctrlHero && ctrlHero.skills) || []
     const skills = allSkills.filter(s => !(s.type === 'attack' && (s.mpCost || 0) === 0))
-    const cell = btnSize + 8 * this.dpr
+    const cell = btnSize + (gap != null ? gap : 8 * this.dpr)
 
     sys.skillButtons = []
+    // ★ 按钮整体在屏幕右下角，为避免右侧/底部溢出，技能环向 ATK 的【上/左/左上/左下】聚拢
+    //   （优先朝上、朝左，不朝右/朝正下），各分辨率下均不越界
     const dirs = [
-      { dx: 0,     dy: -cell, pos: 'top'    }, // 上
-      { dx: cell,  dy: 0,     pos: 'right'  }, // 右
-      { dx: 0,     dy: cell,  pos: 'bottom' }, // 下
-      { dx: -cell, dy: 0,     pos: 'left'   }, // 左
+      { dx: 0,      dy: -cell, pos: 'top'     }, // 上
+      { dx: -cell,  dy: 0,     pos: 'left'    }, // 左
+      { dx: -cell,  dy: -cell, pos: 'topleft' }, // 左上
+      { dx: -cell,  dy: cell,  pos: 'botleft' }, // 左下
     ]
     skills.forEach((skill, index) => {
       const dir = dirs[index % dirs.length]
       let bx = centerX + dir.dx
       let by = centerY + dir.dy
-      // 钳制
+      // ★ 严格钳制：保证按钮完整落在屏幕内（不同分辨率都适用）
       bx = Math.max(margin, Math.min(this.width - btnSize - margin, bx))
       by = Math.max(margin, Math.min(this.height - btnSize - margin, by))
       sys.skillButtons.push({
@@ -2102,8 +2111,8 @@ export function installFieldBattleSystem(FieldSceneClass) {
     ctx.lineWidth = 2
     ctx.stroke()
 
-    // 按钮文字
-    ctx.font = `${16 * this.dpr}px sans-serif`
+    // 按钮文字（字号随按钮尺寸自适应，避免放大后文字过小）
+    ctx.font = `${Math.round(btn.height * 0.32)}px sans-serif`
     ctx.fillStyle = '#ffffff'
     ctx.textAlign = 'center'
     ctx.textBaseline = 'middle'
@@ -2146,8 +2155,10 @@ export function installFieldBattleSystem(FieldSceneClass) {
       ctx.lineWidth = 2
       ctx.stroke()
 
-      // 按钮文字
-      ctx.font = `${12 * this.dpr}px sans-serif`
+      // 按钮文字（字号随按钮尺寸自适应；名字较长时按字数缩小，避免溢出）
+      const nameLen = (btn.text || '').length
+      const fitScale = nameLen <= 2 ? 0.34 : (nameLen <= 3 ? 0.26 : 0.2)
+      ctx.font = `${Math.round(btn.height * fitScale)}px sans-serif`
       ctx.fillStyle = '#ffffff'
       ctx.textAlign = 'center'
       ctx.textBaseline = 'middle'

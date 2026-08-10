@@ -4096,3 +4096,22 @@ _checkBattleEnd() {
   - `_updateBattle` 每帧 `castAxisLockTimer = playerAnim.timer` 跟随递减不变，确保 Y 轴锁到动画真正最后一帧才解锁。
 - **状态**：✅ 已通过 Babel 语法检查；用户实机确认普攻完整播放完毕前不再能移动 Y 轴
 - **修改文件**：`scripts/systems/field-battle-system.js`
+
+## 2026-08-10 更新：右侧操作区域（普攻+技能）按钮放大并适配不同分辨率
+
+### fix: 普攻/技能按钮太小难按，且放大后超出屏幕
+
+- **现象**：右下角 ATK 与技能按钮偏小难按；放大尺寸后按钮超出屏幕边界（不同手机分辨率表现不一）。
+- **根因**：
+  1. 按钮尺寸硬编码 `42 * dpr`，未随屏幕分辨率缩放；
+  2. 布局为四向十字（含"右"方向 `dx:+cell`），在 ATK 已靠右下角时右侧技能必越界；
+  3. 运行时实际调用的是 `field-scene.js._initBattleUI`（之前只改了 `field-battle-system.js` 那份同名的旧实现，等于未生效）。
+- **修复**：
+  - **尺寸自适应**：`btnSize = clamp(短边 * 0.13, 48*dpr, 72*dpr)`，不同分辨率按比例缩放且设上下限；
+  - **布局改为左上扇形**：技能环向 ATK 的【上/左/左上/左下】聚拢，避开右侧与底部边界；
+  - **ATK 内缩**：从"退两格"改为退一个按钮+边距，整体更紧凑；
+  - **严格钳制**：所有按钮位置 `clamp(margin, width/height - btnSize - margin)` 保证完整在屏内；
+  - **字号自适应**：ATK 字号 `btn.height*0.32`，技能名按字数 `0.34/0.26/0.2` 缩放避免溢出；
+  - 同步修复了 `field-scene.js._initBattleUI`（真身）与切换英雄时的 `_rebuildSkillButtons` 调用参数。
+- **状态**：✅ 已通过 Babel 语法检查；待用户实机确认不同分辨率下按钮大小合适且不溢出
+- **修改文件**：`scripts/scenes/field-scene.js`（`_initBattleUI`）、`scripts/systems/field-battle-system.js`（`_rebuildSkillButtons`/字体自适应）
