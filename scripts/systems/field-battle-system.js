@@ -1127,7 +1127,8 @@ export function installFieldBattleSystem(FieldSceneClass) {
         if (!m.alive || p._hitSet.has(m.id)) continue
         const dx = Math.abs(m.x - p.x)
         const dy = Math.abs(m.y - p.y)
-        if (dx <= 30 * this.dpr && dy <= 100 * this.dpr) { hitMonster = m; break }
+        // ★ 命中判定：X 轴范围宽松（投射物沿X飞行），Y 轴范围收紧，避免越层误伤
+        if (dx <= 45 * this.dpr && dy <= 45 * this.dpr) { hitMonster = m; break }
       }
       if (hitMonster) {
         p._hitSet.add(hitMonster.id)
@@ -1362,7 +1363,8 @@ export function installFieldBattleSystem(FieldSceneClass) {
             if (!m.alive || blade._hitSet.has(m.id)) continue
             const dx = Math.abs(m.x - blade.x)
             const dy = Math.abs(m.y - blade.y)
-            if (dx <= blade.w / 2 && dy <= 100 * this.dpr) {
+            // ★ 冰刃命中：X 轴按刃宽（横向扫击），Y 轴收紧到 ±45*dpr 避免跨层误伤
+            if (dx <= blade.w / 2 && dy <= 45 * this.dpr) {
               blade._hitSet.add(m.id)
               const isCrit = Math.random() < (p.hero.crit || 0.05)
               const dmg = this._calcSkillDamageToMonster(m, p.skill, p.hero, isCrit)

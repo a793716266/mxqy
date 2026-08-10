@@ -2791,14 +2791,19 @@ baseRadius: 50 * this.dpr,    // 底座半径（缩小）
         const sx = ef.x
         const sy = ef.y
         ef._ySorted = true   // ★ 本帧已由 Y 排序渲染，防止 effects.render() 重复绘制
+        // ★ 2.5D 层级对齐：特效脚底锚定在世界坐标 (world.y)，与角色/怪物一致
+        //   角色/怪物 sortY 取脚底 pos.y/dpr，故特效也用 world.y 作为锚点，
+        //   绘制时按脚底对齐（sy - efH + efH/2 使底部贴 world.y，而非中心贴 world.y）
+        const worldY = ef.y + this.cameraY
         engine.addEntity({
           layer: 2,
-          sortY: (ef.y + this.cameraY) / this.dpr + efH / (2 * this.dpr),
+          sortY: worldY / this.dpr,
           type: 'skillEffect',
           render: (ctx) => {
             ctx.save()
             ctx.globalAlpha = ef.alpha
-            ctx.drawImage(currentImage, sx - efW / 2, sy - efH / 2, efW, efH)
+            // 底部对齐世界坐标：把精灵底边贴到 sy（脚底），中心上移 efH/2
+            ctx.drawImage(currentImage, sx - efW / 2, sy - efH + efH / 2, efW, efH)
             ctx.restore()
           }
         })
@@ -2915,6 +2920,56 @@ baseRadius: 50 * this.dpr,    // 底座半径（缩小）
             ctx.restore()
           }
         })
+      }
+    }
+
+    // ── layer=2：BUFF 脚底光环（按世界Y排序，被前排角色正确遮挡）─
+    // ★ 之前在 _renderWorldHealthBars 里直接绘制，绕过了 Y 排序，始终盖在最上层；
+    //   现改为注册为 Y 排序实体，脚底锚定角色世界坐标，层级与角色/怪物一致。
+    if (this.party && this.party.length) {
+      const auraAt = (wx, wy, hero) => {
+        if (!hero || !hero._buffs) return
+        const active = hero._buffs.filter(b => b._active && b._remaining > 0)
+        if (active.length === 0) return
+        engine.addEntity({
+          layer: 2,
+          sortY: wy / this.dpr,
+          type: 'buffAura',
+          render: (ctx) => {
+            // 角色脚底屏幕坐标（与 character 实体同一锚点，确保遮挡一致）
+            const sx = wx - this.cameraX
+            const sy = wy - this.cameraY
+            this._renderHeroBuffAura(ctx, sx, sy, hero)
+          }
+        })
+      }
+      const mainPos = (this._heroWorldPos && this._heroWorldPos[0]) ? this._heroWorldPos[0] : { x: this.playerX, y: this.playerY }
+      const mainDead = this.battleSystem && this.battleSystem.active && this.party[0] && this.party[0].hp <= 0
+      if (!mainDead) auraAt(mainPos.x, mainPos.y, this.party[0])
+      if (this.followers && Array.isArray(this.followers)) {
+        for (let i = 0; i < this.followers.length; i++) {
+          const f = this.followers[i]
+          if (!f || !f.character) continue
+          if (this.battleSystem && this.battleSystem.active && f.character.hp <= 0) continue
+          const fPos = (this._heroWorldPos && this._heroWorldPos[i + 1]) ? this._heroWorldPos[i + 1] : { x: f.x, y: f.y }
+          auraAt(fPos.x, fPos.y, f.character)
+        }
+      }
+    }
+
+    // ── layer=2：BUFF 生效冲击波（释放瞬间扩散光圈，按世界Y排序）─
+    if (this.battleSystem && this.battleSystem.buffShockwaves && this.battleSystem.buffShockwaves.length > 0) {
+      for (const sw of this.battleSystem.buffShockwaves) {
+        engine.addEntity({
+          layer: 2,
+          sortY: sw.y / this.dpr,
+          type: 'buffShockwave',
+          render: (ctx) => {
+            // 临时把冲击波画到当前 ctx（_renderBuffShockwaves 内部用 this.cameraX/Y 计算屏幕坐标）
+            this._renderBuffShockwaves(ctx)
+          }
+        })
+        break // 一次性绘制全部冲击波即可（函数内部遍历 list），只注册一个实体
       }
     }
 
@@ -3293,9 +3348,6 @@ baseRadius: 50 * this.dpr,    // 底座半径（缩小）
       ctx.textBaseline = 'bottom'
       ctx.fillText(hero.name + (isControlled ? '（控制中）' : ''), screenX, barY - 4 * this.dpr)
       ctx.textAlign = 'left'
-
-      // ★ BUFF 光环粒子（在这里渲染，确保每帧血条渲染时一定被调用）
-      this._renderHeroBuffAura(ctx, screenX, screenY, hero)
     }
 
     // 主角坐标（战斗中可能非被控者，但始终用真实位置）
@@ -3321,10 +3373,8 @@ baseRadius: 50 * this.dpr,    // 底座半径（缩小）
       }
     }
 
-    // ★ BUFF 生效冲击波（与血条在同一渲染层，确保每帧必调）
-    this._renderBuffShockwaves(ctx)
-
-    // ★ BUFF 粒子已改为按 2.5D Y 轴排序渲染（在 _renderYSortedEntities 中），此处不再重复绘制
+    // ★ BUFF 脚底光环与生效冲击波已改为按 2.5D Y 轴排序渲染（在 _renderYSortedEntities 中），
+    //   与角色/怪物同级，前端角色可正确遮挡，此处不再重复绘制
   }
 
   /**
