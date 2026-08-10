@@ -4035,3 +4035,31 @@ _checkBattleEnd() {
 
 - **状态**：待实机验证（静态分析未发现代码缺陷，资源完整）
 - 详见上方"野外怪物行走方向统一修复"章节的"排查中"子节。
+
+---
+
+## 2026-08-10 更新：BUFF 层级补全 + 投射物范围收紧 + 异常状态视觉系统
+
+### fix: BUFF 期间按钮拦截 + 2.5D 层级补全 + 投射物命中范围收紧
+
+- **BUFF 期间重复释放拦截**：点击拦截原仅判断 `btn.cooldown > 0`，但 BUFF 在效果结束前走 `cooldownDelay`，导致 BUFF 期间可无限直接释放。修复点击拦截加 `btn.cooldownDelay > 0` 条件，释放时记录 `cooldownDelayMax`；按钮渲染加 BUFF 禁用灰态 + 遮罩。
+- **2.5D 层级补全**：特效原 `sortY = (ef.y + cameraY)/dpr + efH/2` 偏移导致始终最顶层问题已修正为脚底锚定；脚底 BUFF 光环（`_renderHeroBuffAura`）与冲击波（`_renderBuffShockwaves`）从 `_renderWorldHealthBars` 移到 `_renderYSortedEntities` 作为 Y 排序实体，与角色同层级参与排序（修复"身上的粒子有 2.5D 层级了但脚底的圈没有"）。
+- **投射物命中范围收紧**：原 `dx<=45*dpr && dy<=100*dpr`（Y 轴偏大），改为 `dx<=45*dpr && dy<=45*dpr`；冰刃 `dy<=45*dpr`，使 X 轴稍宽、Y 轴收紧。
+- **状态**：✅ 已通过 Babel 语法检查 + 222 项自动化断言（0 失败）
+- **修改文件**：`scripts/scenes/field-scene.js`、`scripts/systems/field-battle-system.js`、`scripts/tools/verify_skills.mjs`
+
+### feat: 异常状态（灼烧/感电/冰冻/紧固）专业视觉特效系统
+
+- **背景**：怪物处于灼烧(burn)/感电(electrify)/冰冻(freeze)/紧固(root) 状态时，原无任何可见视觉表现，玩家无法感知状态施加与倒计时。
+- **状态元配置**：`STATUS_META` 定义四种状态配色（灼烧橙红 `#ff6a2b` / 冰冻青蓝 `#7fe3ff` / 感电黄 `#ffe14d` / 紧固绿 `#5bd66b`）及 glow 前缀。
+- **施加表现**（`_applyMonsterStatus`）：
+  - 施加时调用 `_spawnStatusShockwave(monster, type, meta)` 生成配色冲击波环（`statusShockwaves`，含 x/y/r/maxR/color/alpha/_t）。
+  - `_updateMonsterStatusEffects` 每帧重置 `_frozen/_rooted` 并按激活状态重设；`root` 同置 `_rooted`，`_updateMonsters` 中 `if (_frozen || _rooted) continue` 跳过移动/动作。
+- **持续粒子**（`_spawnMonsterStatusParticles` / `_updateMonsterStatusParticles` / `_renderMonsterStatusParticles`）：
+  - 灼烧：橙红上升火星；冰冻：青蓝冰晶下坠；感电：黄白火花迸射；紧固：绿色藤蔓钻出。每帧持续补充，位置/衰减更新。
+- **脚底光圈 + 身体染色 + 头顶图标**（`_renderMonsterStatusAura`）：
+  - 脚底三层配色光圈；身体染色（冰冻青蓝冰壳 / 灼烧橙红呼吸 / 感电黄白电弧 / 紧固绿根系）；头顶状态图标（灼/冰/电/缚）+ 剩余秒数，≤1s 闪烁提示。
+  - 注册为 Y 排序实体 `monsterStatusAura`(sortY=m.y/dpr)、`statusShockwave`、`monsterStatusParticle`，与角色同层级参与 2.5D 排序。
+- **状态**：✅ 已通过 Babel 语法检查 + 222 项自动化断言（0 失败）
+- **修改文件**：`scripts/scenes/field-scene.js`、`scripts/systems/field-battle-system.js`、`scripts/tools/verify_skills.mjs`
+- **验证脚本**：`verify_skills.mjs` 测试18（12 条断言：四种状态挂接、冲击波生成、aura/particle/shockwave 实体注册、`_frozen/_rooted` 标记、到期自动清除）

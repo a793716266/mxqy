@@ -1038,11 +1038,22 @@ export function installFieldBattleSystem(FieldSceneClass) {
   }
 
   /**
-   * ★ 给怪物挂状态效果（灼烧/冰冻/感电）
+   * ★ 怪物状态视觉元数据（颜色 / 图标 / 中文名），供渲染层统一取用
+   */
+  proto.STATUS_META = {
+    burn:      { color: '#ff6a2b', glow: 'rgba(255,106,43,', name: '灼烧' },
+    freeze:    { color: '#7fe3ff', glow: 'rgba(127,227,255,', name: '冰冻' },
+    electrify: { color: '#ffe14d', glow: 'rgba(255,225,77,', name: '感电' },
+    root:      { color: '#5bd66b', glow: 'rgba(91,214,107,', name: '紧固' },
+  }
+
+  /**
+   * ★ 给怪物挂状态效果（灼烧/冰冻/感电/紧固）
    */
   proto._applyMonsterStatus = function(monster, type, config, hero) {
     if (!monster || !monster.alive || !config) return
     if (!monster.statusEffects) monster.statusEffects = []
+    const meta = this.STATUS_META[type] || { color: '#ffffff', glow: 'rgba(255,255,255,', name: type }
     // 同类型状态刷新（不叠加，重置计时）
     const existing = monster.statusEffects.find(e => e.type === type)
     if (existing) {
@@ -1051,6 +1062,9 @@ export function installFieldBattleSystem(FieldSceneClass) {
       if (type === 'burn') existing.tickDamage = config.tickDamage || existing.tickDamage
       if (type === 'electrify') existing.damageMult = config.damageMult || existing.damageMult
       if (type === 'freeze') existing._frozen = true
+      if (type === 'root') existing._rooted = true
+      // ★ 刷新时重新触发一次施加冲击波（视觉反馈）
+      this._spawnStatusShockwave(monster, type, meta)
       return
     }
     monster.statusEffects.push({
@@ -1058,16 +1072,39 @@ export function installFieldBattleSystem(FieldSceneClass) {
       duration: config.duration || 1,
       _remaining: config.duration || 1,
       _lastTick: 0,
+      _active: true,
+      _color: meta.color,
+      _glow: meta.glow,
       // burn
       tickDamage: config.tickDamage || 0,
       tickInterval: config.tickInterval || 0.5,
       _tickAccum: 0,
       // electrify
       damageMult: config.damageMult || 0,
-      _active: true,
       // freeze
-      _frozen: true,
+      _frozen: type === 'freeze',
+      // root（紧固：定身，区别于冰冻——仍可受击但不移动）
+      _rooted: type === 'root',
       _strikeCount: 0
+    })
+    // ★ 首次施加：触发扩散冲击波（与英雄 BUFF 同理，给玩家明确视觉反馈）
+    this._spawnStatusShockwave(monster, type, meta)
+  }
+
+  /**
+   * ★ 状态施加瞬间的扩散冲击波（脚底光圈），复用 buffShockwaves 列表
+   */
+  proto._spawnStatusShockwave = function(monster, type, meta) {
+    if (!this.battleSystem) return
+    if (!this.battleSystem.statusShockwaves) this.battleSystem.statusShockwaves = []
+    this.battleSystem.statusShockwaves.push({
+      x: monster.x,
+      y: monster.y + 20 * this.dpr,
+      r: 8 * this.dpr,
+      maxR: 46 * this.dpr,
+      color: (meta && meta.color) || '#ffffff',
+      alpha: 0.9,
+      _t: 0
     })
   }
 
@@ -1289,13 +1326,16 @@ export function installFieldBattleSystem(FieldSceneClass) {
   }
 
   /**
-   * ★ 更新怪物状态效果（灼烧DoT / 冰冻 / 感电计时）
+   * ★ 更新怪物状态效果（灼烧DoT / 冰冻 / 感电 / 紧固 计时）
    */
   proto._updateMonsterStatusEffects = function(dt) {
     if (!this.mapMonsters) return
     for (const m of this.mapMonsters) {
-      if (!m.statusEffects || m.statusEffects.length === 0) continue
-      if (!m.alive) { m.statusEffects = []; continue }
+      if (!m.statusEffects || m.statusEffects.length === 0) { m._frozen = false; m._rooted = false; continue }
+      if (!m.alive) { m.statusEffects = []; m._frozen = false; m._rooted = false; continue }
+      // 每帧先清状态标记，由下方按当前生效状态重新置位
+      m._frozen = false
+      m._rooted = false
       for (let i = m.statusEffects.length - 1; i >= 0; i--) {
         const e = m.statusEffects[i]
         e._remaining -= dt
@@ -1315,11 +1355,9 @@ export function installFieldBattleSystem(FieldSceneClass) {
           }
         }
         // 冰冻：怪物无法行动（由 _updateMonsters 读取 m._frozen 跳过移动/攻击）
-        if (e.type === 'freeze') {
-          m._frozen = true
-        } else {
-          m._frozen = false
-        }
+        if (e.type === 'freeze' && e._active) m._frozen = true
+        // 紧固：定身（由 _updateMonsters 读取 m._rooted 跳过移动，但仍可受击/被技能命中）
+        if (e.type === 'root' && e._active) m._rooted = true
       }
     }
   }
@@ -1482,8 +1520,8 @@ export function installFieldBattleSystem(FieldSceneClass) {
     for (const monster of this.mapMonsters) {
       if (!monster.alive) continue
 
-      // ★ 冰冻状态：怪物无法行动（冰晶术施加），跳过移动/攻击/技能
-      if (monster._frozen) continue
+      // ★ 冰冻 / 紧固(定身) 状态：怪物无法移动与行动（冰晶术/紧固施加），跳过移动/攻击/技能
+      if (monster._frozen || monster._rooted) continue
 
       // ★ 找最近的存活参战英雄作为攻击目标
       let nearestHero = null

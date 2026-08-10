@@ -885,6 +885,8 @@ baseRadius: 50 * this.dpr,    // 底座半径（缩小）
 
     // ★ BUFF 粒子系统更新 + 持续喷发（真正的粒子效果）
     this._updateBuffParticles(dt)
+    // ★ 怪物异常状态粒子系统更新 + 持续喷发
+    this._updateMonsterStatusParticles(dt)
   }
 
   // ==========================================================================
@@ -1019,6 +1021,167 @@ baseRadius: 50 * this.dpr,    // 底座半径（缩小）
       ctx.fill()
       // 粒子核心（带颜色）
       ctx.fillStyle = p.color.startsWith('#') ? p.color : p.color
+      ctx.globalAlpha = alpha * 0.9
+      ctx.beginPath()
+      ctx.arc(sx, sy, p.size, 0, Math.PI * 2)
+      ctx.fill()
+      ctx.globalAlpha = 1
+    }
+    ctx.restore()
+  }
+
+  // ════════════════════════════════════════════════════════════
+  // ★ 怪物异常状态视觉系统（灼烧/冰冻/感电/紧固）
+  //   复用 BUFF 粒子基础设施，独立 list 管理怪物状态持续粒子
+  // ════════════════════════════════════════════════════════════
+
+  // 状态元数据（与 battle-system 的 STATUS_META 保持一致，供渲染取色）
+  STATUS_META = {
+    burn:      { color: '#ff6a2b', glow: 'rgba(255,106,43,', name: '灼烧' },
+    freeze:    { color: '#7fe3ff', glow: 'rgba(127,227,255,', name: '冰冻' },
+    electrify: { color: '#ffe14d', glow: 'rgba(255,225,77,', name: '感电' },
+    root:      { color: '#5bd66b', glow: 'rgba(91,214,107,', name: '紧固' },
+  }
+
+  /**
+   * 怪物状态持续粒子生成（每帧由 _updateMonsterStatusParticles 调用）
+   * 不同状态用不同粒子语言：
+   *   burn      → 橙红火星上升 + 飘动
+   *   freeze    → 青蓝冰晶碎片缓慢下坠 + 微光
+   *   electrify → 黄白电弧火花快速迸射
+   *   root      → 绿色藤蔓/草屑从脚底钻出
+   */
+  _spawnMonsterStatusParticles(monster, type, color) {
+    if (!this.battleSystem.monsterStatusParticles) this.battleSystem.monsterStatusParticles = []
+    if (this.battleSystem.monsterStatusParticles.length > 320) return
+    const dpr = this.dpr
+    const wx = monster.x
+    const wy = monster.y
+    let n = 2
+    if (type === 'burn') {
+      for (let i = 0; i < 2; i++) {
+        const a = -Math.PI / 2 + (Math.random() - 0.5) * 0.9
+        const spd = (40 + Math.random() * 60) * dpr
+        this.battleSystem.monsterStatusParticles.push({
+          x: wx + (Math.random() - 0.5) * 26 * dpr,
+          y: wy - (10 + Math.random() * 40) * dpr,
+          vx: Math.cos(a) * spd * 0.4,
+          vy: Math.sin(a) * spd,
+          size: (2 + Math.random() * 3) * dpr,
+          color: Math.random() < 0.5 ? color : '#ffd24a',
+          life: 0.6 + Math.random() * 0.4,
+          decay: 1.0 + Math.random() * 0.6,
+          gravity: -10 * dpr,
+          glow: true,
+          kind: 'ember'
+        })
+      }
+    } else if (type === 'freeze') {
+      for (let i = 0; i < 1; i++) {
+        const a = Math.random() * Math.PI * 2
+        const spd = (15 + Math.random() * 25) * dpr
+        this.battleSystem.monsterStatusParticles.push({
+          x: wx + Math.cos(a) * 22 * dpr,
+          y: wy - (20 + Math.random() * 30) * dpr,
+          vx: Math.cos(a) * spd * 0.5,
+          vy: (10 + Math.random() * 20) * dpr,   // 冰晶缓慢下坠
+          size: (1.5 + Math.random() * 2.5) * dpr,
+          color: color,
+          life: 0.7 + Math.random() * 0.5,
+          decay: 0.8 + Math.random() * 0.4,
+          gravity: 12 * dpr,
+          glow: true,
+          kind: 'ice'
+        })
+      }
+    } else if (type === 'electrify') {
+      for (let i = 0; i < 2; i++) {
+        const a = Math.random() * Math.PI * 2
+        const spd = (80 + Math.random() * 120) * dpr
+        this.battleSystem.monsterStatusParticles.push({
+          x: wx + (Math.random() - 0.5) * 30 * dpr,
+          y: wy - (10 + Math.random() * 50) * dpr,
+          vx: Math.cos(a) * spd,
+          vy: Math.sin(a) * spd,
+          size: (1 + Math.random() * 2) * dpr,
+          color: Math.random() < 0.5 ? color : '#ffffff',
+          life: 0.2 + Math.random() * 0.25,
+          decay: 2.5 + Math.random() * 2,
+          gravity: 0,
+          glow: true,
+          kind: 'spark'
+        })
+      }
+    } else if (type === 'root') {
+      for (let i = 0; i < 1; i++) {
+        const a = -Math.PI / 2 + (Math.random() - 0.5) * 0.8
+        const spd = (30 + Math.random() * 50) * dpr
+        this.battleSystem.monsterStatusParticles.push({
+          x: wx + (Math.random() - 0.5) * 30 * dpr,
+          y: wy + 8 * dpr,
+          vx: Math.cos(a) * spd,
+          vy: Math.sin(a) * spd * 0.3,
+          size: (2 + Math.random() * 2.5) * dpr,
+          color: color,
+          life: 0.5 + Math.random() * 0.4,
+          decay: 1.2 + Math.random() * 0.6,
+          gravity: 30 * dpr,
+          glow: false,
+          kind: 'vine'
+        })
+      }
+    }
+  }
+
+  /**
+   * 更新怪物状态粒子（位置/衰减）+ 持续补充
+   */
+  _updateMonsterStatusParticles(dt) {
+    if (!this.battleSystem) return
+    if (!this.battleSystem.monsterStatusParticles) this.battleSystem.monsterStatusParticles = []
+    const list = this.battleSystem.monsterStatusParticles
+    for (let i = list.length - 1; i >= 0; i--) {
+      const p = list[i]
+      p.life -= p.decay * dt
+      if (p.life <= 0) { list.splice(i, 1); continue }
+      p.x += p.vx * dt
+      p.y += p.vy * dt
+      p.vy += p.gravity * dt
+      // 火花类快速闪烁衰减已有 decay 控制；其余自然飘散
+    }
+    // ★ 持续喷发：怪物处于异常状态时每帧补充粒子
+    if (this.battleSystem.active && this.mapMonsters) {
+      for (const m of this.mapMonsters) {
+        if (!m.alive || !m.statusEffects) continue
+        for (const e of m.statusEffects) {
+          if (!e._active || e._remaining <= 0) continue
+          const color = e._color || (this.STATUS_META && this.STATUS_META[e.type] && this.STATUS_META[e.type].color) || '#ffffff'
+          this._spawnMonsterStatusParticles(m, e.type, color)
+        }
+      }
+    }
+  }
+
+  /**
+   * 渲染怪物状态粒子（与 BUFF 粒子同款发光画法）
+   */
+  _renderMonsterStatusParticles(ctx) {
+    if (!this.battleSystem || !this.battleSystem.monsterStatusParticles) return
+    const list = this.battleSystem.monsterStatusParticles
+    if (list.length === 0) return
+    const dpr = this.dpr
+    ctx.save()
+    for (const p of list) {
+      const alpha = Math.max(0, Math.min(1, p.life))
+      const sx = p.x - this.cameraX
+      const sy = p.y - this.cameraY
+      if (p.glow) {
+        ctx.fillStyle = `rgba(255,255,255,${alpha * 0.25})`
+        ctx.beginPath()
+        ctx.arc(sx, sy, p.size * 1.8, 0, Math.PI * 2)
+        ctx.fill()
+      }
+      ctx.fillStyle = p.color
       ctx.globalAlpha = alpha * 0.9
       ctx.beginPath()
       ctx.arc(sx, sy, p.size, 0, Math.PI * 2)
@@ -2144,6 +2307,127 @@ baseRadius: 50 * this.dpr,    // 底座半径（缩小）
   }
 
   /**
+   * ★ 渲染怪物异常状态视觉（脚底圈 + 身体染色 + 头顶状态标记）
+   *   - 脚底：按状态配色的椭圆光圈（多状态叠加，逐层外扩）
+   *   - 身体：冰冻=青蓝半透明覆盖；灼烧=橙红呼吸光晕；感电=黄白边缘电光；紧固=绿色根系提示
+   *   - 头顶：状态图标+剩余秒数（即将消失闪烁）
+   * @param {Object} ctx 画布上下文
+   * @param {number} screenX 怪物屏幕X（脚底）
+   * @param {number} screenY 怪物屏幕Y（脚底）
+   * @param {Object} monster 怪物对象（含 statusEffects）
+   */
+  _renderMonsterStatusAura(ctx, screenX, screenY, monster) {
+    if (!monster || !monster.statusEffects || !this.battleSystem) return
+    const active = monster.statusEffects.filter(e => e._active && e._remaining > 0)
+    if (active.length === 0) return
+    const t = Date.now() / 1000
+    const dpr = this.dpr
+    ctx.save()
+    const drawOval = (cx, cy, rx, ry) => {
+      ctx.save()
+      ctx.translate(cx, cy)
+      ctx.scale(1, ry / (rx || 1))
+      ctx.beginPath()
+      ctx.arc(0, 0, rx, 0, Math.PI * 2)
+      ctx.restore()
+    }
+    // 怪物身体包围盒（用于身体染色）：脚底向上约 90*dpr 高、宽约 56*dpr
+    const bodyH = 100 * dpr
+    const bodyW = 56 * dpr
+    const bodyTopY = screenY - bodyH
+    active.forEach((e, i) => {
+      const colorBase = e._glow || (this.STATUS_META[e.type] && this.STATUS_META[e.type].glow) || 'rgba(255,255,255,'
+      const warn = e._remaining <= 1.5
+      const flicker = e._remaining <= 1.0
+      const alpha = flicker ? (0.5 + 0.5 * Math.abs(Math.sin(t * 10))) : (0.6 + 0.4 * Math.sin(t * 2.5 + i))
+      const baseR = (30 + i * 9) * dpr
+      const orbitR = baseR + 6 * Math.sin(t * 1.8 + i)
+      // ★ 脚底三层光圈
+      ctx.strokeStyle = colorBase + (alpha * 0.18) + ')'
+      ctx.lineWidth = 6 * dpr
+      drawOval(screenX, screenY + 6 * dpr, orbitR + 14 * dpr, (orbitR + 14 * dpr) * 0.34)
+      ctx.stroke()
+      ctx.strokeStyle = colorBase + alpha + ')'
+      ctx.lineWidth = 3.5 * dpr
+      drawOval(screenX, screenY + 6 * dpr, orbitR, orbitR * 0.34)
+      ctx.stroke()
+      // ★ 身体染色覆盖（按状态类型差异化）
+      if (e.type === 'freeze') {
+        // 冰冻：青蓝半透明冰壳
+        ctx.fillStyle = colorBase + '0.22)'
+        this._roundRect(ctx, screenX - bodyW / 2, bodyTopY, bodyW, bodyH, 12 * dpr)
+        ctx.fill()
+        // 冰晶高光斜线
+        ctx.strokeStyle = 'rgba(255,255,255,0.35)'
+        ctx.lineWidth = 2 * dpr
+        ctx.beginPath()
+        ctx.moveTo(screenX - bodyW * 0.2, bodyTopY + bodyH * 0.25)
+        ctx.lineTo(screenX + bodyW * 0.1, bodyTopY + bodyH * 0.6)
+        ctx.stroke()
+      } else if (e.type === 'burn') {
+        // 灼烧：橙红呼吸光晕
+        const ba = 0.12 + 0.1 * (0.5 + 0.5 * Math.sin(t * 5 + i))
+        ctx.fillStyle = colorBase + ba + ')'
+        this._roundRect(ctx, screenX - bodyW / 2, bodyTopY, bodyW, bodyH, 12 * dpr)
+        ctx.fill()
+      } else if (e.type === 'electrify') {
+        // 感电：黄白边缘电弧
+        ctx.strokeStyle = colorBase + (0.5 + 0.5 * Math.sin(t * 18 + i)) + ')'
+        ctx.lineWidth = 2.5 * dpr
+        this._roundRect(ctx, screenX - bodyW / 2, bodyTopY, bodyW, bodyH, 12 * dpr)
+        ctx.stroke()
+      } else if (e.type === 'root') {
+        // 紧固：绿色根系提示（脚底向上爬的草绿光）
+        ctx.fillStyle = colorBase + '0.16)'
+        this._roundRect(ctx, screenX - bodyW / 2, screenY - bodyH * 0.45, bodyW, bodyH * 0.45, 12 * dpr)
+        ctx.fill()
+      }
+      // ★ 环绕小光点（旋转）
+      const n = 6
+      for (let p = 0; p < n; p++) {
+        const ang = t * 1.4 + (Math.PI * 2 * p) / n + i * 0.7
+        const px = screenX + Math.cos(ang) * orbitR
+        const py = screenY + 6 * dpr + Math.sin(ang) * orbitR * 0.34
+        ctx.fillStyle = colorBase + (0.7 + 0.3 * Math.sin(t * 6 + p)) + ')'
+        ctx.beginPath()
+        ctx.arc(px, py, 3 * dpr, 0, Math.PI * 2)
+        ctx.fill()
+      }
+    })
+    // ★ 头顶状态图标 + 剩余时间（取剩余最短的状态）
+    const shortest = active.reduce((a, b) => (b._remaining < a._remaining ? b : a), active[0])
+    const secs = Math.ceil(shortest._remaining)
+    const flick = shortest._remaining <= 1.0
+    const iconY = bodyTopY - 18 * dpr
+    const numAlpha = flick ? (0.5 + 0.5 * Math.abs(Math.sin(t * 10))) : 1.0
+    const iconColor = shortest._glow || (this.STATUS_META[shortest.type] && this.STATUS_META[shortest.type].glow) || 'rgba(255,255,255,'
+    // 图标底圈
+    ctx.fillStyle = 'rgba(0,0,0,0.35)'
+    ctx.beginPath()
+    ctx.arc(screenX, iconY, 13 * dpr, 0, Math.PI * 2)
+    ctx.fill()
+    ctx.strokeStyle = iconColor + (numAlpha * 0.9) + ')'
+    ctx.lineWidth = 2.5 * dpr
+    ctx.beginPath()
+    ctx.arc(screenX, iconY, 13 * dpr, 0, Math.PI * 2)
+    ctx.stroke()
+    // 状态标识字（灼/冰/电/缚）
+    const mark = shortest.type === 'burn' ? '灼' : shortest.type === 'freeze' ? '冰' : shortest.type === 'electrify' ? '电' : shortest.type === 'root' ? '缚' : '?'
+    ctx.fillStyle = iconColor + numAlpha + ')'
+    ctx.font = `bold ${15 * dpr}px sans-serif`
+    ctx.textAlign = 'center'
+    ctx.textBaseline = 'middle'
+    ctx.fillText(mark, screenX, iconY)
+    // 剩余秒数
+    ctx.font = `bold ${13 * dpr}px sans-serif`
+    ctx.fillStyle = `rgba(0,0,0,${numAlpha * 0.6})`
+    ctx.fillText(secs, screenX + 1, iconY - 22 * dpr + 1)
+    ctx.fillStyle = iconColor + numAlpha + ')'
+    ctx.fillText(secs, screenX, iconY - 22 * dpr)
+    ctx.restore()
+  }
+
+  /**
    * ★ 渲染 buff 生效冲击波（释放瞬间扩散光圈）
    */
   _renderBuffShockwaves(ctx) {
@@ -2955,6 +3239,65 @@ baseRadius: 50 * this.dpr,    // 底座半径（缩小）
           auraAt(fPos.x, fPos.y, f.character)
         }
       }
+    }
+
+    // ── layer=2：怪物异常状态视觉（脚底圈/身体染色/头顶标记，按世界Y排序）─
+    if (this.battleSystem && this.battleSystem.active && this.mapMonsters) {
+      for (const m of this.mapMonsters) {
+        if (!m.alive || !m.statusEffects || m.statusEffects.filter(e => e._active && e._remaining > 0).length === 0) continue
+        const mx = m.x - this.cameraX
+        const my = m.y - this.cameraY
+        engine.addEntity({
+          layer: 2,
+          sortY: m.y / this.dpr,   // ★ 脚底锚定，与角色/怪物同级，前排正确遮挡
+          type: 'monsterStatusAura',
+          render: (ctx) => {
+            this._renderMonsterStatusAura(ctx, mx, my, m)
+          }
+        })
+      }
+    }
+
+    // ── layer=2：怪物状态施加冲击波（扩散光圈，按世界Y排序）─
+    if (this.battleSystem && this.battleSystem.statusShockwaves && this.battleSystem.statusShockwaves.length > 0) {
+      // 先推进动画（在渲染层消费前更新半径/透明度）
+      this.battleSystem.statusShockwaves = this.battleSystem.statusShockwaves.filter(sw => sw._t < 1)
+      for (const sw of this.battleSystem.statusShockwaves) {
+        sw._t += 1 / 30   // 约 0.5s 扩散完（按帧近似，渲染层每帧调用一次）
+        sw.r = sw.r + (sw.maxR - sw.r) * 0.18
+        sw.alpha = Math.max(0, 0.9 * (1 - sw._t))
+      }
+      for (const sw of this.battleSystem.statusShockwaves) {
+        engine.addEntity({
+          layer: 2,
+          sortY: sw.y / this.dpr,
+          type: 'statusShockwave',
+          render: (ctx) => {
+            const sx = sw.x - this.cameraX
+            const sy = sw.y - this.cameraY
+            ctx.save()
+            ctx.strokeStyle = sw.color
+            ctx.globalAlpha = sw.alpha
+            ctx.lineWidth = 4 * this.dpr
+            ctx.translate(sx, sy)
+            ctx.scale(1, 0.34)
+            ctx.beginPath()
+            ctx.arc(0, 0, sw.r, 0, Math.PI * 2)
+            ctx.stroke()
+            ctx.restore()
+          }
+        })
+      }
+    }
+
+    // ── layer=2：怪物状态持续粒子（与 BUFF 粒子同款发光，按世界Y排序）─
+    if (this.battleSystem && this.battleSystem.monsterStatusParticles && this.battleSystem.monsterStatusParticles.length > 0) {
+      engine.addEntity({
+        layer: 2,
+        sortY: (this.battleSystem.monsterStatusParticles.length ? (this.battleSystem.monsterStatusParticles[0].y) : this.playerY) / this.dpr,
+        type: 'monsterStatusParticle',
+        render: (ctx) => { this._renderMonsterStatusParticles(ctx) }
+      })
     }
 
     // ── layer=2：BUFF 生效冲击波（释放瞬间扩散光圈，按世界Y排序）─

@@ -791,5 +791,45 @@ const sorted = [...sortYs].sort((a, b) => a - b)
 assert(sorted[0] === Math.min(...sortYs), 'Y 小的角色排在前面（引擎按sortY升序绘制）')
 console.log(`  sortY 排序: 队友(Y小)=${Math.round(sorted[0])}, 主角(Y大)=${Math.round(sorted[1])}`)
 
+// ==================== 测试18：异常状态视觉系统（脚底圈/身体染色/粒子/施加冲击波） ====================
+console.log('\n=== 测试18: 异常状态视觉（灼烧/冰冻/感电/紧固 可见特效） ===')
+// 重置怪物为单只，挂在 4 种状态
+scene.mapMonsters = [{
+  id: 'm_st', name: '状怪', enemyId: 'wild_cat', alive: true,
+  x: scene.playerX + 200 * scene.dpr, y: scene.playerY, hp: 500, maxHp: 500,
+  def: 5, atk: 10, level: 1, attackCDTimer: 0, attackInterval: 2000, skillCDs: {},
+  statusEffects: []
+}]
+const mStatus = scene.mapMonsters[0]
+scene.battleSystem.statusShockwaves = []
+scene.battleSystem.monsterStatusParticles = []
+// 施加四种状态（复用 scene._applyMonsterStatus，带施加冲击波）
+scene._applyMonsterStatus(mStatus, 'burn', { duration: 5, tickDamage: 5, tickInterval: 0.5 })
+scene._applyMonsterStatus(mStatus, 'freeze', { duration: 4 })
+scene._applyMonsterStatus(mStatus, 'electrify', { duration: 4, damageMult: 0.2 })
+scene._applyMonsterStatus(mStatus, 'root', { duration: 4 })
+assert(mStatus.statusEffects.length === 4, '怪物挂上4种异常状态', `状态数=${mStatus.statusEffects.length}`)
+assert(scene.battleSystem.statusShockwaves.length === 4, '每次施加触发状态冲击波', `shockwaves=${scene.battleSystem.statusShockwaves.length}`)
+// 驱动若干帧，让粒子持续喷发
+for (let f = 0; f < 30; f++) scene.update(1/60)
+scene.render(canvasCtx)   // 触发 Y 排序实体注册
+const stEnts = (scene._renderer2d5 ? scene._renderer2d5._entities : [])
+const auraEnts = stEnts.filter(e => e.type === 'monsterStatusAura')
+const partEnts = stEnts.filter(e => e.type === 'monsterStatusParticle')
+const shockEnts = stEnts.filter(e => e.type === 'statusShockwave')
+assert(auraEnts.length === 1, '带状态怪物注册statusAura实体(脚底圈/身体染色/头顶标记)', `aura=${auraEnts.length}`)
+assert(typeof auraEnts[0].render === 'function', 'statusAura实体带render回调')
+assert(partEnts.length === 1, '状态持续粒子注册实体', `particles=${partEnts.length}`)
+assert(scene.battleSystem.monsterStatusParticles.length > 0, '状态粒子已持续生成', `粒子数=${scene.battleSystem.monsterStatusParticles.length}`)
+assert(shockEnts.length >= 1, '状态施加冲击波注册实体', `shock=${shockEnts.length}`)
+// 验证冰冻/紧固 immobilize 标记（怪物无法行动）
+assert(mStatus._frozen === true, '冰冻状态置 _frozen 标记')
+assert(mStatus._rooted === true, '紧固状态置 _rooted 标记')
+// 状态到期应自动清除并解除标记
+for (let f = 0; f < 360; f++) scene.update(1/60)   // 6s，超过最长状态
+assert(mStatus.statusEffects.length === 0, '所有状态到期后自动清除', `剩余=${mStatus.statusEffects.length}`)
+assert(mStatus._frozen === false && mStatus._rooted === false, '状态清除后immobilize标记复位')
+assert(scene.battleSystem.monsterStatusParticles.length === 0, '状态清除后粒子停止喷发')
+
 console.log(`\n=== 结果: ${passed} 通过, ${failed} 失败 ===`)
 process.exit(failed === 0 ? 0 : 1)
