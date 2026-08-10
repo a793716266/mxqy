@@ -46,7 +46,26 @@ export const HEROES = [
       { id: 'slash', name: '斩击', type: 'attack', power: 1.2, mpCost: 0, range: 100, desc: '基础物理攻击' },
       { id: 'shield_bash', name: '盾击', type: 'attack', power: 0.8, mpCost: 5, range: 80, desc: '附带眩晕效果，使敌人1秒无法行动', effect: 'stun', statusEffect: 'stunned' },
       { id: 'war_cry', name: '战吼', type: 'buff', mpCost: 8, range: 0, desc: '提升全体攻击力', effect: 'atk_up', turns: 3, value: 0.3 },
-      { id: 'berserk', name: '狂暴', type: 'buff', mpCost: 15, range: 0, desc: '大幅提升自身攻击', effect: 'atk_up_self', turns: 3, value: 0.5 }
+      { id: 'berserk', name: '狂暴', type: 'buff', mpCost: 15, range: 0, desc: '大幅提升自身攻击', effect: 'atk_up_self', turns: 3, value: 0.5 },
+      {
+        id: 'blade_storm',
+        name: '剑气风暴',
+        type: 'blade_storm',   // ★ 自定义斩击大招：前摇蓄力→吸附→5次突刺→剑气收尾
+        mpCost: 25,
+        range: 0,
+        combo: 5,              // 突刺次数
+        power: 0.85,           // 单次突刺伤害系数
+        pullRange: 220,        // 吸附范围（像素，世界坐标）
+        pullDist: 70,          // 吸附到玩家正前方的距离
+        projectile: {
+          speed: 760,          // 剑气飞行速度
+          power: 1.4,          // 剑气伤害系数
+          width: 90,           // 剑气刃宽（X轴命中范围）
+          height: 60,          // Y轴命中容差
+          duration: 1.2
+        },
+        desc: '蓄力吸附周围敌人，连续突刺5次，最后挥出剑气'
+      }
     ]
   },
   {

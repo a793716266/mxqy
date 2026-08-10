@@ -344,6 +344,15 @@ export function installFieldBattleSystem(FieldSceneClass) {
     if (this.battleSystem.playerAnim) {
       const pa = this.battleSystem.playerAnim
       pa.timer -= dt
+      // ★ 剑气风暴（自定义斩击大招）：分阶段状态机推进（前摇→突刺→收尾）
+      if (pa.type === 'blade_storm') {
+        this._updateBladeStorm(pa, dt)
+        pa.timer -= dt
+        if (pa.timer <= 0 && pa.phase !== 'finish') {
+          // 兜底：异常超时也清理
+          this.battleSystem.playerAnim = null
+        }
+      } else {
       // ★ 近战攻击位移（lunge）：身体跟随挥砍前冲后回弹
       if (this.battleSystem._attackLunge) {
         const ln = this.battleSystem._attackLunge
@@ -376,6 +385,7 @@ export function installFieldBattleSystem(FieldSceneClass) {
           this.battleSystem._attackLunge = null
         }
         this.battleSystem.playerAnim = null
+      }
       }
     }
 
@@ -527,6 +537,12 @@ export function installFieldBattleSystem(FieldSceneClass) {
     if (!ctrl || !ctrl.hero) return
     const mainHero = ctrl.hero
     const sprite = ctrl.sprite
+
+    // ★ 剑气风暴（自定义斩击大招）：独立的状态机流程，提前分发
+    if (skill && skill.type === 'blade_storm') {
+      this._castBladeStorm(skill, ctrl)
+      return
+    }
 
     // ★ 触发攻击/技能动画（通过 CharacterSprite 的 state 切换）
     let animState = 'attack'
@@ -792,6 +808,180 @@ export function installFieldBattleSystem(FieldSceneClass) {
         sb.cooldownMax = sb.cooldownMax || sb.cooldown  // 记录最大值用于渲染比例
       }
     }
+  }
+
+  // ==========================================================================
+  // 5.1 剑气风暴（斩击大招）：前摇蓄力 → 吸附 → 5次突刺 → 剑气收尾
+  // ==========================================================================
+  proto._castBladeStorm = function(skill, ctrl) {
+    const sys = this.battleSystem
+    const dir = ctrl.facingLeft ? -1 : 1
+
+    // ★ 锁 Y 轴（整个技能期间：蓄力1s + 突刺 + 收尾）
+    const total = 1.0 + (skill.combo || 5) * 0.12 + 0.4
+    sys.castAxisLockTimer = Math.max(sys.castAxisLockTimer, total)
+
+    // 记录蓄力范围内（世界坐标）的存活怪物，供吸附
+    const pos = ctrl.getPos()
+    const pullRange = (skill.pullRange || 220) * this.dpr
+    const pulled = []
+    for (const m of (this.mapMonsters || [])) {
+      if (!m.alive) continue
+      if (Math.hypot(m.x - pos.x, m.y - pos.y) <= pullRange) pulled.push(m)
+    }
+
+    sys.playerAnim = {
+      type: 'blade_storm',
+      phase: 'charge',          // charge → dash → finish
+      chargeMax: 1.0,
+      chargeTimer: 1.0,         // 前摇蓄力 1 秒
+      dashMax: 0.12,            // 单次突刺时长
+      dashTimer: 0,
+      dashStep: 0,
+      combo: skill.combo || 5,
+      skill: skill,
+      dir: dir,
+      pulled: pulled,
+      frame: 2,                 // ★ 蓄力用 02 帧
+      maxTimer: total,
+      timer: total,             // 总时长兜底
+      facing: Math.atan2(0, dir)
+    }
+
+    // 赛亚人式蓄力粒子初喷
+    this._spawnBuffParticles(ctrl.hero, '#FFD700', 24)
+  }
+
+  // ★ 每帧推进剑气风暴状态机
+  proto._updateBladeStorm = function(pa, dt) {
+    const ctrl = this._getCurrentControlHero()
+    if (!ctrl) return
+    const cpos = ctrl.getPos()
+    const dir = pa.dir
+    const dpr = this.dpr
+
+    // ★ 吸附：被锁定怪物拉向玩家正前方（pullDist），Y 轴对齐玩家
+    const tx = cpos.x + dir * (pa.skill.pullDist || 70) * dpr
+    const ty = cpos.y
+    for (const m of pa.pulled) {
+      if (!m.alive) continue
+      const k = Math.min(1, dt * 8)
+      m.x += (tx - m.x) * k
+      m.y += (ty - m.y) * k
+    }
+
+    if (pa.phase === 'charge') {
+      // 蓄力阶段：赛亚人金色光环持续喷发 + 02 帧
+      this._spawnBuffAuraParticles(ctrl.hero, '#FFD700')
+      pa.frame = 2
+      pa.chargeTimer -= dt
+      if (pa.chargeTimer <= 0) {
+        pa.phase = 'dash'
+        pa.dashTimer = pa.dashMax
+        pa.dashStep = 0
+        pa._dashHitPending = true
+        this._bladeStormLunge(ctrl, dir)   // 第一次突刺前冲
+      }
+    } else if (pa.phase === 'dash') {
+      pa.dashTimer -= dt
+      // ★ 02/03 帧反复播放
+      pa.frame = (pa.dashStep % 2 === 0) ? 2 : 3
+      // 前冲瞬间结算一次伤害（X 轴正前方所有敌人）
+      if (pa._dashHitPending) {
+        this._bladeStormHit(ctrl, dir, pa.skill)
+        pa._dashHitPending = false
+      }
+      if (pa.dashTimer <= 0) {
+        pa.dashStep++
+        if (pa.dashStep >= pa.combo) {
+          pa.phase = 'finish'
+          pa.finishTimer = 0.3
+          pa.frame = 3          // ★ 收尾用 03 帧
+        } else {
+          pa.dashTimer = pa.dashMax
+          pa._dashHitPending = true
+          this._bladeStormLunge(ctrl, dir)   // 下一次突刺前冲
+        }
+      }
+    } else if (pa.phase === 'finish') {
+      pa.finishTimer -= dt
+      // ★ 03 帧 → 07 帧
+      pa.frame = pa.finishTimer > 0.15 ? 3 : 7
+      if (pa.finishTimer <= 0) {
+        // ★ 向前方发送剑气投射物（X 轴伤害）
+        this._spawnBladeStormProjectile(ctrl, dir, pa.skill)
+        this.battleSystem.playerAnim = null
+      }
+    }
+  }
+
+  // ★ 突刺前冲位移（复用 lunge 机制）
+  proto._bladeStormLunge = function(ctrl, dir) {
+    const amount = 30 * this.dpr
+    // 先归位上一突刺残留偏移
+    if (this.battleSystem._attackLunge && this.battleSystem._attackLunge.last) {
+      const ln0 = this.battleSystem._attackLunge
+      const lp = ctrl.getPos()
+      lp.x -= ln0.last
+      if (ctrl.partyIndex === 0) this.playerX -= ln0.last
+    }
+    this.battleSystem._attackLunge = { dir: dir, amount: amount, last: 0 }
+  }
+
+  // ★ 单次突刺伤害：玩家正前方 X 轴（吸附来的 + 范围内）所有敌人各造成 1 次
+  proto._bladeStormHit = function(ctrl, dir, skill) {
+    const cpos = ctrl.getPos()
+    const dpr = this.dpr
+    const reach = 160 * dpr          // 突刺命中前方距离
+    const yTol = 70 * dpr            // Y 轴容差
+    const power = skill.power || 0.85
+    for (const m of (this.mapMonsters || [])) {
+      if (!m.alive) continue
+      const dx = (m.x - cpos.x) * dir   // 前方为正
+      const dy = Math.abs(m.y - cpos.y)
+      if (dx >= -20 * dpr && dx <= reach && dy <= yTol) {
+        const dmg = Math.max(1, Math.floor(this._getHeroAtk(ctrl.hero) * power - Math.floor(m.def * 0.5)))
+        const isCrit = Math.random() < (ctrl.hero.crit || 0.05)
+        const finalDmg = isCrit ? Math.floor(dmg * 1.5) : dmg
+        m.hp = Math.max(0, m.hp - finalDmg)
+        this._pushDamageText(m, finalDmg, isCrit, '#fff0a0')
+        if (m.hp <= 0) { m.alive = false; this.battleSystem.battleTarget = null }
+      }
+    }
+  }
+
+  // ★ 剑气投射物（X 轴直线，前方所有敌人受击）
+  proto._spawnBladeStormProjectile = function(ctrl, dir, skill) {
+    const cpos = ctrl.getPos()
+    const dpr = this.dpr
+    const proj = skill.projectile || {}
+    const speed = (proj.speed || 760)
+    const width = (proj.width || 90) * dpr
+    const height = (proj.height || 60) * dpr
+    const power = proj.power || 1.4
+    // 发射点：玩家手部高度（中心略偏上）
+    const sx = cpos.x + dir * 20 * dpr
+    const sy = cpos.y - 15 * dpr
+    if (!this.battleSystem.projectiles) this.battleSystem.projectiles = []
+    this.battleSystem.projectiles.push({
+      x: sx,
+      y: sy,
+      vx: dir * speed,
+      vy: 0,
+      life: proj.duration || 1.2,
+      owner: 'hero',
+      fromMonster: false,
+      isBasicAttack: false,
+      hero: ctrl.hero,
+      skill: skill,
+      bladeStorm: true,
+      width: width,        // 剑气刃宽（X轴命中范围）
+      height: height,      // Y轴命中容差
+      power: power,
+      _hitSet: new Set(),
+      _born: false,
+      _fx: this.game && this.game.effects
+    })
   }
 
   // ==========================================================================
@@ -1219,12 +1409,34 @@ export function installFieldBattleSystem(FieldSceneClass) {
       p.life -= dt
       // 命中判定：与怪物 X 轴带碰撞（火球Y固定，命中 Y 带内的敌人）
       let hitMonster = null
-      for (const m of this.mapMonsters || []) {
-        if (!m.alive || p._hitSet.has(m.id)) continue
-        const dx = Math.abs(m.x - p.x)
-        const dy = Math.abs(m.y - p.y)
-        // ★ 命中判定：X 轴范围宽松（投射物沿X飞行），Y 轴范围收紧，避免越层误伤
-        if (dx <= 45 * this.dpr && dy <= 45 * this.dpr) { hitMonster = m; break }
+      if (p.bladeStorm) {
+        // ★ 剑气：矩形范围（width×height）穿透命中路径上所有未命中的敌人（不消散）
+        for (const m of this.mapMonsters || []) {
+          if (!m.alive || p._hitSet.has(m.id)) continue
+          const dx = Math.abs(m.x - p.x)
+          const dy = Math.abs(m.y - p.y)
+          if (dx <= p.width / 2 && dy <= p.height / 2) {
+            p._hitSet.add(m.id)
+            const isCrit = Math.random() < (p.hero.crit || 0.05)
+            const dmg = Math.max(1, Math.floor(this._getHeroAtk(p.hero) * (p.power || 1.4) - Math.floor(m.def * 0.5)))
+            const finalDmg = isCrit ? Math.floor(dmg * 1.5) : dmg
+            m.hp = Math.max(0, m.hp - finalDmg)
+            this._pushDamageText(m, finalDmg, isCrit, '#aee6ff')
+            if (p._fx && p._fx.playHitEffect) {
+              p._fx.playHitEffect('magic_impact', m.x - this.cameraX, m.y - this.cameraY - 30 * this.dpr, this.dpr)
+            }
+            console.log(`[FieldBattle] 剑气命中 ${m.name}，伤害 ${finalDmg}${isCrit ? '（暴击）' : ''}，剩余HP ${m.hp}`)
+            if (m.hp <= 0) { m.alive = false; this.battleSystem.battleTarget = null }
+          }
+        }
+      } else {
+        for (const m of this.mapMonsters || []) {
+          if (!m.alive || p._hitSet.has(m.id)) continue
+          const dx = Math.abs(m.x - p.x)
+          const dy = Math.abs(m.y - p.y)
+          // ★ 命中判定：X 轴范围宽松（投射物沿X飞行），Y 轴范围收紧，避免越层误伤
+          if (dx <= 45 * this.dpr && dy <= 45 * this.dpr) { hitMonster = m; break }
+        }
       }
       if (hitMonster) {
         p._hitSet.add(hitMonster.id)

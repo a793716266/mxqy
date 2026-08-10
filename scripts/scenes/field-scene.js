@@ -3138,6 +3138,36 @@ baseRadius: 50 * this.dpr,    // 底座半径（缩小）
                 ctx.arc(Math.cos(ang) * 10 * this.dpr, Math.sin(ang) * 4 * this.dpr, 2 * this.dpr, 0, Math.PI * 2)
                 ctx.fill()
               }
+            } else if (p.bladeStorm) {
+              // ★ 剑气：朝飞行方向的横向发光刃（宽度=width，高度=height）
+              const dir = p.vx >= 0 ? 1 : -1
+              ctx.scale(dir, 1)
+              const w = (p.width || 90 * this.dpr)
+              const h = (p.height || 60 * this.dpr)
+              // 外发光
+              const grad = ctx.createLinearGradient(-w / 2, 0, w / 2, 0)
+              grad.addColorStop(0, 'rgba(120, 220, 255, 0)')
+              grad.addColorStop(0.5, 'rgba(160, 235, 255, 0.55)')
+              grad.addColorStop(1, 'rgba(220, 250, 255, 0.9)')
+              ctx.fillStyle = grad
+              ctx.fillRect(-w / 2, -h / 2, w, h)
+              // 核心亮刃
+              ctx.fillStyle = 'rgba(255,255,255,0.95)'
+              ctx.fillRect(-w / 2, -h * 0.12, w, h * 0.24)
+              // 前端锐利剑尖
+              ctx.fillStyle = 'rgba(230,250,255,0.95)'
+              ctx.beginPath()
+              ctx.moveTo(w / 2, -h * 0.4)
+              ctx.lineTo(w / 2 + 18 * this.dpr, 0)
+              ctx.lineTo(w / 2, h * 0.4)
+              ctx.closePath()
+              ctx.fill()
+              // 流动微光
+              for (let k = 0; k < 4; k++) {
+                const fx2 = -w / 2 + ((now * 200 * this.dpr + k * w / 4) % w)
+                ctx.fillStyle = 'rgba(255,255,255,0.5)'
+                ctx.fillRect(fx2, -h * 0.3, 4 * this.dpr, h * 0.6)
+              }
             } else {
               // ★ 火球：火焰粒子效果（核心亮球 + 多层火焰粒子 + 拖尾）
               // 外层火焰（橙红扩散）
@@ -3955,7 +3985,8 @@ baseRadius: 50 * this.dpr,    // 底座半径（缩小）
       const atkFrameBase = Math.floor(prog * 8) // 0~7
       let atkImg = null
       if (heroId === 'zhenbao') {
-        const idx = (atkFrameBase % 8) + 1
+        // ★ blade_storm 用状态机指定的自定义帧（pa.frame，如 02/03/07）
+        const idx = pa.frame ? (pa.frame % 8) : (atkFrameBase % 8) + 1
         atkImg = this.game.assets.get(`HERO_ZHENBAO_ATTACK_${idx.toString().padStart(2, '0')}`)
       } else if (heroId === 'lixiaobao') {
         // ★ 李小宝普攻：使用 cast_universal.png 精灵表（8帧横排），与正规战斗一致

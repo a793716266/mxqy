@@ -4115,3 +4115,25 @@ _checkBattleEnd() {
   - 同步修复了 `field-scene.js._initBattleUI`（真身）与切换英雄时的 `_rebuildSkillButtons` 调用参数。
 - **状态**：✅ 已通过 Babel 语法检查；待用户实机确认不同分辨率下按钮大小合适且不溢出
 - **修改文件**：`scripts/scenes/field-scene.js`（`_initBattleUI`）、`scripts/systems/field-battle-system.js`（`_rebuildSkillButtons`/字体自适应）
+
+## 2026-08-10 更新：臻宝新增斩击大招「剑气风暴」
+
+### feat: 臻宝技能"剑气风暴"（blade_storm）— 前摇蓄力→吸附→5次突刺→剑气收尾
+
+- **需求**：复用 `attack` 资源帧（02/03/07），新增一个斩击大招：
+  1. 前摇蓄力 1 秒，用 02 帧，期间把周围怪物吸附到正前方；
+  2. 蓄力期间身上有赛亚人式金色粒子光环；
+  3. 连续快速向前突刺，用 02/03 帧反复播放 5 次，每次对前方 X 轴所有敌人造成 1 次伤害（共 5 次）；
+  4. 收尾用 03 帧 + 07 帧，并向前方发射剑气投射物，对 X 轴造成伤害。
+- **实现**：
+  - `scripts/data/heroes.js`：臻宝 `skills` 新增 `blade_storm`（type:'blade_storm'，mpCost:25，combo:5，power:0.85，pullRange:220，pullDist:70，projectile 配置剑气速度/伤害/刃宽高）。
+  - `scripts/systems/field-battle-system.js`：
+    - `_playerAttackMonster` 拦截 `type==='blade_storm'` 分发到 `_castBladeStorm`；
+    - 新增 `_castBladeStorm`（初始化状态机：记录吸附怪物、锁 Y 轴、初喷粒子）、`_updateBladeStorm`（每帧推进 charge→dash→finish 三阶段，吸附插值、赛亚人粒子、02/03 帧交替、突刺前冲 lunge）、`_bladeStormLunge`（复用 lunge 机制做突刺位移）、`_bladeStormHit`（单次突刺对正前方 X 轴所有敌人各 1 次伤害）、`_spawnBladeStormProjectile`（发射剑气投射物，owner:'hero'）；
+    - `_updateBattle` 的 `playerAnim` 段增加 `blade_storm` 分支（不走普通 timer 清空，由状态机自管结束）；
+    - `_updateHeroProjectiles` 增加剑气矩形穿透命中（width×height，放行经过的所有敌人，用 `p.power` 系数）。
+  - `scripts/scenes/field-scene.js`：
+    - 攻击渲染段：臻宝支持 `pa.frame` 自定义帧（blade_storm 用 02/03/07）；
+    - 投射物渲染：新增剑气视觉（朝飞行方向的横向发光刃 + 剑尖 + 流动微光）。
+- **状态**：✅ 已通过 Babel 语法检查；待用户实机验证蓄力/吸附/突刺/剑气全套表现
+- **修改文件**：`scripts/data/heroes.js`、`scripts/systems/field-battle-system.js`、`scripts/scenes/field-scene.js`
