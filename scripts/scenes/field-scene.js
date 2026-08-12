@@ -2623,8 +2623,8 @@ baseRadius: 50 * this.dpr,    // 底座半径（缩小）
       return
     }
 
-    // ★ 召回按钮（左上角，返回按钮右侧）：切换队友"自行寻怪 / 召回身边"模式
-    const recallBtn = { x: 120 * this.dpr, y: 20 * this.dpr, w: 110 * this.dpr, h: 40 * this.dpr }
+    // ★ 召回按钮（右上角、顶栏下方，与 render 绘制坐标一致）：切换队友"自行寻怪 / 召回身边"模式
+    const recallBtn = { x: this.width - 240 * this.dpr, y: 80 * this.dpr, w: 120 * this.dpr, h: 44 * this.dpr }
     if (tap.x >= recallBtn.x && tap.x <= recallBtn.x + recallBtn.w &&
         tap.y >= recallBtn.y && tap.y <= recallBtn.y + recallBtn.h) {
       this.aiRecall = !this.aiRecall
@@ -3705,20 +3705,20 @@ baseRadius: 50 * this.dpr,    // 底座半径（缩小）
     ctx.textBaseline = 'middle'
     ctx.fillText('🏠 城镇', backBtnX + backBtnW / 2, backBtnY + backBtnH / 2)
 
-    // ★ 召回按钮（左上角，返回按钮右侧）：切换队友"自行寻怪 / 召回身边"
-    const recallBtnX = 120 * this.dpr
-    const recallBtnY = 20 * this.dpr
-    const recallBtnW = 110 * this.dpr
-    const recallBtnH = 40 * this.dpr
-    ctx.fillStyle = this.aiRecall ? 'rgba(255, 180, 180, 0.95)' : 'rgba(255, 255, 255, 0.9)'
+    // ★ 召回按钮（右上角、顶栏下方，醒目且不与其他UI重叠）：切换队友"自行寻怪 / 召回身边"
+    const recallBtnX = this.width - 240 * this.dpr
+    const recallBtnY = 80 * this.dpr
+    const recallBtnW = 120 * this.dpr
+    const recallBtnH = 44 * this.dpr
+    ctx.fillStyle = this.aiRecall ? 'rgba(255, 120, 120, 0.95)' : 'rgba(255, 255, 255, 0.92)'
     ctx.beginPath()
-    this._roundRect(ctx, recallBtnX, recallBtnY, recallBtnW, recallBtnH, 8 * this.dpr)
+    this._roundRect(ctx, recallBtnX, recallBtnY, recallBtnW, recallBtnH, 10 * this.dpr)
     ctx.fill()
-    ctx.strokeStyle = this.aiRecall ? 'rgba(220, 80, 80, 0.9)' : 'rgba(100, 149, 237, 0.8)'
-    ctx.lineWidth = 2 * this.dpr
+    ctx.strokeStyle = this.aiRecall ? 'rgba(220, 60, 60, 0.95)' : 'rgba(60, 120, 220, 0.9)'
+    ctx.lineWidth = 3 * this.dpr
     ctx.stroke()
-    ctx.font = `bold ${15 * this.dpr}px sans-serif`
-    ctx.fillStyle = '#333333'
+    ctx.font = `bold ${17 * this.dpr}px sans-serif`
+    ctx.fillStyle = '#222222'
     ctx.textAlign = 'center'
     ctx.textBaseline = 'middle'
     ctx.fillText(this.aiRecall ? '📣 召回中' : '⚔ 解散', recallBtnX + recallBtnW / 2, recallBtnY + recallBtnH / 2)

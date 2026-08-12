@@ -385,39 +385,34 @@ export class FieldMovement {
         }
       }
       
-      // 防重叠检测（只在移动时执行，避免振荡）
-      if (follower.isMoving || follower._effectiveMoving) {
-        // 队友之间的防重叠检测
-        for (let j = 0; j < i; j++) {
-          const other = this.followers[j]
-          const sepDx = follower.x - other.x
-          const sepDy = follower.y - other.y
-          const sepDist = Math.sqrt(sepDx * sepDx + sepDy * sepDy)
-          
-          // 如果距离太近，推开
-          if (sepDist < this.followerSpacing && sepDist > 0) {
-            const pushForce = (this.followerSpacing - sepDist) / 2
-            const pushX = (sepDx / sepDist) * pushForce
-            const pushY = (sepDy / sepDist) * pushForce
-            
-            follower.x += pushX
-            follower.y += pushY
-            other.x -= pushX
-            other.y -= pushY
-          }
-        }
-        
-        // 队友与主角之间的防重叠检测
-        const playerDx = follower.x - this.playerX
-        const playerDy = follower.y - this.playerY
-        const playerDist = Math.sqrt(playerDx * playerDx + playerDy * playerDy)
-        
-        if (playerDist < this.followerSpacing && playerDist > 0) {
-          const pushForce = (this.followerSpacing - playerDist) / 2
-          follower.x += (playerDx / playerDist) * pushForce
-          follower.y += (playerDy / playerDist) * pushForce
-        }
-      }
+      // ★ 防重叠检测已禁用：AI 队友不参与任何物理碰撞推挤（用户要求：
+      //   AI 与 AI、AI 与主角、怪物与 AI 之间均不互相推开，避免被挤到角落）。
+      //   如需恢复队友分离，可在下方取消注释。
+      // if (follower.isMoving || follower._effectiveMoving) {
+      //   for (let j = 0; j < i; j++) {
+      //     const other = this.followers[j]
+      //     const sepDx = follower.x - other.x
+      //     const sepDy = follower.y - other.y
+      //     const sepDist = Math.sqrt(sepDx * sepDx + sepDy * sepDy)
+      //     if (sepDist < this.followerSpacing && sepDist > 0) {
+      //       const pushForce = (this.followerSpacing - sepDist) / 2
+      //       const pushX = (sepDx / sepDist) * pushForce
+      //       const pushY = (sepDy / sepDist) * pushForce
+      //       follower.x += pushX
+      //       follower.y += pushY
+      //       other.x -= pushX
+      //       other.y -= pushY
+      //     }
+      //   }
+      //   const playerDx = follower.x - this.playerX
+      //   const playerDy = follower.y - this.playerY
+      //   const playerDist = Math.sqrt(playerDx * playerDx + playerDy * playerDy)
+      //   if (playerDist < this.followerSpacing && playerDist > 0) {
+      //     const pushForce = (this.followerSpacing - playerDist) / 2
+      //     follower.x += (playerDx / playerDist) * pushForce
+      //     follower.y += (playerDy / playerDist) * pushForce
+      //   }
+      // }
       
       // 队友移动状态滞后（与主角相同的防闪烁机制）
       if (follower.isMoving) {
