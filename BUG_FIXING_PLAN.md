@@ -13,6 +13,8 @@
 - **AI 技能 CD 不失效**：无 `cooldown` 配置的技能（如火球/盾击）给定兜底 CD（魔法类 5s、盾击 2.5s、剑气风暴 4s），并新增 `_aiSkillLock` 统一锁兜底，杜绝「1 秒一个火球」无限连放。
 - **AI 英雄 MP 回复**：每帧按 `mpRegen * dt * 0.5` 回蓝（与正规战斗一致），避免技能只减不增导致很快哑火。
 - **AI 技能动画正确映射**：盾击（`effect==='stun'`/`type==='attack'`）→ `shield` 状态；魔法/AOE/剑气风暴 → `skill` 状态，修复臻宝放盾击却播普攻动画的问题。
+- **AI 普攻区分远程/近战（与控制时一致）**：`_updateAllyAI` 普攻分支按 `hero.role` 判定，`mage`/`healer` 发射普攻投射物（`isBasicAttack:true`，蓝色 `#9acdff`，伤害 `_calcBasicAttackDamage` 体系），近战（`warrior`/`tank`）走延迟伤害结算。修复李小宝 AI 普攻无投射物、与玩家手操两回事的问题。
+- **AI/怪物无物理碰撞**：确认野外场景 AI 队友移动（`_updateFollowers`）、怪物更新（`_updateMonsters`）均不做任何碰撞检测；被控者与怪物的 `_checkMonsterCollision`（接触开战）调用已在 `field-scene.js` 第 847 行移除，仅保留与地图障碍物的地形碰撞（`_checkObstacleCollision`）。AI 角色与怪物互不影响、互不阻挡。
 - **修改文件**：
   - `scripts/scenes/field-scene.js`：`init` 新增 `aiRecall`、`_updateFollowers` 独立行动/召回分支、`_findNearestMapMonster`、`_recallAlliesToPlayer`、`_handleTap` 召回按钮、`render` 召回按钮绘制
   - `scripts/systems/field-battle-system.js`：`_updateAllyAI`（CD 倒计时 + MP 回复 + 技能尝试）、新增 `_allyTryCastSkill` / `_allyCastBladeStorm`

@@ -1114,15 +1114,44 @@ export function installFieldBattleSystem(FieldSceneClass) {
       const damage = Math.max(1, this._getHeroAtk(hero) - Math.floor(monster.def * 0.5))
       const isCrit = Math.random() < (hero.crit || 0.05)
       const finalDmg = isCrit ? Math.floor(damage * 1.5) : damage
-      this.battleSystem.pendingDamages.push({
-        monster: monster,
-        damage: finalDmg,
-        isCrit: isCrit,
-        timer: 0.4,
-        heroName: hero.name
-      })
+
+      // ★ 远程角色（mage/healer）普攻发射投射物，与玩家手动操作一致；近战走延迟伤害
+      const isRanged = (hero.role === 'mage' || hero.role === 'healer')
+      if (isRanged) {
+        if (!this.battleSystem.projectiles) this.battleSystem.projectiles = []
+        const projSpeed = 320 * this.dpr
+        const range = (this.battleSystem.attackRange || 100) * this.dpr * 2
+        this.battleSystem.projectiles.push({
+          x: pos.x + castDir * 24 * this.dpr,
+          y: pos.y - 15 * this.dpr,
+          vx: castDir * projSpeed,
+          vy: 0,
+          power: 1,
+          atk: hero.atk || hero.matk || 0,
+          def: hero.def || 0,
+          life: range / projSpeed,
+          maxLife: range / projSpeed,
+          color: '#9acdff',
+          owner: 'hero',
+          skill: null,
+          hero: hero,
+          castDir: castDir,
+          burn: null,
+          isBasicAttack: true,
+          _hitSet: new Set(),
+          _fx: this.game && this.game.effects
+        })
+      } else {
+        this.battleSystem.pendingDamages.push({
+          monster: monster,
+          damage: finalDmg,
+          isCrit: isCrit,
+          timer: 0.4,
+          heroName: hero.name
+        })
+      }
       bh.hero._aiAttackCD = this.battleSystem.playerAttackInterval
-      console.log(`[FieldBattle] ${hero.name}（AI）攻击 ${monster.name}，伤害 ${finalDmg}`)
+      console.log(`[FieldBattle] ${hero.name}（AI）普攻 ${monster.name}${isRanged ? '（投射物）' : ''}，伤害 ${finalDmg}`)
     }
   }
 
