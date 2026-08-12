@@ -564,6 +564,9 @@ export class FieldScene extends SceneBase {
   }
   
   init() {
+    // 队友 AI 行为模式：false=自行寻怪战斗不跟随；true=召回（紧跟主角身边）
+    this.aiRecall = false
+
     // 处理战斗结果
     this._checkBattleResult()
 
@@ -1936,21 +1939,40 @@ baseRadius: 50 * this.dpr,    // 底座半径（缩小）
         continue
       }
 
-      // ★ 战斗激活时：队友独立行动 —— 自己找最近的怪物，走到怪物附近的输出位站桩，不跟随主角
+      // ★ 队友独立行动：战斗中 or 非战斗(未召回) 都自己找最近的怪物，走到输出位站桩，不跟随主角
       let targetPos = null
       let isCombatPos = false
-      if (this.battleSystem && this.battleSystem.active) {
+      const inCombat = this.battleSystem && this.battleSystem.active
+      const allyAutoHunt = !this.aiRecall   // 未召回时，队友自行寻怪战斗
+      if (inCombat || allyAutoHunt) {
         targetPos = this._getAllyCombatTarget(follower, i)
         isCombatPos = !!targetPos
       }
 
+      // ★ 非战斗 + 未召回 + 附近有怪物且队友已接近 → 队友主动开战（让主角也进入战斗）
+      if (!inCombat && !this.aiRecall && targetPos) {
+        const nearMon = this._findNearestMapMonster(follower.x, follower.y, 80 * this.dpr)
+        if (nearMon) {
+          this._startFieldBattle(nearMon)
+        }
+      }
+
       if (!targetPos) {
-        // 计算队友应该在的历史位置索引
-        // 第1个队友延迟10个记录点，第2个延迟20个记录点，以此类推
-        // 每个记录点间隔3帧，所以实际延迟约30帧
-        const historyIndex = Math.min((i + 1) * 10, this.playerHistory.length - 1)
-        if (historyIndex >= 0 && this.playerHistory.length > 0) {
-          targetPos = this.playerHistory[historyIndex]
+        if (this.aiRecall) {
+          // ★ 召回模式：队友立即回到主角身边（紧随主角移动轨迹）
+          const historyIndex = Math.min((i + 1) * 10, this.playerHistory.length - 1)
+          if (historyIndex >= 0 && this.playerHistory.length > 0) {
+            targetPos = this.playerHistory[historyIndex]
+          }
+        } else {
+          // 非战斗且附近无怪：原地待命（不跟随主角），等待怪物出现
+          // 让队友停在当前位置，避免一直跟随主角
+          follower.isMoving = false
+          follower._effectiveMoving = false
+          if (follower.sprite && typeof follower.sprite.update === 'function') {
+            follower.sprite.update(dt, false, follower.facingLeft)
+          }
+          continue
         }
       }
 
@@ -2115,6 +2137,29 @@ baseRadius: 50 * this.dpr,    // 底座半径（缩小）
   /**
    * 战斗中队友的独立站位目标
    * 队友不跟随主角，而是自己锁定最近的怪物，走到怪物侧边的输出位站桩输出
+   * @param {number} x 搜索中心 X
+   * @param {number} y 搜索中心 Y
+   * @param {number} range 搜索半径
+   * @returns {Object|null} 最近的地图怪物；无则返回 null
+   */
+  _findNearestMapMonster(x, y, range) {
+    const monsters = this.mapMonsters
+    if (!monsters || !monsters.length) return null
+    let best = null
+    let bestD = range * range
+    for (const m of monsters) {
+      // 跳过已死亡/正在离场的怪物
+      if (m.dead || m.removed || (m.hp !== undefined && m.hp <= 0)) continue
+      const dx = m.x - x
+      const dy = m.y - y
+      const d = dx * dx + dy * dy
+      if (d < bestD) { bestD = d; best = m }
+    }
+    return best
+  }
+
+  /**
+   * ★ 获取队友战斗目标站位：队友独立行动，自己找最近的怪物，走到怪物附近的输出位站桩
    * @param {Object} follower 队友对象
    * @param {number} i 队友索引（用于左右错开，避免多个队友重叠）
    * @returns {{x:number,y:number,facingLeft:boolean}|null} 目标站位；无怪物时返回 null（回退为跟随主角）
@@ -2141,9 +2186,7 @@ baseRadius: 50 * this.dpr,    // 底座半径（缩小）
         const d = Math.sqrt(dx * dx + dy * dy)
         if (d < minDist) { minDist = d; target = m }
       }
-      // 超出参战半径的怪物不主动脱队去打，避免队友跑丢
-      const engageRange = 520 * this.dpr
-      if (target && minDist > engageRange) target = null
+      // ★ 全图寻怪：取消参战半径限制，队友会去找地图上最近的任何怪物
       follower._aiTargetId = target ? target.id : null
     }
 
@@ -2166,6 +2209,36 @@ baseRadius: 50 * this.dpr,    // 底座半径（缩小）
       facingLeft: (target.x < follower.x),
       _targetId: target.id
     }
+  }
+
+  /**
+   * ★ 召回：立即把所有队友瞬移到被控角色（当前操作角色）周围，不再缓慢走回
+   */
+  _recallAlliesToPlayer() {
+    if (!this.followers || !this.followers.length) return
+    // 被控角色的世界坐标（战斗中 battleHeroes[0]，非战斗用主角）
+    let cx = this.playerX
+    let cy = this.playerY
+    const ctrlHero = (this.battleSystem && this.battleSystem.battleHeroes &&
+                      this.battleSystem.battleHeroes[0]) || null
+    if (ctrlHero && this._heroWorldPos && this._heroWorldPos[ctrlHero.partyIndex]) {
+      cx = this._heroWorldPos[ctrlHero.partyIndex].x
+      cy = this._heroWorldPos[ctrlHero.partyIndex].y
+    }
+    const radius = 55 * this.dpr
+    for (let i = 0; i < this.followers.length; i++) {
+      const follower = this.followers[i]
+      const angle = (Math.PI * 2 * i) / this.followers.length
+      follower.x = cx + Math.cos(angle) * radius
+      follower.y = cy + Math.sin(angle) * radius
+      follower.facingLeft = cx < follower.x
+      follower.isMoving = false
+      follower._aiTargetId = null
+      if (follower.sprite && typeof follower.sprite.update === 'function') {
+        follower.sprite.update(0, false, follower.facingLeft)
+      }
+    }
+    console.log('[Field] 已召回全部队友到被控角色周围')
   }
 
   /**
@@ -2547,6 +2620,17 @@ baseRadius: 50 * this.dpr,    // 底座半径（缩小）
     if (tap.x >= backBtn.x && tap.x <= backBtn.x + backBtn.w &&
         tap.y >= backBtn.y && tap.y <= backBtn.y + backBtn.h) {
       this.game.changeScene('town')
+      return
+    }
+
+    // ★ 召回按钮（左上角，返回按钮右侧）：切换队友"自行寻怪 / 召回身边"模式
+    const recallBtn = { x: 120 * this.dpr, y: 20 * this.dpr, w: 110 * this.dpr, h: 40 * this.dpr }
+    if (tap.x >= recallBtn.x && tap.x <= recallBtn.x + recallBtn.w &&
+        tap.y >= recallBtn.y && tap.y <= recallBtn.y + recallBtn.h) {
+      this.aiRecall = !this.aiRecall
+      // ★ 点击"召回"：立即把全部队友瞬移到被控角色周围（而非缓慢走回）
+      if (this.aiRecall) this._recallAlliesToPlayer()
+      console.log(`[Field] 队友召回模式: ${this.aiRecall ? '召回中（跟随主角）' : '解散（自行寻怪）'}`)
       return
     }
     
@@ -3620,7 +3704,25 @@ baseRadius: 50 * this.dpr,    // 底座半径（缩小）
     ctx.textAlign = 'center'
     ctx.textBaseline = 'middle'
     ctx.fillText('🏠 城镇', backBtnX + backBtnW / 2, backBtnY + backBtnH / 2)
-    
+
+    // ★ 召回按钮（左上角，返回按钮右侧）：切换队友"自行寻怪 / 召回身边"
+    const recallBtnX = 120 * this.dpr
+    const recallBtnY = 20 * this.dpr
+    const recallBtnW = 110 * this.dpr
+    const recallBtnH = 40 * this.dpr
+    ctx.fillStyle = this.aiRecall ? 'rgba(255, 180, 180, 0.95)' : 'rgba(255, 255, 255, 0.9)'
+    ctx.beginPath()
+    this._roundRect(ctx, recallBtnX, recallBtnY, recallBtnW, recallBtnH, 8 * this.dpr)
+    ctx.fill()
+    ctx.strokeStyle = this.aiRecall ? 'rgba(220, 80, 80, 0.9)' : 'rgba(100, 149, 237, 0.8)'
+    ctx.lineWidth = 2 * this.dpr
+    ctx.stroke()
+    ctx.font = `bold ${15 * this.dpr}px sans-serif`
+    ctx.fillStyle = '#333333'
+    ctx.textAlign = 'center'
+    ctx.textBaseline = 'middle'
+    ctx.fillText(this.aiRecall ? '📣 召回中' : '⚔ 解散', recallBtnX + recallBtnW / 2, recallBtnY + recallBtnH / 2)
+
     // 角色信息卡片（左上角，顶部UI下方）
     if (this.charInfoPanel && this.mainCharacter) {
       this.charInfoCardBounds = this.charInfoPanel.renderMiniCard(

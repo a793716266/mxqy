@@ -1066,6 +1066,20 @@ export function installFieldBattleSystem(FieldSceneClass) {
         continue  // 攻击动画播放期间不再触发新攻击
       }
 
+      // ★ AI 技能冷却倒计时（双保险：字典 _aiSkillsCD + 统一累加锁 _aiSkillLock）
+      if (!bh.hero._aiSkillsCD) bh.hero._aiSkillsCD = {}
+      for (const sid in bh.hero._aiSkillsCD) {
+        if (bh.hero._aiSkillsCD[sid] > 0) bh.hero._aiSkillsCD[sid] -= dt
+      }
+      if (!bh.hero._aiSkillLock) bh.hero._aiSkillLock = 0
+      if (bh.hero._aiSkillLock > 0) bh.hero._aiSkillLock -= dt
+
+      // ★ AI 英雄 MP 回复（与正规战斗一致，避免只减不增导致技能很快哑火）
+      const regenRate = bh.hero.mpRegen || 5
+      if ((bh.hero.maxMp || 0) > 0 && (bh.hero.mp || 0) < bh.hero.maxMp) {
+        bh.hero.mp = Math.min(bh.hero.maxMp, (bh.hero.mp || 0) + regenRate * dt * 0.5)
+      }
+
       // ★ 队友搜索范围放大：队友在主角身后约 followerDistance，主角贴脸攻击时队友距离可能超出攻击范围，
       //   因此队友用更大的搜索半径（约 1.8 倍），确保能锁定主角附近的怪物
       const baseRange = (this.battleSystem.attackRange || 100) * this.dpr
@@ -1075,6 +1089,11 @@ export function installFieldBattleSystem(FieldSceneClass) {
       const allyYTol = 220 * this.dpr
       const monster = this._findNearestMonsterFromPos(range, 'x', pos.x, pos.y, allyYTol)
       if (!monster) continue
+
+      // ★ 先尝试释放技能（CD 好 + MP 够 + 统一锁空闲），成功则跳过普攻
+      const castDir = (sprite.facingLeft) ? -1 : 1
+      const castSkill = this._allyTryCastSkill(bh, monster, castDir)
+      if (castSkill) continue
 
       // 普攻冷却控制（避免每帧触发）
       if (!bh.hero._aiAttackCD) bh.hero._aiAttackCD = 0
@@ -1105,6 +1124,154 @@ export function installFieldBattleSystem(FieldSceneClass) {
       bh.hero._aiAttackCD = this.battleSystem.playerAttackInterval
       console.log(`[FieldBattle] ${hero.name}（AI）攻击 ${monster.name}，伤害 ${finalDmg}`)
     }
+  }
+
+  // ==========================================================================
+  // 5.5b ★ AI 技能释放（轮转选技能 + 冷却/MP/统一锁控制）
+  // ==========================================================================
+
+  /**
+   * ★ AI 尝试释放一个技能。
+   * 逻辑：收集所有"当前可用"的技能（CD 好 + MP 够 + 非 buff），按顺序轮转选取，
+   *       保证多个技能都会被释放，而不是永远只放排第一的火球。
+   * @returns {boolean} 是否成功释放了技能
+   */
+  proto._allyTryCastSkill = function(bh, monster, castDir) {
+    const hero = bh.hero
+    if (!hero || !hero.skills || !hero.skills.length) return false
+    const inBattle = this.battleSystem.active
+    if (!inBattle) return false
+
+    // 第一遍：收集所有"当前可用"的技能
+    const available = []
+    for (const skill of hero.skills) {
+      if (skill.type === 'buff') continue
+      const isRealSkill = (skill.mpCost && skill.mpCost > 0) || skill.cooldown || skill.aoe || skill.type === 'magic' || skill.type === 'blade_storm'
+      if (!isRealSkill) continue
+      const cdLeft = (hero._aiSkillsCD && hero._aiSkillsCD[skill.id]) || 0
+      if (cdLeft > 0) continue
+      if ((hero._aiSkillLock || 0) > 0) continue
+      if ((hero.mp || 0) < (skill.mpCost || 0)) continue
+      available.push(skill)
+    }
+    if (available.length === 0) return false
+
+    // 轮转选技能
+    if (hero._aiLastSkillIdx === undefined) hero._aiLastSkillIdx = -1
+    const pickIdx = (hero._aiLastSkillIdx + 1) % available.length
+    const skill = available[pickIdx]
+    hero._aiLastSkillIdx = pickIdx
+
+    // 释放技能：扣 MP、设冷却 + 统一锁
+    const cpos = bh.getPos()
+    hero.mp = Math.max(0, (hero.mp || 0) - (skill.mpCost || 0))
+    if (!hero._aiSkillsCD) hero._aiSkillsCD = {}
+    const defaultCD = (skill.type === 'blade_storm') ? 4
+      : (skill.aoe || skill.type === 'magic') ? 5
+      : (skill.effect === 'stun' || skill.type === 'attack') ? 2.5
+      : 2
+    hero._aiSkillsCD[skill.id] = skill.cooldown || defaultCD
+    hero._aiSkillLock = skill.cooldown || defaultCD
+
+    // 播放对应动画状态（盾击→shield，其他→skill）
+    const sprite = bh.sprite
+    if (sprite) {
+      let animState = 'attack'
+      if (skill.effect === 'stun' || skill.type === 'attack') animState = 'shield'
+      else if (skill.type === 'magic' || skill.type === 'blade_storm' || skill.aoe) animState = 'skill'
+      sprite.state = animState
+      sprite.animFrame = 0
+      sprite.animTimer = 0
+    }
+    hero._aiAttacking = true
+    hero._aiAttackTimer = 0.8
+
+    // 分派
+    if (skill.type === 'blade_storm') {
+      this._allyCastBladeStorm(bh, monster, skill)
+    } else if (skill.aoe) {
+      if (skill.aoe.aoeType === 'lineX') {
+        this._castFireballAoE(skill, cpos, castDir, hero)
+      } else if (skill.aoe.aoeType === 'circle') {
+        this._castIceWaveAoE(skill, cpos, castDir, hero)
+      } else if (skill.aoe.aoeType === 'thunder') {
+        this._castThunderAoE(skill, cpos, hero)
+      } else {
+        this._castFireballAoE(skill, cpos, castDir, hero)
+      }
+    } else if (skill.type === 'magic') {
+      if (!this.battleSystem.projectiles) this.battleSystem.projectiles = []
+      const cfg = skill.projectile || {}
+      const speed = (cfg.speed || 320) * this.dpr
+      const projRange = (cfg.range || 200) * this.dpr
+      this.battleSystem.projectiles.push({
+        x: cpos.x + castDir * 20 * this.dpr,
+        y: cpos.y - 15 * this.dpr,
+        vx: castDir * speed,
+        vy: 0,
+        power: cfg.power || (skill.power || 1),
+        atk: this._getHeroAtk(hero),
+        def: hero.def || 0,
+        life: projRange / speed,
+        maxLife: projRange / speed,
+        color: '#b76bff',
+        owner: 'hero',
+        hero: hero,
+        skill: skill,
+        castDir: castDir,
+        isBasicAttack: false,
+        _hitSet: new Set()
+      })
+    } else {
+      const damage = Math.max(1, Math.floor(this._getHeroAtk(hero) * (skill.power || 1) - Math.floor(monster.def * 0.5)))
+      const isCrit = Math.random() < (hero.crit || 0.05)
+      const finalDmg = isCrit ? Math.floor(damage * 1.5) : damage
+      this.battleSystem.pendingDamages.push({
+        monster: monster,
+        damage: finalDmg,
+        isCrit: isCrit,
+        timer: 0.4,
+        heroName: hero.name,
+        statusEffect: skill.statusEffect,
+        effectValue: skill.effectValue
+      })
+    }
+
+    console.log(`[FieldBattle] ${hero.name}（AI）释放技能 ${skill.name}`)
+    return true
+  }
+
+  /**
+   * ★ AI 释放剑气风暴（blade_storm）：生成月牙剑气投射物
+   */
+  proto._allyCastBladeStorm = function(bh, monster, skill) {
+    const hero = bh.hero
+    const cpos = bh.getPos()
+    const castDir = (bh.sprite && bh.sprite.facingLeft) ? -1 : 1
+    if (!this.battleSystem.projectiles) this.battleSystem.projectiles = []
+    this.battleSystem.projectiles.push({
+      x: cpos.x + castDir * 20 * this.dpr,
+      y: cpos.y - 25 * this.dpr,
+      vx: castDir * 260 * this.dpr,
+      vy: 0,
+      power: skill.power || 2.2,
+      atk: this._getHeroAtk(hero),
+      def: hero.def || 0,
+      life: 1.2,
+      maxLife: 1.2,
+      color: '#aee6ff',
+      owner: 'hero',
+      hero: hero,
+      skill: skill,
+      castDir: castDir,
+      isBasicAttack: false,
+      bladeStorm: true,
+      height: 90,
+      width: 55,
+      hitW: 100,
+      hitH: 100,
+      _hitSet: new Set()
+    })
   }
 
   // ==========================================================================

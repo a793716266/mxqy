@@ -2,6 +2,22 @@
 
 ## 📅 更新日志
 
+### 2026-08-12（更新）
+
+**feat: 野外 AI 队友自行寻怪战斗 + 召回机制 + AI 技能修复**
+
+- **队友自行寻怪战斗（不跟随主角）**：非战斗且未召回时，队友全图寻找最近的地图怪物（`_getAllyCombatTarget` 取消 520px 参战半径限制），靠近怪物（80px）后主动开战（`_startFieldBattle`），战斗中独立站位输出，不再贴主角身上。
+- **召回机制**：新增左上角「⚔ 解散 / 📣 召回中」按钮（`_handleTap` + `render`）。点击召回立即把所有队友瞬移到被控角色周围（`_recallAlliesToPlayer`，按索引均分角度环绕）；解散后队友再次全图自行寻怪。`this.aiRecall` 状态持久于 `init()`。
+- **AI 远程普攻投射物**：李小宝（mage）等远程角色 AI 普攻现在发射投射物（与玩家一致），近战走延迟伤害结算。
+- **AI 多技能轮转释放**：新增 `_allyTryCastSkill` / `_allyCastBladeStorm`。收集所有「CD 好 + MP 够」的技能后按 `_aiLastSkillIdx` **轮转选取**，解决此前永远只放排第一的火球、冰晶/雷击等技能从不释放的问题。
+- **AI 技能 CD 不失效**：无 `cooldown` 配置的技能（如火球/盾击）给定兜底 CD（魔法类 5s、盾击 2.5s、剑气风暴 4s），并新增 `_aiSkillLock` 统一锁兜底，杜绝「1 秒一个火球」无限连放。
+- **AI 英雄 MP 回复**：每帧按 `mpRegen * dt * 0.5` 回蓝（与正规战斗一致），避免技能只减不增导致很快哑火。
+- **AI 技能动画正确映射**：盾击（`effect==='stun'`/`type==='attack'`）→ `shield` 状态；魔法/AOE/剑气风暴 → `skill` 状态，修复臻宝放盾击却播普攻动画的问题。
+- **修改文件**：
+  - `scripts/scenes/field-scene.js`：`init` 新增 `aiRecall`、`_updateFollowers` 独立行动/召回分支、`_findNearestMapMonster`、`_recallAlliesToPlayer`、`_handleTap` 召回按钮、`render` 召回按钮绘制
+  - `scripts/systems/field-battle-system.js`：`_updateAllyAI`（CD 倒计时 + MP 回复 + 技能尝试）、新增 `_allyTryCastSkill` / `_allyCastBladeStorm`
+- **状态**：✅ 已通过 Babel 语法检查；用户实测 AI 火球/冰晶/雷击轮流释放、盾击播正确动画、不再无限连放
+
 ### 2026-08-09（更新2）
 
 **fix: 角色卡/信息面板 BUFF 显示、切换崩溃、清理调试代码**
