@@ -1004,28 +1004,33 @@ export function installFieldBattleSystem(FieldSceneClass) {
     const cpos = ctrl.getPos()
     const dpr = this.dpr
     const proj = skill.projectile || {}
-    const speed = (proj.speed || 760)
-    const width = (proj.width || 90) * dpr
-    const height = (proj.height || 60) * dpr
-    const power = proj.power || 1.4
-    // 发射点：玩家手部高度（中心略偏上）
+    const speed = (proj.speed || 620)
+    const width = (proj.width || 110) * dpr      // 月牙视觉长度
+    const height = (proj.height || 70) * dpr      // 月牙视觉高度
+    const hitW = (proj.hitW || 130) * dpr         // 命中矩形宽
+    const hitH = (proj.hitH || 90) * dpr          // 命中矩形高
+    const power = proj.power || 1.6
+    // 发射点：玩家身体中部（中心略偏下）
     const sx = cpos.x + dir * 20 * dpr
-    const sy = cpos.y - 15 * dpr
+    const sy = cpos.y - 25 * dpr
     if (!this.battleSystem.projectiles) this.battleSystem.projectiles = []
     this.battleSystem.projectiles.push({
       x: sx,
       y: sy,
       vx: dir * speed,
       vy: 0,
-      life: proj.duration || 1.2,
+      life: proj.duration || 1.1,
+      age: 0,
       owner: 'hero',
       fromMonster: false,
       isBasicAttack: false,
       hero: ctrl.hero,
       skill: skill,
       bladeStorm: true,
-      width: width,        // 剑气刃宽（X轴命中范围）
-      height: height,      // Y轴命中容差
+      width: width,        // 月牙视觉长度（X轴）
+      height: height,      // 月牙视觉高度（Y轴弯度）
+      hitW: hitW,          // 命中矩形宽
+      hitH: hitH,          // 命中矩形高
       power: power,
       _hitSet: new Set(),
       _born: false,
@@ -1456,6 +1461,7 @@ export function installFieldBattleSystem(FieldSceneClass) {
       p.x += p.vx * dt
       p.y += p.vy * dt
       p.life -= dt
+      p.age = (p.age || 0) + dt
       // 命中判定：与怪物 X 轴带碰撞（火球Y固定，命中 Y 带内的敌人）
       let hitMonster = null
       if (p.bladeStorm) {
@@ -1464,7 +1470,7 @@ export function installFieldBattleSystem(FieldSceneClass) {
           if (!m.alive || p._hitSet.has(m.id)) continue
           const dx = Math.abs(m.x - p.x)
           const dy = Math.abs(m.y - p.y)
-          if (dx <= p.width / 2 && dy <= p.height / 2) {
+          if (dx <= p.hitW / 2 && dy <= p.hitH / 2) {
             p._hitSet.add(m.id)
             const isCrit = Math.random() < (p.hero.crit || 0.05)
             const dmg = Math.max(1, Math.floor(this._getHeroAtk(p.hero) * (p.power || 1.4) - Math.floor(m.def * 0.5)))

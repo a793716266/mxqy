@@ -22,7 +22,7 @@ export const HEROES = [
     title: '勇敢的战士',
     role: 'warrior',
     maxHp: 120,
-    maxMp: 30,
+    maxMp: 300,
     atk: 18,
     def: 12,
     spd: 10,
@@ -53,18 +53,20 @@ export const HEROES = [
         type: 'blade_storm',   // ★ 自定义斩击大招：前摇蓄力→吸附→5次突刺→剑气收尾
         mpCost: 25,
         range: 0,
-        cooldown: 10,          // 冷却（秒）
+        cooldown: 3,          // 冷却（秒）
         combo: 5,              // 突刺次数
         power: 0.85,           // 单次突刺伤害系数
         lungeDist: 46,         // 每次突刺前冲距离（像素，明显可见）
         pullRange: 220,        // 吸附范围（像素，世界坐标）
         pullDist: 70,          // 吸附到玩家正前方的距离
         projectile: {
-          speed: 760,          // 剑气飞行速度
-          power: 1.4,          // 剑气伤害系数
-          width: 90,           // 剑气刃宽（X轴命中范围）
-          height: 60,          // Y轴命中容差
-          duration: 1.2
+          speed: 680,          // 月牙剑气飞行速度
+          power: 1.6,          // 剑气伤害系数
+          width: 55,           // 剑气视觉厚度（X轴，月牙厚度）
+          height: 40,          // 剑气视觉高度（Y轴，竖直月牙跨度）
+          hitW: 100,           // 命中矩形宽
+          hitH: 100,           // 命中矩形高
+          duration: 0.9
         },
         desc: '蓄力吸附周围敌人，连续突刺5次，最后挥出剑气'
       }

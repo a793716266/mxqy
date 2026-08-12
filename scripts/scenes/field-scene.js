@@ -3139,64 +3139,103 @@ baseRadius: 50 * this.dpr,    // 底座半径（缩小）
                 ctx.fill()
               }
             } else if (p.bladeStorm) {
-              // ★ 剑气：新月形能量刃（青白光晕 + 锐利核心 + 拖尾流光）
+              // ★ 剑气：修罗邪光斩式月牙实体面（凸面朝前飞行，带残影）
               const dir = p.vx >= 0 ? 1 : -1
-              ctx.scale(dir, 1)
-              const w = (p.width || 90 * this.dpr)
-              const h = (p.height || 60 * this.dpr)
-              const t = now * 6
+              const dpr = this.dpr
+              const age = p.age || 0
+              const fade = Math.max(0, Math.min(1, p.life / (p.life + age + 0.001) * 1.6))
+              const H = (p.height || 110) * dpr   // 月牙竖直跨度
+              // 月牙几何：外弧（凸面朝前）+ 内弧（凹面朝后）闭合填充
+              const R_out = H * 0.6      // 外弧半径
+              const R_in  = H * 0.42     // 内弧半径（<R_out，形成厚度）
+              const o_cx = -R_out * 0.5  // 外弧圆心（偏后）
+              const i_cx = R_in * 0.15   // 内弧圆心（偏前）
+              const cy = 0
+              const a0 = -Math.PI * 0.28
+              const a1 =  Math.PI * 0.28
 
-              // 1) 外层柔光晕（径向渐变椭圆）
-              const glow = ctx.createRadialGradient(0, 0, h * 0.1, 0, 0, w * 0.55)
-              glow.addColorStop(0, 'rgba(180, 245, 255, 0.55)')
-              glow.addColorStop(0.5, 'rgba(120, 220, 255, 0.30)')
-              glow.addColorStop(1, 'rgba(120, 220, 255, 0)')
-              ctx.fillStyle = glow
-              ctx.save()
-              ctx.translate(0, 0)
-              ctx.scale(1, h / w * 0.9 + 0.25)
-              ctx.beginPath()
-              ctx.arc(0, 0, w * 0.55, 0, Math.PI * 2)
-              ctx.fill()
-              ctx.restore()
+              // 月牙前缘（最右）X 坐标 = 外弧最右点
+              const edgeX = o_cx + R_out
+              // 月牙后缘（最左）X 坐标 = 外弧/内弧左侧交点附近，取内弧最左
+              const backX = i_cx - R_in
 
-              // 2) 新月形剑刃主体（两段贝塞尔围成弯月）
-              ctx.save()
-              ctx.beginPath()
-              // 上缘弧（从剑尖后方弯到尖端）
-              ctx.moveTo(-w / 2, 0)
-              ctx.quadraticCurveTo(0, -h * 0.55, w / 2, -h * 0.12)
-              // 尖端
-              ctx.quadraticCurveTo(w / 2 + h * 0.5, 0, w / 2, h * 0.12)
-              // 下缘弧（弯回后方）
-              ctx.quadraticCurveTo(0, h * 0.55, -w / 2, 0)
-              ctx.closePath()
-              const edge = ctx.createLinearGradient(-w / 2, 0, w / 2, 0)
-              edge.addColorStop(0, 'rgba(120, 220, 255, 0.15)')
-              edge.addColorStop(0.6, 'rgba(170, 240, 255, 0.65)')
-              edge.addColorStop(1, 'rgba(235, 252, 255, 0.95)')
-              ctx.fillStyle = edge
-              ctx.fill()
-              ctx.restore()
-
-              // 3) 核心亮刃线（白）
-              ctx.strokeStyle = 'rgba(255,255,255,0.95)'
-              ctx.lineWidth = Math.max(1.5, h * 0.08)
-              ctx.lineCap = 'round'
-              ctx.beginPath()
-              ctx.moveTo(-w / 2, 0)
-              ctx.quadraticCurveTo(0, -h * 0.18, w / 2, 0)
-              ctx.stroke()
-
-              // 4) 拖尾流光（沿刃身向后流动的亮纹）
-              for (let k = 0; k < 4; k++) {
-                const fx = -w / 2 + ((t * 26 * this.dpr + k * w / 4) % w)
-                const fy = Math.sin((fx / w) * Math.PI) * -h * 0.18
-                ctx.fillStyle = 'rgba(255,255,255,0.45)'
+              // 绘制月牙实体路径（外弧正向 + 内弧反向，端点连接形成闭合面）
+              function crescentPath(ctx, oCx, iCx, rOut, rIn, aStart, aEnd) {
                 ctx.beginPath()
-                ctx.arc(fx, fy, Math.max(1, h * 0.05), 0, Math.PI * 2)
+                ctx.arc(oCx, 0, rOut, aStart, aEnd)
+                ctx.arc(iCx, 0, rIn, aEnd, aStart, true)
+                ctx.closePath()
+              }
+
+              ctx.save()
+              ctx.scale(dir, 1)
+
+              // ===== 残影拖尾：3个月牙面，向后偏移、逐渐变淡 =====
+              for (let k = 3; k >= 1; k--) {
+                const off = k * 9 * dpr
+                const aOff = k * 0.035
+                ctx.globalAlpha = fade * (0.18 - k * 0.04)
+                ctx.fillStyle = 'rgba(150, 210, 255, 0.85)'
+                crescentPath(ctx, o_cx - off, i_cx - off, R_out, R_in, a0 - aOff, a1 + aOff)
                 ctx.fill()
               }
+
+              // ===== 主体剑气（月牙实体面，前缘亮、后缘消散） =====
+              ctx.globalAlpha = fade
+
+              // 1) 主体填充：水平线性渐变（前缘青白实、后缘透明）
+              const bodyGrad = ctx.createLinearGradient(edgeX, 0, backX, 0)
+              bodyGrad.addColorStop(0,   'rgba(220, 240, 255, 0.95)')  // 前缘：实
+              bodyGrad.addColorStop(0.5, 'rgba(180, 225, 255, 0.6)')   // 中段
+              bodyGrad.addColorStop(1,   'rgba(140, 200, 255, 0.0)')   // 后缘：透明消散
+              ctx.fillStyle = bodyGrad
+              crescentPath(ctx, o_cx, i_cx, R_out, R_in, a0, a1)
+              ctx.fill()
+
+              // 2) 外层光晕（沿前缘外侧的青蓝光）
+              ctx.strokeStyle = 'rgba(120, 190, 255, 0.45)'
+              ctx.lineWidth = 7 * dpr
+              ctx.lineJoin = 'round'
+              crescentPath(ctx, o_cx, i_cx, R_out, R_in, a0, a1)
+              ctx.stroke()
+
+              // 3) 前缘刃锋（细锐亮线，强化刀刃锋利感）
+              const edgeGrad = ctx.createLinearGradient(edgeX, 0, o_cx, 0)
+              edgeGrad.addColorStop(0, 'rgba(255, 255, 255, 0.95)')
+              edgeGrad.addColorStop(1, 'rgba(180, 220, 255, 0.1)')
+              ctx.strokeStyle = edgeGrad
+              ctx.lineWidth = 1.8 * dpr
+              ctx.lineCap = 'round'
+              ctx.beginPath()
+              ctx.arc(o_cx, 0, R_out, a0, a1)
+              ctx.stroke()
+
+              // 4) 内部能量纹路已移除（用户反馈多余）
+
+              // 5) 凸面中段能量高光（亮斑）
+              const coreX = edgeX
+              const grad = ctx.createRadialGradient(coreX, 0, 0, coreX, 0, 12 * dpr)
+              grad.addColorStop(0, 'rgba(255, 255, 255, 0.85)')
+              grad.addColorStop(1, 'rgba(255, 255, 255, 0)')
+              ctx.fillStyle = grad
+              ctx.beginPath()
+              ctx.arc(coreX, 0, 12 * dpr, 0, Math.PI * 2)
+              ctx.fill()
+
+              // 5) 上下尖端亮点（让端角尖锐发光）
+              for (const a of [a0, a1]) {
+                const tx = o_cx + R_out * Math.cos(a)
+                const ty = R_out * Math.sin(a)
+                const tg = ctx.createRadialGradient(tx, ty, 0, tx, ty, 7 * dpr)
+                tg.addColorStop(0, 'rgba(255, 255, 255, 0.9)')
+                tg.addColorStop(1, 'rgba(255, 255, 255, 0)')
+                ctx.fillStyle = tg
+                ctx.beginPath()
+                ctx.arc(tx, ty, 7 * dpr, 0, Math.PI * 2)
+                ctx.fill()
+              }
+
+              ctx.restore()
             } else {
               // ★ 火球：火焰粒子效果（核心亮球 + 多层火焰粒子 + 拖尾）
               // 外层火焰（橙红扩散）
