@@ -4353,3 +4353,18 @@ _checkBattleEnd() {
   - 解散模式保持原全图寻敌站桩行为不变。
 - **修改文件**：`scripts/scenes/field-scene.js`
 - **状态**：✅ 已通过 Babel 语法检查，用户确认召回跟随 + 附近有怪自动攻击 + 怪死回归均正常
+
+## 2026-08-16 更新：非霸体技能受击打断机制
+
+### feat/fix: 所有非霸体技能（怪物 + AI英雄）受击即打断
+
+- **需求（用户定义）**：所有非霸体的技能（包括怪物与 AI 英雄），在释放过程中一旦受到 HP 伤害，技能应当被打断、放不出来；只有标了霸体（superArmor）的技能才免疫打断。
+- **根因**：原战斗系统完全没有「施法被打断」逻辑。怪物与 AI 英雄释放技能时设 `isCastingSkill` / `_aiAttacking`，但受击扣血路径（`_damageMonster`、英雄 `_applyHeroDamage`）只减血，不清除施法状态 → 施法过程照常完成。
+- **修复**：
+  - **霸体字段**：技能配置加 `superArmor: true`（默认 false = 非霸体）。`field-scene._normalizeMonsterSkills` 透传；示例霸体技能：`lost_healer_cat`「光明冲锋」(charge 蓄力)、`dark_cat_king`「暗影之怒」大招。
+  - **怪物打断**：`field-battle-system._damageMonster`（所有怪物扣血唯一入口）扣血后调用 `_interruptCastingForMonster(m)`：当前 `isCastingSkill` 且技能非霸体时，清除 `isCastingSkill / skillCastId / skillAnimTimer / animFrame / hasDealtDamage`，恢复可行动。
+  - **AI英雄打断**：英雄受击入口（`_applyHeroDamage`，field-scene + field-battle-system 两份）`hpDamage>0` 后调用 `_interruptCastingForHero(hero)`：当前 `_aiAttacking` 且技能非霸体时，清除 `_aiAttacking / _aiAttackTimer / _castAxisLock / _castLock / _aiCastingSkill`，恢复 idle。
+  - **记录释放技能**：`field-battle-system._allyTryCastSkill` 释放时设 `hero._aiCastingSkill = skill`，供打断时查霸体标记（普攻无 skill → 视为非霸体，可被普攻打断）。
+  - **范围控制**：打断仅作用于 `isCastingSkill`（怪物）与 `_aiAttacking`（AI 英雄）；玩家手动操作的角色不被误打断（手动释放不走 `_aiAttacking`）。
+- **修改文件**：`scripts/systems/field-battle-system.js`、`scripts/scenes/field-scene.js`、`scripts/data/enemies.js`
+- **状态**：✅ 已通过 Babel 语法检查；待用户实测确认打断手感

@@ -300,7 +300,8 @@ export const ENEMIES_CH1 = {
         critBonus: 1.0,  // 必定暴击（100%暴击加成）
         drainPercent: 0.3,  // 回复伤害30%生命值
         cooldown: 8,  // CD 8秒
-        noMpCost: true 
+        noMpCost: true,
+        superArmor: true  // ★ 霸体：蓄力冲锋期间不被打断（示例霸体技能）
       },
       // 防御技能
       { name: '圣盾之光', power: 0, type: 'buff', effect: 'def_up', value: 0.3, duration: 3, noMpCost: true },
@@ -415,7 +416,7 @@ export const ENEMIES_CH1 = {
       { name: '暗影领域', power: 1.2, type: 'attack', target: 'all' },  // 0.8 → 1.2
       { name: '生命吸取', power: 1.5, type: 'attack', effect: 'drain' }, // 1.0 → 1.5
       { name: '暗影爆发', power: 2.5, type: 'attack' },      // 2.0 → 2.5
-      { name: '暗影之怒', power: 3.0, type: 'attack' }       // 新增大招
+      { name: '暗影之怒', power: 3.0, type: 'attack', superArmor: true }       // 新增大招（霸体）
     ],
     drop: [{ id: 'dark_gem', name: '暗影宝石', chance: 1.0 }],
     dialogue: [

@@ -1013,6 +1013,8 @@ export function installFieldBattleSystem(FieldSceneClass) {
     //   这样无论渲染帧和伤害帧之间隔了多少次命中，lag 都从"上一次受伤前的 hp"开始追
     m._preDamageHp = (typeof m.hp === 'number') ? m.hp : m._preDamageHp
     m.hp = Math.max(0, m.hp - real)
+    // ★ 非霸体施法被打断：怪物正在放非霸体技能时受到 HP 伤害，技能放不出来
+    this._interruptCastingForMonster(m)
     // ★ 记录"最近受伤的怪"：无论致死与否都记录，
     //   面板据此稳定锁定正在交战的怪，并能把残影追赶到 0（致死也显示完整扣血过程）
     this.battleSystem._lastDamagedMonster = m
@@ -1020,6 +1022,46 @@ export function installFieldBattleSystem(FieldSceneClass) {
       this.battleSystem.battleTarget = m
     }
     return real
+  }
+
+  // ★ 怪物施法被打断：当前正在释放技能且非霸体（superArmor）时，清除施法状态
+  //   使技能放不出来（动画中止、伤害不再结算）。霸体技能（BOSS 大招等）不受影响。
+  proto._interruptCastingForMonster = function(m) {
+    if (!m || !m.isCastingSkill) return
+    // 查当前释放技能的霸体标记
+    const sk = (m.skills && m.skillCastId)
+      ? m.skills.find(s => s.id === m.skillCastId)
+      : null
+    if (sk && sk.superArmor) return  // 霸体：不被打断
+    // ★ 打断：清除所有施法状态，恢复可行动
+    m.isCastingSkill = false
+    m.skillCastId = null
+    m.skillAnimTimer = 0
+    m.isMoving = false
+    m.animFrame = 0
+    m.hasDealtDamage = false
+    // 受击表现：轻微位移抖动由渲染层处理，这里仅中断施法
+    console.log(`[FieldBattle] 怪物 ${m.name} 施法被打断（非霸体）`)
+  }
+
+  // ★ 我方 AI 英雄施法被打断：当前正在释放技能/普攻且非霸体时，清除施法状态
+  //   使技能放不出来。霸体技能不受影响。
+  proto._interruptCastingForHero = function(hero) {
+    if (!hero || !hero._aiAttacking) return
+    // 查当前释放技能的霸体标记（普攻无 _aiCastingSkill → 视为非霸体，可被普攻打断）
+    const sk = hero._aiCastingSkill
+    if (sk && sk.superArmor) return  // 霸体：不被打断
+    // ★ 打断：清除所有施法/攻击状态，恢复 idle
+    hero._aiAttacking = false
+    hero._aiAttackTimer = 0
+    hero._castAxisLock = 0
+    hero._castLock = 0
+    hero._aiCastingSkill = null
+    if (hero._sprite) {
+      hero._sprite.state = 'idle'
+      hero._sprite.animFrame = 0
+    }
+    console.log(`[FieldBattle] ${hero.name}（AI）施法被打断（非霸体）`)
   }
 
   // ★ 单次突刺伤害：玩家正前方 X 轴（吸附来的 + 范围内）所有敌人各造成 1 次
@@ -1287,6 +1329,7 @@ export function installFieldBattleSystem(FieldSceneClass) {
       sprite.animTimer = 0
     }
     hero._aiAttacking = true
+    hero._aiCastingSkill = skill  // ★ 记录正在释放的技能，供"被打断"时查霸体标记
     hero._aiAttackTimer = 0.8
 
     // ★ BUFF / 治疗类：与被控角色一致，释放期间完全锁定移动
@@ -2677,6 +2720,10 @@ export function installFieldBattleSystem(FieldSceneClass) {
     hero.hp = Math.max(0, hero.hp - hpDamage)
     if (hero.hp <= 0 && hero.alive !== false) {
       hero.alive = false
+    }
+    // ★ 非霸体施法被打断：英雄（AI）正在释放技能/普攻时受到 HP 伤害，技能放不出来
+    if (hpDamage > 0) {
+      this._interruptCastingForHero(hero)
     }
     const screenX = (sx != null) ? sx : this.playerX
     const screenY = (sy != null) ? sy : this.playerY

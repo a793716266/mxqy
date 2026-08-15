@@ -1409,6 +1409,9 @@ baseRadius: 50 * this.dpr,    // 底座半径（缩小）
       healAmount: s.healAmount || 0,
       summonId: s.summonId || null,
       target: s.target || 'single',
+      // ★ 霸体标记：superArmor=true 表示释放期间不被打断（如 BOSS 大招）；
+      //   默认 false → 非霸体技能/普攻在受到 HP 伤害时会被打断，技能放不出来。
+      superArmor: !!s.superArmor,
       desc: s.desc || ''
     }))
   }
@@ -1431,6 +1434,10 @@ baseRadius: 50 * this.dpr,    // 底座半径（缩小）
     if (hero.hp <= 0 && hero.alive !== false) {
       hero.alive = false
     }
+    // ★ 非霸体施法被打断：英雄（AI）正在释放技能/普攻时受到 HP 伤害，技能放不出来
+    if (hpDamage > 0) {
+      this._interruptCastingForHero(hero)
+    }
     // 同步回角色状态管理
     try {
       const charState = charStateManager.getCharacter(hero.id)
@@ -1439,9 +1446,24 @@ baseRadius: 50 * this.dpr,    // 底座半径（缩小）
     return { hpDamage, absorbed }
   }
 
-  /**
-   * ★ 新增：怪物对英雄造成伤害（普攻）
-   */
+  // ★ 我方 AI 英雄施法被打断：当前正在释放技能/普攻且非霸体时，清除施法状态
+  //   使技能放不出来（动画中止）。霸体技能（superArmor）不受影响。
+  _interruptCastingForHero(hero) {
+    if (!hero || !hero._aiAttacking) return
+    // 查当前释放技能的霸体标记（普攻无 _aiCastingSkill → 视为非霸体，可被普攻打断）
+    const sk = hero._aiCastingSkill
+    if (sk && sk.superArmor) return  // 霸体：不被打断
+    hero._aiAttacking = false
+    hero._aiAttackTimer = 0
+    hero._castAxisLock = 0
+    hero._castLock = 0
+    hero._aiCastingSkill = null
+    if (hero._sprite) {
+      hero._sprite.state = 'idle'
+      hero._sprite.animFrame = 0
+    }
+    console.log(`[Field-Battle] ${hero.name}（AI）施法被打断（非霸体）`)
+  }
   _dealMonsterDamage(monster, hero) {
     if (!monster || !hero || hero.hp <= 0) return
 
