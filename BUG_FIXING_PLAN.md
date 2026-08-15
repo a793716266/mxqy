@@ -2,6 +2,27 @@
 
 ## 📅 更新日志
 
+### 2026-08-15（更新）
+
+**fix: 彻底消除 AI 与 AI、AI 与怪物之间的碰撞/推挤观感（野外+战斗场景）**
+
+- **背景**：用户实测野外阳光草原地图上，怪物攻击时 AI（队友/主角 AI）会被"推开/带跑"，表现为碰撞。此前虽已移除 `_checkMonsterCollision`（接触开战）调用、禁用 `field-movement.js` follower 防重叠推挤，但"被弹开/推挤卡顿"观感依旧。
+- **根因定位（逐行排查）**：
+  - 代码层面**怪物攻击从不修改 AI 世界坐标**（怪物走位 `monster.x += vx*dt` 只改自己；英雄受击 `_dealMonsterDamage` 只扣血+飘字）。真正的推挤观感来自两点：
+  - **(1) 战斗场景单位分离**：`battle-combat.js` 的 `physics.separate()` 会把英雄 AI 之间、英雄 AI 与怪物之间互相推开；`_getMovementBlocker` 把其它单位当移动阻挡（卡住/滑开）。
+  - **(2) 野外 AI 站位点每帧跟随怪物实时坐标漂移**：`_getAllyCombatTarget` 基于怪物当前坐标 `target.x + side*attackDist` 算站位点，怪物每帧走位（后撤/绕圈）带动 AI 阵型漂移，视觉上像"被怪物推开"。
+- **修复**：
+  - `scripts/scenes/battle/battle-combat.js`：
+    - `_applyCollisionSeparation` 中 `physics.separate(...)` 改为 `physics.clampAll(visualR/dpr)`，仅保留地图边界钳制，彻底取消单位间推挤分离。
+    - `_getMovementBlocker` 直接 `return null`，单位移动不再被任何其它单位卡住或滑开（保留地形碰撞不受影响）。
+    - 新增进战斗一次性 `console.log` 调试标记，用于确认新代码已编译进预览包。
+  - `scripts/scenes/field-scene.js`：
+    - `_getAllyCombatTarget`：AI 站位点**锁定**——首次选定目标（按 `target.id`）时基于当时怪物位置算一个固定输出位存进 `follower._lockedStand`；之后怪物怎么移动，AI 都站定在自己锁定点，不再被"带跑/推开"。目标切换时重新锁定。
+    - 主角 AI 站位调用处改为传入 `px` 自身（原为匿名临时对象，`_lockedStand` 无法持久），使主角 AI 站位同样锁定。
+- **效果**：AI（队友+主角 AI）一旦站定输出位，位置完全独立于怪物；战斗场景中单位可自由穿过、互不推挤、互不阻挡。地形碰撞仍保留。符合用户"AI 与 AI、AI 与怪物完全可穿过互不干扰"的要求。
+- **修改文件**：`scripts/scenes/battle/battle-combat.js`、`scripts/scenes/field-scene.js`
+- **状态**：✅ 已通过 Babel 语法检查；用户实测碰撞问题已解决
+
 ### 2026-08-12（更新）
 
 **feat: 野外 AI 队友自行寻怪战斗 + 召回机制 + AI 技能修复**

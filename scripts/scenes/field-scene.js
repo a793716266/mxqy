@@ -841,9 +841,9 @@ baseRadius: 50 * this.dpr,    // 底座半径（缩小）
           // 更新相机位置（跟随玩家）
           this._updateCamera()
 
-          // ★ 不再检查与怪物的碰撞（与AI角色行为一致：两个角色都不被怪物碰撞/阻挡）
+          // ★ 不再检查与怪物的碰撞（与AI角色行为一致：角色之间无碰撞，角色与怪物也无碰撞）
           // 之前只有被控者(摇杆移动)触发 _checkMonsterCollision，AI角色不走这里，
-          // 导致"臻宝不碰撞、李小宝碰撞"的差异；现统一移除，战斗由草地模式自动激活/其它入口触发
+          // 导致"臻宝不碰撞、李小宝碰撞"的差异；现统一移除，角色可自由穿过怪物。
           // this._checkMonsterCollision()
         }
       }
@@ -2063,9 +2063,9 @@ baseRadius: 50 * this.dpr,    // 底座半径（缩小）
         const inCombat = this.battleSystem.active
         if (inCombat) {
           // 主角 AI 站位：自己找怪输出（复用队友站位逻辑，i=-1 表示主角侧）
-          const targetPos = this._getAllyCombatTarget({
-            x: px.x, y: px.y, _aiTargetId: px._aiTargetId
-          }, -1)
+          // ★ 直接传 px 自身（而非匿名对象），让 _lockedStand 能持久保存，
+          //   主角 AI 站位点同样锁定，不再被怪物走位带动。
+          const targetPos = this._getAllyCombatTarget(px, -1)
           px._aiTargetId = targetPos ? targetPos._targetId : null
 
           // ★ 无怪可打时：回到被控者身边待命（保持队伍），不四处乱跑
@@ -2209,10 +2209,14 @@ baseRadius: 50 * this.dpr,    // 底座半径（缩小）
 
     if (!target) {
       follower._aiTargetId = null
+      follower._lockedStand = null
       return null   // 附近无怪物 → 回退跟随主角
     }
 
-    // 3) 计算怪物侧边的输出位：从怪物当前所在侧靠近，多个队友左右错开站位
+    // 3) 计算输出位：★ AI 站位点锁定，不再每帧跟随怪物实时坐标漂移，
+    //    实现"AI 与怪物完全互不干扰、可自由穿插"（怪物走位不会再带动/推开 AI）。
+    //    - 首次选定目标时，基于怪物当前位置算一个固定偏移站位点并存起来；
+    //    - 之后怪物怎么移动，AI 都站定在自己锁定的点，不再被怪物"带跑/推开"。
     const attackDist = ((this.battleSystem && this.battleSystem.attackRange) || 100) * this.dpr * 0.75
     // 队友从自己当前所在的一侧接近怪物（谁在左就站左边），减少绕路
     const side = (follower.x <= target.x) ? -1 : 1
@@ -2220,9 +2224,17 @@ baseRadius: 50 * this.dpr,    // 底座半径（缩小）
     const idx = Math.max(0, i)
     const yOffset = ((i % 2 === 0) ? 1 : -1) * (18 + idx * 10) * this.dpr
 
+    if (!follower._lockedStand || follower._lockedStand._targetId !== target.id) {
+      follower._lockedStand = {
+        x: target.x + side * attackDist,
+        y: target.y + yOffset,
+        _targetId: target.id
+      }
+    }
+
     return {
-      x: target.x + side * attackDist,
-      y: target.y + yOffset,
+      x: follower._lockedStand.x,
+      y: follower._lockedStand.y,
       facingLeft: (target.x < follower.x),
       _targetId: target.id
     }

@@ -665,37 +665,22 @@ export function installBattleCombat(BattleSceneClass) {
       bottom: this.height * 0.82 - visualR,
     })
 
-    physics.separate({ pushForce: 1.0, passes: 3, extraMargin: 4 })
+    // ★ 单位间碰撞分离已禁用：用户要求 AI 与 AI、AI 与怪物之间完全可穿过、
+    //   互不推挤、互不阻挡（像幽灵一样自由穿插）。仅保留地图边界钳制，
+    //   地形碰撞不受影响（battle 场景无地形障碍参与）。
+    // ★ 调试标记：进战斗时打印一次，用于确认本文件已编译进预览包
+    if (!this._sepDisabledLogged) {
+      this._sepDisabledLogged = true
+      console.log('[BattleCombat] ★ 单位间碰撞分离已禁用（AI/怪物可自由穿插）')
+    }
+    physics.clampAll(visualR / this.dpr)
   }
 
   proto._getMovementBlocker = function(moverState, targetX, targetY) {
-    const physics = this._physics
-    physics.clearUnits()
-
-    // ★ P3-19: 排除攻击中单位作为碰撞阻挡
-    const attackingIds = new Set()
-    if (this.attackingHero && this.attackAnim) {
-      attackingIds.add(this.attackingHero.id)
-    }
-    for (const attackerId of this.activeAttackers) {
-      attackingIds.add(attackerId)
-    }
-
-    for (const hero of this.party) {
-      if (hero.hp <= 0) continue
-      if (attackingIds.has(hero.id)) continue
-      const state = this.unitStates[hero.id]
-      if (!state) continue
-      physics.addUnit(state)
-    }
-    for (let i = 0; i < this.enemies.length; i++) {
-      if (this.enemies[i].hp <= 0) continue
-      if (attackingIds.has('enemy_' + i)) continue
-      const estate = this.unitStates['enemy_' + i]
-      if (!estate) continue
-      physics.addUnit(estate)
-    }
-    return physics.getMovementBlocker(moverState, targetX, targetY)
+    // ★ 单位间移动阻挡已禁用：用户要求 AI 与 AI、AI 与怪物之间完全可穿过、
+    //   互不阻挡移动（不再被其它单位卡住或滑开）。直接返回 null，
+    //   使单位可自由移动到目标点。
+    return null
   }
 
   proto._slideAround = function(moverState, targetX, targetY, dirX, dirY, moveSpeed, blocker) {
