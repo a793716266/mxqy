@@ -178,6 +178,7 @@ export class FieldScene extends SceneBase {
                 monster.inCombat = false
                 monster.strafeDir = Math.random() > 0.5 ? 1 : -1
                 monster.strafeTimer = 0
+                monster.strafeAngle = Math.random() * Math.PI * 2  // ★ 固定世界方向角，避免 strafe 随相对位置抖动
               }
               console.log(`[Field] 迁移怪物属性: ${monster.enemyId}, atk=${monster.atk}, def=${monster.def}, hp=${monster.hp}`)
             }
@@ -437,6 +438,7 @@ export class FieldScene extends SceneBase {
           skillUseCount: 0,       // 普攻计数，用于强制穿插技能
           strafeDir: Math.random() > 0.5 ? 1 : -1, // 横向走位方向
           strafeTimer: 0,         // 走位方向切换计时
+          strafeAngle: Math.random() * Math.PI * 2, // ★ 固定世界方向角，避免 strafe 随相对位置抖动
           // 动画属性
           bobOffset: 0,
           bobSpeed: 1.5,
@@ -540,6 +542,7 @@ export class FieldScene extends SceneBase {
           skillUseCount: 0,       // 普攻计数，用于强制穿插技能
           strafeDir: Math.random() > 0.5 ? 1 : -1, // 横向走位方向
           strafeTimer: 0,         // 走位方向切换计时
+          strafeAngle: Math.random() * Math.PI * 2, // ★ 固定世界方向角，避免 strafe 随相对位置抖动
           // 动画属性
           bobOffset: Math.random() * Math.PI * 2, // 随机浮动偏移
           bobSpeed: 2 + Math.random(), // 随机浮动速度
@@ -1548,45 +1551,62 @@ baseRadius: 50 * this.dpr,    // 底座半径（缩小）
     }
 
     // 保持距离区间（不贴脸），并加入横向走位让移动更自然
-    const keepDistance = attackRange * 0.75
+    // ★ 带滞回：甜区上界放宽到 attackRange*1.15，下界放宽到 attackRange*0.6，
+    //   避免 strafe 小幅推离攻击范围后即触发"猛冲靠近"造成边界振荡/抖动。
+    const farThreshold = attackRange * 1.15
+    const nearThreshold = attackRange * 0.6
     const nx = dist > 1 ? dx / dist : 0
     const ny = dist > 1 ? dy / dist : 0
-    // 垂直方向（用于 strafe）
-    const px = -ny
-    const py = nx
+    // ★ strafe 方向改用「固定世界方向角」strafeAngle（怪物进场时随机、翻转时 +PI），
+    //   不再基于「指向玩家向量旋转 90°」的 px/py。否则当怪物与玩家同 Y 轴/同 X 轴时，
+    //   相对角度快速翻转会让 strafe 方向每帧抖动，表现为左右抽风。
+    if (monster.strafeAngle == null) monster.strafeAngle = Math.random() * Math.PI * 2
+    const sx = Math.cos(monster.strafeAngle)
+    const sy = Math.sin(monster.strafeAngle)
 
-    // 周期性切换走位方向，模拟包抄/绕圈
+    // 周期性切换走位方向，模拟包抄/绕圈（低频，避免频繁翻转造成抖动）
     monster.strafeTimer -= dt
     if (monster.strafeTimer <= 0) {
       monster.strafeTimer = 1.2 + Math.random() * 1.5
-      if (Math.random() < 0.4) monster.strafeDir *= -1
+      if (Math.random() < 0.4) {
+        monster.strafeDir *= -1
+        monster.strafeAngle += Math.PI   // ★ 翻转时直接旋转世界角，方向整体反转
+      }
     }
 
     let vx = 0, vy = 0
     const spd = monster.moveSpeed || 60
-    if (dist > attackRange) {
+    if (dist > farThreshold) {
       // 太远：靠近（带一点横向偏移，避免直线愣头青）
       vx += nx * spd * 2.2
       vy += ny * spd * 2.2
-      vx += px * monster.strafeDir * spd * 1.0
-      vy += py * monster.strafeDir * spd * 1.0
-    } else if (dist < keepDistance) {
+      vx += sx * spd * 0.6
+      vy += sy * spd * 0.6
+    } else if (dist < nearThreshold) {
       // 太近：后撤并横向绕，避免粘身
       vx -= nx * spd * 1.8
       vy -= ny * spd * 1.8
-      vx += px * monster.strafeDir * spd * 1.6
-      vy += py * monster.strafeDir * spd * 1.6
+      vx += sx * spd * 1.0
+      vy += sy * spd * 1.0
     } else {
-      // 在攻击甜区内：横向绕圈 + 强制向心锁定，避免被玩家甩出攻击范围
-      vx += px * monster.strafeDir * spd * 1.4
-      vy += py * monster.strafeDir * spd * 1.4
-      vx += nx * spd * 1.2
-      vy += ny * spd * 1.2
+      // 在攻击甜区内：仅做低速横向绕圈（包抄），完全不加径向分量。
+      // ★ 之前这里在 dist>0.95*attackRange 时补向心，导致 strafe 把怪物推到攻击范围上沿后
+      //   反复"补向心推近→strafe推远→再补向心"，在边界自激振荡（典型表现为同Y轴时左右抖动）。
+      //   现在进入甜区后彻底停径向力，只绕圈；退出甜区由"太远/太近"分支负责拉回。
+      vx += sx * spd * 0.7
+      vy += sy * spd * 0.7
     }
 
-    monster.x += vx * dt
-    monster.y += vy * dt
-    monster.isMoving = (Math.abs(vx) + Math.abs(vy)) > 0.01
+    // ★ 速度平滑（lerp）：避免每帧速度突变造成左右摇摆/抽风。
+    //   用固定收敛速率（与帧率无关），避免 0.0001^dt 在 dt 波动时系数不稳。
+    if (monster._vx == null) { monster._vx = 0; monster._vy = 0 }
+    const lerp = Math.min(1, dt * 6)
+    monster._vx += (vx - monster._vx) * lerp
+    monster._vy += (vy - monster._vy) * lerp
+
+    monster.x += monster._vx * dt
+    monster.y += monster._vy * dt
+    monster.isMoving = (Math.abs(monster._vx) + Math.abs(monster._vy)) > 0.01
 
     // 更新技能冷却
     if (monster.skillCDs) {
@@ -1888,6 +1908,7 @@ baseRadius: 50 * this.dpr,    // 底座半径（缩小）
           skillUseCount: 0,       // 普攻计数，用于强制穿插技能
           strafeDir: Math.random() > 0.5 ? 1 : -1, // 横向走位方向
           strafeTimer: 0,         // 走位方向切换计时
+          strafeAngle: Math.random() * Math.PI * 2, // ★ 固定世界方向角，避免 strafe 随相对位置抖动
           // 动画属性
           bobOffset: Math.random() * Math.PI * 2,
           bobSpeed: 2 + Math.random(),
@@ -4869,10 +4890,23 @@ baseRadius: 50 * this.dpr,    // 底座半径（缩小）
       if (Math.abs(dxMove) > 0.05) {
         facingLeft = dxMove < 0
       } else if (monster.inCombat || monster.moveAngle === undefined) {
-        facingLeft = (this.playerX - monster.x) < 0
+        // ★ 战斗兜底朝向：用「怪物相对玩家水平位置」决定，但加滞回死区，
+        //   避免怪物绕圈到玩家正上/正下方（水平偏移≈0）时朝向每帧左右翻转（抖动）。
+        //   relX>0 表示怪物在玩家右侧 → 朝右（facingLeft=false）；
+        //   仅当 |relX| 超过死区才更新朝向，否则保持上一帧。
+        const relX = monster.x - this.playerX
+        const faceDead = 10 * this.dpr
+        if (relX > faceDead) {
+          facingLeft = false
+        } else if (relX < -faceDead) {
+          facingLeft = true
+        } else {
+          facingLeft = (monster.facingLeft !== undefined) ? monster.facingLeft : ((this.playerX - monster.x) < 0)
+        }
       } else {
         facingLeft = Math.cos(monster.moveAngle) < 0
       }
+      monster.facingLeft = facingLeft
       monster._prevRenderX = monster.x
 
       // 翻转判定：优先使用 renderConfig.flipRule（与英雄/主角统一的语义），
