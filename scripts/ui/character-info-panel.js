@@ -136,7 +136,16 @@ export class CharacterInfoPanel {
     this.ctx.fillRect(hpBarX, hpBarY, hpBarWidth, hpBarHeight)
 
     // HP条进度
-    const hpProgress = char.hp / char.maxHp
+    const hpProgress = Math.max(0, Math.min(1, char.hp / (char.maxHp || 1)))
+
+    // ── ★ 扣血追赶动画（残影层）：受击瞬间真实血量掉落，白色残影保持高位再缓慢追回 ──
+    const lagProgress = this._updateHpLag(char, hpProgress)
+    // 1) 残影层（亮白，先画，长度=受击前的血量，缓慢缩短）
+    if (lagProgress > hpProgress) {
+      this.ctx.fillStyle = 'rgba(255, 255, 255, 0.85)'
+      this.ctx.fillRect(hpBarX, hpBarY, hpBarWidth * lagProgress, hpBarHeight)
+    }
+    // 2) 真实血量层（后画，盖住前段；颜色随血量绿→橙→红）
     this.ctx.fillStyle = this._getHpColor(hpProgress)
     this.ctx.fillRect(hpBarX, hpBarY, hpBarWidth * hpProgress, hpBarHeight)
 
@@ -334,6 +343,38 @@ export class CharacterInfoPanel {
     }
   }
   
+  /**
+   * ★ 扣血追赶（残影）动画状态更新
+   * 受击时残影保持旧血量高位，随后以固定速率追赶到当前血量（经典格斗游戏扣血效果）；
+   * 回血/满血时残影直接跟随，不做动画。
+   * @param {Object} char 角色（含 hp/maxHp）
+   * @param {number} hpProgress 当前血量比例 0~1
+   * @returns {number} 残影层比例 0~1（恒 >= hpProgress）
+   */
+  _updateHpLag(char, hpProgress) {
+    const nowT = Date.now()
+    if (!this._hpLagLastT) this._hpLagLastT = nowT
+    let dt = (nowT - this._hpLagLastT) / 1000
+    this._hpLagLastT = nowT
+    if (dt < 0) dt = 0
+    if (dt > 0.1) dt = 0.1   // 切后台回来防止跳变
+
+    if (!this._hpLagMap) this._hpLagMap = {}
+    const key = char.id || char.name || 'main'
+    const maxHp = char.maxHp || 1
+    let lag = this._hpLagMap[key]
+    const hpVal = hpProgress * maxHp
+    if (typeof lag !== 'number' || lag < hpVal) {
+      // 未初始化 / 回血：残影直接跟随真实血量
+      lag = hpVal
+    } else {
+      // 受击：残影缓慢追赶（每秒追回 20% 满血，一次明显受击约 1~2 秒追完）
+      lag = Math.max(hpVal, lag - maxHp * 0.2 * dt)
+    }
+    this._hpLagMap[key] = lag
+    return Math.max(0, Math.min(1, lag / maxHp))
+  }
+
   /**
    * 获取HP条颜色
    */

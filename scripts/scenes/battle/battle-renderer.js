@@ -768,12 +768,20 @@ export function installBattleRenderer(BattleSceneClass) {
 
     // HP 条 → 角色头顶（名字下方）
     const hpRatio = Math.min(1, Math.max(0, hero.hp / hero.maxHp))
+    // ★ 扣血追赶残影层（每秒追回 20% 满血）
+    const lagRatio = this._getHpLagRatio('hero_' + hero.id, hpRatio, 0.2)
     const barW = spriteSize * 0.8
     const hpBarX = bx - barW / 2
     const hpBarY = uiTopY
     const hpBarH = 5 * dpr
     ctx.fillStyle = 'rgba(0, 0, 0, 0.7)'
     ctx.fillRect(hpBarX, hpBarY, barW, hpBarH)
+    // 1) 残影层（白色，先画）
+    if (lagRatio > hpRatio + 0.002) {
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.85)'
+      ctx.fillRect(hpBarX, hpBarY, barW * lagRatio, hpBarH)
+    }
+    // 2) 真实血量层（红色）
     if (hpRatio > 0.001) {
       ctx.fillStyle = '#FF4757'
       ctx.fillRect(hpBarX, hpBarY, barW * hpRatio, hpBarH)
@@ -810,6 +818,26 @@ export function installBattleRenderer(BattleSceneClass) {
   }
 
   // ======== 敌人UI渲染 ========
+  // ★ 扣血追赶（残影）血条通用状态：受击瞬间真实血条掉落，白色残影保持高位再缓慢追回
+  //    每个血条 key 独立计时（墙钟时间驱动，防帧率波动/切后台跳变）
+  proto._getHpLagRatio = function(key, hpRatio, speedPerSec) {
+    const nowT = Date.now()
+    if (!this._hpLagMap) this._hpLagMap = {}
+    const st = this._hpLagMap[key] || (this._hpLagMap[key] = { lag: hpRatio, lastT: nowT })
+    let dt = (nowT - st.lastT) / 1000
+    st.lastT = nowT
+    if (dt < 0) dt = 0
+    if (dt > 0.1) dt = 0.1
+    if (hpRatio >= st.lag) {
+      // 未受击/回血：残影直接跟随真实血量
+      st.lag = hpRatio
+    } else {
+      // 受击：残影缓慢追赶（speedPerSec = 每秒追回的满血比例）
+      st.lag = Math.max(hpRatio, st.lag - speedPerSec * dt)
+    }
+    return st.lag
+  }
+
   proto._renderEnemyUI = function(ctx) {
     const dpr = this.dpr
     if (!this.enemyPositions || this.enemyPositions.length === 0) return
@@ -872,12 +900,22 @@ export function installBattleRenderer(BattleSceneClass) {
       const hpBarX = ex - hpBarW / 2
       const hpBarY = ey - 52 * dpr
 
+      // ★ 扣血追赶残影层：受击瞬间白条保持高位，随后缓慢追回（每秒追回 20% 满血）
+      const lagRatio = this._getHpLagRatio('enemy_' + index, hpRatio, 0.2)
+
       // 黑底
       ctx.fillStyle = 'rgba(0, 0, 0, 0.6)'
       this._roundRect(ctx, hpBarX - 2 * dpr, hpBarY - 2 * dpr, hpBarW + 4 * dpr, hpBarH + 4 * dpr, 6 * dpr)
       ctx.fill()
 
-      // ★ 红色填充（直接用 hpRatio，与角色HP条一致的简单逻辑）
+      // 1) 残影层（白色，先画，长度=受击前血量，缓慢缩短）
+      if (lagRatio > hpRatio + 0.002) {
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.85)'
+        this._roundRect(ctx, hpBarX, hpBarY, hpBarW * lagRatio, hpBarH, 4 * dpr)
+        ctx.fill()
+      }
+
+      // 2) 真实血量层（后画，盖住前段；颜色随血量绿→黄→红）
       if (hpRatio > 0.005) {
         ctx.fillStyle = barColor
         this._roundRect(ctx, hpBarX, hpBarY, hpBarW * hpRatio, hpBarH, 4 * dpr)

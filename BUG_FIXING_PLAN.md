@@ -23,6 +23,66 @@
   - `scripts/utils/field-movement.js`：禁用 follower 防重叠碰撞推挤（AI 不再被互相/被主角推挤）
 - **状态**：✅ 已通过 Babel 语法检查；用户实测 AI 火球/冰晶/雷击轮流释放、盾击播正确动画、不再无限连放
 
+### 2026-08-12（更新2）
+
+**feat: DNF 式固定目标面板（怪物血条从头顶移至召回按钮下方）+ 手动普攻锁定当前目标**
+
+- **怪物头顶血条移除（移到固定面板）**：`field-battle-system.js` 的 `_renderMonsterHealthBars` 改为空函数（保留调用点不破坏 `_renderHealthBars`/`_renderBattleUI` 结构）。所有怪物不再在头顶画血条。
+- **DNF 式固定目标面板 `_renderTargetPanel`（field-scene.js）**：
+  - 位置：召回/解散按钮正下方，与角色卡片、按钮左对齐、等宽（180×76 @dpr），形成一组视觉层级：`角色卡 → 召回/解散按钮 → 当前目标面板`。
+  - 内容：头像（猫咪用 `enemyId + '_WALK_01'` 序列帧，与 `_renderCatMonster` 同路径 `game.assets.get`；Boss 👹 / 精英 👿 / 普通 🐱 用 emoji 降级）+ 怪物名 + 等级（`Lv.x`）+ 血条（绿/橙/红按血量，显示 `当前/最大` 数值）+ 异常/增益状态图标行（从 `statusEffects` 取，显示类型色块 + 剩余秒数，最多 6 个）。
+  - 触发条件：`this.battleSystem.battleTarget` 存在且存活时绘制。切换攻击目标面板内容自动跟随。
+- **手动普攻锁定当前目标**：`field-battle-system.js` 的 `_playerAttackMonster`（普攻/伤害技能命中，非 buff）新增 `this.battleSystem.battleTarget = monster`。此前 `battleTarget` 仅在 `_triggerBattle`（正式战斗 BOSS/精英）时设置，普通野怪手动普攻时面板无数据；现在打哪个怪面板就显示哪个。怪物死亡自动置 null（既有逻辑）。
+- **修改文件**：
+  - `scripts/scenes/field-scene.js`：新增 `_renderTargetPanel` 并在 `render` 末尾挂载（条件 `this.battleSystem`）
+  - `scripts/systems/field-battle-system.js`：`_playerAttackMonster` 设 `battleTarget`、`_renderMonsterHealthBars` 改空
+- **状态**：✅ 已通过 Babel 语法检查（待用户编译/实测面板显示与头像加载）
+
+### 2026-08-12（更新3）
+
+**fix: 目标面板扣血不跟手 + 远程攻击需贴近才显示血条（battleTarget 只在普攻命中时设置）**
+
+- **根因（关键）**：面板血条绑定的是 `battleSystem.battleTarget` 的 `hp`，但此前 `battleTarget` 仅在 **`_playerAttackMonster`（玩家手动普攻）命中时** 设置。远程攻击（玩家/AI 队友的法师·治愈猫普攻发射投射物、技能火球/剑气弹道）的命中结算在**投射物/弹道更新循环**与**延迟伤害队列 `pendingDamages`** 里完成，命中后并未更新 `battleTarget`：
+  - 玩家远程英雄：点攻击按钮发射弹道 → 弹道飞行命中 → 扣的是飞行途中命中的怪（`hitMonster.hp`），而面板锁定的是之前普攻设的 `battleTarget`，甚至 `battleTarget` 仍是 null（没先贴脸普攻）→ 表现为"血条不扣 / 远程要贴近才显示"。
+  - AI 远程队友：普攻发投射物、技能发弹道，命中后同样不设 `battleTarget`，面板不会切换到队友正在打的怪。
+- **修复（统一在所有命中路径设置 battleTarget）**：
+  - `field-battle-system.js` 投射物主命中分支（`hitMonster`）：命中即 `this.battleSystem.battleTarget = hitMonster`（死亡才置 null）。
+  - 剑气（`bladeStorm`）穿透命中：每个被命中的怪都设 `battleTarget`。
+  - 延迟伤害队列 `pendingDamages` 结算（近战延迟命中 + 队友近战普攻）：`m.hp` 结算后设 `battleTarget = m`。
+  - 玩家 `_playerAttackMonster` 既有设置保留（普攻/技能命中路径兜底）。
+  - 上述四处均保证：真正被击中的怪即面板锁定的怪，`battleTarget.hp` 就是被扣的血 → 扣血动画（白色滞留层 DNF 效果）自然跟手；远程攻击命中即显示血条，不再需要贴近。
+- **修改文件**：
+  - `scripts/systems/field-battle-system.js`：`_updateProjectiles` 弹道命中 + 剑气命中 + `pendingDamages` 结算三处设 `battleTarget`
+  - `scripts/scenes/field-scene.js`：`_renderTargetPanel` 双层血条（绿真实层 + 白滞留层），目标切换用对象引用比对（`_targetPanelRef`）、`maxHp` 兜底防 NaN
+- **状态**：✅ 已通过 Babel 语法检查（待用户编译/实测扣血动画 + 远程血条显示）
+
+### 2026-08-12（更新4）
+
+**fix: 目标面板血条只变色、无扣血动画（滞留层回落速度 + 红盖红导致看不出）**
+
+- **根因**：双层血条动画逻辑本身正确（绿真实层立即变短 + 滞留层缓缩），但有两个叠加问题让用户只看到"变色"：
+  1. **滞留层回落过快**：早期 `LAG_SPEED = hpMax*0.85`（满血约 1.1 秒缩完），对单次中等伤害（如 18/152）实际只有 2~3 帧就缩完（~30-50ms），肉眼完全捕捉不到缓缩过程，误以为"没动画"。
+  2. **红盖红**：真实绿条在低血量时 `hpColor` 变成红（`#ff4757`），而滞留层也是红（`#ff3b3b`）。两层都是红色叠在一起，绿条变短 + 红层缓缩在视觉上只是"整体变红"，完全看不出"扣掉一段血在慢慢消失"。
+- **修复**：
+  - 滞留层回落速度调慢：`LAG_SPEED = hpMax * 0.06`（满血约 1.6 秒匀速缩完一次中等伤害，肉眼清晰可见）。
+  - 真实血条固定为高饱和亮绿 `#2ed573`（**绝不随血量变红**），让"当前血量"与"残留血量"颜色强区分。
+  - 滞残留层从红色改为**亮黄 `#ffe14d`**，并精确绘制在绿条右侧区间 `realRatio~lagRatio`（不再从 0 铺到 lag 再被绿条盖住），视觉即"绿条已短，右侧还盖着一段亮黄正在消失"= 经典 DNF 受伤残留效果。
+  - 滞留层存储改用怪物 id 字典 `_targetPanelLagMap[target.id]`，避免引用比对每帧重置导致动画丢失。
+  - 已清除所有临时调试残留：console.log `[TargetPanel]` 日志、屏幕内 F:/L:/T: 调试文字。
+- **修改文件**：`scripts/scenes/field-scene.js`（`_renderTargetPanel` 动画块 + 绘制块）
+- **状态**：✅ 已修复（已通过 Babel 语法检查，动画逻辑 + 颜色对比已修正，待用户编译实测）
+
+**fix: 怪物目标面板血条残影（红边）彻底不显示的根因 — roundRect 缺 beginPath 污染路径**
+
+- **根因（关键）**：怪物目标面板血条是**双层叠加绘制**（先画红色残影层 `_roundRect`+`fill`，再画绿色真实层 `_roundRect`+`fill`）。项目全局 `roundRect`（`scripts/ui/canvas-utils.js`）内部只调 `moveTo`/`arcTo`/`closePath`、**没有 `ctx.beginPath()`**。这意味着第二次调用 `roundRect`（绿条）会把路径**追加**到第一次（红条背景槽 4018 行）尚未重置的路径上，随后的 `fill()` 把两条路径一起填充，红色残影区域被绿条路径覆盖 → 红边永远看不到。之前所有"数据全对（日志 diff=0.173）但画不出来"的 3 小时调试，根因都在这里。
+- **修复**：
+  - `scripts/ui/canvas-utils.js` 的 `roundRect` 开头补 `ctx.beginPath()`（一行，根治：所有调用方多层叠加绘制均受益，tower 系列本地 `roundRect` 本已有 `beginPath` 不受影响）。
+  - 怪物目标面板血条绘制改用原生 `fillRect` 双层（红残影 `lagRatio` 宽 + 绿真实 `realRatio` 宽），不再依赖 `roundRect`，彻底隔离路径污染。
+  - 保留 `_preDamageHp`（扣血前血量，写于 `_damageMonster` / `_playerAttackMonster`）作为残影高位来源，`_targetPanelLagMap[id]` 按怪物 id 独立维护缓动追回落差。
+- **配套**：战斗场景角色/敌人头顶血条（`battle-renderer.js` `_getHpLagRatio`）、角色信息面板血条（`character-info-panel.js` `_updateHpLag`）同步实现同款 DNF 式扣血残影。
+- **修改文件**：`scripts/ui/canvas-utils.js`、`scripts/scenes/field-scene.js`、`scripts/scenes/battle/battle-renderer.js`、`scripts/ui/character-info-panel.js`、`scripts/systems/field-battle-system.js`
+- **状态**：✅ 已修复（用户实测截图确认怪物面板血条右侧红色残影出现，已通过 Babel 语法检查，调试日志已清理）
+
 ### 2026-08-09（更新2）
 
 **fix: 角色卡/信息面板 BUFF 显示、切换崩溃、清理调试代码**

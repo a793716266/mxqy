@@ -420,7 +420,8 @@ export function installFieldBattleSystem(FieldSceneClass) {
           // 命中帧到达，结算伤害
           const m = pd.monster
           if (m && m.alive) {
-            m.hp = Math.max(0, m.hp - pd.damage)
+            this._damageMonster(m, pd.damage)
+            // ★ 让目标面板锁定真正被击中的怪（近战延迟命中 / 队友近战）
             // 添加伤害数字
             const sx = m.x - this.cameraX
             const sy = m.y - this.cameraY
@@ -535,6 +536,11 @@ export function installFieldBattleSystem(FieldSceneClass) {
     // monster 存在但已死亡则 return；monster 为 null 时允许继续（只播动画不造成伤害）
     if (monster && !monster.alive) return
     if (this.battleSystem.playerAttackCD > 0 && !skill) return
+
+    // ★ 设置当前攻击目标（用于 field-scene._renderTargetPanel 的 DNF 式固定目标面板）
+    if (monster && !isBuff) {
+      this.battleSystem.battleTarget = monster
+    }
 
     // ★ 使用当前被控制的参战英雄（而非固定主角）
     const ctrl = this._getCurrentControlHero()
@@ -977,6 +983,26 @@ export function installFieldBattleSystem(FieldSceneClass) {
     }
   }
 
+  // ★ 统一对怪物造成伤害：所有怪物扣血必须走此方法，并在此处聚焦目标面板
+  //   （确保玩家手动攻击 / AI 队友攻击 / 技能 / 持续伤害 都让面板跟随当前交战的怪，
+  //    解决"面板只随玩家手动锁定才更新、AI 输出时血条跳变无扣血效果"的问题）
+  proto._damageMonster = function(m, dmg) {
+    if (!m) return 0
+    const real = Math.max(1, Math.floor(dmg) || 0)
+    // ★ 扣血前记录"受伤前血量"：供目标面板 DNF 式残影效果使用
+    //   面板读取 m._preDamageHp 作为 lag（滞留层）的起始值，
+    //   这样无论渲染帧和伤害帧之间隔了多少次命中，lag 都从"上一次受伤前的 hp"开始追
+    m._preDamageHp = (typeof m.hp === 'number') ? m.hp : m._preDamageHp
+    m.hp = Math.max(0, m.hp - real)
+    // ★ 记录"最近受伤的怪"：无论致死与否都记录，
+    //   面板据此稳定锁定正在交战的怪，并能把残影追赶到 0（致死也显示完整扣血过程）
+    this.battleSystem._lastDamagedMonster = m
+    if (m.alive && m.hp > 0) {
+      this.battleSystem.battleTarget = m
+    }
+    return real
+  }
+
   // ★ 单次突刺伤害：玩家正前方 X 轴（吸附来的 + 范围内）所有敌人各造成 1 次
   proto._bladeStormHit = function(ctrl, dir, skill) {
     const cpos = ctrl.getPos()
@@ -992,7 +1018,7 @@ export function installFieldBattleSystem(FieldSceneClass) {
         const dmg = Math.max(1, Math.floor(this._getHeroAtk(ctrl.hero) * power - Math.floor(m.def * 0.5)))
         const isCrit = Math.random() < (ctrl.hero.crit || 0.05)
         const finalDmg = isCrit ? Math.floor(dmg * 1.5) : dmg
-        m.hp = Math.max(0, m.hp - finalDmg)
+        this._damageMonster(m, finalDmg)
         this._pushDamageText(m, finalDmg, isCrit, '#fff0a0')
         if (m.hp <= 0) { m.alive = false; this.battleSystem.battleTarget = null }
       }
@@ -1087,7 +1113,16 @@ export function installFieldBattleSystem(FieldSceneClass) {
       // ★ 队友 Y 轴容差放大：队友在主角身后跟随（间距约 followerDistance），Y 轴天然错位，
       //    默认 80*dpr(=240) 的容差经常不够，导致队友永远找不到怪物。这里用 220*dpr 放宽。
       const allyYTol = 220 * this.dpr
-      const monster = this._findNearestMonsterFromPos(range, 'x', pos.x, pos.y, allyYTol)
+
+      // ★ 优先集火玩家锁定的目标（battleTarget）：让队友与玩家打同一只怪，
+      //   使队友施加的灼烧/冰冻/感电等状态都汇聚到面板显示的怪身上
+      let monster = null
+      const bt = this.battleSystem.battleTarget
+      if (bt && bt.alive && Math.abs(bt.x - pos.x) <= range && Math.abs(bt.y - pos.y) <= allyYTol) {
+        monster = bt
+      } else {
+        monster = this._findNearestMonsterFromPos(range, 'x', pos.x, pos.y, allyYTol)
+      }
       if (!monster) continue
 
       // ★ 先尝试释放技能（CD 好 + MP 够 + 统一锁空闲），成功则跳过普攻
@@ -1671,12 +1706,13 @@ export function installFieldBattleSystem(FieldSceneClass) {
             const isCrit = Math.random() < (p.hero.crit || 0.05)
             const dmg = Math.max(1, Math.floor(this._getHeroAtk(p.hero) * (p.power || 1.4) - Math.floor(m.def * 0.5)))
             const finalDmg = isCrit ? Math.floor(dmg * 1.5) : dmg
-            m.hp = Math.max(0, m.hp - finalDmg)
+            this._damageMonster(m, finalDmg)
             this._pushDamageText(m, finalDmg, isCrit, '#aee6ff')
             if (p._fx && p._fx.playHitEffect) {
               p._fx.playHitEffect('magic_impact', m.x - this.cameraX, m.y - this.cameraY - 30 * this.dpr, this.dpr)
             }
             console.log(`[FieldBattle] 剑气命中 ${m.name}，伤害 ${finalDmg}${isCrit ? '（暴击）' : ''}，剩余HP ${m.hp}`)
+            this.battleSystem.battleTarget = m
             if (m.hp <= 0) { m.alive = false; this.battleSystem.battleTarget = null }
           }
         }
@@ -1701,7 +1737,7 @@ export function installFieldBattleSystem(FieldSceneClass) {
         } else {
           dmg = this._calcSkillDamageToMonster(hitMonster, p.skill, p.hero, isCrit)
         }
-        hitMonster.hp = Math.max(0, hitMonster.hp - dmg)
+        this._damageMonster(hitMonster, dmg)
         // 灼烧状态（仅技能火球）
         if (p.burn) this._applyMonsterStatus(hitMonster, 'burn', p.burn, p.hero)
         this._pushDamageText(hitMonster, dmg, isCrit, p.isBasicAttack ? '#ffffff' : '#ff6b35')
@@ -1714,6 +1750,8 @@ export function installFieldBattleSystem(FieldSceneClass) {
           }
         }
         console.log(`[FieldBattle] ${p.hero.name} ${p.isBasicAttack ? '普攻' : '火球'}命中 ${hitMonster.name}，伤害 ${dmg}${isCrit ? '（暴击）' : ''}，剩余HP ${hitMonster.hp}`)
+        // ★ 让目标面板锁定真正被击中的怪（解决远程攻击需贴近才显示血条 / 扣血不跟手）
+        this.battleSystem.battleTarget = hitMonster
         if (hitMonster.hp <= 0) {
           hitMonster.alive = false
           this.battleSystem.battleTarget = null
@@ -1870,7 +1908,7 @@ export function installFieldBattleSystem(FieldSceneClass) {
           e._tickAccum = (e._tickAccum || 0) + dt
           if (e._tickAccum >= (e.tickInterval || 0.5)) {
             e._tickAccum = 0
-            m.hp = Math.max(0, m.hp - e.tickDamage)
+            this._damageMonster(m, e.tickDamage)
             this._pushDamageText(m, e.tickDamage, false, '#ff6600')
             console.log(`[FieldBattle] ${m.name} 灼烧-${e.tickDamage}`)
             if (m.hp <= 0) { m.alive = false; m.statusEffects = []; this.battleSystem.battleTarget = null }
@@ -1928,7 +1966,7 @@ export function installFieldBattleSystem(FieldSceneClass) {
               blade._hitSet.add(m.id)
               const isCrit = Math.random() < (p.hero.crit || 0.05)
               const dmg = this._calcSkillDamageToMonster(m, p.skill, p.hero, isCrit)
-              m.hp = Math.max(0, m.hp - dmg)
+              this._damageMonster(m, dmg)
               if (p.freeze) this._applyMonsterStatus(m, 'freeze', { duration: (p.skill.aoe && p.skill.aoe.freeze && p.skill.aoe.freeze.duration) || 2 }, p.hero)
               this._pushDamageText(m, dmg, isCrit, '#66ddff')
               if (fx && fx.playHitEffect) {
@@ -1980,7 +2018,7 @@ export function installFieldBattleSystem(FieldSceneClass) {
       const m = alive[Math.floor(Math.random() * alive.length)]
       const isCrit = Math.random() < (p.hero.crit || 0.05)
       const dmg = this._calcSkillDamageToMonster(m, p.skill, p.hero, isCrit)
-      m.hp = Math.max(0, m.hp - dmg)
+      this._damageMonster(m, dmg)
       this._pushDamageText(m, dmg, isCrit, '#ffe066')
       if (fx && fx.playHitEffect) {
         fx.playHitEffect('magic_impact', m.x - this.cameraX, m.y - this.cameraY - 30 * this.dpr, this.dpr)
@@ -2738,32 +2776,9 @@ export function installFieldBattleSystem(FieldSceneClass) {
   }
 
   proto._renderMonsterHealthBars = function(ctx) {
-    if (!this.mapMonsters || !Array.isArray(this.mapMonsters)) return
-
-    for (const monster of this.mapMonsters) {
-      if (!monster.alive) continue
-
-      const screenX = monster.x - this.cameraX
-      const screenY = monster.y - this.cameraY
-      const barWidth = 50 * this.dpr
-      const barHeight = 5 * this.dpr
-      const barX = screenX - barWidth / 2
-      const barY = screenY - 40 * this.dpr
-
-      // 背景
-      ctx.fillStyle = 'rgba(0,0,0,0.5)'
-      ctx.fillRect(barX, barY, barWidth, barHeight)
-
-      // HP条
-      const hpRatio = Math.max(0, monster.hp / monster.maxHp)
-      ctx.fillStyle = hpRatio > 0.5 ? '#2ed573' : (hpRatio > 0.25 ? '#ffa502' : '#ff4757')
-      ctx.fillRect(barX, barY, barWidth * hpRatio, barHeight)
-
-      // 边框
-      ctx.strokeStyle = '#ffffff'
-      ctx.lineWidth = 1
-      ctx.strokeRect(barX, barY, barWidth, barHeight)
-    }
+    // ★ 怪物头顶血条已在 field-scene._renderCatMonster 中绘制（覆盖战斗/非战斗全场景）。
+    //   此处保留为空以维持调用结构。
+    return
   }
 
   // ==========================================================================

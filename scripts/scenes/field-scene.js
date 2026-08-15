@@ -2168,9 +2168,17 @@ baseRadius: 50 * this.dpr,    // 底座半径（缩小）
     const monsters = this.mapMonsters
     if (!monsters || !monsters.length) return null
 
-    // 1) 已锁定的怪物仍存活则继续输出，避免每帧切目标导致来回横跳
+    // 0) ★ 优先集火玩家当前锁定的目标（battleTarget）：确保 AI 与玩家打同一只怪，
+    //    使队友施加的灼烧/冰冻/感电等状态都汇聚到面板上显示的那只怪身上
     let target = null
-    if (follower._aiTargetId != null) {
+    const playerTarget = this.battleSystem && this.battleSystem.battleTarget
+    if (playerTarget && playerTarget.alive) {
+      target = playerTarget
+      follower._aiTargetId = playerTarget.id
+    }
+
+    // 1) 否则沿用自己已锁定的怪物（仍存活则继续输出，避免每帧切目标导致来回横跳）
+    if (!target && follower._aiTargetId != null) {
       for (const m of monsters) {
         if (m.alive && m.id === follower._aiTargetId) { target = m; break }
       }
@@ -2623,8 +2631,8 @@ baseRadius: 50 * this.dpr,    // 底座半径（缩小）
       return
     }
 
-    // ★ 召回按钮（右上角、顶栏下方，与 render 绘制坐标一致）：切换队友"自行寻怪 / 召回身边"模式
-    const recallBtn = { x: this.width - 240 * this.dpr, y: 80 * this.dpr, w: 120 * this.dpr, h: 44 * this.dpr }
+    // ★ 召回/解散按钮（角色信息卡片正下方，与 render 绘制坐标一致）：切换队友"自行寻怪 / 召回身边"模式
+    const recallBtn = { x: 20 * this.dpr, y: (80 + 100 + 8) * this.dpr, w: 180 * this.dpr, h: 40 * this.dpr }
     if (tap.x >= recallBtn.x && tap.x <= recallBtn.x + recallBtn.w &&
         tap.y >= recallBtn.y && tap.y <= recallBtn.y + recallBtn.h) {
       this.aiRecall = !this.aiRecall
@@ -2964,6 +2972,8 @@ baseRadius: 50 * this.dpr,    // 底座半径（缩小）
 
     // 计算伤害
     const damage = Math.max(1, mainHero.atk - Math.floor(monster.def * 0.5))
+    // ★ 扣血前记录"受伤前血量"（与 _damageMonster 一致，供面板残影效果使用）
+    monster._preDamageHp = (typeof monster.hp === 'number') ? monster.hp : monster._preDamageHp
     monster.hp = Math.max(0, monster.hp - damage)
 
     // 添加伤害数字
@@ -2981,6 +2991,13 @@ baseRadius: 50 * this.dpr,    // 底座半径（缩小）
     this.battleSystem.playerAttackCD = this.battleSystem.playerAttackInterval
 
     console.log(`[Field-Battle] ${mainHero.name} 攻击 ${monster.name}，造成 ${damage} 点伤害，剩余HP: ${monster.hp}`)
+
+    // ★ 同步到 battleSystem：让目标面板知道"这只怪刚被打了"
+    //   （_playerAttackMonster 不走 _damageMonster，必须手动设置）
+    this.battleSystem._lastDamagedMonster = monster
+    if (monster.alive && monster.hp > 0) {
+      this.battleSystem.battleTarget = monster
+    }
 
     // 检查怪物是否死亡
     if (monster.hp <= 0) {
@@ -3614,6 +3631,8 @@ baseRadius: 50 * this.dpr,    // 底座半径（缩小）
         } else {
           self._renderEmojiMonster(ctx, monster, sx, jumpY)
         }
+        // ★ 怪物头顶血条已移除（用户要求）：怪物血条统一在左下目标面板
+        //   （召回/解散按钮下方，_renderTargetPanel）显示，含扣血追赶效果
       },
     })
   }
@@ -3705,11 +3724,11 @@ baseRadius: 50 * this.dpr,    // 底座半径（缩小）
     ctx.textBaseline = 'middle'
     ctx.fillText('🏠 城镇', backBtnX + backBtnW / 2, backBtnY + backBtnH / 2)
 
-    // ★ 召回按钮（右上角、顶栏下方，醒目且不与其他UI重叠）：切换队友"自行寻怪 / 召回身边"
-    const recallBtnX = this.width - 240 * this.dpr
-    const recallBtnY = 80 * this.dpr
-    const recallBtnW = 120 * this.dpr
-    const recallBtnH = 44 * this.dpr
+    // ★ 召回/解散按钮（角色信息卡片正下方，与卡片左对齐，视觉上形成一组）
+    const recallBtnX = 20 * this.dpr
+    const recallBtnY = (80 + 100 + 8) * this.dpr   // 卡片底部 y=80+100=180, 间距8
+    const recallBtnW = 180 * this.dpr              // 与卡片等宽
+    const recallBtnH = 40 * this.dpr               // 略矮于卡片，紧凑
     ctx.fillStyle = this.aiRecall ? 'rgba(255, 120, 120, 0.95)' : 'rgba(255, 255, 255, 0.92)'
     ctx.beginPath()
     this._roundRect(ctx, recallBtnX, recallBtnY, recallBtnW, recallBtnH, 10 * this.dpr)
@@ -3717,7 +3736,7 @@ baseRadius: 50 * this.dpr,    // 底座半径（缩小）
     ctx.strokeStyle = this.aiRecall ? 'rgba(220, 60, 60, 0.95)' : 'rgba(60, 120, 220, 0.9)'
     ctx.lineWidth = 3 * this.dpr
     ctx.stroke()
-    ctx.font = `bold ${17 * this.dpr}px sans-serif`
+    ctx.font = `bold ${16 * this.dpr}px sans-serif`
     ctx.fillStyle = '#222222'
     ctx.textAlign = 'center'
     ctx.textBaseline = 'middle'
@@ -3846,6 +3865,227 @@ baseRadius: 50 * this.dpr,    // 底座半径（缩小）
         ctx.restore()
       }
     }
+
+    // ★ 新增：渲染 DNF 式固定目标面板（当前攻击怪物：头像 + 名字 + 血条 + 状态）
+    if (this.battleSystem) {
+      this._renderTargetPanel(ctx)
+    }
+  }
+
+  /**
+   * ★ DNF 式固定目标面板：展示当前攻击的怪物
+   * 位置：召回/解散按钮正下方（与角色卡片、按钮左对齐、等宽）
+   * 布局（紧凑横向）：
+   *   第1行：[小图标] 怪物名  Lv.x
+   *   第2行：[========HP条========]  120/150
+   *   第3行：[状态1] [状态2] ...
+   */
+  _renderTargetPanel(ctx) {
+    const bs = this.battleSystem
+    if (!bs) return
+    // ★ 面板目标必须从"当前区域的活怪列表(mapMonsters)"里取，杜绝游离引用
+    //   （_lastDamagedMonster / battleTarget 可能残留上一场战斗已销毁的旧怪物对象，
+    //    其 hp 字段可能已被清理 → 导致 curHp.toFixed 崩溃）
+    //   策略：优先 _lastDamagedMonster（真正挨打的怪），其次 battleTarget，
+    //   但都必须能在 mapMonsters 里找到且 alive && hp > 0 才用
+    const liveList = (this.mapMonsters || []).filter(m => m && m.alive && typeof m.hp === 'number' && m.hp > 0)
+    const findLive = (ref) => {
+      if (!ref || !ref.id) return null
+      return liveList.find(m => m.id === ref.id) || null
+    }
+    let target = findLive(bs._lastDamagedMonster)
+    if (!target) target = findLive(bs.battleTarget)
+    if (!target) return
+    const dpr = this.dpr
+
+    // ── 血条平滑动画（DNF 式双层延迟扣血效果）──
+    const hpMax = (typeof target.maxHp === 'number' && target.maxHp > 0) ? target.maxHp : (target.hp > 0 ? target.hp : 1)
+    if (!this._tpLastT) this._tpLastT = Date.now()
+    const nowT = Date.now()
+    let dt = (nowT - this._tpLastT) / 1000
+    if (dt < 0) dt = 0
+    if (dt > 0.1) dt = 0.1
+    this._tpLastT = nowT
+    // 回落速度：每秒追回 4% 满血（红边停留约2.5秒）
+    const LAG_SPEED = hpMax * 0.04
+    // ★ 按 id 字典存 lag，每只怪独立维护、永不清除：
+    //   即使面板每帧在不同怪间切换（多怪混战），每只怪的 lag 记录都保留。
+    //   当面板切到"刚被打的那只"时，它的 lag 已从上次受伤的高位开始追 → 红边必现
+    if (!this._targetPanelLagMap) this._targetPanelLagMap = {}
+    const lagKey = (target.id != null) ? target.id : '__cur__'
+    const curHp = target.hp
+    // ★ _preDamageHp：扣血前记录的旧血量（_damageMonster / _playerAttackMonster 写入）
+    const preDmg = (typeof target._preDamageHp === 'number') ? target._preDamageHp : null
+    // ★ 残影效果：与角色血条 drawBar 完全一致的逻辑（已验证能正常工作）
+    //   用 ratio（0~1比例值）而非绝对 hp 值存储 lag，避免 curHp>=lag 吞掉残影
+    const realRatio = Math.max(0, Math.min(1, target.hp / hpMax))
+    let lagRatio = this._targetPanelLagMap[lagKey]
+    if (typeof lagRatio !== 'number' || lagRatio < realRatio) {
+      // 首次或 lag 落后于真实血量：如果有受伤记录(_preDamageHp > hp)，从 preDmg 的 ratio 起步
+      if (preDmg != null && preDmg > target.hp) {
+        lagRatio = Math.max(realRatio, Math.min(1, preDmg / hpMax))
+      } else {
+        lagRatio = realRatio
+      }
+    } else {
+      // lag 高于真实血量：缓慢追回（每秒追回 20% 满血，和角色血条一致）
+      lagRatio = Math.max(realRatio, lagRatio - 0.2 * dt)
+    }
+    this._targetPanelLagMap[lagKey] = lagRatio
+
+    // 面板位置：召回/解散按钮正下方（与角色卡片、按钮左对齐、等宽）
+    const panelX = 20 * dpr
+    const panelY = (80 + 100 + 8 + 40 + 8) * dpr   // 卡片(80+100) + 按钮间距8 + 按钮高40 + 间距8
+    const panelW = 180 * dpr
+    const rowH = 22 * dpr                           // 每行高度
+    const pad = 6 * dpr                              // 内边距
+    const panelH = (pad * 2 + rowH * 3 + 6 * dpr)   // 3行 + 行间距
+
+    ctx.save()
+
+    // 面板背景（半透明深色卡片）
+    ctx.fillStyle = 'rgba(18, 20, 28, 0.85)'
+    this._roundRect(ctx, panelX, panelY, panelW, panelH, 8 * dpr)
+    ctx.fill()
+    // 顶部高亮边线（类似 DNF 目标框的强调色）
+    ctx.fillStyle = 'rgba(255, 80, 80, 0.9)'
+    ctx.beginPath()
+    ctx.moveTo(panelX + 8 * dpr, panelY)
+    ctx.lineTo(panelX + panelW - 8 * dpr, panelY)
+    ctx.quadraticCurveTo(panelX + panelW, panelY, panelX + panelW, panelY + 3 * dpr)
+    ctx.lineTo(panelX + panelW, panelY + 3 * dpr)
+    ctx.lineTo(panelX, panelY + 3 * dpr)
+    ctx.lineTo(panelX, panelY + 3 * dpr)
+    ctx.quadraticCurveTo(panelX, panelY, panelX + 8 * dpr, panelY)
+    ctx.closePath()
+    ctx.fill()
+    // 外边框
+    ctx.strokeStyle = 'rgba(255, 200, 90, 0.7)'
+    ctx.lineWidth = 1.5 * dpr
+    ctx.strokeRect(panelX, panelY, panelW, panelH)
+
+    // ── 第1行：小图标 + 名字 + 等级 ──
+    const iconSz = 18 * dpr
+    const y1 = panelY + pad
+    // ★ 头像 key 修正：使用 assetPrefix 大写格式（与 asset-manager 注册一致）
+    //   enemyId → assetPrefix 映射表（与 character-sprite._autoDetectPrefix 一致）
+    const prefixMap = {
+      slime_cat: 'SLIME_CAT', shadow_mouse: 'SHADOW_MOUSE', wild_cat: 'SLIME_CAT',
+      lost_healer_cat: 'LOST_HEALER_CAT', flame_slime: 'FLAME_SLIME',
+      aqua_slime: 'AQUA_SLIME', violet_slime: 'VIOLET_SLIME',
+      shadow_mouse_smooth: 'SHADOW_MOUSE'
+    }
+    const assetPrefix = prefixMap[target.enemyId] || null
+    const iconKey = assetPrefix ? (assetPrefix + '_WALK_01') : null
+    const iconImg = iconKey && this.game && this.game.assets ? this.game.assets.get(iconKey) : null
+    if (iconImg) {
+      ctx.drawImage(iconImg, panelX + pad, y1 + (rowH - iconSz) / 2, iconSz, iconSz)
+    } else {
+      const icon = target.isBoss ? '👹' : (target.isElite ? '👿' : '🐱')
+      ctx.font = `${iconSz}px sans-serif`
+      ctx.textAlign = 'left'
+      ctx.textBaseline = 'middle'
+      ctx.fillText(icon, panelX + pad, y1 + rowH / 2)
+    }
+    // 名字
+    const nameX = panelX + pad + iconSz + 4 * dpr
+    const nameMaxW = panelW - (nameX - panelX) - pad - 35 * dpr   // 给等级留空间
+    ctx.font = `bold ${13 * dpr}px sans-serif`
+    ctx.fillStyle = '#ffffff'
+    ctx.textAlign = 'left'
+    ctx.textBaseline = 'middle'
+    let nameText = target.name || '怪物'
+    if (ctx.measureText(nameText).width > nameMaxW) {
+      while (ctx.measureText(nameText + '..').width > nameMaxW && nameText.length > 1) nameText = nameText.slice(0, -1)
+      nameText += '..'
+    }
+    ctx.fillText(nameText, nameX, y1 + rowH / 2)
+    // 等级（右侧对齐）
+    if (target.level != null) {
+      ctx.font = `bold ${11 * dpr}px sans-serif`
+      ctx.fillStyle = '#ffd700'
+      ctx.textAlign = 'right'
+      ctx.fillText(`Lv.${target.level}`, panelX + panelW - pad, y1 + rowH / 2)
+    }
+
+    // ── 第2行：血条（带平滑动画）+ HP数字 ──
+    const barY = panelY + pad + rowH + 3 * dpr
+    const barH = 14 * dpr
+    const barX = panelX + pad
+    const barW = panelW - pad * 2
+    // 血条背景槽
+    ctx.fillStyle = 'rgba(0,0,0,0.55)'
+    this._roundRect(ctx, barX, barY, barW, barH, 3 * dpr)
+    ctx.fill()
+    // HP填充（扣血追赶双层：红色"残影" + 亮绿"当前血"）
+    //   realRatio / lagRatio 已在上面用 ratio 方式计算完成
+    // 1) 先画满条红色残影（0~lagRatio）
+    if (lagRatio > 0.001) {
+      ctx.fillStyle = '#ff2222'
+      ctx.fillRect(barX, barY, barW * lagRatio, barH)
+    }
+    // 2) 再画绿色真实血量（0~realRatio），盖在红色上面 → 右侧露出红边
+    if (realRatio > 0) {
+      ctx.fillStyle = '#2ed573'
+      ctx.fillRect(barX, barY, barW * realRatio, barH)
+    }
+    // 血条边框
+    ctx.strokeStyle = 'rgba(255,255,255,0.5)'
+    ctx.lineWidth = 0.8 * dpr
+    ctx.strokeRect(barX, barY, barW, barH)
+    // HP 数字（显示真实 HP，右下角叠在血条上）
+    ctx.font = `${9 * dpr}px sans-serif`
+    ctx.fillStyle = '#ffffff'
+    ctx.textAlign = 'right'
+    ctx.textBaseline = 'bottom'
+    ctx.shadowColor = 'rgba(0,0,0,0.9)'
+    ctx.shadowBlur = 2 * dpr
+    ctx.shadowOffsetX = 1
+    ctx.shadowOffsetY = 1
+    ctx.fillText(`${Math.ceil(target.hp)}/${target.maxHp}`, barX + barW - 2 * dpr, barY + barH - 1 * dpr)
+    ctx.shadowBlur = 0
+    ctx.shadowOffsetX = 0
+    ctx.shadowOffsetY = 0
+
+    // ── 第3行：异常/增益状态图标 ──
+    // 过滤：剩余时间 > 0（_active 非必须，兼容不同写入方式）
+    const effects = (target.statusEffects || []).filter(e => (e._remaining != null ? e._remaining : e.duration) > 0)
+    if (effects.length > 0) {
+      const effSz = 16 * dpr
+      const effY = panelY + pad + rowH * 2 + 6 * dpr
+      let ix = panelX + pad
+      const metaMap = (this.battleSystem && this.battleSystem.STATUS_META) || {}
+      effects.slice(0, 8).forEach((e) => {
+        const meta = metaMap[e.type] || {}
+        let color = e._color || meta.color || '#ffffff'
+        // 容错：若不是合法颜色（如 hex 无括号），直接用作底色；rgba 则降透明度
+        let fill = color
+        if (typeof color === 'string' && color.indexOf('rgba') === 0) {
+          fill = color.replace(/[\d.]+\)$/, '0.75)')
+        }
+        // 图标底色块
+        ctx.fillStyle = fill
+        this._roundRect(ctx, ix, effY, effSz, effSz, 3 * dpr)
+        ctx.fill()
+        ctx.strokeStyle = 'rgba(255,255,255,0.65)'
+        ctx.lineWidth = 0.8 * dpr
+        ctx.strokeRect(ix, effY, effSz, effSz)
+        // 状态首字标识（用中文状态名首字，避免纯数字难辨）
+        const label = (meta.name && meta.name[0]) || (e.type && e.type[0]) || '?'
+        ctx.font = `bold ${9 * dpr}px sans-serif`
+        ctx.fillStyle = '#ffffff'
+        ctx.textAlign = 'center'
+        ctx.textBaseline = 'middle'
+        ctx.fillText(label, ix + effSz / 2, effY + effSz / 2 - 5 * dpr)
+        // 剩余秒数（底部小字）
+        ctx.font = `${7 * dpr}px sans-serif`
+        ctx.fillText(String(Math.ceil(e._remaining || e.duration || 0)), ix + effSz / 2, effY + effSz / 2 + 5 * dpr)
+        ix += effSz + 3 * dpr
+        if (ix + effSz > panelX + panelW - pad) return   // 超出宽度则停止
+      })
+    }
+
+    ctx.restore()
   }
 
   /**
@@ -3855,7 +4095,16 @@ baseRadius: 50 * this.dpr,    // 底座半径（缩小）
   _renderWorldHealthBars(ctx) {
     if (!this.party || !this.party.length) return
 
-    const drawBar = (wx, wy, hero, isControlled) => {
+    // ── ★ 扣血追赶动画：真实墙钟时间驱动帧间隔（防帧率波动/切后台跳变）──
+    const nowT = Date.now()
+    if (!this._whbLastT) this._whbLastT = nowT
+    let frameDt = (nowT - this._whbLastT) / 1000
+    this._whbLastT = nowT
+    if (frameDt < 0) frameDt = 0
+    if (frameDt > 0.1) frameDt = 0.1
+    if (!this._heroHpLagMap) this._heroHpLagMap = {}
+
+    const drawBar = (wx, wy, hero, isControlled, lagKey) => {
       const screenX = wx - this.cameraX
       const screenY = wy - this.cameraY
       const barWidth = 60 * this.dpr
@@ -3869,6 +4118,17 @@ baseRadius: 50 * this.dpr,    // 底座半径（缩小）
 
       // HP 条
       const hpRatio = Math.max(0, (hero.hp || 0) / (hero.maxHp || 1))
+
+      // ★ 扣血追赶残影层：受击瞬间白条保持高位，随后缓慢追回，露出"刚被打掉的血量"
+      let lagRatio = this._heroHpLagMap[lagKey]
+      if (typeof lagRatio !== 'number' || lagRatio < hpRatio) lagRatio = hpRatio
+      else lagRatio = Math.max(hpRatio, lagRatio - 0.2 * frameDt)   // 每秒追回 20% 满血
+      this._heroHpLagMap[lagKey] = lagRatio
+      if (lagRatio > hpRatio) {
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.85)'
+        ctx.fillRect(barX, barY, barWidth * lagRatio, barHeight)
+      }
+
       ctx.fillStyle = hpRatio > 0.5 ? '#2ed573' : (hpRatio > 0.25 ? '#ffa502' : '#ff4757')
       ctx.fillRect(barX, barY, barWidth * hpRatio, barHeight)
 
@@ -3905,7 +4165,7 @@ baseRadius: 50 * this.dpr,    // 底座半径（缩小）
       ? this.battleSystem.battleHeroes[0].partyIndex : 0
     // ★ 战斗中阵亡的角色不显示血条
     if (!(this.battleSystem && this.battleSystem.active && this.party[0] && this.party[0].hp <= 0)) {
-      drawBar(mainPos.x, mainPos.y, this.party[0], ctrlIdx === 0)
+      drawBar(mainPos.x, mainPos.y, this.party[0], ctrlIdx === 0, 'main')
     }
 
     // 跟随队友
@@ -3916,7 +4176,7 @@ baseRadius: 50 * this.dpr,    // 底座半径（缩小）
         // ★ 战斗中阵亡的队友不显示血条
         if (this.battleSystem && this.battleSystem.active && f.character.hp <= 0) continue
         const fPos = (this._heroWorldPos && this._heroWorldPos[i + 1]) ? this._heroWorldPos[i + 1] : { x: f.x, y: f.y }
-        drawBar(fPos.x, fPos.y, f.character, ctrlIdx === (i + 1))
+        drawBar(fPos.x, fPos.y, f.character, ctrlIdx === (i + 1), 'f' + i)
       }
     }
 

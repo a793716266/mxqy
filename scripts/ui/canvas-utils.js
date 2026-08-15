@@ -27,6 +27,9 @@
 export function roundRect(ctx, x, y, w, h, r) {
   // 防止圆角超过边长一半导致变形
   r = Math.min(r, w / 2, h / 2)
+  // ★ 必须先重置路径：否则会追加到调用方此前未闭合的路径上，
+  //   导致多层叠加绘制（如血条红+绿双层）时路径互相污染、fill() 把旧层一起重绘。
+  ctx.beginPath()
   ctx.moveTo(x + r, y)
   ctx.lineTo(x + w - r, y)
   ctx.arcTo(x + w, y, x + w, y + r, r)
