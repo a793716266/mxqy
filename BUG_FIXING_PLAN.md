@@ -4230,3 +4230,36 @@ _checkBattleEnd() {
   - **修复**：`dir` 改用玩家真实朝向 `this.facingLeft`（摇杆实时更新），并在释放瞬间同步给 `mainCharacterSprite.facingLeft`，保证出剑姿态/吸附/突刺伤害/剑气发射方向一致（均走 `pa.dir`）。
 - **状态**：✅ 已通过 Babel 语法检查；用户确认动画/位移/吸附均已正常，剑气视觉后续继续优化
 - **修改文件**：`scripts/data/heroes.js`、`scripts/systems/field-battle-system.js`、`scripts/scenes/field-scene.js`
+
+## 2026-08-15 更新：怪物攻击范围 / 坏猫素材 / 召回逻辑修复
+
+### fix: 怪物攻击范围过大（隔空打人、全屏攻击）
+
+- **根因（用户实测发现：不同 X 轴、身位差很多仍被攻击）**：
+  - 怪物 `attack`/`magic` 技能若无 `projectile` 配置，原逻辑走 `doMelee` 分支**瞬结算近战伤害**，无投射物飞行过程 → 表现为"隔空打人、攻击范围无限大"。受影响的技能：史莱姆猫 `slime_cat_sk_1`（range 90 无 projectile）、BOSS 两个魔法技（range 9999 无 projectile）。
+  - 普攻判定 `dist <= Math.max(attackRange, maxSR)`：带 `range:9999` 技能的怪物 `maxSR` 极大 → **普攻被连带放大到全场**，远离也能普攻命中。
+  - 全部怪物技能 `range:9999`（暗影鼠隐身、BOSS 圣盾/召唤）属全屏释放，不符合"任何怪物都不应有全屏攻击"的设计意图。
+- **修复**：
+  - `field-battle-system.js` 的 `_fieldCastMonsterSkill`：`attack`/`magic` 技能**一律走抛射物**（无 `projectile` 时兜底默认弹道，magic 紫色 / attack 橙色），不再掉进 `doMelee` 瞬结算。
+  - `_updateMonsterCombat` 普攻与技能**解耦**：普攻严格限定 `dist <= attackRange`（近战），不被 9999 技能连带放大；技能仍按各自 `range` 释放。
+  - 所有 `range:9999` 改为合理值：暗影鼠隐身 `shadow_raid` → 80、BOSS 圣盾 `holy_shield` → 90、BOSS 召唤 `summon_shadow` → 90（自身增益/召唤技仅近战距离内释放）。
+- **修改文件**：`scripts/systems/field-battle-system.js`、`scripts/entities/monsters/shadow-mouse.js`、`scripts/entities/monsters/lost-healer-cat.js`
+- **状态**：✅ 已通过 Babel 语法检查，用户确认不同 X 轴不再被隔空攻击
+
+### fix: 坏猫（wild_cat）动画素材错显为暗影鼠
+
+- **根因**：`enemies.js` 的 `wild_cat.assetPrefix` 写在 `renderConfig` 子对象里（死代码），而 `_buildFrameKey` 读的是**顶层** `enemyConfig.assetPrefix`（undefined）→ 走 `prefixMap['wild_cat'] = 'SLIME_CAT'` fallback。虽 fallback 正确，但 `renderConfig` 里的 `'WILD_CAT'` 具有误导性，CharacterSprite 初始化时可能误读到并错配到 SHADOW_MOUSE 素材。
+- **修复**：`wild_cat` 顶层显式加 `assetPrefix: 'SLIME_CAT'`，删除 `renderConfig` 里误导性的 `assetPrefix: 'WILD_CAT'`。坏猫复用史莱姆猫素材（绿色猫形象）。
+- **修改文件**：`scripts/data/enemies.js`
+- **状态**：✅ 已通过 Babel 语法检查，用户确认坏猫显示正常素材
+
+### fix: 召回模式队友跟随逻辑（自动寻敌但周围无怪）
+
+- **根因**：召回时 `allyAutoHunt = !aiRecall = false`，但 `_updateAlliesFollow` 的寻敌判断 `if (inCombat || allyAutoHunt)` 中 `inCombat`（主角在战斗）为 true 时，队友仍走 `_getAllyCombatTarget` **全图**寻最近怪站桩。即使周围没怪（或残留已消失怪的坐标），队友也跑过去 → 表现为"召回后 AI 又自动寻敌、但周围没怪"。
+- **预期语义（用户定义）**：召回 = 跟随主角为主；主角周围有怪时队友去攻击；怪死/远离后自动回主角身边。
+- **修复**：
+  - `field-scene.js` `_updateAlliesFollow`：召回分支改 `_findNearestMapMonster(playerX, playerY, 200*dpr)` 限定**主角附近 200px** 寻敌；有怪才走向攻击位置，无怪则跟随主角。
+  - 去掉 `!this.aiRecall` 限制，允许召回时队友靠近怪主动开战（附近有怪就打）。
+  - 解散模式保持原全图寻敌站桩行为不变。
+- **修改文件**：`scripts/scenes/field-scene.js`
+- **状态**：✅ 已通过 Babel 语法检查，用户确认召回跟随 + 附近有怪自动攻击 + 怪死回归均正常
