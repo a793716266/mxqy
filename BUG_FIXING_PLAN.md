@@ -2,6 +2,35 @@
 
 ## 📅 更新日志
 
+### 2026-08-16（更新）
+
+**feat: 臻宝「盾击」技能完整实现 + 英雄护盾机制 + 怪物眩晕/击退 + AI 同步**
+
+- **用户要求**：完善臻宝的盾击技能——释放时生成角色 30% 生命值的白色护盾（英雄联盟式，被攻击时优先抵挡）、持续 1 秒防御力提升 70%、30% 几率眩晕敌人、并将前方 X 轴 60 范围所有敌人击退（鸡腿 X100 距离）；并要求把最新技能（含李小宝）更新到对应角色配置，且 AI 同样生效。
+- **新增机制（之前系统缺失，本次从零实现）**：
+  1. **英雄护盾机制**（英雄联盟式白色护盾）：
+     - `field-battle-system.js` `_dealMonsterDamage`：怪物伤害先扣 `hero._shield`，护盾不足才扣 HP；护盾完全吸收不掉血。
+     - 护盾初始化 `hero._shield=0, _shieldMax=0`（battleHeroes 创建处）。
+     - `_renderWorldHealthBars`：英雄 HP 条**上方**渲染白色护盾条（`#ffffff`，叠加 `_shield/_shieldMax` 比例）。
+     - 伤害数字区分：掉血显示红/金，`🛡-吸收值` 显示白色护盾吸收提示。
+  2. **怪物眩晕 + 击退**：
+     - `_updateMonsters`：怪物 `_stunned>0` 时跳过移动/攻击/技能（`isMoving=false`），每帧递减计时。
+     - 击退：盾击对前方 X 轴范围内敌人沿释放者朝向推 `KNOCK` 像素，击退后 `clampToBounds` 防穿墙。
+     - `_resetBattleState` 清理怪物 `_stunned=0`。
+  3. **盾击附加效果 `_applyShieldBashEffects(target, hero, skill)`**（数据驱动）：
+     - 释放者（臻宝）：护盾 = `maxHp * shield.hpPercent`（默认 0.30）；防御 +`defUp.amp`（默认 0.70）持续 `defUp.duration`（默认 1.0s），走 `def_up_self` buff 叠加（`_getHeroDef` 已兼容 `amp`/`value`）。
+     - 前方敌人：以 `this.facingLeft` 定向前方 X 轴，`knock.range`（默认 60px）内、`knock.stunChance`（默认 0.30）几率眩晕 `knock.stunDuration`（默认 1.0s），全部击退 `knock.distance`（默认 100px）。
+     - 触发点：被控角色 `_castHeroSkill` 与 AI `_allyTryCastSkill` 的 `pendingDamages` 结算段（`pd.shieldBash` 标记，均携带 `skill`/`hero`）。
+- **角色配置更新（scripts/data/heroes.js）**：
+  - 臻宝 `shield_bash`：由单行配置补全为数据驱动完整配置（`shield.hpPercent:0.30`、`defUp.amp:0.70/duration:1.0`、`knock.range:60/distance:100/stunChance:0.30/stunDuration:1.0`、`cooldown:6`）。
+  - 李小宝 `mana_shield`：补全 `cooldown:12`、`duration:3`（原仅单行），与臻宝配置风格统一。
+- **AI 同步修复（关键）**：
+  - 发现 AI 技能分派走独立的 `_allyTryCastSkill`（不同于被控角色 `_castHeroSkill`），原普通攻击分支的 `pendingDamages.push` **没有 `shieldBash`/`skill` 标记**，导致 AI 释放臻宝盾击只造成普通伤害、不触发护盾/眩晕/击退。
+  - 已在 `_allyTryCastSkill` 普通攻击分支补上 `hero`、`skill`、`shieldBash` 标记，与 `_castHeroSkill` 行为完全一致——**AI 臻宝释放盾击现在同样生成护盾、提升防御、眩晕+击退敌人**。
+- **效果**：臻宝盾击成为完整防御向技能；白色护盾可在受击时抵挡伤害；怪物可被眩晕/击退；被控角色与 AI 行为完全对齐。
+- **修改文件**：`scripts/systems/field-battle-system.js`、`scripts/data/heroes.js`、`scripts/engine/collision-engine.js`（复用 moveWithSlide/clampToBounds）
+- **状态**：✅ 已通过 Babel 语法检查；未提交（待用户确认后提交）
+
 ### 2026-08-15（更新）
 
 **fix: 修复 AI 普攻仍 Y 轴移动 + 卡障碍物死锁**

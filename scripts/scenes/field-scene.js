@@ -1411,7 +1411,33 @@ baseRadius: 50 * this.dpr,    // 底座半径（缩小）
   }
 
   /**
-   * ★ 新增：怪物对英雄造成伤害
+   * ★ 统一的英雄伤害结算（含护盾优先吸收，英雄联盟式白色护盾）
+   *   所有怪物伤害入口都应走这里，避免绕过护盾逻辑。
+   *   返回 { hpDamage, absorbed }
+   */
+  _applyHeroDamage(hero, rawDamage, pos) {
+    let hpDamage = rawDamage
+    let absorbed = 0
+    if (hero._shield && hero._shield > 0) {
+      absorbed = Math.min(hero._shield, rawDamage)
+      hero._shield -= absorbed
+      hpDamage = rawDamage - absorbed
+      if (hero._shield <= 0) hero._shield = 0
+    }
+    hero.hp = Math.max(0, hero.hp - hpDamage)
+    if (hero.hp <= 0 && hero.alive !== false) {
+      hero.alive = false
+    }
+    // 同步回角色状态管理
+    try {
+      const charState = charStateManager.getCharacter(hero.id)
+      if (charState) charState.hp = hero.hp
+    } catch (e) { /* 忽略 */ }
+    return { hpDamage, absorbed }
+  }
+
+  /**
+   * ★ 新增：怪物对英雄造成伤害（普攻）
    */
   _dealMonsterDamage(monster, hero) {
     if (!monster || !hero || hero.hp <= 0) return
@@ -1421,26 +1447,32 @@ baseRadius: 50 * this.dpr,    // 底座半径（缩小）
     const isCrit = Math.random() < (monster.crit || 0.05)
     let damage = isCrit ? Math.floor(base * 1.5) : base
 
-    hero.hp = Math.max(0, hero.hp - damage)
-
-    // 伤害数字
+    // ★ 护盾优先吸收
     const screenX = hero.x !== undefined ? hero.x : this.playerX
     const screenY = hero.y !== undefined ? hero.y : this.playerY
-    this.battleSystem.damageTexts.push({
-      text: (isCrit ? '暴击 ' : '') + `-${damage}`,
-      x: screenX - this.cameraX,
-      y: screenY - this.cameraY - 40 * this.dpr,
-      color: isCrit ? '#ff9f1a' : '#ff4757',
-      life: 1.0
-    })
+    const res = this._applyHeroDamage(hero, damage, { x: screenX, y: screenY })
 
-    // 同步回角色状态管理（确保战斗结算后存档正确）
-    try {
-      const charState = charStateManager.getCharacter(hero.id)
-      if (charState) charState.hp = hero.hp
-    } catch (e) { /* 忽略 */ }
+    // 伤害数字（护盾吸收部分用白色单独显示）
+    if (res.absorbed > 0) {
+      this.battleSystem.damageTexts.push({
+        text: `🛡-${res.absorbed}`,
+        x: screenX - this.cameraX,
+        y: screenY - this.cameraY - 70 * this.dpr,
+        color: '#ffffff',
+        life: 1.0
+      })
+    }
+    if (res.hpDamage > 0) {
+      this.battleSystem.damageTexts.push({
+        text: (isCrit ? '暴击 ' : '') + `-${res.hpDamage}`,
+        x: screenX - this.cameraX,
+        y: screenY - this.cameraY - 40 * this.dpr,
+        color: isCrit ? '#ff9f1a' : '#ff4757',
+        life: 1.0
+      })
+    }
 
-    console.log(`[Field-Battle] ${monster.name} 攻击 ${hero.name}，造成 ${damage} 点伤害（暴击:${isCrit}），剩余HP: ${hero.hp}`)
+    console.log(`[Field-Battle] ${monster.name} 攻击 ${hero.name}，造成 ${damage} 点伤害（暴击:${isCrit}），护盾吸收 ${res.absorbed}，剩余HP: ${hero.hp}`)
   }
 
   /**
@@ -1657,18 +1689,20 @@ baseRadius: 50 * this.dpr,    // 底座半径（缩小）
     // 根据技能类型施放效果（兼容 enemies.js 的多种 type）
     const doMeleeDamage = (mult) => {
       const dmg = Math.max(1, Math.floor(monster.atk * (mult || skill.power || 1) - hero.def * 0.3))
-      hero.hp = Math.max(0, hero.hp - dmg)
-      this.battleSystem.damageTexts.push({
-        text: `-${dmg}`,
-        x: this.playerX - this.cameraX,
-        y: this.playerY - this.cameraY - 40 * this.dpr,
-        color: '#ff4757',
-        life: 1.0
-      })
-      try {
-        const cs = charStateManager.getCharacter(hero.id)
-        if (cs) cs.hp = hero.hp
-      } catch (e) {}
+      // ★ 护盾优先吸收
+      const res = this._applyHeroDamage(hero, dmg)
+      if (res.absorbed > 0) {
+        this.battleSystem.damageTexts.push({ text: `🛡-${res.absorbed}`, x: this.playerX - this.cameraX, y: this.playerY - this.cameraY - 70 * this.dpr, color: '#ffffff', life: 1.0 })
+      }
+      if (res.hpDamage > 0) {
+        this.battleSystem.damageTexts.push({
+          text: `-${res.hpDamage}`,
+          x: this.playerX - this.cameraX,
+          y: this.playerY - this.cameraY - 40 * this.dpr,
+          color: '#ff4757',
+          life: 1.0
+        })
+      }
     }
 
     if ((skill.type === 'attack' || skill.type === 'magic') && skill.projectile) {
@@ -2966,15 +3000,14 @@ baseRadius: 50 * this.dpr,    // 底座半径（缩小）
           const ddy = this.playerY - p.y
           if (Math.sqrt(ddx * ddx + ddy * ddy) < 30 * this.dpr) {
             const dmg = Math.max(1, Math.floor(this.battleSystem.battleTarget.atk * p.power - hero.def * 0.3))
-            hero.hp = Math.max(0, hero.hp - dmg)
-            this.battleSystem.damageTexts.push({
-              text: `-${dmg}`,
-              x: this.playerX - this.cameraX,
-              y: this.playerY - this.cameraY - 40 * this.dpr,
-              color: '#ff4757',
-              life: 1.0
-            })
-            try { const cs = charStateManager.getCharacter(hero.id); if (cs) cs.hp = hero.hp } catch (e) {}
+            // ★ 护盾优先吸收
+            const res = this._applyHeroDamage(hero, dmg)
+            if (res.absorbed > 0) {
+              this.battleSystem.damageTexts.push({ text: `🛡-${res.absorbed}`, x: this.playerX - this.cameraX, y: this.playerY - this.cameraY - 70 * this.dpr, color: '#ffffff', life: 1.0 })
+            }
+            if (res.hpDamage > 0) {
+              this.battleSystem.damageTexts.push({ text: `-${res.hpDamage}`, x: this.playerX - this.cameraX, y: this.playerY - this.cameraY - 40 * this.dpr, color: '#ff4757', life: 1.0 })
+            }
             p.life = -1
           }
         }
@@ -4246,6 +4279,21 @@ baseRadius: 50 * this.dpr,    // 底座半径（缩小）
       ctx.strokeStyle = '#ffffff'
       ctx.lineWidth = 1
       ctx.strokeRect(barX, barY, barWidth, barHeight)
+
+      // ★ 护盾条（英雄联盟式白色护盾）：紧贴 HP 条上方显示
+      //   底层黑色底 + 白色填充（按 护盾/护盾上限 比例）+ 蓝色发光描边，确保清晰可见
+      if (hero._shield && hero._shield > 0) {
+        const shMax = hero._shieldMax || hero._shield
+        const shRatio = Math.max(0, Math.min(1, hero._shield / (shMax || 1)))
+        const shY = barY - barHeight - 3 * this.dpr
+        ctx.fillStyle = 'rgba(0,0,0,0.6)'
+        ctx.fillRect(barX, shY, barWidth, barHeight)
+        ctx.fillStyle = '#ffffff'
+        ctx.fillRect(barX, shY, barWidth * shRatio, barHeight)
+        ctx.strokeStyle = '#8ec5ff'
+        ctx.lineWidth = 2
+        ctx.strokeRect(barX + 0.5, shY + 0.5, barWidth - 1, barHeight - 1)
+      }
 
       // ★ MP 蓝条
       const mpY = barY + barHeight + 2 * this.dpr

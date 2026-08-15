@@ -44,7 +44,34 @@ export const HEROES = [
     },
     skills: [
       { id: 'slash', name: '斩击', type: 'attack', power: 1.2, mpCost: 0, range: 100, desc: '基础物理攻击' },
-      { id: 'shield_bash', name: '盾击', type: 'attack', power: 0.8, mpCost: 5, range: 80, desc: '附带眩晕效果，使敌人1秒无法行动', effect: 'stun', statusEffect: 'stunned' },
+      {
+        id: 'shield_bash',
+        name: '盾击',
+        type: 'attack',
+        power: 0.8,
+        mpCost: 5,
+        range: 80,
+        cooldown: 6,
+        desc: '举盾猛击前方敌人：自身获得30%最大生命的白色护盾（持续2秒，被攻击优先抵挡），1秒内防御力提升70%；30%几率眩晕命中的敌人1秒，并将前方X轴范围内的所有敌人击退',
+        // ★ 盾击附加效果配置（运行时 _applyShieldBashEffects 读取，数据驱动）
+        shield: {
+          enabled: true,
+          hpPercent: 0.30,          // 护盾值 = 30% 最大生命
+          duration: 2.0,            // 护盾持续 2 秒（英雄联盟式：释放即出现，2 秒后自动消失）
+        },
+        defUp: {
+          enabled: true,
+          amp: 0.70,                // 防御 +70%
+          duration: 1.0,            // 持续 1 秒
+        },
+        knock: {
+          enabled: true,
+          range: 60,                // 前方 X 轴生效范围（像素）
+          distance: 100,            // 鸡腿击退距离（像素，X 轴）
+          stunChance: 0.30,         // 眩晕几率 30%
+          stunDuration: 1.0,        // 眩晕持续 1 秒
+        }
+      },
       { id: 'war_cry', name: '战吼', type: 'buff', mpCost: 8, range: 0, desc: '提升全体攻击力', effect: 'atk_up', turns: 3, value: 0.3 },
       { id: 'berserk', name: '狂暴', type: 'buff', mpCost: 15, range: 0, desc: '大幅提升自身攻击', effect: 'atk_up_self', turns: 3, value: 0.5 },
       {
@@ -174,7 +201,17 @@ export const HEROES = [
         },
         target: 'all'
       },
-      { id: 'mana_shield', name: '魔力护盾', type: 'buff', mpCost: 10, desc: '提升全体防御', effect: 'def_up', turns: 3, value: 0.3 }
+      {
+        id: 'mana_shield',
+        name: '魔力护盾',
+        type: 'buff',
+        mpCost: 10,
+        cooldown: 12,
+        desc: '为全体队友附加魔力护盾，提升30%防御力，持续3秒',
+        effect: 'def_up',
+        value: 0.3,
+        duration: 3
+      }
     ]
   },
   {

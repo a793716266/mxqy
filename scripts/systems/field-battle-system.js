@@ -232,13 +232,19 @@ export function installFieldBattleSystem(FieldSceneClass) {
       for (const m of this.mapMonsters) {
         m.statusEffects = []
         m._frozen = false
+        m._stunned = 0
         m._strikeCount = 0
       }
     }
-    // 清理英雄 buff
+    // 清理英雄 buff 与护盾
     if (this.battleSystem.battleHeroes) {
       for (const bh of this.battleSystem.battleHeroes) {
-        if (bh.hero) bh.hero._buffs = []
+        if (bh.hero) {
+          bh.hero._buffs = []
+          bh.hero._shield = 0
+          bh.hero._shieldMax = 0
+          bh.hero._shieldTimer = 0
+        }
       }
     }
 
@@ -442,6 +448,12 @@ export function installFieldBattleSystem(FieldSceneClass) {
               console.log(`[FieldBattle] ${m.name} 被击败！`)
               this.battleSystem.battleTarget = null
             }
+          }
+          // ★ 盾击附加效果：生成自身护盾 + 防御提升 + 眩晕+击退前方X轴范围敌人
+          //   ★ 移到 if(m&&m.alive) 块之外：即使无锁定目标（m 为空）也要触发——
+          //     盾击是防御向技能，玩家没锁定怪物自保时也该获得护盾/防御，并对前方敌人生效。
+          if (pd.shieldBash && pd.hero) {
+            this._applyShieldBashEffects(m || null, pd.hero, pd.skill)
           }
           // 移除已结算的
           this.battleSystem.pendingDamages.splice(i, 1)
@@ -764,8 +776,10 @@ export function installFieldBattleSystem(FieldSceneClass) {
     }
 
     // 以下为有目标的技能逻辑
-    // 无目标时只播动画，不造成伤害（技能仍设 CD 防止连点）
-    if (!monster) {
+    // ★ 盾击特殊处理：即使没有锁定目标（monster 为空）也要释放——
+    //   生成自身护盾 + 防御提升（防御向技能，自保时无需锁定怪物），并击退/眩晕前方敌人。
+    //   无目标时只播动画 + 生成护盾/防御，不造成伤害（技能仍设 CD 防止连点）。
+    if (!monster && !(skill && skill.id === 'shield_bash')) {
       if (skill && this.battleSystem.skillButtons) {
         const sb = this.battleSystem.skillButtons.find(b => b.skill === skill)
         if (sb) {
@@ -783,9 +797,11 @@ export function installFieldBattleSystem(FieldSceneClass) {
     const hitDelay = (skill ? 0.5 : 0.4) * (animState === 'shield' ? 0.8 : 1.0)  // 秒
 
     // 预计算伤害（但不立即应用）
+    // ★ 盾击无锁定目标（monster 为 null）时伤害记为 0（只生成护盾/防御），避免访问 monster.def 报错
     let damage = 0
+    const isShieldNoTarget = (skill && skill.id === 'shield_bash' && !monster)
     if (skill) {
-      damage = Math.max(1, this._getHeroAtk(mainHero) * (skill.power || 1.0) - Math.floor(monster.def * 0.5))
+      damage = isShieldNoTarget ? 0 : Math.max(1, this._getHeroAtk(mainHero) * (skill.power || 1.0) - Math.floor(monster.def * 0.5))
       mainHero.mp = Math.max(0, mainHero.mp - (skill.mpCost || 0))
     } else {
       damage = Math.max(1, this._getHeroAtk(mainHero) - Math.floor(monster.def * 0.5))
@@ -806,6 +822,9 @@ export function installFieldBattleSystem(FieldSceneClass) {
       isCrit: isCrit,
       timer: hitDelay,        // 倒计时（秒）
       heroName: mainHero.name,
+      hero: mainHero,         // 盾击需引用释放者生成护盾/防御提升
+      skill: skill,            // 盾击需读取技能配置（护盾/防御/眩晕/击退参数）
+      shieldBash: skill && skill.id === 'shield_bash',  // 盾击附加效果标记
     })
 
     // ★ 技能释放后设置按钮冷却（避免无限释放且让冷却遮罩生效）
@@ -1330,7 +1349,10 @@ export function installFieldBattleSystem(FieldSceneClass) {
         timer: 0.4,
         heroName: hero.name,
         statusEffect: skill.statusEffect,
-        effectValue: skill.effectValue
+        effectValue: skill.effectValue,
+        hero: hero,  // ★ AI 盾击同样需要引用释放者生成护盾/防御提升
+        skill: skill,  // ★ AI 盾击读取技能配置
+        shieldBash: skill && skill.id === 'shield_bash',  // ★ AI 盾击附加效果标记（与被控角色一致）
       })
     }
 
@@ -1405,7 +1427,9 @@ export function installFieldBattleSystem(FieldSceneClass) {
     const buffs = hero._buffs || []
     for (const b of buffs) {
       if (b._active && (b.type === 'def_up' || b.type === 'def_up_self')) {
-        def = def * (1 + (b.value || 0))
+        // ★ 兼容两种配置：固定值(b.value) 或 百分比(b.amp, 如 +70% → 0.70)
+        const mult = (b.amp !== undefined) ? b.amp : (b.value || 0)
+        def = def * (1 + mult)
       }
     }
     return Math.floor(def)
@@ -1444,6 +1468,88 @@ export function installFieldBattleSystem(FieldSceneClass) {
           bh.sprite._shakeOffsetX = (Math.random() * 2 - 1) * bh.sprite._shakeAmp
           bh.sprite._shakeOffsetY = (Math.random() * 2 - 1) * bh.sprite._shakeAmp
         }
+      }
+    }
+  }
+
+  /**
+   * ★ 盾击（shield_bash）附加效果（数据驱动：参数取自技能配置 skill.shield/defUp/knock）
+   *   释放者（臻宝）：生成护盾（默认30%最大生命，白色）+ 防御提升（默认+70%，1s）
+   *   前方敌人：默认30%几率眩晕1s，并将前方X轴范围（默认60px）内所有敌人击退（默认100px，鸡腿击退）
+   *   @param {Object} primaryTarget 主要命中怪物
+   *   @param {Object} hero 技能释放者（臻宝）
+   *   @param {Object} skill 技能配置（含 shield/defUp/knock 子配置）
+   */
+  proto._applyShieldBashEffects = function(primaryTarget, hero, skill) {
+    if (!hero) return
+    const dpr = this.dpr || 1
+    const cfg = skill || {}
+
+    // ★ 1) 自身护盾：配置 shield.hpPercent（默认 0.30），英雄联盟式白色护盾，释放即出现，持续 duration 秒后自动消失
+    const shieldCfg = cfg.shield || {}
+    if (shieldCfg.enabled !== false) {
+      const hpPct = (shieldCfg.hpPercent != null) ? shieldCfg.hpPercent : 0.30
+      const shDur = (shieldCfg.duration != null) ? shieldCfg.duration : 2.0
+      const shieldVal = Math.floor((hero.maxHp || hero.hp || 0) * hpPct)
+      hero._shield = shieldVal
+      hero._shieldMax = shieldVal
+      hero._shieldTimer = shDur   // ★ 护盾持续时间（秒）：每帧衰减，归零自动清空护盾（与是否被攻击无关）
+      if (typeof this._refreshCharCard === 'function') this._refreshCharCard(hero)
+      console.log(`[FieldBattle] ${hero.name} 盾击生成护盾 ${shieldVal}（${Math.round(hpPct * 100)}% 生命），持续 ${shDur}s`)
+    }
+
+    // ★ 2) 防御提升：配置 defUp.amp（默认 0.70）/ duration（默认 1.0s），复用 def_up_self buff
+    //   ★ 重点：必须用 _addHeroBuff 添加，确保设置 _active:true / _remaining / _color，
+    //   否则 _getHeroDef（要求 b._active）不生效、角色卡也不显示增益（之前直接 push 缺 _active 导致防御加成完全不体现）。
+    const defCfg = cfg.defUp || {}
+    if (defCfg.enabled !== false && (defCfg.amp != null || defCfg.value != null)) {
+      const amp = (defCfg.amp != null) ? defCfg.amp : (defCfg.value || 0)
+      const dur = (defCfg.duration != null) ? defCfg.duration : 1.0
+      this._addHeroBuff(hero, { type: 'def_up_self', value: amp, duration: dur, source: 'shield_bash' })
+      hero._defUpTimer = Math.max(hero._defUpTimer || 0, dur)
+      console.log(`[FieldBattle] ${hero.name} 盾击防御提升 +${Math.round(amp * 100)}%（${dur}s）`)
+    }
+
+    // ★ 3) 前方 X 轴方向：以释放者朝向决定（this.facingLeft 由摇杆实时更新）
+    const knockCfg = cfg.knock || {}
+    if (knockCfg.enabled === false) return
+    const RANGE = ((knockCfg.range != null) ? knockCfg.range : 60) * dpr      // 前方 X 轴生效范围
+    const KNOCK = ((knockCfg.distance != null) ? knockCfg.distance : 100) * dpr // 鸡腿击退距离
+    const STUN_CHANCE = (knockCfg.stunChance != null) ? knockCfg.stunChance : 0.30
+    const STUN_DUR = (knockCfg.stunDuration != null) ? knockCfg.stunDuration : 1.0
+
+    const dir = this.facingLeft ? -1 : 1
+    const originX = hero.x != null ? hero.x : (primaryTarget ? primaryTarget.x : 0)
+    const originY = hero.y != null ? hero.y : (primaryTarget ? primaryTarget.y : 0)
+
+    // 作用对象：主要目标 + 前方 X 轴范围内所有敌人
+    const targets = []
+    const addTarget = (m) => {
+      if (!m || !m.alive) return
+      const dx = (m.x - originX) * dir   // 朝向前方为正
+      const dy = Math.abs(m.y - originY)
+      // X 轴方向在前方 RANGE 内，且 Y 轴大致同一层（避免越层误击退）
+      if (dx >= 0 && dx <= RANGE && dy <= 60 * dpr) {
+        if (!targets.includes(m)) targets.push(m)
+      }
+    }
+    if (primaryTarget) addTarget(primaryTarget)
+    for (const m of this.mapMonsters || []) addTarget(m)
+
+    for (const m of targets) {
+      // ★ 眩晕：STUN_CHANCE 几率，持续 STUN_DUR
+      if (Math.random() < STUN_CHANCE) {
+        m._stunned = Math.max(m._stunned || 0, STUN_DUR)
+        console.log(`[FieldBattle] ${m.name} 被盾击眩晕 ${STUN_DUR}s`)
+      }
+      // ★ 击退：沿释放者朝向 X 轴推开 KNOCK 像素
+      m.x += dir * KNOCK
+      console.log(`[FieldBattle] ${m.name} 被鸡腿击退 ${KNOCK}px（X 轴方向 ${dir}）`)
+      // 击退后做地形碰撞钳制，避免被推入墙内
+      if (this._collisionEngine && this._collisionEngine.clampToBounds) {
+        const c = this._collisionEngine.clampToBounds(m.x, m.y)
+        m.x = c.x
+        m.y = c.y
       }
     }
   }
@@ -1593,7 +1699,19 @@ export function installFieldBattleSystem(FieldSceneClass) {
     const heroes = this.battleSystem.battleHeroes || []
     for (const bh of heroes) {
       const hero = bh.hero
-      if (!hero || !hero._buffs || hero._buffs.length === 0) continue
+      if (!hero) continue
+      // ★ 护盾计时衰减：释放即开始倒计时，归零自动清空护盾（英雄联盟式，与是否被攻击无关）
+      if (hero._shieldTimer != null && hero._shieldTimer > 0) {
+        hero._shieldTimer -= dt
+        if (hero._shieldTimer <= 0) {
+          hero._shieldTimer = 0
+          hero._shield = 0
+          hero._shieldMax = 0
+          if (typeof this._refreshCharCard === 'function') this._refreshCharCard(hero)
+          console.log(`[FieldBattle] ${hero.name} 护盾到期消失`)
+        }
+      }
+      if (!hero._buffs || hero._buffs.length === 0) continue
       for (let i = hero._buffs.length - 1; i >= 0; i--) {
         const b = hero._buffs[i]
         b._remaining -= dt
@@ -2115,6 +2233,12 @@ export function installFieldBattleSystem(FieldSceneClass) {
 
       // ★ 冰冻 / 紧固(定身) 状态：怪物无法移动与行动（冰晶术/紧固施加），跳过移动/攻击/技能
       if (monster._frozen || monster._rooted) continue
+      // ★ 眩晕状态：怪物被盾击眩晕，无法行动（跳过移动/攻击/技能），但仍可见击退位移
+      if (monster._stunned && monster._stunned > 0) {
+        monster._stunned = Math.max(0, monster._stunned - dt)
+        monster.isMoving = false
+        continue
+      }
 
       // ★ 找最近的存活参战英雄作为攻击目标
       let nearestHero = null
@@ -2329,15 +2453,17 @@ export function installFieldBattleSystem(FieldSceneClass) {
 
     const doMelee = (mult) => {
       const dmg = Math.max(1, Math.floor(monster.atk * (mult || skill.power || 1) - this._getHeroDef(hero) * 0.3))
-      hero.hp = Math.max(0, hero.hp - dmg)
-      this.battleSystem.damageTexts.push({
-        text: `-${dmg}`,
-        x: this.playerX - this.cameraX,
-        y: this.playerY - this.cameraY - 60 * this.dpr,
-        color: '#ff4757',
-        life: 1.0, maxLife: 1.0,
-        _startY: this.playerY - this.cameraY - 60 * this.dpr
-      })
+      const res = this._applyHeroDamage(hero, dmg, this.playerX, this.playerY)
+      if (res.hpDamage > 0) {
+        this.battleSystem.damageTexts.push({
+          text: `-${res.hpDamage}`,
+          x: this.playerX - this.cameraX,
+          y: this.playerY - this.cameraY - 60 * this.dpr,
+          color: '#ff4757',
+          life: 1.0, maxLife: 1.0,
+          _startY: this.playerY - this.cameraY - 60 * this.dpr
+        })
+      }
     }
 
     if (skill.type === 'attack' || skill.type === 'magic') {
@@ -2421,15 +2547,17 @@ export function installFieldBattleSystem(FieldSceneClass) {
       const hdy = this.playerY - p.y
       if (hero && hero.hp > 0 && (hdx * hdx + hdy * hdy) < (40 * this.dpr) ** 2) {
         const dmg = Math.max(1, Math.floor(p.atk * (p.power || 1) - this._getHeroDef(hero) * 0.3))
-        hero.hp = Math.max(0, hero.hp - dmg)
-        this.battleSystem.damageTexts.push({
-          text: `-${dmg}`,
-          x: this.playerX - this.cameraX,
-          y: this.playerY - this.cameraY - 60 * this.dpr,
-          color: '#ff4757',
-          life: 1.0, maxLife: 1.0,
-          _startY: this.playerY - this.cameraY - 60 * this.dpr
-        })
+        const res = this._applyHeroDamage(hero, dmg, this.playerX, this.playerY)
+        if (res.hpDamage > 0) {
+          this.battleSystem.damageTexts.push({
+            text: `-${res.hpDamage}`,
+            x: this.playerX - this.cameraX,
+            y: this.playerY - this.cameraY - 60 * this.dpr,
+            color: '#ff4757',
+            life: 1.0, maxLife: 1.0,
+            _startY: this.playerY - this.cameraY - 60 * this.dpr
+          })
+        }
         this.battleSystem.projectiles.splice(i, 1)
         continue
       }
@@ -2505,15 +2633,17 @@ export function installFieldBattleSystem(FieldSceneClass) {
       const hdy = this.playerY - z.y
       if ((hdx * hdx + hdy * hdy) <= z.r * z.r) {
         const dmg = Math.max(1, Math.floor(z.atk * (z.power || 1) - this._getHeroDef(hero) * 0.3))
-        hero.hp = Math.max(0, hero.hp - dmg)
-        this.battleSystem.damageTexts.push({
-          text: `-${dmg}`,
-          x: this.playerX - this.cameraX,
-          y: this.playerY - this.cameraY - 60 * this.dpr,
-          color: '#ff4757',
-          life: 1.0, maxLife: 1.0,
-          _startY: this.playerY - this.cameraY - 60 * this.dpr
-        })
+        const res = this._applyHeroDamage(hero, dmg, this.playerX, this.playerY)
+        if (res.hpDamage > 0) {
+          this.battleSystem.damageTexts.push({
+            text: `-${res.hpDamage}`,
+            x: this.playerX - this.cameraX,
+            y: this.playerY - this.cameraY - 60 * this.dpr,
+            color: '#ff4757',
+            life: 1.0, maxLife: 1.0,
+            _startY: this.playerY - this.cameraY - 60 * this.dpr
+          })
+        }
       }
     }
   }
@@ -2528,6 +2658,39 @@ export function installFieldBattleSystem(FieldSceneClass) {
     monster.hasDealtDamage = false // 标记尚未造成伤害
 
     console.log(`[FieldBattle] ${monster.name} 开始攻击动画`)
+  }
+
+  /**
+   * ★ 统一的英雄伤害结算（含护盾优先吸收，英雄联盟式白色护盾）
+   *   所有怪物伤害入口都应走这里，避免绕过护盾逻辑。
+   *   返回 { hpDamage, absorbed }
+   */
+  proto._applyHeroDamage = function(hero, rawDamage, sx, sy) {
+    let hpDamage = rawDamage
+    let absorbed = 0
+    if (hero._shield && hero._shield > 0) {
+      absorbed = Math.min(hero._shield, rawDamage)
+      hero._shield -= absorbed
+      hpDamage = rawDamage - absorbed
+      if (hero._shield <= 0) hero._shield = 0
+    }
+    hero.hp = Math.max(0, hero.hp - hpDamage)
+    if (hero.hp <= 0 && hero.alive !== false) {
+      hero.alive = false
+    }
+    const screenX = (sx != null) ? sx : this.playerX
+    const screenY = (sy != null) ? sy : this.playerY
+    if (absorbed > 0) {
+      this.battleSystem.damageTexts.push({
+        text: `🛡-${absorbed}`,
+        x: screenX - this.cameraX,
+        y: screenY - this.cameraY - 90 * this.dpr,
+        color: '#ffffff',
+        life: 1.0, maxLife: 1.0,
+        _startY: screenY - this.cameraY - 90 * this.dpr
+      })
+    }
+    return { hpDamage, absorbed }
   }
 
   /**
@@ -2546,8 +2709,17 @@ export function installFieldBattleSystem(FieldSceneClass) {
     const isCrit = Math.random() < (monster.crit || 0.05)
     const finalDamage = isCrit ? Math.floor(damage * 1.5) : damage
 
-    // 应用伤害
-    hero.hp = Math.max(0, hero.hp - finalDamage)
+    // 应用伤害：★ 英雄护盾优先吸收（英雄联盟式白色护盾）
+    //   护盾存在时先扣护盾，不足部分才扣 HP；被护盾完全吸收则不掉血
+    let hpDamage = finalDamage
+    let absorbed = 0
+    if (hero._shield && hero._shield > 0) {
+      absorbed = Math.min(hero._shield, finalDamage)
+      hero._shield -= absorbed
+      hpDamage = finalDamage - absorbed
+      if (hero._shield <= 0) hero._shield = 0
+    }
+    hero.hp = Math.max(0, hero.hp - hpDamage)
     // ★ 阵亡标记：hp<=0 时同步 hero.alive（否则 AI 角色死亡后不会消失）
     if (hero.hp <= 0 && hero.alive !== false) {
       hero.alive = false
@@ -2563,7 +2735,7 @@ export function installFieldBattleSystem(FieldSceneClass) {
     const screenX = hpos.x - this.cameraX
     const screenY = hpos.y - this.cameraY
     this.battleSystem.damageTexts.push({
-      text: `-${finalDamage}${isCrit ? '!' : ''}`,
+      text: `-${hpDamage}${isCrit ? '!' : ''}`,
       x: screenX,
       y: screenY - 60 * this.dpr,
       color: isCrit ? '#FFD700' : '#FF4757',
@@ -2572,6 +2744,19 @@ export function installFieldBattleSystem(FieldSceneClass) {
       _startY: screenY - 60 * this.dpr,
       isCrit: isCrit
     })
+    // ★ 护盾吸收提示（白色，英雄联盟式护盾抵挡反馈）
+    if (absorbed > 0) {
+      this.battleSystem.damageTexts.push({
+        text: `🛡-${absorbed}`,
+        x: screenX,
+        y: screenY - 90 * this.dpr,
+        color: '#ffffff',
+        life: 1.0,
+        maxLife: 1.0,
+        _startY: screenY - 90 * this.dpr,
+        isCrit: false
+      })
+    }
 
     console.log(`[FieldBattle] ${monster.name} 攻击 ${hero.name}，造成 ${finalDamage} 点伤害${isCrit ? '（暴击！）' : ''}，剩余HP: ${hero.hp}`)
   }
@@ -2758,60 +2943,9 @@ export function installFieldBattleSystem(FieldSceneClass) {
   // 12. 渲染血条
   // ==========================================================================
   proto._renderHealthBars = function(ctx) {
-    // 玩家血条/蓝条已移至 field-scene._renderWorldHealthBars（非战斗也显示）
+    // 玩家血条/蓝条/护盾条已移至 field-scene._renderWorldHealthBars（非战斗也显示，含护盾白条）
     // 此处仅渲染怪物血条
     this._renderMonsterHealthBars(ctx)
-  }
-
-  proto._renderPlayerHealthBar = function(ctx) {
-    const heroes = this.battleSystem.battleHeroes
-    if (!heroes || !heroes.length) return
-
-    const curIdx = this.battleSystem.currentControlIndex % heroes.length
-
-    for (let i = 0; i < heroes.length; i++) {
-      const bh = heroes[i]
-      if (!bh || !bh.hero) continue
-      const pos = bh.getPos()
-      const screenX = pos.x - this.cameraX
-      const screenY = pos.y - this.cameraY
-      const barWidth = 60 * this.dpr
-      const barHeight = 6 * this.dpr
-      const barX = screenX - barWidth / 2
-      const barY = screenY - 50 * this.dpr
-
-      // 背景
-      ctx.fillStyle = 'rgba(0,0,0,0.5)'
-      ctx.fillRect(barX, barY, barWidth, barHeight)
-
-      // HP条
-      const hpRatio = Math.max(0, (bh.hero.hp || 0) / (bh.hero.maxHp || 1))
-      ctx.fillStyle = hpRatio > 0.5 ? '#2ed573' : (hpRatio > 0.25 ? '#ffa502' : '#ff4757')
-      ctx.fillRect(barX, barY, barWidth * hpRatio, barHeight)
-
-      // 边框
-      ctx.strokeStyle = '#ffffff'
-      ctx.lineWidth = 1
-      ctx.strokeRect(barX, barY, barWidth, barHeight)
-
-      // ★ MP（蓝条）
-      const mpY = barY + barHeight + 2 * this.dpr
-      ctx.fillStyle = 'rgba(0,0,0,0.5)'
-      ctx.fillRect(barX, mpY, barWidth, barHeight)
-      const mpRatio = Math.max(0, (bh.hero.mp || 0) / (bh.hero.maxMp || 1))
-      ctx.fillStyle = '#1e90ff'
-      ctx.fillRect(barX, mpY, barWidth * mpRatio, barHeight)
-      ctx.strokeStyle = '#ffffff'
-      ctx.lineWidth = 1
-      ctx.strokeRect(barX, mpY, barWidth, barHeight)
-
-      // 名字（当前控制者高亮）
-      ctx.fillStyle = (i === curIdx) ? '#FFD700' : '#ffffff'
-      ctx.font = `${10 * this.dpr}px sans-serif`
-      ctx.textAlign = 'center'
-      ctx.fillText(bh.hero.name + (i === curIdx ? '（控制中）' : ''), screenX, barY - 4 * this.dpr)
-      ctx.textAlign = 'left'
-    }
   }
 
   proto._renderMonsterHealthBars = function(ctx) {
