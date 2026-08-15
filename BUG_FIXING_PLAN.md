@@ -4,6 +4,24 @@
 
 ### 2026-08-15（更新）
 
+**fix: 修复 AI 普攻仍 Y 轴移动 + 卡障碍物死锁**
+
+- **用户反馈**：① AI 普攻还是可以 Y 轴移动（之前的行为对齐未彻底解决）；② AI 碰到障碍物会一直被卡住，表现不聪明。
+- **根因定位**：
+  - **普攻 Y 轴**：被控角色的 `castAxisLockTimer` 是**跟随 `playerAnim.timer` 持续维持**的（普攻动画播放期间每帧都刷新），而 AI 的 `_castAxisLock` 只在普攻**触发那一帧**设一次 `8*frameDuration` 后递减——动画播完但还在走位靠近时 `_castAxisLock` 已减为 0，恢复 Y 移动。
+  - **卡障碍物**：原 AI 移动碰撞后直接 `checkStaticCollision` 检测→还原旧坐标，原地卡死无绕行；且 `_getAllyCombatTarget` 算出的输出位可能直接落在障碍（墙/树/石）内，AI 一头撞进去反复卡。
+- **修复**：
+  - `scripts/systems/field-battle-system.js`（`_updateAllyAI`）：AI 施法轴锁定逻辑改为——**普攻/伤害技能动画播放期间（`_aiAttackTimer > 0`）持续维持 `_castAxisLock`**（对齐被控角色 `playerAnim.timer` 跟随逻辑），而非一次性设置后递减。彻底消除普攻 Y 轴移动。
+  - `scripts/scenes/field-scene.js`：
+    - AI 三处移动（队友战斗站位 / 主角 AI 战斗移动 / 主角 AI 非战斗跟随）的地形碰撞由「检测即还原旧坐标」改为引擎已有的 `moveWithSlide`（完整→仅 X →仅 Y→回退）**分轴滑动避障**，被阻挡时沿可通行轴向滑动绕行，不再原地死锁。
+    - 完全回退（位置没动）时累计 `_stuckFrames`，约 0.75s（>45 帧）仍卡死则放弃当前锁定站位点（`_lockedStand=null` + `_aiTargetId=null`），下一帧重新规划路线绕开障碍。
+    - `_getAllyCombatTarget` 计算输出位时增加**站位点避障**：若候选点落在障碍内，按「翻转 side → 调整 yOffset（±40px）」优先级挑选可达点，从源头避免 AI 站进墙里反复卡死。
+- **效果**：AI 普攻全程锁 Y 轴（与被控角色一致）；AI 遇障碍会滑动绕行、长时间卡住则重新寻路，表现更聪明。
+- **修改文件**：`scripts/systems/field-battle-system.js`、`scripts/scenes/field-scene.js`
+- **状态**：✅ 已通过 Babel 语法检查；已提交（commit 8d5aee2）
+
+### 2026-08-15（更新）
+
 **fix: AI 角色行为与被操控角色完全对齐（移动锁定/技能轮转/BUFF/地形碰撞）**
 
 - **用户要求**：AI 和被操作的逻辑是一样的，只是不会被玩家操控。
