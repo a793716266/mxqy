@@ -1608,6 +1608,31 @@ baseRadius: 50 * this.dpr,    // 底座半径（缩小）
     monster.y += monster._vy * dt
     monster.isMoving = (Math.abs(monster._vx) + Math.abs(monster._vy)) > 0.01
 
+    // ★ 地形碰撞 + 绕行：怪物同样受障碍（树/石/森林）阻挡，不能穿墙。
+    //   用 moveWithSlide 分轴滑动避障；若完全被挡死（滑动后位置没动）则累计卡住帧，
+    //   长时间卡死则主动改变绕行方向 + 加一个侧向脱离冲量，从别的方向绕开障碍物，
+    //   而不是原地死卡。
+    if (this._collisionEngine) {
+      const slid = this._collisionEngine.moveWithSlide(monster.x - monster._vx * dt, monster.y - monster._vy * dt, monster.x, monster.y)
+      monster.x = slid.x
+      monster.y = slid.y
+      if (slid.x === monster.x - monster._vx * dt && slid.y === monster.y - monster._vy * dt) {
+        monster._stuckFrames = (monster._stuckFrames || 0) + 1
+        if (monster._stuckFrames > 30) {
+          // ★ 卡死超过约0.5s：翻转绕圈方向 + 给一个垂直当前朝向的侧向冲量，绕开障碍
+          monster.strafeAngle = (monster.strafeAngle || 0) + Math.PI + (Math.random() - 0.5) * 1.2
+          const perpX = Math.cos(monster.strafeAngle)
+          const perpY = Math.sin(monster.strafeAngle)
+          const burst = (monster.moveSpeed || 60) * 1.5
+          monster._vx += perpX * burst
+          monster._vy += perpY * burst
+          monster._stuckFrames = 0
+        }
+      } else {
+        monster._stuckFrames = 0
+      }
+    }
+
     // 更新技能冷却
     if (monster.skillCDs) {
       for (const id in monster.skillCDs) {
