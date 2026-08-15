@@ -1944,13 +1944,22 @@ baseRadius: 50 * this.dpr,    // 底座半径（缩小）
       let isCombatPos = false
       const inCombat = this.battleSystem && this.battleSystem.active
       const allyAutoHunt = !this.aiRecall   // 未召回时，队友自行寻怪战斗
-      if (inCombat || allyAutoHunt) {
+      // ★ 召回模式：跟随主角为主，仅当主角附近有怪时才去攻击（否则贴着主角）
+      if (this.aiRecall) {
+        const recallRange = 200 * this.dpr
+        const nearMon = this._findNearestMapMonster(this.playerX, this.playerY, recallRange)
+        if (nearMon) {
+          targetPos = this._getAllyCombatTarget(follower, i) || { x: nearMon.x, y: nearMon.y, facingLeft: nearMon.x < this.playerX }
+          isCombatPos = true
+        }
+        // 无附近怪 → targetPos 保持 null → 走下方召回分支跟随主角
+      } else if (inCombat || allyAutoHunt) {
         targetPos = this._getAllyCombatTarget(follower, i)
         isCombatPos = !!targetPos
       }
 
-      // ★ 非战斗 + 未召回 + 附近有怪物且队友已接近 → 队友主动开战（让主角也进入战斗）
-      if (!inCombat && !this.aiRecall && targetPos) {
+      // ★ 非战斗 + 附近有怪物且队友已接近 → 队友主动开战（召回时也允许，附近有怪就打）
+      if (!inCombat && targetPos) {
         const nearMon = this._findNearestMapMonster(follower.x, follower.y, 80 * this.dpr)
         if (nearMon) {
           this._startFieldBattle(nearMon)
