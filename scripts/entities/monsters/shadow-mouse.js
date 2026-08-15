@@ -57,7 +57,7 @@ module.exports = {
       power: 0,
       cooldown: 30,  // 秒（提高CD时间）
       desc: '隐身5秒，提升30%攻击力，持续10秒',
-      range: 9999,    // 全场释放，不受距离限制
+      range: 80,       // 自身增益技：仅近战距离内释放（不再全屏）
       effect: 'atk_up',
       value: 0.3,
       duration: 10

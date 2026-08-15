@@ -71,6 +71,7 @@ export const ENEMIES_CH1 = {
   wild_cat: {
     id: 'wild_cat',
     name: '野猫',
+    assetPrefix: 'SLIME_CAT',   // ★ 复用史莱姆猫素材（与 _buildFrameKey prefixMap 一致）
     level: 1,           // 基础等级
     maxHp: 50,       // 30 → 50 (+67%)
     atk: 12,         // 8 → 12 (+50%)
@@ -80,7 +81,6 @@ export const ENEMIES_CH1 = {
     aiPattern: 'aggressive',  // 激进：猛扑不退
     // 渲染配置（用于 CharacterSprite）
     renderConfig: {
-      assetPrefix: 'WILD_CAT',
       spriteType: 'enemy',
       totalWalkFrames: 8,
       totalIdleFrames: 8,

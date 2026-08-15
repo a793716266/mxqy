@@ -2141,17 +2141,19 @@ export function installFieldBattleSystem(FieldSceneClass) {
       // 4. 战斗走位（贴近攻击距离，避免原地站桩/被甩开脱战）
       this._fieldMonsterCombatMove(monster, dx, dy, dist, attackRange, dt)
 
-      // 5. 进入可攻击距离：技能优先，其次普攻
+      // 5. 进入可攻击距离：普攻（近战）与技能（各自 range）解耦
       const maxSR = this._fieldMaxSkillRange(monster)
-      if (dist <= Math.max(attackRange, maxSR)) {
+      // 5a. 技能：仅在技能自身 range 内释放（不搭普攻便车）
+      if (dist <= maxSR) {
         const chosen = this._fieldChooseMonsterSkill(monster, dist, attackRange)
         if (chosen) {
           this._fieldCastMonsterSkill(monster, chosen, mainHero, dx, dy, dist)
           monster.skillUseCount = 0
           continue
         }
-
-        // 普攻（冷却结束才放）
+      }
+      // 5b. 普攻：仅限近战攻击距离（attackRange），不被 9999 等全屏技能连带放大
+      if (dist <= attackRange) {
         if (!monster.attackCDTimer) monster.attackCDTimer = 0
         monster.attackCDTimer -= dt * 1000
         if (monster.attackCDTimer <= 0 && !monster.isAttacking) {
@@ -2305,8 +2307,12 @@ export function installFieldBattleSystem(FieldSceneClass) {
       })
     }
 
-    if ((skill.type === 'attack' || skill.type === 'magic') && skill.projectile) {
-      // 远程抛射物
+    if (skill.type === 'attack' || skill.type === 'magic') {
+      // 远程攻击/魔法：必须走抛射物，禁止瞬结算（避免"隔空打人、无投射物"的视觉 bug）
+      // 无 projectile 配置时兜底用默认弹道参数，保证有可见飞行过程
+      if (!skill.projectile) {
+        skill.projectile = { color: skill.type === 'magic' ? '#b15eff' : '#ff7b54' }
+      }
       this._fieldSpawnMonsterProjectile(monster, skill, dx, dy, dist)
     } else if (skill.type === 'debuff') {
       this._applyMonsterDebuff(monster, skill)
