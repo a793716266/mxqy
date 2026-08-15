@@ -1104,7 +1104,16 @@ export function installFieldBattleSystem(FieldSceneClass) {
       //   但每个 AI 英雄独立存储，避免 AI 与被控角色、AI 与 AI 互相干扰）：
       //   _castAxisLock：普攻/伤害技能期间限制 Y 轴（只能 X 轴移动）
       //   _castLock：BUFF 释放期间完全锁移动
-      if (bh.hero._castAxisLock > 0) bh.hero._castAxisLock = Math.max(0, bh.hero._castAxisLock - dt)
+      //   ★ 对齐被控角色：被控角色的 castAxisLockTimer 是跟随 playerAnim.timer
+      //     （普攻动画播放期间持续维持）的，AI 在此同样跟随 _aiAttackTimer 持续维持，
+      //     而不是只在触发那一帧设一次——否则动画播完但还在走位时 _castAxisLock 已减为 0，
+      //     就会恢复 Y 轴移动（表现为"普攻还能 Y 轴移动"）。
+      //   ★ 普攻/伤害技能动画播放期间（_aiAttackTimer > 0）强制持续锁 Y 轴
+      if (bh.hero._aiAttackTimer && bh.hero._aiAttackTimer > 0) {
+        bh.hero._castAxisLock = Math.max(bh.hero._castAxisLock || 0, 8 * this.frameDuration)
+      } else if (bh.hero._castAxisLock > 0) {
+        bh.hero._castAxisLock = Math.max(0, bh.hero._castAxisLock - dt)
+      }
       if (bh.hero._castLock > 0) bh.hero._castLock = Math.max(0, bh.hero._castLock - dt)
 
       // ★ AI 英雄 MP 回复（与正规战斗一致，避免只减不增导致技能很快哑火）

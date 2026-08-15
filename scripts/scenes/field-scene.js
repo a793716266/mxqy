@@ -2015,12 +2015,24 @@ baseRadius: 50 * this.dpr,    // 底座半径（缩小）
               follower.y += moveY
             }
           }
-          // ★ 地形碰撞回退（与被控角色 _checkObstacleCollision 一致）：
-          //   AI 角色同样受地形障碍（树/石/森林）阻挡，不能穿墙
+          // ★ 地形碰撞：与被控角色一致，AI 同样受地形障碍（树/石/森林）阻挡，不能穿墙。
+          //   ★ 用 moveWithSlide 做分轴滑动避障（完整→仅X→仅Y→回退），
+          //     不再原地点死卡住；若完全回退则累计卡住帧，长时间卡住则放弃当前锁定站位，
+          //     下一帧重新规划路线（绕开障碍物），表现更聪明。
           if (this._collisionEngine) {
-            if (this._collisionEngine.checkStaticCollision(follower.x, follower.y)) {
-              follower.x = oldX
-              follower.y = oldY
+            const slid = this._collisionEngine.moveWithSlide(oldX, oldY, follower.x, follower.y)
+            follower.x = slid.x
+            follower.y = slid.y
+            // ★ 卡住检测：完全回退（位置没动）才累计，分轴滑动成功不算卡
+            if (slid.x === oldX && slid.y === oldY) {
+              follower._stuckFrames = (follower._stuckFrames || 0) + 1
+              if (follower._stuckFrames > 45) {  // 约 0.75s 卡死 → 放弃当前站位点，重新寻路
+                follower._lockedStand = null
+                follower._aiTargetId = null
+                follower._stuckFrames = 0
+              }
+            } else {
+              follower._stuckFrames = 0
             }
           }
           follower.facingLeft = targetPos.facingLeft
@@ -2123,11 +2135,22 @@ baseRadius: 50 * this.dpr,    // 底座半径（缩小）
                   px.y += moveY
                 }
               }
-              // ★ 地形碰撞回退（与被控角色一致，主角 AI 也受地形阻挡）
+              // ★ 地形碰撞：与被控角色一致，主角 AI 也受地形阻挡。
+              //   ★ 用 moveWithSlide 分轴滑动避障，避免卡障碍物死锁；
+              //     完全回退累计卡住帧，长时间卡死放弃锁定站位重新寻路。
               if (this._collisionEngine) {
-                if (this._collisionEngine.checkStaticCollision(px.x, px.y)) {
-                  px.x = oldX
-                  px.y = oldY
+                const slid = this._collisionEngine.moveWithSlide(oldX, oldY, px.x, px.y)
+                px.x = slid.x
+                px.y = slid.y
+                if (slid.x === oldX && slid.y === oldY) {
+                  px._stuckFrames = (px._stuckFrames || 0) + 1
+                  if (px._stuckFrames > 45) {
+                    px._lockedStand = null
+                    px._aiTargetId = null
+                    px._stuckFrames = 0
+                  }
+                } else {
+                  px._stuckFrames = 0
                 }
               }
               this.mainCharacterSprite.facingLeft = moveTarget.facingLeft
@@ -2151,12 +2174,11 @@ baseRadius: 50 * this.dpr,    // 底座半径（缩小）
             const oldY = px.y
             px.x += (dx / dist) * speed * dt
             px.y += (dy / dist) * speed * dt
-            // ★ 地形碰撞回退（主角 AI 非战斗也受地形阻挡）
+            // ★ 地形碰撞：主角 AI 非战斗跟随也受地形阻挡，用 moveWithSlide 滑动避障
             if (this._collisionEngine) {
-              if (this._collisionEngine.checkStaticCollision(px.x, px.y)) {
-                px.x = oldX
-                px.y = oldY
-              }
+              const slid = this._collisionEngine.moveWithSlide(oldX, oldY, px.x, px.y)
+              px.x = slid.x
+              px.y = slid.y
             }
             this.mainCharacterSprite.isMoving = true
           } else {
@@ -2266,17 +2288,37 @@ baseRadius: 50 * this.dpr,    // 底座半径（缩小）
     //    - 之后怪物怎么移动，AI 都站定在自己锁定的点，不再被怪物"带跑/推开"。
     const attackDist = ((this.battleSystem && this.battleSystem.attackRange) || 100) * this.dpr * 0.75
     // 队友从自己当前所在的一侧接近怪物（谁在左就站左边），减少绕路
-    const side = (follower.x <= target.x) ? -1 : 1
+    const side0 = (follower.x <= target.x) ? -1 : 1
     // 索引错开，避免多个队友挤在同一个点（i=-1 表示主角，放最外侧）
     const idx = Math.max(0, i)
-    const yOffset = ((i % 2 === 0) ? 1 : -1) * (18 + idx * 10) * this.dpr
+    const yOffset0 = ((i % 2 === 0) ? 1 : -1) * (18 + idx * 10) * this.dpr
 
+    // ★ 站位点避障：若算出的输出位落在障碍物内（墙/树/石），尝试翻转 side、调整 yOffset，
+    //   选一个可达的站位点，避免 AI 一头撞进障碍里反复卡死。
+    //   注意 checkStaticCollision 用物理像素（带 footOffset），与运行时移动一致。
+    const tryStand = (side, yOff) => {
+      const x = target.x + side * attackDist
+      const y = target.y + yOff
+      if (this._collisionEngine && this._collisionEngine.checkStaticCollision(x, y)) return null
+      return { x, y }
+    }
+    let stand = null
     if (!follower._lockedStand || follower._lockedStand._targetId !== target.id) {
-      follower._lockedStand = {
-        x: target.x + side * attackDist,
-        y: target.y + yOffset,
-        _targetId: target.id
+      // 候选优先级：原 side/原 yOffset → 翻转 side → 不同 yOffset → 反向 yOffset
+      const candidates = [
+        [side0, yOffset0],
+        [-side0, yOffset0],
+        [side0, yOffset0 + 40 * this.dpr],
+        [side0, yOffset0 - 40 * this.dpr],
+        [-side0, yOffset0 + 40 * this.dpr],
+        [-side0, yOffset0 - 40 * this.dpr],
+      ]
+      for (const [s, y] of candidates) {
+        const r = tryStand(s, y)
+        if (r) { stand = r; break }
       }
+      if (!stand) stand = { x: target.x + side0 * attackDist, y: target.y + yOffset0 }  // 都挡也至少给一个
+      follower._lockedStand = { x: stand.x, y: stand.y, _targetId: target.id }
     }
 
     return {
