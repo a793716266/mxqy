@@ -4,6 +4,28 @@
 
 ### 2026-08-15（更新）
 
+**fix: AI 角色行为与被操控角色完全对齐（移动锁定/技能轮转/BUFF/地形碰撞）**
+
+- **用户要求**：AI 和被操作的逻辑是一样的，只是不会被玩家操控。
+- **问题现象**：
+  1. 普攻只能移动 X 轴（被控角色有此限制，AI 没有，行为不一致）
+  2. BUFF 释放时不能移动（被控角色 castLock 锁移动，AI 仍在动）
+  3. AI 只会放一个技能（原 `_allyTryCastSkill` 把 buff 类型技能 skip，AI 永不释放 BUFF，且仅轮转攻击技能）
+  4. AI 不受地形碰撞影响（`_updateFollowers` / 主角 AI 移动无地形回退）
+- **修复**：
+  - `scripts/systems/field-battle-system.js`：
+    - `_updateAllyAI` 增加每英雄独立的施法锁定计时递减：`_castAxisLock`（普攻/伤害技能限制 Y 轴）、`_castLock`（BUFF 完全锁移动），语义对齐被控角色的 `castAxisLockTimer`/`castLockTimer`，但按英雄独立存储避免互相干扰。
+    - AI 普攻触发处设 `hero._castAxisLock = 8 * frameDuration`（对齐被控角色普攻 X 轴限制时长）。
+    - `_allyTryCastSkill`：技能收集不再 skip `buff`/`heal`，按攻击技能与 BUFF 统一轮转选取；新增 BUFF/治疗分支，释放时设 `hero._castLock = 0.8`（对齐 castLockTimer）、调用 `this._applyHeroBuff(skill, hero)` 复用被控角色 Buff 效果入口、刷新角色卡；动画状态 buff 走 'buff' 态。→ AI 现在会轮转释放全部技能（含 BUFF）。
+  - `scripts/scenes/field-scene.js`（`_updateFollowers` 与主角 AI 移动段）：
+    - AI 移动施加施法锁定：`_castLock>0` 完全锁移动；`_castAxisLock>0` 仅 X 轴移动（对齐被控角色）。
+    - AI 移动后做地形碰撞回退（`this._collisionEngine.checkStaticCollision` 检测，碰撞则回退旧坐标），与被控角色 `_checkObstacleCollision` 一致 → AI 角色同样受地形（树/石/森林）阻挡，不能穿墙。覆盖：队友战斗移动、主角 AI 战斗移动、主角 AI 非战斗跟随。
+- **效果**：AI（队友 + 主角 AI）与被操控角色行为完全一致——普攻限 X 轴、BUFF 锁移动、技能轮转（含 BUFF）、受地形碰撞；区别仅在于由 AI 控制而非玩家摇杆。
+- **修改文件**：`scripts/systems/field-battle-system.js`、`scripts/scenes/field-scene.js`
+- **状态**：✅ 已通过 Babel 语法检查
+
+### 2026-08-15（更新）
+
 **fix: 彻底消除 AI 与 AI、AI 与怪物之间的碰撞/推挤观感（野外+战斗场景）**
 
 - **背景**：用户实测野外阳光草原地图上，怪物攻击时 AI（队友/主角 AI）会被"推开/带跑"，表现为碰撞。此前虽已移除 `_checkMonsterCollision`（接触开战）调用、禁用 `field-movement.js` follower 防重叠推挤，但"被弹开/推挤卡顿"观感依旧。

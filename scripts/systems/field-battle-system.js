@@ -1100,6 +1100,13 @@ export function installFieldBattleSystem(FieldSceneClass) {
       if (!bh.hero._aiSkillLock) bh.hero._aiSkillLock = 0
       if (bh.hero._aiSkillLock > 0) bh.hero._aiSkillLock -= dt
 
+      // ★ AI 独立施法锁定计时（与被控角色的 castAxisLockTimer/castLockTimer 语义一致，
+      //   但每个 AI 英雄独立存储，避免 AI 与被控角色、AI 与 AI 互相干扰）：
+      //   _castAxisLock：普攻/伤害技能期间限制 Y 轴（只能 X 轴移动）
+      //   _castLock：BUFF 释放期间完全锁移动
+      if (bh.hero._castAxisLock > 0) bh.hero._castAxisLock = Math.max(0, bh.hero._castAxisLock - dt)
+      if (bh.hero._castLock > 0) bh.hero._castLock = Math.max(0, bh.hero._castLock - dt)
+
       // ★ AI 英雄 MP 回复（与正规战斗一致，避免只减不增导致技能很快哑火）
       const regenRate = bh.hero.mpRegen || 5
       if ((bh.hero.maxMp || 0) > 0 && (bh.hero.mp || 0) < bh.hero.maxMp) {
@@ -1143,6 +1150,8 @@ export function installFieldBattleSystem(FieldSceneClass) {
       bh.hero._aiAttacking = true
       // ★ cast_universal.png 精灵表 8 帧（每帧≈0.15s），攻击动画时长设为 0.8s 让施法动作播放约 5 帧更完整
       bh.hero._aiAttackTimer = 0.8  // 攻击动画持续 0.8 秒后自动恢复
+      // ★ 与被控角色一致：普攻/伤害技能施法期间限制 Y 轴（只能 X 轴移动）
+      bh.hero._castAxisLock = 8 * this.frameDuration
 
       // 预计算伤害并入延迟队列
       const hero = bh.hero
@@ -1196,8 +1205,9 @@ export function installFieldBattleSystem(FieldSceneClass) {
 
   /**
    * ★ AI 尝试释放一个技能。
-   * 逻辑：收集所有"当前可用"的技能（CD 好 + MP 够 + 非 buff），按顺序轮转选取，
-   *       保证多个技能都会被释放，而不是永远只放排第一的火球。
+   * 逻辑：收集所有"当前可用"的技能（CD 好 + MP 够），按攻击技能与 BUFF 统一轮转选取，
+   *       保证多个技能（含 BUFF）都会被释放，而不是永远只放排第一的火球。
+   *       与被控角色行为一致：普攻/伤害技能设 X 轴锁定，BUFF 设移动锁定。
    * @returns {boolean} 是否成功释放了技能
    */
   proto._allyTryCastSkill = function(bh, monster, castDir) {
@@ -1206,11 +1216,10 @@ export function installFieldBattleSystem(FieldSceneClass) {
     const inBattle = this.battleSystem.active
     if (!inBattle) return false
 
-    // 第一遍：收集所有"当前可用"的技能
+    // 第一遍：收集所有"当前可用"的技能（含 BUFF）
     const available = []
     for (const skill of hero.skills) {
-      if (skill.type === 'buff') continue
-      const isRealSkill = (skill.mpCost && skill.mpCost > 0) || skill.cooldown || skill.aoe || skill.type === 'magic' || skill.type === 'blade_storm'
+      const isRealSkill = (skill.mpCost && skill.mpCost > 0) || skill.cooldown || skill.aoe || skill.type === 'magic' || skill.type === 'blade_storm' || skill.type === 'buff' || skill.type === 'heal'
       if (!isRealSkill) continue
       const cdLeft = (hero._aiSkillsCD && hero._aiSkillsCD[skill.id]) || 0
       if (cdLeft > 0) continue
@@ -1233,15 +1242,17 @@ export function installFieldBattleSystem(FieldSceneClass) {
     const defaultCD = (skill.type === 'blade_storm') ? 4
       : (skill.aoe || skill.type === 'magic') ? 5
       : (skill.effect === 'stun' || skill.type === 'attack') ? 2.5
+      : (skill.type === 'buff' || skill.type === 'heal') ? (skill.cooldown || 3)
       : 2
     hero._aiSkillsCD[skill.id] = skill.cooldown || defaultCD
     hero._aiSkillLock = skill.cooldown || defaultCD
 
-    // 播放对应动画状态（盾击→shield，其他→skill）
+    // 播放对应动画状态（盾击→shield，buff→buff，其他→skill）
     const sprite = bh.sprite
     if (sprite) {
       let animState = 'attack'
       if (skill.effect === 'stun' || skill.type === 'attack') animState = 'shield'
+      else if (skill.type === 'buff' || skill.type === 'heal') animState = 'buff'
       else if (skill.type === 'magic' || skill.type === 'blade_storm' || skill.aoe) animState = 'skill'
       sprite.state = animState
       sprite.animFrame = 0
@@ -1249,6 +1260,19 @@ export function installFieldBattleSystem(FieldSceneClass) {
     }
     hero._aiAttacking = true
     hero._aiAttackTimer = 0.8
+
+    // ★ BUFF / 治疗类：与被控角色一致，释放期间完全锁定移动
+    if (skill.type === 'buff' || skill.type === 'heal') {
+      hero._castLock = 0.8  // 施法锁定（不能移动），对齐被控角色 castLockTimer=0.8
+      // ★ 应用 buff 效果（def_up / def_up_self / heal 等），复用被控角色同一入口
+      this._applyHeroBuff(skill, hero)
+      // ★ 刷新角色卡，立即显示 BUFF 状态
+      if (typeof this._refreshCharCard === 'function') {
+        this._refreshCharCard(hero)
+      }
+      console.log(`[FieldBattle] ${hero.name}（AI）释放 BUFF ${skill.name}`)
+      return true
+    }
 
     // 分派
     if (skill.type === 'blade_storm') {

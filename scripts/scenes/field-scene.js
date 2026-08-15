@@ -2001,8 +2001,28 @@ baseRadius: 50 * this.dpr,    // 底座半径（缩小）
           const moveX = (dx / dist) * speed * dt
           const moveY = (dy / dist) * speed * dt
 
-          follower.x += moveX
-          follower.y += moveY
+          // ★ 与被控角色一致的施法移动限制：
+          //   _castLock > 0：BUFF 释放期间完全锁定移动（不能移动）
+          //   _castAxisLock > 0：普攻/伤害技能施法期间限制 Y 轴（只能 X 轴移动）
+          const oldX = follower.x
+          const oldY = follower.y
+          if (!follower._castLock || follower._castLock <= 0) {
+            if (follower._castAxisLock && follower._castAxisLock > 0) {
+              // 仅 X 轴移动
+              follower.x += moveX
+            } else {
+              follower.x += moveX
+              follower.y += moveY
+            }
+          }
+          // ★ 地形碰撞回退（与被控角色 _checkObstacleCollision 一致）：
+          //   AI 角色同样受地形障碍（树/石/森林）阻挡，不能穿墙
+          if (this._collisionEngine) {
+            if (this._collisionEngine.checkStaticCollision(follower.x, follower.y)) {
+              follower.x = oldX
+              follower.y = oldY
+            }
+          }
           follower.facingLeft = targetPos.facingLeft
           follower.isMoving = true
         } else if (isCombatPos) {
@@ -2090,8 +2110,26 @@ baseRadius: 50 * this.dpr,    // 底座半径（缩小）
             const dist = Math.sqrt(dx * dx + dy * dy)
             if (dist > 16 * this.dpr) {
               const speed = this.playerSpeed * 0.95
-              px.x += (dx / dist) * speed * dt
-              px.y += (dy / dist) * speed * dt
+              const moveX = (dx / dist) * speed * dt
+              const moveY = (dy / dist) * speed * dt
+              // ★ 与被控角色一致的施法移动限制（主角作为 AI 单位同样适用）
+              const oldX = px.x
+              const oldY = px.y
+              if (!px._castLock || px._castLock <= 0) {
+                if (px._castAxisLock && px._castAxisLock > 0) {
+                  px.x += moveX   // 仅 X 轴
+                } else {
+                  px.x += moveX
+                  px.y += moveY
+                }
+              }
+              // ★ 地形碰撞回退（与被控角色一致，主角 AI 也受地形阻挡）
+              if (this._collisionEngine) {
+                if (this._collisionEngine.checkStaticCollision(px.x, px.y)) {
+                  px.x = oldX
+                  px.y = oldY
+                }
+              }
               this.mainCharacterSprite.facingLeft = moveTarget.facingLeft
               this.mainCharacterSprite.isMoving = true
             } else {
@@ -2109,8 +2147,17 @@ baseRadius: 50 * this.dpr,    // 底座半径（缩小）
           const dist = Math.sqrt(dx * dx + dy * dy)
           if (dist > 10 * this.dpr) {
             const speed = this.playerSpeed * 0.95
+            const oldX = px.x
+            const oldY = px.y
             px.x += (dx / dist) * speed * dt
             px.y += (dy / dist) * speed * dt
+            // ★ 地形碰撞回退（主角 AI 非战斗也受地形阻挡）
+            if (this._collisionEngine) {
+              if (this._collisionEngine.checkStaticCollision(px.x, px.y)) {
+                px.x = oldX
+                px.y = oldY
+              }
+            }
             this.mainCharacterSprite.isMoving = true
           } else {
             this.mainCharacterSprite.isMoving = false
