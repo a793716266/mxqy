@@ -764,6 +764,9 @@ baseRadius: 50 * this.dpr,    // 底座半径（缩小）
     // 更新怪物移动
     this._updateMonsters(dt)
 
+    // ★ 英雄状态：击飞弧线位移 + 眩晕倒计时（供移动冻结/AI跳过/渲染使用）
+    this._updateHeroStatus(dt)
+
     // 摇杆输入（每帧从 InputManager 读取触点）
     this._updateJoystickInput()
 
@@ -774,7 +777,9 @@ baseRadius: 50 * this.dpr,    // 底座半径（缩小）
     if (this.joystick.active) {
       // ★ 施法锁定：BUFF 释放期间完全锁定摇杆移动（跳过整个移动逻辑）
       const castLock = this.battleSystem && this.battleSystem.castLockTimer > 0
-      if (castLock) {
+      // ★ 被控英雄眩晕（击飞落地后）：冻结摇杆移动
+      const stunned = (this._getCurrentControlHero() && this._getCurrentControlHero().hero && this._getCurrentControlHero().hero._stunned > 0)
+      if (castLock || stunned) {
         this.isMoving = false
       } else {
         const jx = this.joystick.currentX - this.joystickConfig.centerX
@@ -1213,7 +1218,7 @@ baseRadius: 50 * this.dpr,    // 底座半径（缩小）
       // 更新猫咪动画（无论是否暂停）
       if (useCatAnim) {
         // ★ 技能动画（优先级最高）
-        if (monster.isCastingSkill && monster.skillAnimTimer > 0) {
+        if (monster.isCastingSkill && monster.skillAnimTimer > 0 && !monster._lightCharge) {
           const enemyConfig = this._getMonsterConfig(monster.enemyId)
           const skillConf = enemyConfig?.animationConfig?.skill
           if (skillConf) {
@@ -1393,27 +1398,33 @@ baseRadius: 50 * this.dpr,    // 底座半径（缩小）
    */
   _normalizeMonsterSkills(skills, enemyId) {
     if (!Array.isArray(skills) || skills.length === 0) return []
-    return skills.map((s, i) => ({
-      id: s.id || `${enemyId}_sk_${i}`,
-      name: s.name || '技能',
-      type: s.type || 'attack',
-      power: s.power != null ? s.power : 1,
-      cooldown: s.cooldown || 6,           // 默认 6 秒冷却
-      range: s.range || 120,               // 默认 120 像素释放距离
-      projectile: !!s.projectile,
-      projectileSpeed: s.projectileSpeed || 220,
-      effect: s.effect || null,
-      value: s.value || 0,
-      duration: s.duration || 3,
-      dashDistance: s.dashDistance || 120,
-      healAmount: s.healAmount || 0,
-      summonId: s.summonId || null,
-      target: s.target || 'single',
-      // ★ 霸体标记：superArmor=true 表示释放期间不被打断（如 BOSS 大招）；
-      //   默认 false → 非霸体技能/普攻在受到 HP 伤害时会被打断，技能放不出来。
-      superArmor: !!s.superArmor,
-      desc: s.desc || ''
-    }))
+    return skills.map((s, i) => {
+      const base = { ...s }
+      return {
+        // ★ 先展开原始技能对象，保留所有自定义字段（光明冲锋的 chargeTime/warnDuration/
+        //   aoeRadius/stun/knockback 等均必须透传，否则专用状态机会读到 undefined 而失效）
+        ...base,
+        id: base.id || `${enemyId}_sk_${i}`,
+        name: base.name || '技能',
+        type: base.type || 'attack',
+        power: base.power != null ? base.power : 1,
+        cooldown: base.cooldown || 6,           // 默认 6 秒冷却
+        range: base.range || 120,               // 默认 120 像素释放距离
+        projectile: !!base.projectile,
+        projectileSpeed: base.projectileSpeed || 220,
+        effect: base.effect || null,
+        value: base.value || 0,
+        duration: base.duration || 3,
+        dashDistance: base.dashDistance || 120,
+        healAmount: base.healAmount || 0,
+        summonId: base.summonId || null,
+        target: base.target || 'single',
+        // ★ 霸体标记：superArmor=true 表示释放期间不被打断（如 BOSS 大招）；
+        //   默认 false → 非霸体技能/普攻在受到 HP 伤害时会被打断，技能放不出来。
+        superArmor: !!base.superArmor,
+        desc: base.desc || ''
+      }
+    })
   }
 
   /**
@@ -1443,7 +1454,33 @@ baseRadius: 50 * this.dpr,    // 底座半径（缩小）
       const charState = charStateManager.getCharacter(hero.id)
       if (charState) charState.hp = hero.hp
     } catch (e) { /* 忽略 */ }
+
+    // ★ 受击动画：普通受击 → hurt_01（被击飞由 _triggerHeroHurt(hero, true) 覆盖为 hurt_02）
+    if (hpDamage > 0) {
+      this._triggerHeroHurt(hero, false)
+    }
     return { hpDamage, absorbed }
+  }
+
+  /**
+   * ★ 触发英雄受击动画
+   * @param {Object} hero - 英雄数据（party/follower 中的对象，含 id）
+   * @param {boolean} isKnockback - true=被击飞(hurt_02) / false=普通受击(hurt_01)
+   */
+  _triggerHeroHurt(hero, isKnockback) {
+    if (!hero) return
+    let sprite = null
+    if (this.mainCharacterSprite && this.mainCharacter && hero.id === this.mainCharacter.id) {
+      sprite = this.mainCharacterSprite
+    } else if (this.followers && this.followers.length) {
+      const f = this.followers.find(ff => ff.character && ff.character.id === hero.id)
+      if (f) sprite = f.sprite
+    }
+    if (!sprite) return
+    sprite.state = 'hurt'
+    sprite._hurtVariant = isKnockback ? 2 : 1
+    sprite.animFrame = 0
+    sprite._hurtTimer = isKnockback ? 0.5 : 0.28
   }
 
   // ★ 我方 AI 英雄施法被打断：当前正在释放技能/普攻且非霸体时，清除施法状态
@@ -1997,6 +2034,35 @@ baseRadius: 50 * this.dpr,    // 底座半径（缩小）
   /**
    * 更新队友跟随
    */
+  /**
+   * ★ 英雄状态更新：击飞（视觉弧线位移，不改变逻辑世界坐标）+ 眩晕倒计时
+   *   击飞仅做渲染偏移，避免与控制/跟随系统抢世界坐标；落地后转入眩晕。
+   */
+  _updateHeroStatus(dt) {
+    const heroes = (this.battleSystem && this.battleSystem.battleHeroes) || []
+    for (const bh of heroes) {
+      const hero = bh.hero
+      if (!hero) continue
+      if (hero._knockback) {
+        const kb = hero._knockback
+        kb.t += dt
+        const p = Math.min(1, kb.t / kb.dur)
+        const arc = Math.sin(Math.PI * p)
+        hero._kbOffsetX = (kb.toX - kb.fromX) * p
+        hero._kbOffsetY = (kb.toY - kb.fromY) * p - arc * kb.height
+        if (p >= 1) {
+          hero._knockback = null
+          hero._kbOffsetX = 0
+          hero._kbOffsetY = 0
+          hero._stunned = (hero._stunned || 0) + (kb.stunAfter || 0)
+        }
+      }
+      if (hero._stunned && hero._stunned > 0) {
+        hero._stunned = Math.max(0, hero._stunned - dt)
+      }
+    }
+  }
+
   _updateFollowers(dt) {
     // ★ 记录主角位置历史（每3帧记录一次，避免太密集）
     //   —— 必须在最前、无条件执行：主角(臻宝)AI 跟随直接依赖 playerHistory。
@@ -3912,24 +3978,36 @@ baseRadius: 50 * this.dpr,    // 底座半径（缩小）
         const pPos = (self._heroWorldPos && self._heroWorldPos[0]) ? self._heroWorldPos[0] : { x: self.playerX, y: self.playerY }
         const screenX = pPos.x - self.cameraX
         const screenY = pPos.y - self.cameraY
+        // ★ 击飞渲染偏移（不改变逻辑世界坐标，落地后转入眩晕）
+        const mainHero = self.party && self.party[0]
+        const mainKbX = (mainHero && mainHero._kbOffsetX) || 0
+        const mainKbY = (mainHero && mainHero._kbOffsetY) || 0
+        const mainStunned = !!(mainHero && mainHero._stunned > 0)
+        const mainRenderX = screenX + mainKbX
+        const mainRenderY = screenY + mainKbY
         addCharEntity(pPos.y / self.dpr, function mainRender(ctx) {
           // ★ 被控角色脚下画高亮圈
           if (self.battleSystem && self.battleSystem.active && ctrlPartyIdx === 0) {
-            self._renderControlIndicator(ctx, screenX, screenY)
+            self._renderControlIndicator(ctx, mainRenderX, mainRenderY)
           }
           // ★ MP不足抖动：应用抖动偏移
           const mainShakeX = self.mainCharacterSprite._shakeOffsetX || 0
           const mainShakeY = self.mainCharacterSprite._shakeOffsetY || 0
-          self.mainCharacterSprite.render(ctx, screenX + mainShakeX, screenY + mainShakeY)
+          self.mainCharacterSprite.render(ctx, mainRenderX + mainShakeX, mainRenderY + mainShakeY)
           // ★ 主角 BUFF 光环已移至 _renderWorldHealthBars 里统一渲染（确保每帧必调）
+
+          // ★ 眩晕指示（被击飞落地后）：头顶旋转星星 + 轻微暗化
+          if (mainStunned) {
+            self._renderHeroStun(ctx, mainRenderX, mainRenderY)
+          }
 
           // 移动时添加轻微的方向指示器
           if (self.mainCharacterSprite._effectiveMoving) {
             const targetHeight = 80 * self.dpr
             ctx.beginPath()
             const arrowDist = targetHeight / 2 + 10 * self.dpr
-            let arrowX = screenX
-            let arrowY = screenY
+            let arrowX = mainRenderX
+            let arrowY = mainRenderY
             
             switch (self.playerDirection) {
               case 'up': arrowY -= arrowDist; break
@@ -3960,16 +4038,27 @@ baseRadius: 50 * this.dpr,    // 底座半径（缩小）
             const fAlive = !(self.battleSystem && self.battleSystem.active) ||
               !(follower.character && follower.character.hp <= 0)
             if (!fAlive) continue
+            // ★ 击飞渲染偏移（不改变逻辑世界坐标，落地后转入眩晕）
+            const fHero = follower.character
+            const fKbX = (fHero && fHero._kbOffsetX) || 0
+            const fKbY = (fHero && fHero._kbOffsetY) || 0
+            const fStunned = !!(fHero && fHero._stunned > 0)
+            const fRenderX = fScreenX + fKbX
+            const fRenderY = fScreenY + fKbY
             const fSortY = fPos.y / self.dpr
             addCharEntity(fSortY, function followerRender(ctx) {
               // ★ 被控角色（队友）脚下画高亮圈
               if (self.battleSystem && self.battleSystem.active && ctrlPartyIdx === (fi + 1)) {
-                self._renderControlIndicator(ctx, fScreenX, fScreenY)
+                self._renderControlIndicator(ctx, fRenderX, fRenderY)
               }
               // ★ MP不足抖动：应用抖动偏移
               const fShakeX = follower.sprite._shakeOffsetX || 0
               const fShakeY = follower.sprite._shakeOffsetY || 0
-              follower.sprite.render(ctx, fScreenX + fShakeX, fScreenY + fShakeY)
+              follower.sprite.render(ctx, fRenderX + fShakeX, fRenderY + fShakeY)
+              // ★ 眩晕指示（被击飞落地后）
+              if (fStunned) {
+                self._renderHeroStun(ctx, fRenderX, fRenderY)
+              }
               // ★ 队友 BUFF 光环已移至 _renderWorldHealthBars 里统一渲染
             })
           } else if (typeof self._renderFollower === 'function') {
@@ -4987,7 +5076,7 @@ baseRadius: 50 * this.dpr,    // 底座半径（缩小）
 
       // 所有普通怪物使用坏猫动画，Boss/精英使用emoji
       // ★ 修复：所有有动画资源的怪物都使用猫咪动画
-      const useCatAnim = ['slime_cat', 'shadow_mouse', 'wild_cat', 'flame_slime', 'aqua_slime', 'violet_slime', 'shadow_mouse_smooth'].includes(monster.enemyId)
+      const useCatAnim = ['slime_cat', 'shadow_mouse', 'wild_cat', 'lost_healer_cat', 'flame_slime', 'aqua_slime', 'violet_slime', 'shadow_mouse_smooth'].includes(monster.enemyId)
 
       if (useCatAnim) {
         // 使用猫咪动画渲染
@@ -5130,6 +5219,11 @@ baseRadius: 50 * this.dpr,    // 底座半径（缩小）
       // ★ 隐身(暗影突袭)：怪物半透明呈现，玩家可感知但仍不可被选中
       if (monster._invisible) ctx.globalAlpha = 0.22
 
+      // ★ 光明冲锋蓄力：全身能量聚集特效（金色光环 + 上升粒子 + 聚拢环），随蓄力强度增强
+      if (monster._energyCharge) {
+        this._renderEnergyCharge(ctx, screenX, screenY, targetHeight, monster._energyIntensity || 0)
+      }
+
       // Boss/精英光环
       if (monster.isBoss || monster.isElite) {
         ctx.beginPath()
@@ -5259,22 +5353,6 @@ baseRadius: 50 * this.dpr,    // 底座半径（缩小）
           targetHeight: 80
         }
       },
-      'lost_healer_cat': {
-        animationConfig: {
-          idle: { start: 1, end: 8, path: 'images/characters_anim/transparent/aimi/idle/', framePad: 2, frameDuration: 150 },
-          walk: { start: 1, end: 8, path: 'images/characters_anim/transparent/aimi/walk/', framePad: 2, frameDuration: 120 },
-          attack: { start: 1, end: 8, path: 'images/characters_anim/transparent/aimi/attack/', framePad: 2, frameDuration: 100 },
-          hurt: { start: 1, end: 2, path: 'images/characters_anim/transparent/aimi/hurt/', framePad: 2, frameDuration: 80 },
-          death: { start: 1, end: 8, path: 'images/characters_anim/transparent/aimi/death/', framePad: 2, frameDuration: 150 },
-          skill: { start: 1, end: 8, path: 'images/characters_anim/transparent/aimi/skill/', framePad: 2, frameDuration: 100 },
-          buff: { start: 1, end: 8, path: 'images/characters_anim/transparent/aimi/buff/', framePad: 2, frameDuration: 100 },
-          support: { start: 1, end: 8, path: 'images/characters_anim/transparent/aimi/support/', framePad: 2, frameDuration: 100 },
-          cast: { start: 1, end: 4, path: 'images/characters_anim/transparent/aimi/cast/', framePad: 2, frameDuration: 120 }
-        },
-        renderConfig: {
-          targetHeight: 80
-        }
-      },
       'wild_cat': {
         // 复用史莱姆猫的资源
         animationConfig: {
@@ -5361,6 +5439,109 @@ baseRadius: 50 * this.dpr,    // 底座半径（缩小）
   /**
    * 渲染怪物警告指示器
    */
+  /**
+   * ★ 英雄眩晕指示：头顶旋转星星 + 轻微暗化，提示"被击飞落地后眩晕1秒"
+   *   (screenX, screenY) 为该英雄精灵的渲染锚点（脚下中心）
+   */
+  _renderHeroStun(ctx, screenX, screenY) {
+    const t = this.time || 0
+    ctx.save()
+    // 头顶微弱暗化光环
+    ctx.beginPath()
+    ctx.arc(screenX, screenY - 70 * this.dpr, 26 * this.dpr, 0, Math.PI * 2)
+    ctx.fillStyle = 'rgba(120, 120, 160, 0.18)'
+    ctx.fill()
+    // 3 颗旋转星星（💫 风格的手绘多角星）
+    const starCount = 3
+    for (let i = 0; i < starCount; i++) {
+      const ang = t * 3 + (i * Math.PI * 2 / starCount)
+      const orbitR = 16 * this.dpr
+      const sx = screenX + Math.cos(ang) * orbitR
+      const sy = screenY - 80 * this.dpr + Math.sin(ang) * orbitR * 0.5
+      this._drawStar(ctx, sx, sy, 5 * this.dpr, '#FFE66D')
+    }
+    ctx.restore()
+  }
+
+  _drawStar(ctx, cx, cy, r, color) {
+    ctx.save()
+    ctx.translate(cx, cy)
+    ctx.beginPath()
+    for (let i = 0; i < 5; i++) {
+      const a = -Math.PI / 2 + i * (Math.PI * 2 / 5)
+      const a2 = a + Math.PI / 5
+      ctx.lineTo(Math.cos(a) * r, Math.sin(a) * r)
+      ctx.lineTo(Math.cos(a2) * r * 0.45, Math.sin(a2) * r * 0.45)
+    }
+    ctx.closePath()
+    ctx.fillStyle = color
+    ctx.fill()
+    ctx.strokeStyle = 'rgba(255,180,40,0.9)'
+    ctx.lineWidth = 1 * this.dpr
+    ctx.stroke()
+    ctx.restore()
+  }
+
+  /**
+   * ★ 光明冲锋蓄力能量聚集特效：以角色脚下中心为圆心，绘制金色光环 + 上升粒子 + 向内聚拢环。
+   *   强度 intensity ∈ [0,1] 随蓄力时间增强（越接近释放越亮越密）。
+   *   (screenX, screenY) 为怪物精灵锚点（脚下中心），targetHeight 为精灵高度。
+   */
+  _renderEnergyCharge(ctx, screenX, screenY, targetHeight, intensity) {
+    const t = this.time || 0
+    const k = Math.max(0, Math.min(1, intensity))
+    const bodyH = targetHeight
+    const cx = screenX
+    const cy = screenY - bodyH / 2   // 包围全身的圆心（身体中部）
+    ctx.save()
+    ctx.globalCompositeOperation = 'lighter'
+
+    // 1) 全身柔光圆（扩散感），半径随强度增长
+    const glowR = (bodyH * 0.75) * (0.7 + 0.5 * k)
+    const grad = ctx.createRadialGradient(cx, cy, glowR * 0.15, cx, cy, glowR)
+    grad.addColorStop(0, `rgba(255, 240, 160, ${0.10 + 0.28 * k})`)
+    grad.addColorStop(0.6, `rgba(255, 210, 90, ${0.06 + 0.16 * k})`)
+    grad.addColorStop(1, 'rgba(255, 180, 40, 0)')
+    ctx.fillStyle = grad
+    ctx.beginPath()
+    ctx.arc(cx, cy, glowR, 0, Math.PI * 2)
+    ctx.fill()
+
+    // 2) 旋转双环（蓄力光环），随强度变亮变粗
+    for (let ring = 0; ring < 2; ring++) {
+      const dir = ring === 0 ? 1 : -1
+      const rr = glowR * (0.55 + 0.12 * ring) * (0.85 + 0.15 * Math.sin(t * 4 + ring))
+      ctx.beginPath()
+      ctx.arc(cx, cy, rr, t * dir * 2.2, t * dir * 2.2 + Math.PI * 1.4)
+      ctx.strokeStyle = `rgba(255, 225, 120, ${0.25 + 0.5 * k})`
+      ctx.lineWidth = (2 + 2 * k) * this.dpr
+      ctx.stroke()
+    }
+
+    // 3) 上升粒子（能量从脚底向全身汇聚），数量随强度增加
+    const particleCount = Math.floor(6 + 10 * k)
+    for (let i = 0; i < particleCount; i++) {
+      const phase = (t * 0.9 + i / particleCount) % 1          // 0→1 上升进度
+      const px = cx + Math.sin(i * 2.3 + t * 3) * glowR * 0.45 * (1 - phase * 0.3)
+      const py = screenY - phase * bodyH                       // 从脚底升到头顶
+      const pr = (2 + 2 * k) * this.dpr * (1 - phase * 0.4)
+      ctx.beginPath()
+      ctx.arc(px, py, pr, 0, Math.PI * 2)
+      ctx.fillStyle = `rgba(255, 235, 150, ${0.5 * (1 - phase) + 0.2})`
+      ctx.fill()
+    }
+
+    // 4) 向外脉冲环（释放前征兆），强度越高越频繁
+    const pulse = (t * (1.2 + 2 * k)) % 1
+    ctx.beginPath()
+    ctx.arc(cx, cy, glowR * (0.4 + pulse * 0.8), 0, Math.PI * 2)
+    ctx.strokeStyle = `rgba(255, 245, 180, ${(1 - pulse) * 0.35 * k})`
+    ctx.lineWidth = 2 * this.dpr
+    ctx.stroke()
+
+    ctx.restore()
+  }
+
   _renderMonsterWarning(ctx, monster, screenX, screenY, monsterHeight) {
     const dist = Math.sqrt(
       (this.playerX - monster.x) ** 2 + (this.playerY - monster.y) ** 2

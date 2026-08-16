@@ -312,6 +312,8 @@ export const ASSETS = {
     { action: 'attack', frames: 8 },
     { action: 'shield', frames: 8 },
     { action: 'buff',   frames: 8 },
+    // ★ 受击帧：hurt_01 普通受击 / hurt_02 被击飞（仅臻宝已生成）
+    { action: 'hurt',   frames: 2 },
   ]),
 
   // --- 李小宝动画帧 ---

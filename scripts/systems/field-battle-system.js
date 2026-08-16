@@ -1212,6 +1212,8 @@ export function installFieldBattleSystem(FieldSceneClass) {
       const bh = heroes[i]
       // ★ alive 字段可能未初始化(undefined)，undefined 应视为存活，不能用 !bh.hero.alive（会把 undefined 判成"死亡"而永久跳过）
       if (!bh.hero || bh.hero.alive === false || bh.hero.hp <= 0) continue
+      // ★ 眩晕（被击飞落地后）：期间不移动/不攻击/不施法，AI 完全接管交还玩家
+      if (bh.hero._stunned && bh.hero._stunned > 0) continue
       const pos = bh.getPos()
       const sprite = bh.sprite
       if (!sprite) continue
@@ -2685,6 +2687,12 @@ export function installFieldBattleSystem(FieldSceneClass) {
       if (!nearestHero || !nearestHeroPos) continue
       const mainHero = nearestHero
 
+      // ★ 光明冲锋专用状态机：施法全程由 _updateLightCharge 驱动（蓄力/预警/瞬移/落地）
+      if (monster._lightCharge) {
+        this._updateLightCharge(monster, dt)
+        continue
+      }
+
       const dx = nearestHeroPos.x - monster.x
       const dy = nearestHeroPos.y - monster.y
       const dist = Math.sqrt(dx * dx + dy * dy)
@@ -2822,7 +2830,7 @@ export function installFieldBattleSystem(FieldSceneClass) {
     for (const s of ready) {
       let score = 0.6 + Math.random() * 0.4
       const sRange = (s.range || monster.attackRange || 120) * this.dpr
-      if (s.type === 'attack' || s.type === 'magic' || s.type === 'charge') {
+      if (s.type === 'attack' || s.type === 'magic' || s.type === 'charge' || s.type === 'light_charge') {
         if (dist <= sRange) score += 1.8
         else score -= 1.2
       }
@@ -2917,6 +2925,9 @@ export function installFieldBattleSystem(FieldSceneClass) {
     } else if (skill.type === 'debuff') {
       this._applyMonsterDebuff(monster, skill)
       if (skill.power > 0) doMelee(skill.power)
+    } else if (skill.type === 'light_charge') {
+      this._startLightCharge(monster, skill, dx, dy, dist)
+      return
     } else if (skill.type === 'charge') {
       const dash = Math.min(skill.dashDistance || 120, dist) * this.dpr
       if (dist > 1) {
@@ -2956,6 +2967,146 @@ export function installFieldBattleSystem(FieldSceneClass) {
   /**
    * ★ 怪物远程抛射物（简化：飞行中逐渐靠近玩家，到达结算伤害）
    */
+  /**
+   * ★ 光明冲锋起手：进入专用状态机（蓄力→红色警示区→瞬移→AOE伤害+击飞+眩晕）
+   */
+  proto._startLightCharge = function(monster, skill, dx, dy, dist) {
+    monster.isCastingSkill = true
+    monster.skillCastId = skill.id
+    monster.skillAnimTimer = 999999        // 由状态机自行管理，避免被通用施法计时重置
+    monster._jumpWarn = true              // 施法期间不黏住玩家
+    monster._energyCharge = true          // 渲染：全身能量聚集特效
+    // 锁定落点 = 当前被控角色位置（玩家可走位躲避）
+    const tx = this.playerX, ty = this.playerY
+    monster._lightCharge = {
+      skill: skill,
+      phase: 'charge',
+      t: 0,
+      chargeTime: skill.chargeTime || 2.0,
+      warnDuration: skill.warnDuration || 1.0,
+      aoeRadius: (skill.aoeRadius || 95) * this.dpr,
+      targetX: tx, targetY: ty,
+      warnT: 0, fastT: 0, recoverT: 0,
+      zone: null
+    }
+    if (monster.skillCDs) monster.skillCDs[skill.id] = skill.cooldown || 15
+    console.log(`[FieldBattle] ${monster.name} 开始蓄力光明冲锋`)
+  }
+
+  /**
+   * ★ 光明冲锋逐帧状态机
+   */
+  proto._updateLightCharge = function(monster, dt) {
+    const lc = monster._lightCharge
+    if (!lc) return
+    const sk = lc.skill
+    lc.t += dt
+
+    if (lc.phase === 'charge') {
+      // 前 0.4s 播放 01→03，随后在 03 帧停留直到蓄力结束（能量聚集）
+      if (lc.t < 0.4) monster.animFrame = Math.min(2, Math.floor(lc.t / 0.134))
+      else monster.animFrame = 2 // skill_03.png 停留
+      monster._energyCharge = true
+      monster._energyIntensity = Math.min(1, lc.t / lc.chargeTime)
+      if (lc.t >= lc.chargeTime) {
+        // 进入预警：在落点放红色警示区
+        if (!this.battleSystem.warningZones) this.battleSystem.warningZones = []
+        const zone = {
+          x: lc.targetX, y: lc.targetY, r: lc.aoeRadius,
+          timer: lc.warnDuration, total: lc.warnDuration,
+          power: sk.power, atk: monster.atk, def: monster.def,
+          monsterName: monster.name, skillName: sk.name,
+          monsterRef: monster, ownerId: monster.enemyId,
+          type: 'light_charge', appear: 0
+        }
+        this.battleSystem.warningZones.push(zone)
+        lc.zone = zone
+        lc.phase = 'warn'
+        lc.warnT = 0
+        lc.fastT = 0
+        console.log(`[FieldBattle] ${monster.name} 光明冲锋预警，1秒后落点 (${Math.round(lc.targetX)},${Math.round(lc.targetY)})`)
+      }
+      return
+    }
+
+    if (lc.phase === 'warn') {
+      // 极快播放剩余帧 04→08（0.3s），随后保持 08 帧
+      lc.fastT += dt
+      const fp = Math.min(1, lc.fastT / 0.3)
+      monster.animFrame = Math.min(7, 3 + Math.floor(fp * 4))  // skill_04..08
+      lc.warnT += dt
+      // ★ 驱动红色警示区的渲染倒计时（warningZones 通用绘制按 timer/total 收缩+闪烁），
+      //   状态机独占该 zone，不会走通用跳跃路径
+      if (lc.zone) lc.zone.timer = Math.max(0, lc.warnDuration - lc.warnT)
+      if (lc.warnT >= lc.warnDuration) {
+        this._lightChargeImpact(monster, lc)
+        lc.phase = 'recover'
+        lc.recoverT = 0
+      }
+      return
+    }
+
+    if (lc.phase === 'recover') {
+      monster.animFrame = 7
+      lc.recoverT += dt
+      if (lc.recoverT >= 0.5) {
+        // ★ 清理由本状态机独占的红色警示区（避免残留导致渲染圈永久停留）
+        if (lc.zone && this.battleSystem.warningZones) {
+          const zi = this.battleSystem.warningZones.indexOf(lc.zone)
+          if (zi >= 0) this.battleSystem.warningZones.splice(zi, 1)
+        }
+        lc.zone = null
+        monster._lightCharge = null
+        monster.isCastingSkill = false
+        monster.skillCastId = null
+        monster.skillAnimTimer = 0
+        monster._energyCharge = false
+        monster._jumpWarn = false
+      }
+      return
+    }
+  }
+
+  /**
+   * ★ 光明冲锋落地结算：瞬移到警示区，对范围内角色造成伤害+击飞+落地眩晕
+   */
+  proto._lightChargeImpact = function(monster, lc) {
+    monster.x = lc.targetX
+    monster.y = lc.targetY
+    monster._jumpOffsetY = 0
+    const sk = lc.skill
+    const r = lc.aoeRadius
+    for (const bh of (this.battleSystem.battleHeroes || [])) {
+      if (!bh.hero || bh.hero.hp <= 0) continue
+      const hp = bh.getPos()
+      const hdx = hp.x - monster.x
+      const hdy = hp.y - monster.y
+      if ((hdx * hdx + hdy * hdy) <= r * r) {
+        const dmg = Math.max(1, Math.floor(monster.atk * (monster._atkMul || 1) * (sk.power || 1) - this._getHeroDef(bh.hero) * 0.3))
+        this._applyHeroDamage(bh.hero, dmg, hp.x, hp.y, monster)
+        // 击飞 + 落地眩晕
+        let nx = hdx, ny = hdy
+        const len = Math.sqrt(nx * nx + ny * ny) || 1
+        nx /= len; ny /= len
+        const kb = 90 * this.dpr
+        bh.hero._knockback = {
+          t: 0, dur: 0.45,
+          fromX: hp.x, fromY: hp.y,
+          toX: hp.x + nx * kb, toY: hp.y + ny * kb,
+          height: (sk.knockbackHeight || 70) * this.dpr,
+          stunAfter: sk.stun || 1.0,
+          partyIndex: bh.partyIndex
+        }
+        // ★ 被击飞 → 受击动画使用 hurt_02（覆盖 _applyHeroDamage 设置的 hurt_01）
+        this._triggerHeroHurt(bh.hero, true)
+      }
+    }
+    this.battleSystem.damageTexts.push({
+      text: '光明冲锋!', x: monster.x - this.cameraX, y: monster.y - this.cameraY - 80 * this.dpr,
+      color: '#FFD700', life: 1.0, maxLife: 1.0, _startY: monster.y - this.cameraY - 80 * this.dpr
+    })
+  }
+
   proto._fieldSpawnMonsterProjectile = function(monster, skill, dx, dy, dist) {
     if (!this.battleSystem.projectiles) this.battleSystem.projectiles = []
     const speed = (skill.projectileSpeed || 220) * this.dpr
@@ -3022,6 +3173,9 @@ export function installFieldBattleSystem(FieldSceneClass) {
     const list = this.battleSystem.warningZones
     for (let i = list.length - 1; i >= 0; i--) {
       const z = list[i]
+      // ★ 光明冲锋的警示区由 _updateLightCharge 状态机独占（瞬移+击飞+眩晕），
+      //   生命周期与渲染倒计时由状态机自行维护，绝不走通用跳跃路径，避免重复结算/二次瞬移
+      if (z.type === 'light_charge') continue
       z.timer -= dt
       // 到点（预警消失瞬间）：怪物开始跳跃动画飞向落点（不再瞬移）
       if (z.timer <= 0) {
@@ -3140,6 +3294,10 @@ export function installFieldBattleSystem(FieldSceneClass) {
     if (hpDamage > 0) {
       this._interruptCastingForHero(hero)
     }
+    // ★ 受击动画：普通受击 → hurt_01（被击飞由 _lightChargeImpact 调 _triggerHeroHurt(hero,true) 覆盖为 hurt_02）
+    if (hpDamage > 0) {
+      this._triggerHeroHurt(hero, false)
+    }
     const screenX = (sx != null) ? sx : this.playerX
     const screenY = (sy != null) ? sy : this.playerY
     if (absorbed > 0) {
@@ -3198,6 +3356,10 @@ export function installFieldBattleSystem(FieldSceneClass) {
     if (hero.hp <= 0 && hero.alive !== false) {
       hero.alive = false
       console.log(`[FieldBattle] ${hero.name} 被击败！`)
+    }
+    // ★ 受击动画：普通受击 → hurt_01（被击飞由 _lightChargeImpact 调 _triggerHeroHurt(hero,true) 覆盖为 hurt_02）
+    if (hpDamage > 0) {
+      this._triggerHeroHurt(hero, false)
     }
 
     // ★ 根据被攻击英雄的实际位置显示伤害数字

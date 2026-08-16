@@ -84,6 +84,10 @@ export class CharacterSprite {
     this.state = 'idle' // 'idle' | 'walk' | 'attack' | 'skill' | 'hurt' | 'dead'
     this.attackCompleteCallback = null
 
+    // ★ 受击状态：hurt_01=普通受击 hurt_02=被击飞；_hurtTimer 倒计时后切回 idle
+    this._hurtVariant = 1
+    this._hurtTimer = 0
+
     // ★ 动画完成检测（用于 BUFF/技能动画播放完成后才应用效果）
     this._prevFrame = -1
     this._frameCount = 0
@@ -202,6 +206,18 @@ export class CharacterSprite {
    * @param {boolean} [facingLeft] - 是否朝向左侧（不传则不更新朝向）
    */
   update(dt, isMoving, facingLeft) {
+    // ★ 受击状态：保持 pose 不推进帧，倒计时结束后切回 idle
+    if (this.state === 'hurt') {
+      if (facingLeft !== undefined) this.facingLeft = facingLeft
+      this._hurtTimer -= dt
+      if (this._hurtTimer <= 0) {
+        this.state = 'idle'
+        this.animFrame = 0
+        this._hurtVariant = 1
+      }
+      return
+    }
+
     // 更新移动状态
     if (isMoving !== undefined) {
       this.isMoving = isMoving
@@ -261,6 +277,12 @@ export class CharacterSprite {
    */
   getCurrentFrameKey() {
     const prefix = this.assetPrefix
+
+    // ★ 受击状态：直接返回对应 hurt 变体帧（hurt_01 普通受击 / hurt_02 被击飞）
+    if (this.state === 'hurt') {
+      const frameStr = String(this._hurtVariant || 1).padStart(2, '0')
+      return `${prefix}_HURT_${frameStr}`
+    }
 
     // ★ 战斗状态（attack/shield/skill/buff）期间，即使移动也优先返回对应动画帧，
     //    防止移动/其他动画改变正在播放的技能动画
