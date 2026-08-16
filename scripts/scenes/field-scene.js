@@ -1468,7 +1468,7 @@ baseRadius: 50 * this.dpr,    // 底座半径（缩小）
     if (!monster || !hero || hero.hp <= 0) return
 
     // 计算伤害（参考玩家攻击公式，考虑暴击）
-    let base = Math.max(1, monster.atk - Math.floor(hero.def * 0.5))
+    let base = Math.max(1, monster.atk - Math.floor(this._getHeroDef(hero) * 0.5))
     const isCrit = Math.random() < (monster.crit || 0.05)
     let damage = isCrit ? Math.floor(base * 1.5) : base
 
@@ -1755,7 +1755,7 @@ baseRadius: 50 * this.dpr,    // 底座半径（缩小）
 
     // 根据技能类型施放效果（兼容 enemies.js 的多种 type）
     const doMeleeDamage = (mult) => {
-      const dmg = Math.max(1, Math.floor(monster.atk * (mult || skill.power || 1) - hero.def * 0.3))
+      const dmg = Math.max(1, Math.floor(monster.atk * (mult || skill.power || 1) - this._getHeroDef(hero) * 0.3))
       // ★ 护盾优先吸收
       const res = this._applyHeroDamage(hero, dmg)
       if (res.absorbed > 0) {
@@ -3051,6 +3051,20 @@ baseRadius: 50 * this.dpr,    // 底座半径（缩小）
     // 2. 更新怪物攻击（★ 新增）
     this._updateMonsterAttack(dt)
 
+    // 2.1 ★ 英雄 BUFF 计时衰减（防御/攻击增益按时消失，避免永久生效）
+    if (this.battleSystem.battleHeroes) {
+      for (const bh of this.battleSystem.battleHeroes) {
+        const hero = bh.hero
+        if (!hero || !hero._buffs || hero._buffs.length === 0) continue
+        for (let i = hero._buffs.length - 1; i >= 0; i--) {
+          const b = hero._buffs[i]
+          b._remaining -= dt
+          if (b._remaining <= 0) hero._buffs.splice(i, 1)
+        }
+        if (typeof this._refreshCharCard === 'function') this._refreshCharCard(hero)
+      }
+    }
+
     // 3. 更新伤害数字
     this._updateFieldDamageTexts(dt)
 
@@ -3067,7 +3081,7 @@ baseRadius: 50 * this.dpr,    // 底座半径（缩小）
           const ddx = this.playerX - p.x
           const ddy = this.playerY - p.y
           if (Math.sqrt(ddx * ddx + ddy * ddy) < 30 * this.dpr) {
-            const dmg = Math.max(1, Math.floor(this.battleSystem.battleTarget.atk * p.power - hero.def * 0.3))
+            const dmg = Math.max(1, Math.floor(this.battleSystem.battleTarget.atk * p.power - this._getHeroDef(hero) * 0.3))
             // ★ 护盾优先吸收
             const res = this._applyHeroDamage(hero, dmg)
             if (res.absorbed > 0) {
@@ -3174,15 +3188,30 @@ baseRadius: 50 * this.dpr,    // 底座半径（缩小）
   /**
    * ★ 新增：玩家攻击怪物
    */
-  _playerAttackMonster(monster) {
-    if (!monster || !monster.alive) return
-    if (this.battleSystem.playerAttackCD > 0) return
+  _playerAttackMonster(monster, skill) {
+    if (!monster || !monster.alive) {
+      // ★ 没有怪物目标：仅当携带 buff/heal 类技能（如李小宝魔力护盾、群体增益）时需正常施放
+      if (skill && (skill.type === 'buff' || skill.type === 'heal' || skill.type === 'taunt' || skill.range === 0)) {
+        const caster = this.party[0]
+        if (this._applyHeroBuff) this._applyHeroBuff(skill, caster)
+        return
+      }
+      return
+    }
+    if (this.battleSystem.playerAttackCD > 0 && !skill) return
 
     const mainHero = this.party[0]
     if (!mainHero) return
 
+    // ★ buff/heal 类技能：不造成伤害，只施加增益（李小宝魔力护盾等群体防御需真正生效）
+    if (skill && (skill.type === 'buff' || skill.type === 'heal' || skill.type === 'taunt' || skill.range === 0)) {
+      if (this._applyHeroBuff) this._applyHeroBuff(skill, mainHero)
+      // 群体增益不进入普攻冷却逻辑（避免占用普攻节奏），但仍允许视觉反馈
+      return
+    }
+
     // 计算伤害
-    const damage = Math.max(1, mainHero.atk - Math.floor(monster.def * 0.5))
+    const damage = Math.max(1, this._getHeroAtk(mainHero) - Math.floor((monster.def || 0) * 0.5))
     // ★ 扣血前记录"受伤前血量"（与 _damageMonster 一致，供面板残影效果使用）
     monster._preDamageHp = (typeof monster.hp === 'number') ? monster.hp : monster._preDamageHp
     monster.hp = Math.max(0, monster.hp - damage)

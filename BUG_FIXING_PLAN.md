@@ -4368,3 +4368,14 @@ _checkBattleEnd() {
   - **范围控制**：打断仅作用于 `isCastingSkill`（怪物）与 `_aiAttacking`（AI 英雄）；玩家手动操作的角色不被误打断（手动释放不走 `_aiAttacking`）。
 - **修改文件**：`scripts/systems/field-battle-system.js`、`scripts/scenes/field-scene.js`、`scripts/data/enemies.js`
 - **状态**：✅ 已通过 Babel 语法检查；待用户实测确认打断手感
+
+## 2026-08-16 更新：玩家手动释放增益/治疗技能（魔法护盾等）完全不生效
+
+### fix: 修复野外战斗玩家点技能按钮释放 buff/heal 类技能不生效
+
+- **现象（用户实测）**：李小宝释放「魔力护盾」（群体防御 +30%）前后，被怪物攻击均为相同伤害（如被打 8 点，放盾后仍 8 点），群体防御增益完全无效果。
+- **根因**：`field-scene.js` 中定义的实例方法 `_playerAttackMonster(monster)`（仅普攻）**覆盖了** `field-battle-system.js` 原型上带 `skill` 参数的 `_playerAttackMonster(monster, skill)`。技能按钮回调（`field-battle-system.js` 调用 `this._playerAttackMonster(null, btn.skill)`）期望方法接收 `skill` 并调用 `_applyHeroBuff` 施加增益，但被覆盖的实例方法不接收 `skill`、也不会调 `_applyHeroBuff`，导致所有 buff/heal/taunt 类技能在玩家手动点击按钮时**永远不施放**，护盾/增益从未挂上。
+- **修复**：`field-scene.js` 的 `_playerAttackMonster` 增加 `skill` 参数支持：当传入 `skill` 且为 `buff`/`heal`/`taunt` 类（或 `range === 0`）时，直接调用 `this._applyHeroBuff(skill, hero)` 施放增益，不进入普攻伤害逻辑；普攻（无 skill）路径保持不变。
+- **影响范围**：修复后李小宝魔力护盾、群体增益、治疗等所有需经技能按钮手动释放的 buff/heal 类技能均真正生效（增益挂到 `battleHeroes` 全体并参与 `_getHeroDef`/`_getHeroAtk` 减伤计算）。
+- **修改文件**：`scripts/scenes/field-scene.js`
+- **状态**：✅ 已通过 Babel 语法检查；真实战斗路径（skill 按钮点击）验证 `_applyHeroBuff` 被调用、全体 `def_up` 生效、怪物伤害减伤生效
