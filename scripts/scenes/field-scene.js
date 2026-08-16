@@ -1998,10 +1998,11 @@ baseRadius: 50 * this.dpr,    // 底座半径（缩小）
    * 更新队友跟随
    */
   _updateFollowers(dt) {
-    if (!this.followers || !Array.isArray(this.followers)) return
-    if (this.followers.length === 0) return
-
-    // 记录主角位置历史（每3帧记录一次，避免太密集）
+    // ★ 记录主角位置历史（每3帧记录一次，避免太密集）
+    //   —— 必须在最前、无条件执行：主角(臻宝)AI 跟随直接依赖 playerHistory。
+    //      原代码把这段放在「followers 为空就直接 return」之后，导致「无任何跟随队友时」
+    //      主角块被早返回跳过、臻宝无法跟随。真实游戏里 followers 恒含李小宝+猫咪不会触发，
+    //      但架构上主角跟随不应耦合到无关的 followers 数组，故解耦。
     this.historyFrameCount++
     if (this.historyFrameCount >= this.historyInterval) {
       this.historyFrameCount = 0
@@ -2010,7 +2011,7 @@ baseRadius: 50 * this.dpr,    // 底座半径（缩小）
         y: this.playerY,
         facingLeft: this.facingLeft
       })
-      
+
       // 限制历史长度
       if (this.playerHistory.length > this.historyMaxLength) {
         this.playerHistory.pop()
@@ -2018,7 +2019,9 @@ baseRadius: 50 * this.dpr,    // 底座半径（缩小）
     }
 
     // 每个队友跟随不同的位置（战斗=分散阵型点 / 非战斗=主角移动轨迹历史点）
-    for (let i = 0; i < this.followers.length; i++) {
+    // ★ 仅当存在跟随队友才执行本循环；无队友时跳过，但下面的「主角块」仍必须运行
+    if (this.followers && Array.isArray(this.followers)) {
+      for (let i = 0; i < this.followers.length; i++) {
       const follower = this.followers[i]
 
       // ★ 战斗中阵亡的队友不再移动/站位（死亡消失）
@@ -2191,6 +2194,7 @@ baseRadius: 50 * this.dpr,    // 底座半径（缩小）
         this._heroWorldPos[i + 1].y = follower.y
       }
     }
+    } // ← 结束「存在跟随队友」的 if 守卫；下面的主角块无条件运行（解耦 followers）
 
     // ★ 当控制的不是主角时，主角作为"独立AI单位"也去怪物附近站位输出（不再贴被控者身上）
     //   —— 与队友统一使用 _getAllyCombatTarget，保持一致的战斗站位行为
@@ -2200,26 +2204,105 @@ baseRadius: 50 * this.dpr,    // 底座半径（缩小）
       const px = this._heroWorldPos[0]
       if (ctrl.partyIndex !== 0 && px) {
         const inCombat = this.battleSystem.active
-        if (inCombat) {
-          // 主角 AI 站位：自己找怪输出（复用队友站位逻辑，i=-1 表示主角侧）
-          // ★ 直接传 px 自身（而非匿名对象），让 _lockedStand 能持久保存，
-          //   主角 AI 站位点同样锁定，不再被怪物走位带动。
+        // ★ 召回模式(或非战斗)：主角(臻宝)跟随被控角色；只有"解散"模式(战斗)才去打怪
+        //   —— 原战斗分支直接调 _getAllyCombatTarget 让主角跑去怪物站位点，覆盖跟随，
+        //      表现为"召回后不跟随角色"。
+        const followPlayer = !inCombat || this.aiRecall
+        if (followPlayer) {
+          // ★ 跟随：与 followers 召回完全一致——跟随玩家轨迹历史点（落在身后固定距离），
+          //   而非「当前玩家坐标」。用当前坐标会让 AI 在玩家附近反复横跳(振荡)且越落越远；
+          //   历史点法使臻宝稳定 trailing 在玩家身后、保持编队。速度 0.95x 与 followers 一致。
+          //   近身怪的攻击仍由 _updateAllyAI 统一负责，跟随与攻击不冲突。
+          if (this.playerHistory.length > 0) {
+            const histIdx = Math.min(10, this.playerHistory.length - 1)
+            const hp = this.playerHistory[histIdx]
+            const dx = hp.x - px.x
+            const dy = hp.y - px.y
+            const dist = Math.sqrt(dx * dx + dy * dy)
+            const arrive = 16 * this.dpr
+            if (dist > arrive) {
+              const speed = this.playerSpeed * 0.95
+              const oldX = px.x
+              const oldY = px.y  // 注意：此处 oldY 仅用于碰撞回退判定，下面统一用 dx/dy
+              const ux = dx / dist, uy = dy / dist
+              if (px._noclipFrames > 0) {
+                // ★ 兜底穿透：长时间卡死时直接朝目标移动(忽略碰撞)，确保绝不永久冻结
+                px.x += ux * speed * dt
+                px.y += uy * speed * dt
+                px._noclipFrames--
+              } else {
+                // ★ 正常跟随：朝历史轨迹点（身后固定距离）移动
+                px.x += ux * speed * dt
+                px.y += uy * speed * dt
+                // ★ 地形碰撞：用 moveWithSlide 滑动避障（与队友一致）
+                if (this._collisionEngine) {
+                  const slid = this._collisionEngine.moveWithSlide(oldX, oldY, px.x, px.y)
+                  px.x = slid.x
+                  px.y = slid.y
+                }
+                // ★ 卡住检测：用「是否更靠近目标」判定，而非简单的坐标相等——
+                //   否则 moveWithSlide 的 Y 轴滑动或目标 y 的微差会让 blocked 误判为 false，
+                //   导致绕障逻辑每帧自取消、永远脱困不了。
+                const followBlocked = (Math.hypot(hp.x - px.x, hp.y - px.y) >= dist - 0.5)
+                if (followBlocked) {
+                  px._stuckFrames = (px._stuckFrames || 0) + 1
+                } else {
+                  px._stuckFrames = 0
+                  px._detourFrames = 0
+                }
+                if (px._stuckFrames > 18 && !px._detourFrames) {
+                  px._detourFrames = 50
+                  // 选更通畅的垂直方向：检测 (dx,dy) 的左右法线方向是否可走
+                  const pdx = -dy / dist, pdy = dx / dist
+                  const r = 16 * this.dpr, fy = 36 * this.dpr
+                  const freeA = this._collisionEngine
+                    ? !this._collisionEngine.checkStaticCollision(oldX + pdx * speed * dt * 12, oldY + pdy * speed * dt * 12, { radius: r, footOffsetY: fy })
+                    : true
+                  const freeB = this._collisionEngine
+                    ? !this._collisionEngine.checkStaticCollision(oldX - pdx * speed * dt * 12, oldY - pdy * speed * dt * 12, { radius: r, footOffsetY: fy })
+                    : true
+                  px._detourSign = (freeA && !freeB) ? 1 : (freeB ? -1 : (px._detourSign === 1 ? -1 : 1))
+                }
+                if (px._detourFrames > 0) {
+                  const dOldX = px.x, dOldY = px.y
+                  const pdx = -dy / dist, pdy = dx / dist
+                  px.x += pdx * px._detourSign * speed * dt
+                  px.y += pdy * px._detourSign * speed * dt
+                  if (this._collisionEngine) {
+                    const s2 = this._collisionEngine.moveWithSlide(dOldX, dOldY, px.x, px.y)
+                    px.x = s2.x
+                    px.y = s2.y
+                  }
+                  px._detourFrames--
+                }
+                // ★ 长时间(>120帧≈2s)仍卡死(如障碍簇)：进入兜底穿透模式，循环几次必能脱困
+                if (px._stuckFrames > 120) {
+                  px._noclipFrames = 40
+                  px._stuckFrames = 0
+                  px._detourFrames = 0
+                }
+              }
+              this.mainCharacterSprite.facingLeft = dx < 0
+              this.mainCharacterSprite.isMoving = true
+            } else {
+              this.mainCharacterSprite.facingLeft = dx < 0
+              this.mainCharacterSprite.isMoving = false
+            }
+          } else {
+            this.mainCharacterSprite.isMoving = false
+          }
+        } else {
+          // 解散(战斗)：主角去怪物附近站位输出（复用队友站位逻辑，i=-1 表示主角侧）
           const targetPos = this._getAllyCombatTarget(px, -1)
           px._aiTargetId = targetPos ? targetPos._targetId : null
 
           // ★ 无怪可打时：回到被控者身边待命（保持队伍），不四处乱跑
           let moveTarget = targetPos
           if (!moveTarget) {
-            const backDist = 80 * this.dpr
-            const toPlayerDx = this.playerX - px.x
-            const toPlayerDy = this.playerY - px.y
-            const toPlayerDist = Math.sqrt(toPlayerDx * toPlayerDx + toPlayerDy * toPlayerDy)
-            if (toPlayerDist > backDist) {
-              moveTarget = {
-                x: this.playerX + (toPlayerDx / (toPlayerDist || 1)) * backDist,
-                y: this.playerY + (toPlayerDy / (toPlayerDist || 1)) * backDist,
-                facingLeft: this.facingLeft
-              }
+            const histIdx = Math.min(10, this.playerHistory.length - 1)
+            const hp0 = this.playerHistory.length > 0 ? this.playerHistory[histIdx] : null
+            if (hp0) {
+              moveTarget = { x: hp0.x, y: hp0.y, facingLeft: this.facingLeft }
             }
           }
 
@@ -2231,7 +2314,6 @@ baseRadius: 50 * this.dpr,    // 底座半径（缩小）
               const speed = this.playerSpeed * 0.95
               const moveX = (dx / dist) * speed * dt
               const moveY = (dy / dist) * speed * dt
-              // ★ 与被控角色一致的施法移动限制（主角作为 AI 单位同样适用）
               const oldX = px.x
               const oldY = px.y
               if (!px._castLock || px._castLock <= 0) {
@@ -2242,9 +2324,6 @@ baseRadius: 50 * this.dpr,    // 底座半径（缩小）
                   px.y += moveY
                 }
               }
-              // ★ 地形碰撞：与被控角色一致，主角 AI 也受地形阻挡。
-              //   ★ 用 moveWithSlide 分轴滑动避障，避免卡障碍物死锁；
-              //     完全回退累计卡住帧，长时间卡死放弃锁定站位重新寻路。
               if (this._collisionEngine) {
                 const slid = this._collisionEngine.moveWithSlide(oldX, oldY, px.x, px.y)
                 px.x = slid.x
@@ -2266,28 +2345,6 @@ baseRadius: 50 * this.dpr,    // 底座半径（缩小）
               this.mainCharacterSprite.facingLeft = moveTarget.facingLeft
               this.mainCharacterSprite.isMoving = false
             }
-          } else {
-            // 已在被控者身边：静止待命
-            this.mainCharacterSprite.isMoving = false
-          }
-        } else if (this.mainCharacterSprite) {
-          // 非战斗：主角仍跟随被控者（保持队伍）
-          const dx = this.playerX - px.x
-          const dy = this.playerY - px.y
-          const dist = Math.sqrt(dx * dx + dy * dy)
-          if (dist > 10 * this.dpr) {
-            const speed = this.playerSpeed * 0.95
-            const oldX = px.x
-            const oldY = px.y
-            px.x += (dx / dist) * speed * dt
-            px.y += (dy / dist) * speed * dt
-            // ★ 地形碰撞：主角 AI 非战斗跟随也受地形阻挡，用 moveWithSlide 滑动避障
-            if (this._collisionEngine) {
-              const slid = this._collisionEngine.moveWithSlide(oldX, oldY, px.x, px.y)
-              px.x = slid.x
-              px.y = slid.y
-            }
-            this.mainCharacterSprite.isMoving = true
           } else {
             this.mainCharacterSprite.isMoving = false
           }
@@ -2394,6 +2451,34 @@ baseRadius: 50 * this.dpr,    // 底座半径（缩小）
       return null   // 附近无怪物 → 回退跟随主角
     }
 
+    // ★ 目标位移检测（修复"AI 攻击某单位，该单位跳跃攻击另一个角色后 AI 傻在原地"）：
+    //   怪物用 jump_attack 等位移技能大幅移动后，原本锁定的站位点(_lockedStand)已远离怪物，
+    //   若仍站旧点就会导致 AI 走到空位发呆。按位移幅度处理：
+    //     - 位移 > 200*dpr：视为目标已远离（跳去打别人），放弃旧目标，改选最近存活怪物；
+    //     - 位移 > 90*dpr ：仅放弃旧站位点，重新规划靠近当前目标的输出位。
+    if (target && follower._lockedStand && follower._lockedStand._targetId === target.id) {
+      const lx = follower._lockedStand.x, ly = follower._lockedStand.y
+      const movedDist = Math.hypot(target.x - lx, target.y - ly)
+      if (movedDist > 200 * this.dpr) {
+        let minDist = Infinity, nearest = null
+        for (const m of monsters) {
+          if (!m.alive) continue
+          const dd = Math.hypot(m.x - follower.x, m.y - follower.y)
+          if (dd < minDist) { minDist = dd; nearest = m }
+        }
+        target = nearest
+        follower._aiTargetId = target ? target.id : null
+        follower._lockedStand = null
+      } else if (movedDist > 90 * this.dpr) {
+        follower._lockedStand = null
+      }
+    }
+    if (!target) {
+      follower._aiTargetId = null
+      follower._lockedStand = null
+      return null
+    }
+
     // 3) 计算输出位：★ AI 站位点锁定，不再每帧跟随怪物实时坐标漂移，
     //    实现"AI 与怪物完全互不干扰、可自由穿插"（怪物走位不会再带动/推开 AI）。
     //    - 首次选定目标时，基于怪物当前位置算一个固定偏移站位点并存起来；
@@ -2473,6 +2558,27 @@ baseRadius: 50 * this.dpr,    // 底座半径（缩小）
         follower.sprite.update(0, false, follower.facingLeft)
       }
       nonCtrlCount++
+    }
+    // ★ 召回同时覆盖「非 followers 的人类英雄」：切换控制后，原主角(如臻宝)变为 AI 队友，
+    //   它不在 this.followers 里，上面循环不会动它 → 召回对它无效。这里把这类英雄也瞬移到
+    //   被控角色周围，使"切换后召回/解散"对原主角同样生效。followers 成员已由上方循环处理，跳过避免重复瞬移。
+    const heroes = this.battleSystem && this.battleSystem.battleHeroes
+    if (heroes && heroes.length) {
+      for (const bh of heroes) {
+        if (!bh || bh === ctrlHero) continue
+        if (bh.followerRef && this.followers && this.followers.indexOf(bh.followerRef) !== -1) continue
+        const p = bh.getPos ? bh.getPos() : null
+        if (!p) continue
+        const angle = (Math.PI * 2 * nonCtrlCount) / Math.max(1, heroes.length - 1)
+        p.x = cx + Math.cos(angle) * radius
+        p.y = cy + Math.sin(angle) * radius
+        if (bh.hero) bh.hero._aiTargetId = null
+        if (bh.sprite) {
+          bh.sprite.facingLeft = cx < p.x
+          bh.sprite.isMoving = false
+        }
+        nonCtrlCount++
+      }
     }
     console.log('[Field] 已召回非被控队友到被控角色周围（被控角色保持操控原位）')
   }

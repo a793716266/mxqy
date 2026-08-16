@@ -457,43 +457,44 @@ export function installFieldBattleSystem(FieldSceneClass) {
           // 命中帧到达，结算伤害
           const m = pd.monster
           if (m && m.alive) {
-            this._damageMonster(m, pd.damage)
-            // ★ 诅咒：对命中怪物施加降攻（虚弱）状态
-            if (pd.debuff && pd.debuff.type === 'atk_down') {
-              this._applyMonsterStatus(m, 'atk_down', { duration: pd.debuff.duration || 3, value: pd.debuff.value || 0.3 }, pd.hero)
-            }
-            // ★ 吸血 / 治愈冲击：按伤害比例治疗施法者
-            if (pd.healCasterPct && pd.healCasterPct > 0 && pd.hero) {
-              const heal = Math.round((pd.damage || 0) * pd.healCasterPct)
-              if (heal > 0) {
-                pd.hero.hp = Math.min(pd.hero.maxHp, (pd.hero.hp || 0) + heal)
-                const hp = (typeof pd.hero.getPos === 'function') ? pd.hero.getPos() : { x: this.playerX, y: this.playerY }
-                this.battleSystem.damageTexts.push({
-                  text: `+${heal}`, x: hp.x - this.cameraX, y: hp.y - this.cameraY - 60 * this.dpr,
-                  color: '#2ed573', life: 1.0, maxLife: 1.0, _startY: hp.y - this.cameraY - 60 * this.dpr
-                })
+            const dealt = this._damageMonster(m, pd.damage)
+            if (dealt > 0) {
+              // ★ 诅咒：对命中怪物施加降攻（虚弱）状态
+              if (pd.debuff && pd.debuff.type === 'atk_down') {
+                this._applyMonsterStatus(m, 'atk_down', { duration: pd.debuff.duration || 3, value: pd.debuff.value || 0.3 }, pd.hero)
               }
-            }
-            // ★ 让目标面板锁定真正被击中的怪（近战延迟命中 / 队友近战）
-            // 添加伤害数字
-            const sx = m.x - this.cameraX
-            const sy = m.y - this.cameraY
-            this.battleSystem.damageTexts.push({
-              text: `-${pd.damage}${pd.isCrit ? '!' : ''}`,
-              x: sx,
-              y: sy - 40 * this.dpr,
-              color: pd.isCrit ? '#FFD700' : '#ff4757',
-              life: 1.0,
-              maxLife: 1.0,
-              _startY: sy - 40 * this.dpr,
-              isCrit: pd.isCrit
-            })
-            console.log(`[FieldBattle] ${pd.heroName} 命中 ${m.name}，造成 ${pd.damage} 点伤害${pd.isCrit ? '（暴击！）' : ''}，剩余HP: ${m.hp}`)
-            // 检查死亡
-            if (m.hp <= 0) {
-              m.alive = false
-              console.log(`[FieldBattle] ${m.name} 被击败！`)
-              this.battleSystem.battleTarget = null
+              // ★ 吸血 / 治愈冲击：按伤害比例治疗施法者
+              if (pd.healCasterPct && pd.healCasterPct > 0 && pd.hero) {
+                const heal = Math.round((pd.damage || 0) * pd.healCasterPct)
+                if (heal > 0) {
+                  pd.hero.hp = Math.min(pd.hero.maxHp, (pd.hero.hp || 0) + heal)
+                  const hp = (typeof pd.hero.getPos === 'function') ? pd.hero.getPos() : { x: this.playerX, y: this.playerY }
+                  this.battleSystem.damageTexts.push({
+                    text: `+${heal}`, x: hp.x - this.cameraX, y: hp.y - this.cameraY - 60 * this.dpr,
+                    color: '#2ed573', life: 1.0, maxLife: 1.0, _startY: hp.y - this.cameraY - 60 * this.dpr
+                  })
+                }
+              }
+              // 添加伤害数字
+              const sx = m.x - this.cameraX
+              const sy = m.y - this.cameraY
+              this.battleSystem.damageTexts.push({
+                text: `-${pd.damage}${pd.isCrit ? '!' : ''}`,
+                x: sx,
+                y: sy - 40 * this.dpr,
+                color: pd.isCrit ? '#FFD700' : '#ff4757',
+                life: 1.0,
+                maxLife: 1.0,
+                _startY: sy - 40 * this.dpr,
+                isCrit: pd.isCrit
+              })
+              console.log(`[FieldBattle] ${pd.heroName} 命中 ${m.name}，造成 ${pd.damage} 点伤害${pd.isCrit ? '（暴击！）' : ''}，剩余HP: ${m.hp}`)
+              // 检查死亡
+              if (m.hp <= 0) {
+                m.alive = false
+                console.log(`[FieldBattle] ${m.name} 被击败！`)
+                this.battleSystem.battleTarget = null
+              }
             }
           }
           // ★ 暗星爆发等全体技能：对范围内所有存活怪物结算（不重复结算已命中的 m）
@@ -1077,6 +1078,20 @@ export function installFieldBattleSystem(FieldSceneClass) {
   //    解决"面板只随玩家手动锁定才更新、AI 输出时血条跳变无扣血效果"的问题）
   proto._damageMonster = function(m, dmg) {
     if (!m) return 0
+    // ★ 隐身无敌（暗影突袭）：隐身期间完全免疫，不掉血、不被打断、不锁目标
+    if (m._invisible) {
+      if (this.battleSystem && this.battleSystem.damageTexts) {
+        this.battleSystem.damageTexts.push({
+          text: '无敌',
+          x: m.x - this.cameraX,
+          y: m.y - this.cameraY - 50 * this.dpr,
+          color: '#9fd8ff',
+          life: 0.8, maxLife: 0.8,
+          _startY: m.y - this.cameraY - 50 * this.dpr
+        })
+      }
+      return 0
+    }
     const real = Math.max(1, Math.floor(dmg) || 0)
     // ★ 扣血前记录"受伤前血量"：供目标面板 DNF 式残影效果使用
     //   面板读取 m._preDamageHp 作为 lag（滞留层）的起始值，
@@ -1114,24 +1129,13 @@ export function installFieldBattleSystem(FieldSceneClass) {
     console.log(`[FieldBattle] 怪物 ${m.name} 施法被打断（非霸体）`)
   }
 
-  // ★ 我方 AI 英雄施法被打断：当前正在释放技能/普攻且非霸体时，清除施法状态
-  //   使技能放不出来。霸体技能不受影响。
+  // ★ 我方英雄施法【不再】因受击被打断。
+  //   原逻辑会在盟友(非霸体)被怪物击中时清空其施法/普攻状态，导致 AI 队友频繁空放技能、
+  //   手感极差（"非霸体技能可以被攻击打断"）。现在：英雄侧施法完全免疫受击中断，
+  //   霸体/非霸体都照常把技能放完。怪物侧的中断仍保留（_interruptCastingForMonster），
+  //   玩家可借走位卡掉怪物非霸体大招。被控英雄的硬直/眩晕由专门的 _stunned 机制处理，与此无关。
   proto._interruptCastingForHero = function(hero) {
-    if (!hero || !hero._aiAttacking) return
-    // 查当前释放技能的霸体标记（普攻无 _aiCastingSkill → 视为非霸体，可被普攻打断）
-    const sk = hero._aiCastingSkill
-    if (sk && sk.superArmor) return  // 霸体：不被打断
-    // ★ 打断：清除所有施法/攻击状态，恢复 idle
-    hero._aiAttacking = false
-    hero._aiAttackTimer = 0
-    hero._castAxisLock = 0
-    hero._castLock = 0
-    hero._aiCastingSkill = null
-    if (hero._sprite) {
-      hero._sprite.state = 'idle'
-      hero._sprite.animFrame = 0
-    }
-    console.log(`[FieldBattle] ${hero.name}（AI）施法被打断（非霸体）`)
+    return
   }
 
   // ★ 单次突刺伤害：玩家正前方 X 轴（吸附来的 + 范围内）所有敌人各造成 1 次
@@ -1251,6 +1255,42 @@ export function installFieldBattleSystem(FieldSceneClass) {
       const regenRate = bh.hero.mpRegen || 5
       if ((bh.hero.maxMp || 0) > 0 && (bh.hero.mp || 0) < bh.hero.maxMp) {
         bh.hero.mp = Math.min(bh.hero.maxMp, (bh.hero.mp || 0) + regenRate * dt * 0.5)
+      }
+
+      // ★ 移动（仅对非 followers 的人类英雄；cats 由 field-scene 的 _updateFollowers 驱动，避免双重移动）
+      //   解决"切换控制后召回/解散对原主角(人类英雄)失效"：人类英雄不在 this.followers 里，
+      //   原 _updateAllyAI 只管攻击、不管移动 → 切换后原主角原地不动、也不响应召回/解散。
+      //   aiRecall=true → 聚拢到被控角色；false(解散) → 自行靠近最近怪物。
+      const isFollowerHero = bh.followerRef && this.followers && this.followers.indexOf(bh.followerRef) !== -1
+      if (!isFollowerHero) {
+        const apos = bh.getPos()
+        if (apos) {
+          let mt = null
+          if (this.aiRecall) {
+            const ctrl = this._getCurrentControlHero && this._getCurrentControlHero()
+            if (ctrl) { const cp = ctrl.getPos(); if (cp) mt = { x: cp.x, y: cp.y } }
+          } else {
+            // ★ 解散(aiRecall=false)：盟友自行寻怪，使用全图搜索（与 cats 的 _getAllyCombatTarget「全图寻怪」一致），
+            //   否则搜索半径太小会找不到较远的怪、表现为"解散后原地不动"。大半径保证盟友能走到最近怪物处开打。
+            const nm = this._findNearestMonsterFromPos(1500 * this.dpr, 'xy', apos.x, apos.y, 400 * this.dpr)
+            if (nm) mt = { x: nm.x, y: nm.y }
+          }
+          if (mt) {
+            const mdx = mt.x - apos.x, mdy = mt.y - apos.y
+            const md = Math.hypot(mdx, mdy)
+            const arrive = (this.battleSystem.attackRange || 100) * this.dpr * 0.7
+            if (md > arrive) {
+              const sp = (this.playerSpeed || 200) * 0.95
+              apos.x += (mdx / md) * sp * dt
+              apos.y += (mdy / md) * sp * dt
+              if (bh.sprite) { bh.sprite.facingLeft = mdx < 0; bh.sprite.isMoving = true }
+            } else if (bh.sprite) {
+              bh.sprite.isMoving = false
+            }
+          } else if (bh.sprite) {
+            bh.sprite.isMoving = false
+          }
+        }
       }
 
       // ★ 队友搜索范围：近战用真实短手（attackRange*1.05），远程用放大搜索半径（*1.8）
@@ -2541,6 +2581,8 @@ export function installFieldBattleSystem(FieldSceneClass) {
    */
   proto._pushDamageText = function(m, dmg, isCrit, color) {
     if (!this.battleSystem.damageTexts) this.battleSystem.damageTexts = []
+    // ★ 隐身无敌：实际伤害已在 _damageMonster 中以"无敌"呈现，这里不再弹假伤害数字
+    if (m && m._invisible) return
     const sx = m.x - this.cameraX
     const sy = m.y - this.cameraY
     this.battleSystem.damageTexts.push({
@@ -2572,6 +2614,19 @@ export function installFieldBattleSystem(FieldSceneClass) {
     // 1. 先递减所有怪物技能的冷却（单位：秒）
     for (const monster of this.mapMonsters) {
       if (!monster.alive || !monster.skillCDs) continue
+      // ★ 延迟冷却阶段（buff/隐身/自愈类带 duration 的技能）：效果持续期间(_skillDelay)
+      //   不可重复释放；_skillDelay 递减到 0 后才正式开始计 skillCDs（即"效果结束才开始冷却"）
+      if (monster._skillDelay) {
+        for (const k in monster._skillDelay) {
+          if (monster._skillDelay[k] > 0) {
+            monster._skillDelay[k] = Math.max(0, monster._skillDelay[k] - dt)
+            if (monster._skillDelay[k] === 0) {
+              const sk = (monster.skills || []).find(s => s.id === k)
+              monster.skillCDs[k] = (sk && sk.cooldown) || 10
+            }
+          }
+        }
+      }
       for (const k in monster.skillCDs) {
         if (monster.skillCDs[k] > 0) {
           monster.skillCDs[k] = Math.max(0, monster.skillCDs[k] - dt)
@@ -2742,7 +2797,8 @@ export function installFieldBattleSystem(FieldSceneClass) {
     if (!monster.skills || !monster.skillCDs) return 0
     let maxSR = 0
     for (const s of monster.skills) {
-      if ((monster.skillCDs[s.id] || 0) <= 0) {
+      const onDelay = monster._skillDelay && (monster._skillDelay[s.id] || 0) > 0
+      if (!onDelay && (monster.skillCDs[s.id] || 0) <= 0) {
         const r = (s.range || monster.attackRange || 120) * this.dpr
         if (r > maxSR) maxSR = r
       }
@@ -2755,7 +2811,10 @@ export function installFieldBattleSystem(FieldSceneClass) {
    */
   proto._fieldChooseMonsterSkill = function(monster, dist, attackRange) {
     if (!monster.skills || !monster.skills.length || !monster.skillCDs) return null
-    const ready = monster.skills.filter(s => (monster.skillCDs[s.id] || 0) <= 0)
+    const ready = monster.skills.filter(s => {
+      const onDelay = monster._skillDelay && (monster._skillDelay[s.id] || 0) > 0
+      return !onDelay && (monster.skillCDs[s.id] || 0) <= 0
+    })
     if (ready.length === 0) return null
 
     const hpRatio = (monster.hp / monster.maxHp)
@@ -2794,7 +2853,18 @@ export function installFieldBattleSystem(FieldSceneClass) {
     monster.skillAnimTimer = 800 // 默认 800ms 技能动画
     monster.animFrame = 0
     // 设置技能冷却（秒）
-    if (monster.skillCDs) monster.skillCDs[skill.id] = skill.cooldown || 10
+    if (monster.skillCDs) {
+      const isBuffLike = (skill.type === 'buff' || skill.type === 'heal_self')
+      const hasDuration = (skill.duration || 0) > 0
+      if (isBuffLike && hasDuration) {
+        // ★ 延迟冷却：效果持续期间(_skillDelay)不可重复释放；效果结束才开始计 CD
+        monster._skillDelay = monster._skillDelay || {}
+        monster._skillDelay[skill.id] = skill.duration
+        monster.skillCDs[skill.id] = 0   // 延迟阶段 CD 尚未开始
+      } else {
+        monster.skillCDs[skill.id] = skill.cooldown || 10
+      }
+    }
 
     // ★ jump_attack（跳跃攻击）特殊处理：先落下预警区域，延迟 1 秒后再结算，给玩家躲避时间
     if (skill.type === 'jump_attack') {

@@ -199,7 +199,7 @@ export const ENEMIES_CH1 = {
         warnDuration: 1.0,     // 预警时间1秒
         damageRadius: 50        // 很小的范围（实际上是单体）
       },
-      { name: '暗影突袭', type: 'buff', effect: 'invisible', duration: 5, power: 0 }  // 隐身5秒
+      { name: '暗影突袭', type: 'buff', effect: 'invisible', duration: 5, cooldown: 20, power: 0 }  // 隐身5秒；效果结束后再冷却20秒（延迟CD，期间不可重复释放）
     ],
     drop: [{ id: 'cheese', name: '奶酪', chance: 0.45 }]
   },
