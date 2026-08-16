@@ -110,6 +110,12 @@ function resetBattleState() {
     if (h.atk == null) h.atk = 20
     h.hp = (h.maxHp || 100)
     h.mp = 100
+    // ★ 清除受击硬直/眩晕/施法打断残留状态：真实游戏里这些由每帧递减归零，
+    //   但单测之间不驱动足够帧数，残留 _hurtLock 会卡住下一测试的开场施法（与真实手感一致，仅测试基建需清理）
+    h._hurtLock = 0
+    h._stunned = 0
+    h._castInterrupted = false
+    h._castToken = 0
   })
 }
 

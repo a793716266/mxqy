@@ -36,7 +36,7 @@ module.exports = {
       range: 300, // ★ 跳跃距离（像素）
       cooldown: 3, // ★ 冷却时间改为3秒（方便测试）
       warnDuration: 1.5, // 预警时间（秒）
-      damageRadius: 200 // ★ 伤害范围（像素）
+      damageRadius: 100 // ★ 伤害范围（像素）
     }
   ],
   drop: [{ id: 'gel', name: '黏液', chance: 0.25 }],

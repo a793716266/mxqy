@@ -119,6 +119,9 @@ let sawChargePhase = false, saw03Hold = false, sawEnergy = false
 let sawWarnZone = false, sawFastFrames = false, sawImpact = false
 let sawZoneCleaned = false
 let kbSeen = false, stunObserved = false, kbHeight = 0
+// ★ 冲过去位移 + 帧追踪（07 冲锋姿态 / 08 收招姿态）
+let warnDashStartX = null, warnDashMinDist = Infinity, warnTargetX = null
+let warnFrameMax = -1, recoverFrameSeen = -1
 const dt = 1 / 60
 let frame = 0
 const maxFrames = Math.ceil((2.4 + 1.0 + 0.6) / dt) + 30  // charge + warn + recover + 余量
@@ -139,6 +142,14 @@ for (frame = 0; frame <= maxFrames; frame++) {
     }
     if (lc.phase === 'warn') {
       if (monster.animFrame >= 3) sawFastFrames = true
+      // ★ 冲过去位移 + 帧追踪
+      if (warnDashStartX === null) { warnDashStartX = monster.x; warnTargetX = lc.targetX }
+      const dToTarget = Math.abs(monster.x - lc.targetX)
+      if (dToTarget < warnDashMinDist) warnDashMinDist = dToTarget
+      if (monster.animFrame > warnFrameMax) warnFrameMax = monster.animFrame
+    }
+    if (lc.phase === 'recover') {
+      recoverFrameSeen = monster.animFrame
     }
   }
   // 红色警示区检测
@@ -167,7 +178,11 @@ if (hold03Start >= 0 && hold03End >= 0) {
   assert(false, '03.png 停留约 2 秒', '未采样到 animFrame=2 区间')
 }
 
-assert(sawFastFrames, 'warn 阶段极快播放剩余帧 04→08 (animFrame>=3)')
+assert(sawFastFrames, 'warn 阶段播放冲锋帧 (animFrame>=3)')
+assert(warnDashStartX !== null && warnDashMinDist < 10 * dpr,
+  '冲过去：BOSS 从起点位移至落点附近(冲锋位移生效)', `startX=${warnDashStartX} minDist=${warnDashMinDist}`)
+assert(warnFrameMax === 6, '冲过去阶段播放 skill_07（animFrame=6）', `warnFrameMax=${warnFrameMax}`)
+assert(recoverFrameSeen === 7, '收尾阶段播放 skill_08（animFrame=7）', `recoverFrameSeen=${recoverFrameSeen}`)
 assert(sawImpact, '落地对英雄造成伤害/击飞/眩晕 (英雄获得 _knockback 或 _stunned)')
 if (sawImpact) {
   assert(hero0.hp < hp0, '落地区域内英雄受到 HP 伤害', `hp ${hp0}→${hero0.hp}`)

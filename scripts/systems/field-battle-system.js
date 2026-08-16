@@ -453,6 +453,11 @@ export function installFieldBattleSystem(FieldSceneClass) {
       for (let i = this.battleSystem.pendingDamages.length - 1; i >= 0; i--) {
         const pd = this.battleSystem.pendingDamages[i]
         pd.timer -= dt
+        // ★ 非霸体施法被打断：作废挂在该 cast token 上的延迟伤害（伤害/吸血/诅咒/盾击附加效果一律不结算）
+        if (pd._castToken != null && pd.hero && pd.hero._castInterrupted && pd._castToken === pd.hero._castToken) {
+          this.battleSystem.pendingDamages.splice(i, 1)
+          continue
+        }
         if (pd.timer <= 0) {
           // 命中帧到达，结算伤害
           const m = pd.monster
@@ -619,6 +624,16 @@ export function installFieldBattleSystem(FieldSceneClass) {
     const mainHero = ctrl.hero
     const sprite = ctrl.sprite
 
+    // ★ 受击硬直：被击中瞬间无法攻击/放技能（与怪物/队友统一规则），
+    //   避免"挨打的同时还能反手普攻/放技能"的不合理手感。
+    if (mainHero._hurtLock && mainHero._hurtLock > 0) return
+
+    // ★ 施法 token：标记本次施法（普攻/技能都算），供"非霸体技能被打断时取消其待结算效果"使用。
+    //   token 每次施法自增；霸体(superArmor)技能不受打断影响；被打断时置 _castInterrupted。
+    mainHero._castToken = (mainHero._castToken || 0) + 1
+    mainHero._castSuperArmor = !!(skill && skill.superArmor)
+    mainHero._castInterrupted = false
+
     // ★ 剑气风暴（自定义斩击大招）：独立的状态机流程，提前分发
     if (skill && skill.type === 'blade_storm') {
       this._castBladeStorm(skill, ctrl)
@@ -745,6 +760,8 @@ export function installFieldBattleSystem(FieldSceneClass) {
         // ★ 火球延迟发射：等攻击动画（1.0s）中后段（0.55s）才真正生成弹道，动作与飞出协调
         this._scheduleProjectile({
           delay: 0.55,
+          _hero: mainHero,
+          _castToken: mainHero._castToken,
           spawn: () => {
             // 重新取施法者当前坐标（延迟后角色可能已微动）
             const c2 = this._getCurrentControlHero()
@@ -784,7 +801,9 @@ export function installFieldBattleSystem(FieldSceneClass) {
           monster: monster,
           damage: finalDmg,
           heroName: mainHero.name,
-          isCrit: meleeCrit
+          isCrit: meleeCrit,
+          hero: mainHero,
+          _castToken: mainHero._castToken
         })
         return
       }
@@ -796,6 +815,8 @@ export function installFieldBattleSystem(FieldSceneClass) {
       const cpos0 = ctrl.getPos()
       this._scheduleProjectile({
         delay: 6 * frameDur,  // ★ 第6帧释放点飞出，随帧率动态对齐
+        _hero: mainHero,
+        _castToken: mainHero._castToken,
         spawn: () => {
           const c2 = this._getCurrentControlHero()
           const p2 = c2 ? c2.getPos() : cpos0
@@ -896,6 +917,7 @@ export function installFieldBattleSystem(FieldSceneClass) {
       healCasterPct: healCasterPct,  // 吸血/治愈冲击：按伤害比例回血
       debuff: debuff,                // 诅咒：降攻 debuff
       allTarget: allTarget,          // 暗星爆发：对全体怪物结算
+      _castToken: mainHero._castToken
     })
 
     // ★ 技能释放后设置按钮冷却（避免无限释放且让冷却遮罩生效）
@@ -1098,6 +1120,9 @@ export function installFieldBattleSystem(FieldSceneClass) {
     //   这样无论渲染帧和伤害帧之间隔了多少次命中，lag 都从"上一次受伤前的 hp"开始追
     m._preDamageHp = (typeof m.hp === 'number') ? m.hp : m._preDamageHp
     m.hp = Math.max(0, m.hp - real)
+    // ★ 受击硬直：怪物被打中瞬间短暂无法行动（不能移动/攻击/放技能）。
+    //   时长 0.22s；状态 DOT（灼烧等）刷新此锁也符合预期——燃烧期间被持续压制。
+    m._hurtLock = Math.max(m._hurtLock || 0, 0.22)
     // ★ 非霸体施法被打断：怪物正在放非霸体技能时受到 HP 伤害，技能放不出来
     this._interruptCastingForMonster(m)
     // ★ 记录"最近受伤的怪"：无论致死与否都记录，
@@ -1135,7 +1160,41 @@ export function installFieldBattleSystem(FieldSceneClass) {
   //   霸体/非霸体都照常把技能放完。怪物侧的中断仍保留（_interruptCastingForMonster），
   //   玩家可借走位卡掉怪物非霸体大招。被控英雄的硬直/眩晕由专门的 _stunned 机制处理，与此无关。
   proto._interruptCastingForHero = function(hero) {
-    return
+    if (!hero) return
+    // ★ 霸体技能：释放期间不被打断（如 BOSS 大招 / 配置 superArmor 的技能），效果照常结算
+    if (hero._castSuperArmor) return
+    // ★ 当前没有进行中的施法（已被打断 / 本就在普攻外）→ 无需处理
+    if (!hero._castToken) return
+    // ★ 标记本次施法被打断：所有挂在该 token 上的待结算效果（延迟伤害 / 延迟弹道 / 技能过程 / BUFF）一律作废
+    hero._castInterrupted = true
+    // ★ 清施法 / 普攻状态：动画中止、立即停止施法流程（受击硬直本身由 _hurtLock 统一处理）
+    if (this.battleSystem.playerAnim) this.battleSystem.playerAnim.timer = 0
+    hero._aiAttacking = false
+    hero._aiAttackTimer = 0
+    hero._aiCastingSkill = null
+    hero._castAxisLock = 0
+    hero._castLock = 0
+    // ★ 回滚本次施法已生效的 BUFF（若技能是 BUFF 类且尚未结束）
+    this._revertCastBuffs(hero)
+    console.log(`[FieldBattle] ${hero.name} 施法被打断（非霸体）→ 取消待结算效果`)
+  }
+
+  // ★ 回滚某次施法已生效的 BUFF：移除所有 _castToken 等于该英雄当前 cast token 的 buff
+  //   （含自身 buff 与本次施法给全队施加的 buff，因为都打了同一 caster 的 token）
+  proto._revertCastBuffs = function(hero) {
+    if (!hero || hero._castToken == null) return
+    const token = hero._castToken
+    const heroes = this.battleSystem.battleHeroes || []
+    for (const bh of heroes) {
+      const h = bh.hero
+      if (!h || !h._buffs) continue
+      for (let i = h._buffs.length - 1; i >= 0; i--) {
+        if (h._buffs[i]._castToken === token) {
+          h._buffs.splice(i, 1)
+          if (typeof this._refreshCharCard === 'function') this._refreshCharCard(h)
+        }
+      }
+    }
   }
 
   // ★ 单次突刺伤害：玩家正前方 X 轴（吸附来的 + 范围内）所有敌人各造成 1 次
@@ -1212,8 +1271,9 @@ export function installFieldBattleSystem(FieldSceneClass) {
       const bh = heroes[i]
       // ★ alive 字段可能未初始化(undefined)，undefined 应视为存活，不能用 !bh.hero.alive（会把 undefined 判成"死亡"而永久跳过）
       if (!bh.hero || bh.hero.alive === false || bh.hero.hp <= 0) continue
-      // ★ 眩晕（被击飞落地后）：期间不移动/不攻击/不施法，AI 完全接管交还玩家
+      // ★ 眩晕（被击飞落地后）或被击中硬直：期间不移动/不攻击/不施法
       if (bh.hero._stunned && bh.hero._stunned > 0) continue
+      if (bh.hero._hurtLock && bh.hero._hurtLock > 0) continue
       const pos = bh.getPos()
       const sprite = bh.sprite
       if (!sprite) continue
@@ -1341,6 +1401,10 @@ export function installFieldBattleSystem(FieldSceneClass) {
       bh.hero._aiAttacking = true
       // ★ cast_universal.png 精灵表 8 帧（每帧≈0.15s），攻击动画时长设为 0.8s 让施法动作播放约 5 帧更完整
       bh.hero._aiAttackTimer = 0.8  // 攻击动画持续 0.8 秒后自动恢复
+      // ★ 施法 token：AI 普攻也标记，供"非霸体施法被打断时取消待结算效果"
+      bh.hero._castToken = (bh.hero._castToken || 0) + 1
+      bh.hero._castSuperArmor = false
+      bh.hero._castInterrupted = false
       // ★ 与被控角色一致：普攻/伤害技能施法期间限制 Y 轴（只能 X 轴移动）
       bh.hero._castAxisLock = 8 * this.frameDuration
 
@@ -1382,7 +1446,9 @@ export function installFieldBattleSystem(FieldSceneClass) {
           damage: finalDmg,
           isCrit: isCrit,
           timer: 0.4,
-          heroName: hero.name
+          heroName: hero.name,
+          hero: hero,
+          _castToken: hero._castToken
         })
       }
       bh.hero._aiAttackCD = this.battleSystem.playerAttackInterval
@@ -1551,6 +1617,11 @@ export function installFieldBattleSystem(FieldSceneClass) {
       : 2
     hero._aiSkillsCD[skill.id] = skill.cooldown || defaultCD
     hero._aiSkillLock = skill.cooldown || defaultCD
+
+    // ★ 施法 token：标记本次 AI 施法，供"非霸体技能被打断时取消待结算效果"使用
+    hero._castToken = (hero._castToken || 0) + 1
+    hero._castSuperArmor = !!skill.superArmor
+    hero._castInterrupted = false
 
     // 播放对应动画状态（盾击→shield，buff→buff，其他→skill）
     const sprite = bh.sprite
@@ -1862,19 +1933,21 @@ export function installFieldBattleSystem(FieldSceneClass) {
     const value = skill.value || 0
     // 野外战斗 buff 时长：优先 duration（秒），否则 turns 按回合估算（回合≈2s）
     const dur = skill.duration != null ? skill.duration : ((skill.turns || 1) * 2)
+    // ★ 施法 token：本次施法的 buff 都打上同一 token，供"非霸体技能被打断时回滚"使用
+    const castToken = (caster && caster._castToken) || 0
 
     if (effect === 'def_up') {
       // ★ 全体参战英雄防御提升（含施法者）
       const targets = this.battleSystem.battleHeroes || []
       for (const bh of targets) {
         if (!bh.hero || bh.hero.hp <= 0) continue
-        this._addHeroBuff(bh.hero, { type: 'def_up', value: value, duration: dur })
+        this._addHeroBuff(bh.hero, { type: 'def_up', value: value, duration: dur, _castToken: castToken })
       }
       console.log(`[FieldBattle] ${caster ? caster.name : ''} 施放${skill.name}：全体防御+${Math.round(value * 100)}%（持续${dur}s）`)
     } else if (effect === 'def_up_self') {
       // 仅自身
       if (caster) {
-        this._addHeroBuff(caster, { type: 'def_up_self', value: value, duration: dur })
+        this._addHeroBuff(caster, { type: 'def_up_self', value: value, duration: dur, _castToken: castToken })
         console.log(`[FieldBattle] ${caster.name} 施放${skill.name}：自身防御+${Math.round(value * 100)}%（持续${dur}s）`)
       }
     } else if (effect === 'atk_up') {
@@ -1882,13 +1955,13 @@ export function installFieldBattleSystem(FieldSceneClass) {
       const targets = this.battleSystem.battleHeroes || []
       for (const bh of targets) {
         if (!bh.hero || bh.hero.hp <= 0) continue
-        this._addHeroBuff(bh.hero, { type: 'atk_up', value: value, duration: dur })
+        this._addHeroBuff(bh.hero, { type: 'atk_up', value: value, duration: dur, _castToken: castToken })
       }
       console.log(`[FieldBattle] ${caster ? caster.name : ''} 施放${skill.name}：全体攻击+${Math.round(value * 100)}%（持续${dur}s）`)
     } else if (effect === 'atk_up_self') {
       // ★ 臻宝狂暴：仅自身攻击力大幅提升
       if (caster) {
-        this._addHeroBuff(caster, { type: 'atk_up_self', value: value, duration: dur })
+        this._addHeroBuff(caster, { type: 'atk_up_self', value: value, duration: dur, _castToken: castToken })
         console.log(`[FieldBattle] ${caster.name} 施放${skill.name}：自身攻击+${Math.round(value * 100)}%（持续${dur}s）`)
       }
     } else if (effect === 'heal' || skill.type === 'heal') {
@@ -1919,25 +1992,25 @@ export function installFieldBattleSystem(FieldSceneClass) {
     } else if (effect === 'taunt') {
       // ★ 挑衅：小贝吸引敌人攻击自己（持续期间所有怪物强制锁定小贝）
       if (caster) {
-        this._addHeroBuff(caster, { type: 'taunt', value: 0, duration: dur })
+        this._addHeroBuff(caster, { type: 'taunt', value: 0, duration: dur, _castToken: castToken })
         console.log(`[FieldBattle] ${caster.name} 施放${skill.name}：吸引敌人攻击自己（持续${dur}s）`)
       }
     } else if (effect === 'guard') {
       // ★ 守护：小贝替队友承受伤害（持续期间队友受到的伤害转由小贝承担）
       if (caster) {
-        this._addHeroBuff(caster, { type: 'guard', value: 0, duration: dur })
+        this._addHeroBuff(caster, { type: 'guard', value: 0, duration: dur, _castToken: castToken })
         console.log(`[FieldBattle] ${caster.name} 施放${skill.name}：替队友承受伤害（持续${dur}s）`)
       }
     } else if (effect === 'counter') {
       // ★ 反击：小贝受到攻击时反弹伤害（value=反弹比例）
       if (caster) {
-        this._addHeroBuff(caster, { type: 'counter', value: (skill.value || 0.5), duration: dur })
+        this._addHeroBuff(caster, { type: 'counter', value: (skill.value || 0.5), duration: dur, _castToken: castToken })
         console.log(`[FieldBattle] ${caster.name} 施放${skill.name}：受到攻击时反击（反弹${Math.round((skill.value||0.5)*100)}%，持续${dur}s）`)
       }
     } else if (effect === 'gold_up') {
       // ★ 财运亨通：战斗胜利后额外获得金币（value=额外比例）
       if (caster) {
-        this._addHeroBuff(caster, { type: 'gold_up', value: (skill.value || 0.5), duration: dur })
+        this._addHeroBuff(caster, { type: 'gold_up', value: (skill.value || 0.5), duration: dur, _castToken: castToken })
         console.log(`[FieldBattle] ${caster.name} 施放${skill.name}：战斗胜利额外金币+${Math.round((skill.value||0.5)*100)}%（持续${dur}s）`)
       }
     }
@@ -2022,6 +2095,7 @@ export function installFieldBattleSystem(FieldSceneClass) {
         duration: buff.duration,
         _remaining: buff.duration,
         _active: true,
+        _castToken: (buff._castToken != null ? buff._castToken : 0),
         _color: this._getBuffColor(buff.type)
       })
       // 生效冲击波
@@ -2318,7 +2392,9 @@ export function installFieldBattleSystem(FieldSceneClass) {
     if (!this.battleSystem.pendingProjectiles) this.battleSystem.pendingProjectiles = []
     this.battleSystem.pendingProjectiles.push({
       _delay: spawnCfg.delay || 0,
-      spawn: spawnCfg.spawn
+      spawn: spawnCfg.spawn,
+      _hero: spawnCfg._hero,
+      _castToken: spawnCfg._castToken
     })
   }
 
@@ -2331,6 +2407,11 @@ export function installFieldBattleSystem(FieldSceneClass) {
     for (let i = list.length - 1; i >= 0; i--) {
       const pp = list[i]
       pp._delay -= dt
+      // ★ 非霸体施法被打断：取消尚未发射的延迟投射物（已发射的飞行弹道不受影响，视为已出手）
+      if (pp._castToken != null && pp._hero && pp._hero._castInterrupted && pp._castToken === pp._hero._castToken) {
+        list.splice(i, 1)
+        continue
+      }
       if (pp._delay <= 0) {
         try {
           pp.spawn()
@@ -2376,6 +2457,7 @@ export function installFieldBattleSystem(FieldSceneClass) {
       type: 'iceWave',
       skill: skill,
       hero: hero,
+      _castToken: hero._castToken,
       blades: blades,
       _timer: 0,
       _phase: 'extend',     // extend: 逐个生成；retract: 逐个消失
@@ -2420,6 +2502,7 @@ export function installFieldBattleSystem(FieldSceneClass) {
       type: 'thunder',
       skill: skill,
       hero: hero,
+      _castToken: hero._castToken,
       targets: targets.map(m => m),
       _timer: 0,
       _strikeIndex: 0,
@@ -2478,6 +2561,11 @@ export function installFieldBattleSystem(FieldSceneClass) {
     for (let i = procs.length - 1; i >= 0; i--) {
       const p = procs[i]
       p._elapsed = (p._elapsed || 0) + dt
+      // ★ 非霸体施法被打断：作废挂在该 cast token 上的技能过程（冰刃/雷击），不造成后续伤害
+      if (p._castToken != null && p.hero && p.hero._castInterrupted && p._castToken === p.hero._castToken) {
+        procs.splice(i, 1)
+        continue
+      }
 
       if (p.type === 'iceWave') {
         this._updateIceWaveProcess(p, dt)
@@ -2654,7 +2742,14 @@ export function installFieldBattleSystem(FieldSceneClass) {
 
       // ★ 冰冻 / 紧固(定身) 状态：怪物无法移动与行动（冰晶术/紧固施加），跳过移动/攻击/技能
       if (monster._frozen || monster._rooted) continue
-      // ★ 眩晕状态：怪物被盾击眩晕，无法行动（跳过移动/攻击/技能），但仍可见击退位移
+      // ★ 受击硬直：怪物被打中瞬间无法行动（跳过移动/攻击/技能），但仍可见击退位移。
+      //   正在施放光明冲锋（自身状态机驱动）时不冻结，避免打断冲锋流程。
+      if (!monster._lightCharge && monster._hurtLock && monster._hurtLock > 0) {
+        monster._hurtLock = Math.max(0, monster._hurtLock - dt)
+        monster.isMoving = false
+        continue
+      }
+      // ★ 眩晕状态：怪物被盾击眩晕，无法行动（跳过移动/攻击/用技能），但仍可见击退位移
       if (monster._stunned && monster._stunned > 0) {
         monster._stunned = Math.max(0, monster._stunned - dt)
         monster.isMoving = false
@@ -3009,7 +3104,7 @@ export function installFieldBattleSystem(FieldSceneClass) {
       monster._energyCharge = true
       monster._energyIntensity = Math.min(1, lc.t / lc.chargeTime)
       if (lc.t >= lc.chargeTime) {
-        // 进入预警：在落点放红色警示区
+        // 进入冲刺：在落点放红色警示区，记录冲刺起点，关闭能量光环
         if (!this.battleSystem.warningZones) this.battleSystem.warningZones = []
         const zone = {
           x: lc.targetX, y: lc.targetY, r: lc.aoeRadius,
@@ -3023,20 +3118,24 @@ export function installFieldBattleSystem(FieldSceneClass) {
         lc.zone = zone
         lc.phase = 'warn'
         lc.warnT = 0
-        lc.fastT = 0
+        lc.startX = monster.x
+        lc.startY = monster.y
+        monster._energyCharge = false
+        monster._energyIntensity = 0
         console.log(`[FieldBattle] ${monster.name} 光明冲锋预警，1秒后落点 (${Math.round(lc.targetX)},${Math.round(lc.targetY)})`)
       }
       return
     }
 
     if (lc.phase === 'warn') {
-      // 极快播放剩余帧 04→08（0.3s），随后保持 08 帧
-      lc.fastT += dt
-      const fp = Math.min(1, lc.fastT / 0.3)
-      monster.animFrame = Math.min(7, 3 + Math.floor(fp * 4))  // skill_04..08
+      // ★ 冲过去：从起点向落点位移（ease-in 蓄势加速感），全程播放 skill_07（冲锋姿态）
       lc.warnT += dt
-      // ★ 驱动红色警示区的渲染倒计时（warningZones 通用绘制按 timer/total 收缩+闪烁），
-      //   状态机独占该 zone，不会走通用跳跃路径
+      const p = Math.min(1, lc.warnT / lc.warnDuration)
+      const eased = p * p // 慢起快落，冲锋感
+      monster.x = lc.startX + (lc.targetX - lc.startX) * eased
+      monster.y = lc.startY + (lc.targetY - lc.startY) * eased
+      monster.animFrame = 6 // skill_07.png（冲过去时的姿态）
+      // 驱动红色警示区的渲染倒计时（状态机独占，不走通用跳跃路径）
       if (lc.zone) lc.zone.timer = Math.max(0, lc.warnDuration - lc.warnT)
       if (lc.warnT >= lc.warnDuration) {
         this._lightChargeImpact(monster, lc)
@@ -3047,7 +3146,8 @@ export function installFieldBattleSystem(FieldSceneClass) {
     }
 
     if (lc.phase === 'recover') {
-      monster.animFrame = 7
+      // ★ 收尾：落地定格 skill_08（冲锋收招姿态），0.5s 后复位
+      monster.animFrame = 7 // skill_08.png
       lc.recoverT += dt
       if (lc.recoverT >= 0.5) {
         // ★ 清理由本状态机独占的红色警示区（避免残留导致渲染圈永久停留）

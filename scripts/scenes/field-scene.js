@@ -777,9 +777,11 @@ baseRadius: 50 * this.dpr,    // 底座半径（缩小）
     if (this.joystick.active) {
       // ★ 施法锁定：BUFF 释放期间完全锁定摇杆移动（跳过整个移动逻辑）
       const castLock = this.battleSystem && this.battleSystem.castLockTimer > 0
-      // ★ 被控英雄眩晕（击飞落地后）：冻结摇杆移动
-      const stunned = (this._getCurrentControlHero() && this._getCurrentControlHero().hero && this._getCurrentControlHero().hero._stunned > 0)
-      if (castLock || stunned) {
+      // ★ 被控英雄眩晕（击飞落地后）或被击中硬直：冻结摇杆移动
+      const ctrlHero = this._getCurrentControlHero && this._getCurrentControlHero()
+      const stunned = !!(ctrlHero && ctrlHero.hero && ctrlHero.hero._stunned > 0)
+      const hurtLocked = !!(ctrlHero && ctrlHero.hero && ctrlHero.hero._hurtLock > 0)
+      if (castLock || stunned || hurtLocked) {
         this.isMoving = false
       } else {
         const jx = this.joystick.currentX - this.joystickConfig.centerX
@@ -1481,6 +1483,9 @@ baseRadius: 50 * this.dpr,    // 底座半径（缩小）
     sprite._hurtVariant = isKnockback ? 2 : 1
     sprite.animFrame = 0
     sprite._hurtTimer = isKnockback ? 0.5 : 0.28
+    // ★ 受击硬直：被击中的瞬间角色完全无法行动（不能移动/攻击/放技能），
+    //   时长与受击动画对齐（普通0.28s / 被击飞0.5s）。由 _updateHeroStatus 每帧递减。
+    hero._hurtLock = isKnockback ? 0.5 : 0.28
   }
 
   // ★ 我方 AI 英雄施法被打断：当前正在释放技能/普攻且非霸体时，清除施法状态
@@ -2059,6 +2064,10 @@ baseRadius: 50 * this.dpr,    // 底座半径（缩小）
       }
       if (hero._stunned && hero._stunned > 0) {
         hero._stunned = Math.max(0, hero._stunned - dt)
+      }
+      // ★ 受击硬直倒计时（被击中后短暂无法行动）
+      if (hero._hurtLock && hero._hurtLock > 0) {
+        hero._hurtLock = Math.max(0, hero._hurtLock - dt)
       }
     }
   }
