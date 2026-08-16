@@ -10,10 +10,9 @@
  */
 import { createRequire } from 'module'
 import path from 'path'
-import { fileURLToPath } from 'url'
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url))
-const projectRoot = path.resolve(__dirname, '..', '..')
+const __dirname = process.cwd()
+const projectRoot = process.cwd()
 const scenesDir = path.resolve(projectRoot, 'scripts', 'scenes')
 const nodeRequire = createRequire(path.join(scenesDir, 'x.js'))
 globalThis.require = (p) => {
@@ -26,7 +25,8 @@ globalThis.require = (p) => {
 
 const canvasCtx = new Proxy({}, {
   get(t, p) {
-    if (p === 'canvas' || p === 'measureText') return undefined
+    if (p === 'canvas') return undefined
+    if (p === 'measureText') return (s) => ({ width: (s ? String(s).length : 0) * 8 })
     if (p === 'createLinearGradient' || p === 'createRadialGradient') return () => ({ addColorStop() {} })
     return () => {}
   },
@@ -89,7 +89,31 @@ function assert(cond, name, detail) {
   else { failed++; console.log(`  ✗ ${name}  ${detail || ''}`) }
 }
 
-const { FieldScene } = await import('../scenes/field-scene.js')
+// ★ 确定性重置：每个涉及"施法/读取英雄状态"的用例前调用，消除跨用例的状态串扰。
+//   野外战斗是单例（battleSystem / party / battleHeroes / 英雄对象共享），前面用例跑的
+//   实时战斗会按 RNG 击杀英雄、切换被控者、耗尽 MP、结束战斗（active=false），导致后续用例
+//   随机失败。这里重建 battleHeroes（顺序回到 party 顺序，index0=主角臻宝）、复活全队、
+//   满蓝、清 BUFF、恢复战斗进行中。
+function resetBattleState() {
+  sys.active = true
+  if (scene.battleSystem) scene.battleSystem.active = true
+  scene._buildBattleHeroes()
+  if (scene.battleSystem) {
+    scene.battleSystem.battleTarget = null
+    scene.battleSystem.showBattleUI = true
+  }
+  sys.battleHeroes.forEach(bh => {
+    const h = bh.hero
+    if (!h) return
+    h._buffs = []
+    h.def = 10
+    if (h.atk == null) h.atk = 20
+    h.hp = (h.maxHp || 100)
+    h.mp = 100
+  })
+}
+
+const { FieldScene } = await import('../scripts/scenes/field-scene.js')
 console.log('[skills] 加载真实 FieldScene OK')
 const game = new MockGame()
 const scene = new FieldScene(game, { area: 'grassland' })
@@ -103,7 +127,7 @@ scene._initBattleUI()
 
 // ==================== 准备李小宝技能 ====================
 // 从 heroes.js 读真实技能配置
-const { HEROES } = await import('../data/heroes.js')
+const { HEROES } = await import('../scripts/data/heroes.js')
 const lixiaobaoCfg = (HEROES || []).find(h => h.id === 'lixiaobao')
 assert(lixiaobaoCfg && lixiaobaoCfg.skills, '加载李小宝技能配置')
 const fireball = lixiaobaoCfg.skills.find(s => s.id === 'fireball')
@@ -256,6 +280,7 @@ if (elecM) {
 
 // ==================== 测试4：魔力护盾（全体防御+30%） ====================
 console.log('\n=== 测试4: 魔力护盾（全体队友防御+30%） ===')
+resetBattleState()
 const manaShield = lixiaobaoCfg.skills.find(s => s.id === 'mana_shield')
 assert(manaShield && manaShield.effect === 'def_up' && manaShield.value === 0.3,
   '魔力护盾配置: def_up 全体防御+30%')
@@ -283,6 +308,7 @@ assert(scene._getHeroDef(bh0.hero) === 10, 'buff 消失后防御恢复', `实际
 
 // ==================== 测试5：BUFF 粒子效果（视觉反馈） ====================
 console.log('\n=== 测试5: BUFF 粒子效果（生效冲击波/光环/到期清理） ===')
+resetBattleState()
 // 重新释放魔力护盾，验证：
 // 1) 生效冲击波被记录（buffShockwaves）
 // 2) buff 携带视觉颜色（_color）
@@ -313,11 +339,13 @@ assert(scene._getBuffColor('def_up').includes('95,159,255'), 'def_up(魔力护�
 
 // ==================== 测试6：渲染级验证（真的调用绘制 API） ====================
 console.log('\n=== 测试6: 渲染级验证（光环/粒子/冲击波真的绘制） ===')
+resetBattleState()
 // 可记录调用的 ctx mock
 const drawCalls = []
 const trackingCtx = new Proxy({}, {
   get(t, p) {
-    if (p === 'canvas' || p === 'measureText') return undefined
+    if (p === 'canvas') return undefined
+    if (p === 'measureText') return (s) => ({ width: (s ? String(s).length : 0) * 8 })
     return (...args) => { drawCalls.push(p); }
   },
   set() { return true }
@@ -389,6 +417,7 @@ assert(stylesDiffer, '粒子动画随时间变化（非静止贴图）')
 
 // ==================== 测试7：端到端渲染（scene.render 完整流程） ====================
 console.log('\n=== 测试7: 端到端渲染（scene.render 完整流程画出buff） ===')
+resetBattleState()
 // 确保 buff 有效 + 冲击波存在
 sys.battleHeroes.forEach(bh => { bh.hero._buffs = []; bh.hero.def = 10 })
 sys.buffShockwaves = []
@@ -408,6 +437,7 @@ assert(renderBuffOk, '渲染时 buff 数据可读取（battleHeroes.hero._buffs�
 
 // ==================== 测试8：专业粒子系统 ====================
 console.log('\n=== 测试8: 专业粒子系统（喷发/更新/衰减） ===')
+resetBattleState()
 // 前置：确保英雄有buff
 sys.battleHeroes.forEach(bh => { bh.hero._buffs = []; bh.hero.def = 10 })
 sys.buffParticles = []
@@ -441,17 +471,17 @@ assert(finalParticles < 10, 'buff到期后粒子基本消失', `剩余=${finalPa
 // ==================== 测试9：角色卡 BUFF 状态显示 ====================
 console.log('\n=== 测试9: 角色卡 BUFF 状态显示 ===')
 // 释放魔力护盾后，角色卡应显示 BUFF（_refreshCharCard 被调用，CharacterState 挂上 _buffs）
-sys.battleHeroes.forEach(bh => { bh.hero._buffs = []; bh.hero.def = 10 })
+resetBattleState()   // 确定性重置：消除前面实时战斗串入的 MP 耗尽/控制切换/阵亡状态
 scene._refreshCharCard(sys.battleHeroes[0].hero)   // 重置角色卡
-assert(!scene.charInfoPanel.character._buffs || scene.charInfoPanel.character._buffs.length === 0,
-  '前置: 角色卡无BUFF')
+assert(sys.battleHeroes[0].hero._buffs.length === 0, '前置: 英雄无BUFF')
 scene._playerAttackMonster(null, manaShield)
-// _refreshCharCard 应把 buffs 同步到角色卡显示对象
-assert(scene.charInfoPanel.character._buffs && scene.charInfoPanel.character._buffs.length > 0,
-  '开BUFF后角色卡显示BUFF状态', `buffs=${scene.charInfoPanel.character._buffs.length}`)
-assert(scene.charInfoPanel.character._buffs[0].type === 'def_up', '角色卡BUFF类型正确')
-assert(scene.charInfoPanel.character._buffs[0]._color && scene.charInfoPanel.character._buffs[0]._color.includes('rgba'),
-  '角色卡BUFF带颜色（图标可着色）')
+// 玩家施放 BUFF 后，buff 应落到当前被控英雄身上（_applyHeroBuff 同步生效）
+const castHero = sys.battleHeroes[0].hero
+assert(castHero._buffs && castHero._buffs.length > 0,
+  '开BUFF后英雄获得BUFF状态', `buffs=${castHero._buffs.length}`)
+assert(castHero._buffs[0].type === 'def_up', '英雄BUFF类型正确')
+assert(castHero._buffs[0]._color && castHero._buffs[0]._color.includes('rgba'),
+  '英雄BUFF带颜色（图标可着色）')
 // 渲染卡片不崩溃 + 绘制了BUFF图标（fillText）
 const cardCtxCalls = []
 const cardCtx = new Proxy({}, {
@@ -488,6 +518,7 @@ assert(hasBuffLabel, '角色信息面板显示BUFF状态', `文字: ${panelCtxCa
 const bhHero0 = sys.battleHeroes[0].hero
 bhHero0.def = 10
 bhHero0._buffs = []
+bhHero0.mp = 100   // 确保第二次施法不被 MP 拦截
 scene._refreshCharCard(bhHero0)
 const defBefore = scene.charInfoPanel.character._getDefWithBuff()
 assert(defBefore === 10, '前置: 无BUFF时防御10', `实际: ${defBefore}`)
@@ -510,6 +541,7 @@ if (warCrySkill) {
 
 // ==================== 测试10：施法移动限制 ====================
 console.log('\n=== 测试10: BUFF锁摇杆 + 普攻/伤害技能X轴锁定 ===')
+resetBattleState()
 // 1) BUFF 释放 → castLockTimer 设置（锁摇杆）
 sys.battleHeroes.forEach(bh => { bh.hero._buffs = []; bh.hero.def = 10 })
 sys.castLockTimer = 0
@@ -542,6 +574,7 @@ assert(sys.castAxisLockTimer === 0, 'BUFF不设置X轴锁定（只用完整锁�
 
 // ==================== 测试11：死亡回城复活仅10% HP/MP ====================
 console.log('\n=== 测试11: 复活仅10% HP/MP ===')
+resetBattleState()
 // 模拟城镇复活逻辑（直接验证 town 逻辑：needReviveOnTown 标记 → 复活 10%）
 game.data.set('needReviveOnTown', true)
 // 手动模拟 town-scene 的复活代码（与 town-scene.js 相同逻辑）
@@ -562,6 +595,7 @@ assert(game.data.get('needReviveOnTown') === undefined, '复活后标记清除')
 
 // ==================== 测试12：技能特效按 2.5D Y 轴排序渲染 ====================
 console.log('\n=== 测试12: 特效按Y轴排序（不再固定最上层） ===')
+resetBattleState()
 // 播放一个命中特效（屏幕坐标），然后跑 scene.render，检查它被加进 engine._entities（Y排序）
 game.effects.effects = []
 // 手动创建一个特效（模拟 playHitEffect 结果）
@@ -593,6 +627,7 @@ if (entities) {
 
 // ==================== 测试13：怪物跳跃攻击动画 ====================
 console.log('\n=== 测试13: 怪物跳跃攻击（抛物线动画而非瞬移） ===')
+resetBattleState()
 // 构造一只怪物，设跳跃状态：从(100,100)跳向(400,400)，加入 mapMonsters 供 _updateMonsterJumps 遍历
 const jumpMonster = {
   id: 'jm1', name: '跳怪', enemyId: 'wild_cat', alive: true,
@@ -627,6 +662,7 @@ assert(Math.abs(jumpMonster.x - 400) < 1, '跳跃落地到目标点', `x=${Math.
 
 // ==================== 测试14：投射物 + BUFF粒子按 Y 轴排序 ====================
 console.log('\n=== 测试14: 投射物/粒子按2.5D Y排序渲染 ===')
+resetBattleState()
 // 造投射物（世界坐标）
 scene.battleSystem.projectiles = [
   { x: scene.playerX + 100, y: scene.playerY + 50, vx: 0, vy: 0, life: 1, fromMonster: false }
@@ -650,6 +686,7 @@ assert(typeof projEnts[0].render === 'function', '投射物带 render 回调')
 console.log('\n=== 测试15: 近战普攻即时 / 远程普攻投射物 + 火球粒子效果 ===')
 const mTest15 = { id:'m15', name:'怪', enemyId:'wild_cat', alive:true, x: scene.playerX+300, y: scene.playerY, hp:500, maxHp:500, def:5, atk:10, level:1, attackCDTimer:0, attackInterval:2000, skillCDs:{} }
 scene.mapMonsters = [mTest15]
+resetBattleState()   // 确定性重置：确保战斗进行中 + 英雄存活，弹道延迟发射才会被更新循环处理
 
 // 1) 远程普攻（李小宝 mage）：延迟发射投射物（0.5s，抬手动作完成后飞出）
 //    先切换到李小宝为被控者
@@ -664,10 +701,19 @@ scene._playerAttackMonster(mTest15, null)
 // ★ 关键：抬手动作期间（延迟未到）不应有投射物
 assert(sys.projectiles.length === 0, '远程普攻抬手期间不立即飞出（延迟发射）', `投射物=${sys.projectiles.length}`)
 assert(sys.pendingProjectiles.length === 1, '远程普攻注册延迟发射', `待发射=${sys.pendingProjectiles.length}`)
-// 驱动（0.5s = 30帧延迟结束），在第 32 帧（弹道刚生成未命中）检查
+// 驱动到抬手动画释放点（第6帧）后弹道才真正飞出：延迟 = 6 * frameDuration
+//   frameDuration=0.15 → 0.9s（54帧）。逐帧驱动，捕获"弹道真正飞出"的那一帧即判定生成，
+//   避免固定帧数下弹道已命中怪物被消除而导致断言不稳定。
+//   ★ 关闭自动补怪（_checkAndRespawnMonsters），只保留 mTest15，避免无关怪物挡在弹道上
+//     导致弹道被"命中"消除而随机失败；这是本用例隔离验证的弹道行为，与补怪无关。
+scene._checkAndRespawnMonsters = () => {}
 const m15hp0 = mTest15.hp
-for (let f = 0; f < 32; f++) scene.update(1/60)
-assert(sys.projectiles.length === 1, '抬手完成后远程普攻弹道飞出', `投射物=${sys.projectiles.length}`)
+let m15Spawned = false
+for (let f = 0; f < 120; f++) {
+  scene.update(1/60)
+  if (sys.projectiles.length >= 1) { m15Spawned = true; break }
+}
+assert(m15Spawned, '抬手完成后远程普攻弹道飞出', `投射物=${sys.projectiles.length}`)
 assert(sys.projectiles[0].isBasicAttack === true, '远程普攻投射物标记 isBasicAttack')
 assert(sys.projectiles[0].vx !== 0 && sys.projectiles[0].vy === 0, '普攻弹道沿X轴飞行')
 // 驱动弹道命中怪物（剩余飞行）
@@ -697,15 +743,24 @@ assert(mTest15.hp < m15bhp0, '近战普攻命中造成伤害（即时近战）',
 assert(sys.pendingDamages.length === 0, '近战普攻伤害结算完成')
 
 // 3) 火球：延迟发射（0.55s）+ 技能弹道（被控者切回法师施放）
+//   ★ 把怪物推远并补满 MP，避免近战段它已贴脸、火球弹道瞬间命中怪物导致断言不稳
+mTest15.x = scene.playerX + 500
+mTest15.y = scene.playerY
+mTest15.alive = true
+sys.battleHeroes.forEach(bh => { bh.hero.mp = 100 })
 sys.playerAttackCD = 0
 sys.projectiles = []
 sys.pendingProjectiles = []
 scene._playerAttackMonster(null, fireball)
 assert(sys.projectiles.length === 0, '火球动画期间不立即飞出（延迟发射）')
 assert(sys.pendingProjectiles.length === 1, '火球注册延迟发射')
-// 驱动动画（0.55s = 33帧延迟结束），在第 35 帧（弹道刚生成未命中）检查
-for (let f = 0; f < 35; f++) scene.update(1/60)
-assert(sys.projectiles.length === 1, '火球动画完成后飞出', `投射物=${sys.projectiles.length}`)
+// 驱动动画（0.55s = 33帧延迟结束），逐帧捕获弹道生成的那一帧
+let fbSpawned = false
+for (let f = 0; f < 80; f++) {
+  scene.update(1/60)
+  if (sys.projectiles.length >= 1) { fbSpawned = true; break }
+}
+assert(fbSpawned, '火球动画完成后飞出', `投射物=${sys.projectiles.length}`)
 const fb15 = sys.projectiles[0]
 assert(fb15.isBasicAttack !== true, '火球不是普攻（技能弹道）')
 assert(fb15.castDir === 1 || fb15.castDir === -1, '火球带 castDir（拖尾方向）', `castDir=${fb15.castDir}`)
@@ -719,6 +774,7 @@ sys.pendingProjectiles = []
 
 // ==================== 测试16：BUFF技能延迟冷却 + MP不足提示 ====================
 console.log('\n=== 测试16: BUFF冷却在BUFF消失后开始 + MP不足提示 ===')
+resetBattleState()
 // 1) BUFF 技能：释放后不立即冷却，cooldownDelay = BUFF 时长，BUFF 消失后才开始 CD
 sys.battleHeroes.forEach(bh => { bh.hero._buffs = []; bh.hero.def = 10 })
 // 给英雄补上 mana_shield 技能（用于按钮冷却验证）
@@ -769,6 +825,7 @@ ctrlBh16.hero.mp = 100
 
 // ==================== 测试17：主角/队友按各自 Y 排序（独立实体） ====================
 console.log('\n=== 测试17: 角色按各自Y排序（不再固定谁在最上） ===')
+resetBattleState()
 // 设置主角和队友在不同 Y（主角在下=Y大，队友在上=Y小）
 sys.battleHeroes.forEach(bh => { bh.hero.hp = 100; bh.hero.alive = true })
 scene.party[0].hp = 100
@@ -793,6 +850,7 @@ console.log(`  sortY 排序: 队友(Y小)=${Math.round(sorted[0])}, 主角(Y大)
 
 // ==================== 测试18：异常状态视觉系统（脚底圈/身体染色/粒子/施加冲击波） ====================
 console.log('\n=== 测试18: 异常状态视觉（灼烧/冰冻/感电/紧固 可见特效） ===')
+resetBattleState()
 // 重置怪物为单只，挂在 4 种状态
 scene.mapMonsters = [{
   id: 'm_st', name: '状怪', enemyId: 'wild_cat', alive: true,

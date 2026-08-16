@@ -88,14 +88,13 @@ class MockGame {
 }
 
 // ==================== 加载真实场景 ====================
-// ★ 微信小游戏代码里用了静态 require('../entities/monsters/xxx.js')，
+// ★ 微信小游戏代码里用了静态 require('../scripts/entities/monsters/xxx.js')，
 //   在 Node ESM 中需注入全局 require（用 createRequire 指向项目根）
 import { createRequire } from 'module'
 import path from 'path'
-import { fileURLToPath } from 'url'
-const __dirname = path.dirname(fileURLToPath(import.meta.url))
-const projectRoot = path.resolve(__dirname, '..', '..')
-// ★ 微信小游戏代码里 require('../entities/monsters/xxx.js') 写在 field-scene.js 中，
+const __dirname = process.cwd()
+const projectRoot = process.cwd()
+// ★ 微信小游戏代码里 require('../scripts/entities/monsters/xxx.js') 写在 field-scene.js 中，
 //   其相对基准是 field-scene.js 所在目录（scripts/scenes/），故 `../entities` = scripts/entities
 //   用 scripts/scenes/ 作为 createRequire 的基准即可正确解析
 const scenesDir = path.resolve(projectRoot, 'scripts', 'scenes')
@@ -111,7 +110,7 @@ globalThis.require = (p) => {
 
 let FieldScene
 try {
-  const mod = await import('../scenes/field-scene.js')
+  const mod = await import('../scripts/scenes/field-scene.js')
   FieldScene = mod.FieldScene
   console.log('[模拟器] 成功加载真实 FieldScene')
 } catch (e) {

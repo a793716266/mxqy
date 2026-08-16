@@ -12,11 +12,9 @@
 import { parse } from '@babel/parser'
 import { readFileSync, statSync, readdirSync } from 'fs'
 import { resolve, extname } from 'path'
-import { fileURLToPath } from 'url'
 
-const __dirname = fileURLToPath(new URL('.', import.meta.url))
-// 脚本位于 scripts/tools/，项目根目录是上级的上级
-const PROJECT_ROOT = resolve(__dirname, '..', '..')
+// 脚本由 npm run check 从项目根目录执行，process.cwd() 即项目根（meow-star-native）
+const PROJECT_ROOT = process.cwd()
 
 function collectJsFiles(targetPath) {
   const files = []

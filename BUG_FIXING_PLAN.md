@@ -2,6 +2,35 @@
 
 ## 📅 更新日志
 
+### 2026-08-16（三次更新）
+
+**fix: 英雄 offensive/heal 技能失效修复（drain / heal_strike / curse / dark_nova）+ 怪物降攻状态系统**
+
+- **用户反馈**：除 BUFF 时机外，还有"很多其他问题"，要求自主排查逐个修。本次定位到一批**玩家手动放也失效**的技能（描述说会做、实际不做），全部用 `scripts/tools/verify_hero_skills.mjs` 自测（7 通过）+ `verify_monster_ai.mjs`（6 通过）。
+- **修复（field-battle-system.js）**：
+  1. **`dark_nova`(暗星爆发, target:'all') 只打单只怪** → 延迟伤害结算处加 `allTarget` 分支，命中范围内全部存活怪物（紫色飘字）。
+  2. **`drain`(吸命, effect:drain) 不吸血** → 结算时按伤害比例回血施法者（`healCasterPct`）。
+  3. **`heal_strike`(治愈冲击, attack_heal) 不回血** → 同上按 `healPercent` 回血施法者。
+  4. **`curse`(诅咒, debuff→atk_down) 不降敌属性** → 新增怪物 `atk_down`(虚弱) 状态：施加时设 `monster._atkMul`、怪物伤害结算（近战普攻 `_dealMonsterDamage` + 技能近战 `doMelee`）乘该系数、过期恢复；`STATUS_META` 加 `atk_down` 配色。
+- **验证**：`verify_hero_skills.mjs` 7/0、`verify_ai_buff.mjs` 14/0、`verify_switch_skills.mjs` 4/0、`verify_monster_ai.mjs` 6/0、`simulate_game.mjs` 23/0、Babel 65/65 全绿；预览 reload 重新打包无游戏代码报错。
+- **仍待处理（设计级，需确认意图）**：`taunt`(挑衅)/`guard`(守护)/`gold_up`(财运) 三类 hero buff 在野外战斗未实现（点了白费 MP）；怪物 `invisible`(暗影突袭) buff 亦为只弹 toast 的空壳。这些涉及"怪物改 target / 替队友承伤 / 额外金币"等玩法设计，建议确认后再实现。
+
+### 2026-08-16（二次更新）
+
+**fix: AI 技能决策重写（BUFF 时机 + 治疗实现 + 未实现 BUFF 排除）**
+
+- **用户反馈**：AI 很傻，BUFF 技能释放时机不对（只挨打后才开防御、进攻类 BUFF 从不开、受击时可能选错 BUFF），且每次改动都要手动测、问题多。本次自主排查并修复，全部用 `scripts/tools/verify_ai_buff.mjs` / `verify_switch_skills.mjs` 自测（14 通过 + 4 通过），无需用户手动测逻辑。
+- **根因与修复（field-battle-system.js `_allyTryCastSkill` 决策块重写）**：
+  1. **防御 BUFF 只挨打后才开** → 改为主动开：脆皮(法师/治疗)或全队已有人受伤即开；受击时优先选【防御类】buff（def_up/def_up_self），不再误选挑衅/进攻类。
+  2. **进攻/增益 BUFF（战吼 atk_up / 狂暴 atk_up_self）永远放不出** → 安全时主动轮转开，提升团队输出。
+  3. **受击时 `has('buff')` 可能选到挑衅/财运/反击/守护** → 这些在野外战斗**未实现**（只打日志），AI 永不选用；`classify` 新增 `'noop'` 类别并排除，避免空转浪费 MP/CD。
+  4. **治疗技能整体失效（严重 bug）**：`_applyHeroBuff` 入口 `!skill.effect` 直接 return，而治愈之光用 `type:'heal'`（无 `effect`），导致玩家与 AI 施放治疗都不回血。已放开入口并按 `type==='heal'` 识别，新增群体治疗分支（base+matk 系数，全队回血 + 飘治疗字）。
+  5. **治疗职业不预判奶** → 全队最低血量 < 72% 即主动奶，不等地狱模式。
+  6. **AOE 阈值 ≥3 太高** → 降到 ≥2。
+  7. **受控英雄误判**：原 `ctrlHero` 写死 `battleHeroes[0]`，改用 `_getCurrentControlHero()` 取真实被控者。
+- **验证脚本**：`scripts/tools/verify_ai_buff.mjs`（A 进攻BUFF/B 防御BUFF/C 受击选防御/D 治疗回血/E 多怪AOE/F 未实现BUFF不空转，14 通过）、`verify_switch_skills.mjs`（切换后技能按钮更新，4 通过）。原 `simulate_game.mjs` 回归 23 通过 0 失败，Babel 语法检查 65/65。
+- **状态**：✅ 已通过自测；未提交（待用户真机预览确认手感后提交）
+
 ### 2026-08-16（更新）
 
 **feat: 臻宝「盾击」技能完整实现 + 英雄护盾机制 + 怪物眩晕/击退 + AI 同步**
@@ -4388,6 +4417,12 @@ _checkBattleEnd() {
 - **修复**：`_switchControl` 同步重排 `this.followers` 与 `battleHeroes`；`isControlled` 改为引用相等 `follower === ctrlHero.followerRef`。
 - **修改文件**：`scripts/systems/field-battle-system.js`（`_switchControl`）、`scripts/scenes/field-scene.js`（跟随循环）
 
+### fix: 任务7-A 召回/解散只作用于非被控成员（被控角色不被瞬移）
+- **现象**：切换控制权后点「召回」，被控角色（玩家当前操作的角色）也被瞬移到环绕圈上，导致玩家操作的角色被强行拉走、控制权"看起来失效"。
+- **根因**：`_recallAlliesToPlayer` 遍历 `this.followers` 时把**全部**成员（含 `battleHeroes[0]` 被控角色对应的 follower）都按环形角度瞬移，被控角色无法保持玩家摇杆操控原位。
+- **修复**：`_recallAlliesToPlayer` 增加引用相等跳过——`if (ctrlHero && ctrlHero.followerRef && follower === ctrlHero.followerRef) continue`，被控角色保持原位由玩家操控；环形角度改用 `nonCtrlCount`（非被控成员计数）均分，保证其余队友均匀环绕。**解散**路径本身只切 `aiRecall=false`、被控成员已在 `_updateFollowers` 的 `isControlled` 分支被 `continue` 跳过，已正确只影响非被控成员，无需额外改动。
+- **修改文件**：`scripts/scenes/field-scene.js`（`_recallAlliesToPlayer`）
+
 ### fix: AI 近战攻击范围过离谱（不同 X 轴都能打到怪物）
 - **现象**：队友在 Y 轴错位很远（如上下 300px）仍攻击到怪物。
 - **根因**：AI 攻击触发用 `_findNearestMonsterFromPos(range, 'x', ...)` 只看 X 轴距离 + 220*dpr 的 Y 容差，近战判定退化为"X 轴在范围内即可"。
@@ -4395,8 +4430,14 @@ _checkBattleEnd() {
 - **修改文件**：`scripts/systems/field-battle-system.js`（`_updateAllyAI` 攻击触发段）
 
 ### fix: AI 有护盾/治疗技能不放（智能决策）
-- **现象**：主角被打，李小宝有魔力护盾却不释放。
-- **根因**：`_allyTryCastSkill` 按 CD 盲目轮转选技能，无任何战况触发条件。
-- **修复**：改为条件优先级决策——①自身/队友 HP<45% 放治疗/护盾 → ②主角 2.5 秒内挨打且有防御 buff 立即放护盾 → ③怪物≥3 只放 AOE → ④否则轮转攻击。怪物伤害结算处新增 `hero._lastHitTime` 时间戳供 AI 判断"主角正挨打"。
-- **修改文件**：`scripts/systems/field-battle-system.js`（`_allyTryCastSkill`）、`scripts/scenes/field-scene.js`（`_dealMonsterDamage`）
-- **状态**：✅ 三项均通过真实战斗路径（FieldScene 实例化）验证：切换同步、隔轴不命中/贴脸命中、主角挨打自动放护盾
+- **现象**：主角被打，李小宝有魔力护盾却不释放；且实测中 AI 队友自己被打个半死（HP≈50%）也死活不放保命技，"BUFF 跟祖传一样"。
+- **根因（实测后定位，3 个真实 bug）**：
+  1. **`_dealMonsterDamage` 从未写入 `hero._lastHitTime`**——上一轮只在代码里"读取"了它，却漏了"写入"这一步（field-battle-system.js 伤害结算函数里没有这行）。导致 `ctrlUnderAttack` 永远为 false（读 undefined），所有"受击触发护盾"分支永不执行。
+  2. **保命阈值只看全队最低血**：条件① `lowestRatio < 0.45` 取的是全队血最低者。当主角满血、某 AI 队友自己血 50% 时，最低比=1.0，不触发——"自己半死"无人救助。
+  3. **护盾只认"主角挨打"**：条件② `ctrlUnderAttack` 仅判断被控主角，AI 队友自身挨打时不会主动放护盾（用户实测主诉点）。
+- **修复**：
+  - 在 `_dealMonsterDamage` 伤害应用后补写 `hero._lastHitTime = Date.now() / 1000`（受击时间戳，供决策感知）。
+  - `_allyTryCastSkill` 新增 `selfRatio`（自身血比）、`selfUnderAttack`（自身 2.5s 内受击）。
+  - 条件①放宽为 **`selfRatio < 0.55 || lowestRatio < 0.45`**（自己半死就保命）；条件②改为 **`selfUnderAttack || ctrlUnderAttack`**（自己或主角挨打都放护盾）。
+- **修改文件**：`scripts/systems/field-battle-system.js`（`_dealMonsterDamage` 加 `_lastHitTime`、`_allyTryCastSkill` 决策逻辑）
+- **状态**：✅ 已通过 Babel 语法检查（待用户真机实测确认 AI 是否会在自身/主角挨打时主动放护盾）

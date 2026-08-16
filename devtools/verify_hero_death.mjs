@@ -6,9 +6,8 @@
  */
 import { createRequire } from 'module'
 import path from 'path'
-import { fileURLToPath } from 'url'
-const __dirname = path.dirname(fileURLToPath(import.meta.url))
-const projectRoot = path.resolve(__dirname, '..', '..')
+const __dirname = process.cwd()
+const projectRoot = process.cwd()
 const scenesDir = path.resolve(projectRoot, 'scripts', 'scenes')
 const nodeRequire = createRequire(path.join(scenesDir, 'x.js'))
 globalThis.require = (p) => { const abs = p.startsWith('.') ? path.resolve(scenesDir, p) : p; return nodeRequire(abs) }
@@ -31,7 +30,7 @@ class MockGame {
     this.changeScene = (n) => { this._changedScene = n }
   }
 }
-const { FieldScene } = await import('../scenes/field-scene.js')
+const { FieldScene } = await import('../scripts/scenes/field-scene.js')
 const game = new MockGame()
 const scene = new FieldScene(game, { area: 'grassland' })
 await scene.init()

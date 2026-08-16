@@ -2307,6 +2307,11 @@ baseRadius: 50 * this.dpr,    // 底座半径（缩小）
    */
   _findNearestBattleHero(monster) {
     const heroes = (this.battleSystem && this.battleSystem.battleHeroes) || []
+    // ★ 挑衅(taunt)：命中帧强制锁定正在挑衅的英雄
+    if (typeof this._fieldGetTauntHero === 'function') {
+      const tauntHero = this._fieldGetTauntHero()
+      if (tauntHero) return tauntHero
+    }
     let best = null
     let bestD = Infinity
     for (const bh of heroes) {
@@ -2451,9 +2456,14 @@ baseRadius: 50 * this.dpr,    // 底座半径（缩小）
       cy = this._heroWorldPos[ctrlHero.partyIndex].y
     }
     const radius = 55 * this.dpr
+    // ★ 关键修复（任务7-A）：召回只作用于「非被控成员」，被控角色由玩家摇杆操控，
+    //   不能被瞬移到环绕圈上、否则切换控制权后玩家操作的角色会被强行拉走，
+    //   表现为"切换后召回/解散失效"。用引用相等跳过被控角色（followerRef 与 followers 同引用）。
+    let nonCtrlCount = 0
     for (let i = 0; i < this.followers.length; i++) {
       const follower = this.followers[i]
-      const angle = (Math.PI * 2 * i) / this.followers.length
+      if (ctrlHero && ctrlHero.followerRef && follower === ctrlHero.followerRef) continue
+      const angle = (Math.PI * 2 * nonCtrlCount) / Math.max(1, this.followers.length - 1)
       follower.x = cx + Math.cos(angle) * radius
       follower.y = cy + Math.sin(angle) * radius
       follower.facingLeft = cx < follower.x
@@ -2462,8 +2472,9 @@ baseRadius: 50 * this.dpr,    // 底座半径（缩小）
       if (follower.sprite && typeof follower.sprite.update === 'function') {
         follower.sprite.update(0, false, follower.facingLeft)
       }
+      nonCtrlCount++
     }
-    console.log('[Field] 已召回全部队友到被控角色周围')
+    console.log('[Field] 已召回非被控队友到被控角色周围（被控角色保持操控原位）')
   }
 
   /**
@@ -3078,6 +3089,10 @@ baseRadius: 50 * this.dpr,    // 底座半径（缩小）
       const hero = this.party[0]
       for (let i = this.battleSystem.projectiles.length - 1; i >= 0; i--) {
         const p = this.battleSystem.projectiles[i]
+        // ★ 只处理怪物投射物：英雄投射物（owner='hero'）由 field-battle-system 的
+        //   _updateHeroProjectiles 统一处理。否则英雄弹道出生点离主角极近（<30*dpr），
+        //   会被下面的"命中玩家"判定当场消除，导致英雄普攻/火球弹道瞬间消失。
+        if (p.owner !== 'monster') continue
         p.x += p.vx * dt
         p.y += p.vy * dt
         p.life -= dt
@@ -5005,6 +5020,9 @@ baseRadius: 50 * this.dpr,    // 底座半径（缩小）
       }
 
       ctx.save()
+
+      // ★ 隐身(暗影突袭)：怪物半透明呈现，玩家可感知但仍不可被选中
+      if (monster._invisible) ctx.globalAlpha = 0.22
 
       // Boss/精英光环
       if (monster.isBoss || monster.isElite) {

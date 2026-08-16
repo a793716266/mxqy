@@ -1,6 +1,6 @@
 {
   "scripts": {
-    "check": "node scripts/tools/check_syntax.js",
+    "check": "node devtools/check_syntax.mjs",
     "scan-assets": "node tools/map-editor/scan-assets.js"
   },
   "devDependencies": {

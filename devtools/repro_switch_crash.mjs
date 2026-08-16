@@ -1,8 +1,7 @@
 import { createRequire } from 'module'
 import path from 'path'
-import { fileURLToPath } from 'url'
-const __dirname = path.dirname(fileURLToPath(import.meta.url))
-const projectRoot = path.resolve(__dirname, '..', '..')
+const __dirname = process.cwd()
+const projectRoot = process.cwd()
 const scenesDir = path.resolve(projectRoot, 'scripts', 'scenes')
 const nodeRequire = createRequire(path.join(scenesDir, 'x.js'))
 globalThis.require = (p) => { const abs = p.startsWith('.') ? path.resolve(scenesDir, p) : p; return nodeRequire(abs) }
@@ -12,7 +11,7 @@ const _storage = {}
 globalThis.wx = { createCanvas:()=>mockCanvas, createImage:()=>{const i={width:64,height:64};setTimeout(()=>{if(i.onload)i.onload()},0);return i}, getStorageSync:(k)=>_storage[k], setStorageSync:(k,v)=>{_storage[k]=v}, getSystemInfoSync:()=>({windowWidth:750,windowHeight:1334,pixelRatio:3}), onTouchStart:()=>{},onTouchMove:()=>{},onTouchEnd:()=>{},onTouchCancel:()=>{}, requestAnimationFrame:(cb)=>setTimeout(()=>cb(Date.now()),16), canvasToTempFilePath:()=>{},vibrateShort:()=>{},showToast:()=>{},showLoading:()=>{},hideLoading:()=>{},setKeepScreenOn:()=>{},getMenuButtonBoundingClientRect:()=>({top:50,bottom:90,left:280,right:470,width:190,height:40}),onShow:()=>{},onHide:()=>{},downloadFile:()=>({onProgressUpdate:()=>{},onHeadersReceived:()=>{}}) }
 class MockGame { constructor(){ this.ctx=canvasCtx; this.width=750*3; this.height=1334*3; this.dpr=3; this.data={_d:{},_flags:new Set(),get:(k)=>this.data._d[k],set:(k,v)=>{this.data._d[k]=v},del:(k)=>{delete this.data._d[k]},hasFlag:(k)=>this.data._flags.has(k),setFlag:(k)=>this.data._flags.add(k),delFlag:(k)=>this.data._flags.delete(k)}; this.assets={get:()=>({width:64,height:64}),getImage:()=>({width:64,height:64}),loadSubpackage:async()=>{},isLoaded:()=>true}; this.audio={play:()=>{},playSound:()=>{}}; this.input={taps:[],touches:{},consumeTaps:()=>this.input.taps.splice(0,this.input.taps.length)}; this.showToast=()=>{}; this.sceneManager={changeScene:()=>{}}; this.effects={playHitEffect:()=>{}} } }
 
-const { FieldScene } = await import('../scenes/field-scene.js')
+const { FieldScene } = await import('../scripts/scenes/field-scene.js')
 const game = new MockGame()
 const scene = new FieldScene(game, { area: 'grassland' })
 await scene.init()

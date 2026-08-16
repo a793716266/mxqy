@@ -12,10 +12,9 @@
  */
 import { createRequire } from 'module'
 import path from 'path'
-import { fileURLToPath } from 'url'
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url))
-const projectRoot = path.resolve(__dirname, '..', '..')
+const __dirname = process.cwd()
+const projectRoot = process.cwd()
 const scenesDir = path.resolve(projectRoot, 'scripts', 'scenes')
 const nodeRequire = createRequire(path.join(scenesDir, 'x.js'))
 globalThis.require = (p) => {
@@ -75,7 +74,7 @@ function assert(cond, name, detail) {
   else { failed++; console.log(`  ✗ ${name}  ${detail || ''}`) }
 }
 
-const { FieldScene } = await import('../scenes/field-scene.js')
+const { FieldScene } = await import('../scripts/scenes/field-scene.js')
 console.log('[seq] 加载真实 FieldScene OK')
 const game = new MockGame()
 const scene = new FieldScene(game, { area: 'grassland' })

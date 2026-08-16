@@ -10,7 +10,7 @@
  *
  * 用法: node scripts/tools/verify_switch_control.mjs
  */
-import { installFieldBattleSystem } from '../systems/field-battle-system.js'
+import { installFieldBattleSystem } from '../scripts/systems/field-battle-system.js'
 
 let passed = 0
 let failed = 0

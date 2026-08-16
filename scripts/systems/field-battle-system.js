@@ -207,6 +207,23 @@ export function installFieldBattleSystem(FieldSceneClass) {
       if (this.game.showToast) {
         this.game.showToast('战斗胜利！')
       }
+      // ★ 财运亨通(gold_up)：战斗胜利额外获得金币（基础金币 + 加成）
+      const battleHeroesG = this.battleSystem.battleHeroes || []
+      let goldBonusRatio = 0
+      for (const bh of battleHeroesG) {
+        if (bh.hero && bh.hero.hp > 0) {
+          const gv = this._heroBuffValue(bh.hero, 'gold_up')
+          if (gv > goldBonusRatio) goldBonusRatio = gv
+        }
+      }
+      const baseGold = 20
+      const extraGold = Math.round(baseGold * goldBonusRatio)
+      const totalGold = baseGold + extraGold
+      const curGold = (this.game.data && this.game.data.get && this.game.data.get('gold')) || 0
+      this.game.data.set('gold', curGold + totalGold)
+      if (extraGold > 0 && this.game.showToast) {
+        this.game.showToast(`战斗胜利！获得金币 +${totalGold}（财运亨通 +${extraGold}）`)
+      }
     } else {
       // 战斗失败，全部英雄阵亡 → 回城镇（★ 保持死亡状态返回，到城镇后再复活）
       if (this.game.showToast) {
@@ -441,6 +458,22 @@ export function installFieldBattleSystem(FieldSceneClass) {
           const m = pd.monster
           if (m && m.alive) {
             this._damageMonster(m, pd.damage)
+            // ★ 诅咒：对命中怪物施加降攻（虚弱）状态
+            if (pd.debuff && pd.debuff.type === 'atk_down') {
+              this._applyMonsterStatus(m, 'atk_down', { duration: pd.debuff.duration || 3, value: pd.debuff.value || 0.3 }, pd.hero)
+            }
+            // ★ 吸血 / 治愈冲击：按伤害比例治疗施法者
+            if (pd.healCasterPct && pd.healCasterPct > 0 && pd.hero) {
+              const heal = Math.round((pd.damage || 0) * pd.healCasterPct)
+              if (heal > 0) {
+                pd.hero.hp = Math.min(pd.hero.maxHp, (pd.hero.hp || 0) + heal)
+                const hp = (typeof pd.hero.getPos === 'function') ? pd.hero.getPos() : { x: this.playerX, y: this.playerY }
+                this.battleSystem.damageTexts.push({
+                  text: `+${heal}`, x: hp.x - this.cameraX, y: hp.y - this.cameraY - 60 * this.dpr,
+                  color: '#2ed573', life: 1.0, maxLife: 1.0, _startY: hp.y - this.cameraY - 60 * this.dpr
+                })
+              }
+            }
             // ★ 让目标面板锁定真正被击中的怪（近战延迟命中 / 队友近战）
             // 添加伤害数字
             const sx = m.x - this.cameraX
@@ -461,6 +494,17 @@ export function installFieldBattleSystem(FieldSceneClass) {
               m.alive = false
               console.log(`[FieldBattle] ${m.name} 被击败！`)
               this.battleSystem.battleTarget = null
+            }
+          }
+          // ★ 暗星爆发等全体技能：对范围内所有存活怪物结算（不重复结算已命中的 m）
+          if (pd.allTarget) {
+            for (const mm of (this.mapMonsters || [])) {
+              if (!mm.alive || mm === m) continue
+              const ic = Math.random() < (pd.hero.crit || 0.05)
+              const dmg = this._calcSkillDamageToMonster(mm, pd.skill, pd.hero, ic)
+              this._damageMonster(mm, dmg)
+              this._pushDamageText(mm, dmg, ic, '#c08bff')
+              if (mm.hp <= 0) { mm.alive = false; this.battleSystem.battleTarget = null }
             }
           }
           // ★ 盾击附加效果：生成自身护盾 + 防御提升 + 眩晕+击退前方X轴范围敌人
@@ -830,6 +874,15 @@ export function installFieldBattleSystem(FieldSceneClass) {
 
     // ★ 放入延迟伤害队列，动画命中帧时结算
     if (!this.battleSystem.pendingDamages) this.battleSystem.pendingDamages = []
+    // ★ 特殊技能附加数据（吸血/治愈冲击回血、诅咒降攻、全体攻击）
+    const isDrain = skill && (skill.effect === 'drain')
+    const isHealStrike = skill && (skill.type === 'attack_heal')
+    const healCasterPct = isDrain ? (skill.drainPercent || 1.0)
+      : (isHealStrike ? (skill.healPercent || 0.3) : 0)
+    const debuff = (skill && skill.type === 'debuff')
+      ? { type: 'atk_down', value: (skill.value || 0.3), duration: (skill.turns || 3) }
+      : null
+    const allTarget = !!(skill && skill.target === 'all')
     this.battleSystem.pendingDamages.push({
       monster: monster,
       damage: damage,
@@ -839,6 +892,9 @@ export function installFieldBattleSystem(FieldSceneClass) {
       hero: mainHero,         // 盾击需引用释放者生成护盾/防御提升
       skill: skill,            // 盾击需读取技能配置（护盾/防御/眩晕/击退参数）
       shieldBash: skill && skill.id === 'shield_bash',  // 盾击附加效果标记
+      healCasterPct: healCasterPct,  // 吸血/治愈冲击：按伤害比例回血
+      debuff: debuff,                // 诅咒：降攻 debuff
+      allTarget: allTarget,          // 暗星爆发：对全体怪物结算
     })
 
     // ★ 技能释放后设置按钮冷却（避免无限释放且让冷却遮罩生效）
@@ -1333,43 +1389,105 @@ export function installFieldBattleSystem(FieldSceneClass) {
     const hpRatio = (h) => (h.maxHp ? (h.hp / h.maxHp) : 1)
     const lowestRatio = aliveHeroes.length
       ? Math.min(...aliveHeroes.map(hpRatio)) : 1
-    // 主角（被控角色）是否正在挨打：最近 2.5 秒内受过击
-    const ctrlHero = (this.battleSystem.battleHeroes && this.battleSystem.battleHeroes[0])
-      ? this.battleSystem.battleHeroes[0].hero : null
+    // 自身血量比例（★ 关键：AI 队友自己被打个半死也要放保命技，不能只看全队最低）
+    const selfRatio = hpRatio(hero)
+    const selfUnderAttack = hero._lastHitTime &&
+      (nowSec - hero._lastHitTime) <= 2.5
+    // 当前被控角色是否正在挨打：最近 2.5 秒内受过击（用真正的被控英雄，而非写死的 index 0）
+    const ctrlObj = this._getCurrentControlHero ? this._getCurrentControlHero() : null
+    const ctrlHero = ctrlObj ? ctrlObj.hero : null
     const ctrlUnderAttack = ctrlHero && ctrlHero._lastHitTime &&
       (nowSec - ctrlHero._lastHitTime) <= 2.5
     // 全图存活怪物数（判断是否多怪，放 AOE）
     const aliveMonsters = (this.mapMonsters || []).filter(m => m.alive)
     const monsterCount = aliveMonsters.length
 
+    // ★ 重写分类：区分 治疗/防御buff/进攻buff/AOE/攻击，并把野外【未实现】的
+    //   buff（taunt/counter/guard/gold_up 等）单独归为 'noop'，AI 永不选用，避免空转浪费 CD。
+    //   已实现的 buff 仅 4 种：def_up / def_up_self / atk_up / atk_up_self。
     const classify = (s) => {
       if (s.type === 'heal' || s.effect === 'heal') return 'heal'
-      if (s.type === 'buff' || s.effect === 'def_up' || s.effect === 'def_up_self' ||
-          s.effect === 'atk_up' || s.effect === 'atk_up_self' || s.effect === 'shield' ||
-          s.effect === 'speed_up' || s.effect === 'stun') return 'buff'
+      if (s.effect === 'def_up' || s.effect === 'def_up_self') return 'def'
+      if (s.effect === 'atk_up' || s.effect === 'atk_up_self') return 'atk'
+      if (s.effect === 'taunt') return 'taunt'        // 挑衅：坦克拉怪
+      if (s.effect === 'guard') return 'guard'        // 守护：替队友承伤
+      if (s.effect === 'counter') return 'counter'    // 反击：受击反弹
+      if (s.effect === 'gold_up') return 'gold'        // 财运：额外金币
       if (s.aoe || (s.range && s.range >= 150)) return 'aoe'
       return 'attack'
     }
-    const has = (type) => available.find(s => classify(s) === type)
+    const classifyList = (type) => available.filter(s => classify(s) === type)
+    const healSkills = classifyList('heal')
+    const defBuffs   = classifyList('def')
+    const atkBuffs   = classifyList('atk')
+    const aoeSkills  = classifyList('aoe')
+    const atkSkills  = classifyList('attack')
+    const tauntBuffs = classifyList('taunt')
+    const guardBuffs = classifyList('guard')
+    const counterBuffs = classifyList('counter')
+    const goldBuffs  = classifyList('gold')
+    // 可用技能（所有已实现的类型，含挑衅/守护/反击/财运）
+    const usable = available
+    // 该类型 buff 是否仍在生效（剩余 > 1s 视为生效，避免刚过期就重开浪费 CD）
+    const buffActive = (kind) => !!(hero._buffs && hero._buffs.some(b => b._active && b._remaining > 1 &&
+      ((kind === 'def' && (b.type === 'def_up' || b.type === 'def_up_self')) ||
+       (kind === 'atk' && (b.type === 'atk_up' || b.type === 'atk_up_self')))))
+    // 通用：指定 buff 类型是否仍在生效（剩余 > 1s）
+    const buffTypeActive = (type) => !!(hero._buffs && hero._buffs.some(b => b._active && b._remaining > 1 && b.type === type))
+    // 取一个【未生效】的防御 buff，否则退化为任意一个（保证能开）
+    const pickDef = () => (defBuffs.find(b => !buffActive('def')) || defBuffs[0] || null)
 
     let skill = null
 
-    // ① 紧急治疗/护盾：自身或任一队友血量 < 45% → 优先保命
-    if (lowestRatio < 0.45) {
-      skill = has('heal') || has('buff')
+    // ① 紧急保命：自身 < 45% 或 全队最低 < 40% → 优先治疗 / 防御buff
+    if (!skill && (selfRatio < 0.45 || lowestRatio < 0.40)) {
+      skill = healSkills[0] || pickDef()
     }
-    // ② 主角正挨打且自己有防御类 buff（如李小宝魔力护盾）→ 立即护盾
-    if (!skill && ctrlUnderAttack) {
-      skill = has('buff')
+    // ② 受击即减伤：自身或主角正挨打（2.5s 内）→ 优先放【防御类】buff（非挑衅/进攻类）
+    if (!skill && (selfUnderAttack || ctrlUnderAttack)) {
+      skill = pickDef()
     }
-    // ③ 多怪（≥3 只）且有 AOE → 清场
-    if (!skill && monsterCount >= 3) {
-      skill = has('aoe')
+    // ③ 治疗职业主动预判奶：全队最低 < 72% 就奶（不等地狱模式才救）
+    if (!skill && healSkills.length && lowestRatio < 0.72) {
+      skill = healSkills[0]
     }
-    // ④ 否则：轮转攻击技能（保证攻击类技能正常输出）
+    // ④ 防御buff：接敌即主动开（脆皮法师/治疗，或全队已有人受伤），不再等挨打
+    if (!skill && defBuffs.length && !buffActive('def') && monsterCount > 0) {
+      const squishy = (hero.role === 'mage' || hero.role === 'healer')
+      const someoneHurt = lowestRatio < 0.95
+      if (squishy || someoneHurt) skill = defBuffs[0]
+    }
+    // ⑤ 进攻buff：安全时主动开（战吼/狂暴），提升团队输出（未生效才开）
+    if (!skill && atkBuffs.length && !buffActive('atk')) {
+      const safe = !selfUnderAttack && !ctrlUnderAttack && lowestRatio > 0.6
+      if (safe) skill = atkBuffs[0]
+    }
+    // ⑤-1 守护(guard)：有队友受伤/受击 → 坦克替队友承伤（未生效才开）
+    if (!skill && guardBuffs.length && !buffTypeActive('guard') &&
+        (selfUnderAttack || ctrlUnderAttack || lowestRatio < 0.6)) {
+      skill = guardBuffs[0]
+    }
+    // ⑤-2 挑衅(taunt)：坦克主动拉怪（敌人≥1 且未生效），保护脆皮队友
+    if (!skill && tauntBuffs.length && !buffTypeActive('taunt') && monsterCount > 0) {
+      skill = tauntBuffs[0]
+    }
+    // ⑤-3 反击(counter)：坦克受击或安全时开（攻防一体，未生效才开）
+    if (!skill && counterBuffs.length && !buffTypeActive('counter') &&
+        (selfUnderAttack || lowestRatio > 0.5)) {
+      skill = counterBuffs[0]
+    }
+    // ⑤-4 财运(gold_up)：经济技能，安全时（血量健康、无受击）主动开，叠战斗金币
+    if (!skill && goldBuffs.length && !buffTypeActive('gold_up') && lowestRatio > 0.6) {
+      skill = goldBuffs[0]
+    }
+    // ⑥ 多怪（≥2 只）且有 AOE → 清场（阈值由 3 降到 2）
+    if (!skill && monsterCount >= 2) {
+      skill = aoeSkills[0] || null
+    }
+    // ⑦ 否则：轮转攻击技能（仅从可用技能中选，避免空转未实现的 buff）
     if (!skill) {
-      const attacks = available.filter(s => classify(s) === 'attack' || classify(s) === 'aoe')
-      const pool = attacks.length ? attacks : available
+      const pool = atkSkills.length ? atkSkills : usable
+      if (pool.length === 0) return false   // 没有任何可用技能（只剩未实现buff），不浪费MP
       if (hero._aiLastSkillIdx === undefined) hero._aiLastSkillIdx = -1
       const pickIdx = (hero._aiLastSkillIdx + 1) % pool.length
       skill = pool[pickIdx]
@@ -1695,7 +1813,9 @@ export function installFieldBattleSystem(FieldSceneClass) {
    * @param {Object} caster 施法者（buff 技能以施法者为基准）
    */
   proto._applyHeroBuff = function(skill, caster) {
-    if (!skill || !skill.effect || !this.battleSystem) return
+    if (!skill || !this.battleSystem) return
+    // ★ 兼容两种配置：def/atk 类用 skill.effect，纯治疗用 skill.type === 'heal'
+    if (!skill.effect && skill.type !== 'heal') return
     const effect = skill.effect
     const value = skill.value || 0
     // 野外战斗 buff 时长：优先 duration（秒），否则 turns 按回合估算（回合≈2s）
@@ -1729,8 +1849,115 @@ export function installFieldBattleSystem(FieldSceneClass) {
         this._addHeroBuff(caster, { type: 'atk_up_self', value: value, duration: dur })
         console.log(`[FieldBattle] ${caster.name} 施放${skill.name}：自身攻击+${Math.round(value * 100)}%（持续${dur}s）`)
       }
+    } else if (effect === 'heal' || skill.type === 'heal') {
+      // ★ 群体治疗（艾米治愈之光等）：base + matk*系数，回复全队生命并飘治疗字
+      const targets = this.battleSystem.battleHeroes || []
+      const matkScale = (skill.healMatk != null) ? skill.healMatk : 1
+      for (const bh of targets) {
+        if (!bh.hero || bh.hero.hp <= 0) continue
+        const matk = bh.hero.matk || bh.hero.atk || 0
+        const amount = Math.floor((skill.power || 0) + matk * matkScale)
+        const before = bh.hero.hp
+        bh.hero.hp = Math.min(bh.hero.maxHp, bh.hero.hp + amount)
+        const healed = bh.hero.hp - before
+        // 治疗飘字
+        if (this.battleSystem.damageTexts) {
+          const p = (bh.getPos ? bh.getPos() : { x: this.playerX, y: this.playerY })
+          this.battleSystem.damageTexts.push({
+            text: `+${healed}`,
+            x: (p.x || 0) - (this.cameraX || 0),
+            y: (p.y || 0) - (this.cameraY || 0) - 90 * this.dpr,
+            color: '#6dffb0', life: 1.0, maxLife: 1.0,
+            _startY: (p.y || 0) - (this.cameraY || 0) - 90 * this.dpr
+          })
+        }
+        if (typeof this._refreshCharCard === 'function') this._refreshCharCard(bh.hero)
+      }
+      console.log(`[FieldBattle] ${caster ? caster.name : ''} 施放${skill.name}：全队回复生命（单体约 ${Math.floor((skill.power || 0) + ((targets[0] && (targets[0].hero.matk || targets[0].hero.atk || 0)) || 0) * matkScale)}）`)
+    } else if (effect === 'taunt') {
+      // ★ 挑衅：小贝吸引敌人攻击自己（持续期间所有怪物强制锁定小贝）
+      if (caster) {
+        this._addHeroBuff(caster, { type: 'taunt', value: 0, duration: dur })
+        console.log(`[FieldBattle] ${caster.name} 施放${skill.name}：吸引敌人攻击自己（持续${dur}s）`)
+      }
+    } else if (effect === 'guard') {
+      // ★ 守护：小贝替队友承受伤害（持续期间队友受到的伤害转由小贝承担）
+      if (caster) {
+        this._addHeroBuff(caster, { type: 'guard', value: 0, duration: dur })
+        console.log(`[FieldBattle] ${caster.name} 施放${skill.name}：替队友承受伤害（持续${dur}s）`)
+      }
+    } else if (effect === 'counter') {
+      // ★ 反击：小贝受到攻击时反弹伤害（value=反弹比例）
+      if (caster) {
+        this._addHeroBuff(caster, { type: 'counter', value: (skill.value || 0.5), duration: dur })
+        console.log(`[FieldBattle] ${caster.name} 施放${skill.name}：受到攻击时反击（反弹${Math.round((skill.value||0.5)*100)}%，持续${dur}s）`)
+      }
+    } else if (effect === 'gold_up') {
+      // ★ 财运亨通：战斗胜利后额外获得金币（value=额外比例）
+      if (caster) {
+        this._addHeroBuff(caster, { type: 'gold_up', value: (skill.value || 0.5), duration: dur })
+        console.log(`[FieldBattle] ${caster.name} 施放${skill.name}：战斗胜利额外金币+${Math.round((skill.value||0.5)*100)}%（持续${dur}s）`)
+      }
     }
-    // 其它 buff 类型（taunt/counter/guard/gold_up 等）暂未在野外战斗中实现，仅记录
+    // 其它未知 buff 类型暂不处理
+  }
+
+  // ==========================================================================
+  // ★ 挑衅/守护/反击/财运 辅助查询（野外战斗实现）
+  // ==========================================================================
+  proto._heroHasBuff = function(hero, type) {
+    if (!hero || !hero._buffs) return false
+    return hero._buffs.some(b => b._active && b._remaining > 0 && b.type === type)
+  }
+  proto._heroBuffValue = function(hero, type) {
+    if (!hero || !hero._buffs) return 0
+    const b = hero._buffs.find(x => x._active && x._remaining > 0 && x.type === type)
+    return b ? (b.value || 0) : 0
+  }
+  // 返回当前正在挑衅的英雄（存活），否则 null
+  proto._fieldGetTauntHero = function() {
+    const battleHeroes = this.battleSystem.battleHeroes || []
+    for (const bh of battleHeroes) {
+      if (bh.hero && bh.hero.hp > 0 && this._heroHasBuff(bh.hero, 'taunt')) return bh.hero
+    }
+    return null
+  }
+  // 返回当前正在守护（替队友承伤）的英雄（存活），否则 null
+  proto._fieldGetGuardHero = function() {
+    const battleHeroes = this.battleSystem.battleHeroes || []
+    for (const bh of battleHeroes) {
+      if (bh.hero && bh.hero.hp > 0 && this._heroHasBuff(bh.hero, 'guard')) return bh.hero
+    }
+    return null
+  }
+  // 守护：若非守护者本人受伤，且存在存活守护者，则伤害转由守护者承担
+  proto._fieldResolveGuard = function(targetHero) {
+    if (!targetHero || targetHero.hp <= 0) return targetHero
+    const guarder = this._fieldGetGuardHero()
+    if (guarder && guarder !== targetHero && guarder.hp > 0) {
+      return guarder
+    }
+    return targetHero
+  }
+  // 反击：被击中的英雄若处于反击状态，向攻击者反弹伤害
+  proto._fieldApplyCounterReflect = function(monster, hpDamage, hero) {
+    if (!monster || monster.alive === false || !hero || hpDamage <= 0) return
+    const counterVal = this._heroBuffValue(hero, 'counter')
+    if (counterVal <= 0) return
+    const reflect = Math.max(1, Math.floor(hpDamage * counterVal))
+    this._damageMonster(monster, reflect)
+    const mx = monster.x - this.cameraX
+    const my = monster.y - this.cameraY
+    this.battleSystem.damageTexts.push({
+      text: `反击-${reflect}`,
+      x: mx, y: my - 60 * this.dpr,
+      color: '#ffb142', life: 1.0, maxLife: 1.0, _startY: my - 60 * this.dpr
+    })
+    if (monster.hp <= 0) {
+      monster.alive = false
+      console.log(`[FieldBattle] ${monster.name} 被反击击杀！`)
+      this.battleSystem.battleTarget = null
+    }
   }
 
   /**
@@ -1794,6 +2021,10 @@ export function installFieldBattleSystem(FieldSceneClass) {
       atk_up_self: 'rgba(255,77,77,',   // 红（狂暴）
       spd_up: 'rgba(0,230,118,',        // 绿
       heal: 'rgba(0,230,118,',          // 绿
+      taunt: 'rgba(255,80,80,',         // 红（挑衅）
+      guard: 'rgba(120,200,255,',       // 浅蓝（守护）
+      counter: 'rgba(255,177,66,',      // 橙黄（反击）
+      gold_up: 'rgba(255,215,0,',       // 金（财运）
     }
     return map[type] || 'rgba(200,200,255,'
   }
@@ -1848,6 +2079,7 @@ export function installFieldBattleSystem(FieldSceneClass) {
     freeze:    { color: '#7fe3ff', glow: 'rgba(127,227,255,', name: '冰冻' },
     electrify: { color: '#ffe14d', glow: 'rgba(255,225,77,', name: '感电' },
     root:      { color: '#5bd66b', glow: 'rgba(91,214,107,', name: '紧固' },
+    atk_down:  { color: '#c08bff', glow: 'rgba(192,139,255,', name: '虚弱' },
   }
 
   /**
@@ -1866,6 +2098,7 @@ export function installFieldBattleSystem(FieldSceneClass) {
       if (type === 'electrify') existing.damageMult = config.damageMult || existing.damageMult
       if (type === 'freeze') existing._frozen = true
       if (type === 'root') existing._rooted = true
+      if (type === 'atk_down') monster._atkMul = Math.max(0.1, 1 - (config.value || 0.3))
       // ★ 刷新时重新触发一次施加冲击波（视觉反馈）
       this._spawnStatusShockwave(monster, type, meta)
       return
@@ -1890,6 +2123,8 @@ export function installFieldBattleSystem(FieldSceneClass) {
       _rooted: type === 'root',
       _strikeCount: 0
     })
+    // ★ 虚弱（atk_down）：降低怪物攻击力（在怪物伤害结算处乘 _atkMul）
+    if (type === 'atk_down') monster._atkMul = Math.max(0.1, 1 - (config.value || 0.3))
     // ★ 首次施加：触发扩散冲击波（与英雄 BUFF 同理，给玩家明确视觉反馈）
     this._spawnStatusShockwave(monster, type, meta)
   }
@@ -2169,6 +2404,7 @@ export function installFieldBattleSystem(FieldSceneClass) {
         const e = m.statusEffects[i]
         e._remaining -= dt
         if (e._remaining <= 0) {
+          if (e.type === 'atk_down') m._atkMul = 1
           m.statusEffects.splice(i, 1)
           continue
         }
@@ -2349,6 +2585,16 @@ export function installFieldBattleSystem(FieldSceneClass) {
     for (const monster of this.mapMonsters) {
       if (!monster.alive) continue
 
+      // ★ 隐身计时：到期解除隐身（暗影突袭）
+      if (monster._invisibleTimer && monster._invisibleTimer > 0) {
+        monster._invisibleTimer -= dt
+        if (monster._invisibleTimer <= 0) {
+          monster._invisible = false
+          monster._invisibleTimer = 0
+          console.log(`[FieldBattle] ${monster.name} 隐身结束`)
+        }
+      }
+
       // ★ 冰冻 / 紧固(定身) 状态：怪物无法移动与行动（冰晶术/紧固施加），跳过移动/攻击/技能
       if (monster._frozen || monster._rooted) continue
       // ★ 眩晕状态：怪物被盾击眩晕，无法行动（跳过移动/攻击/技能），但仍可见击退位移
@@ -2373,6 +2619,13 @@ export function installFieldBattleSystem(FieldSceneClass) {
           nearestHero = bh.hero
           nearestHeroPos = hp
         }
+      }
+      // ★ 挑衅(taunt)：若存在正在挑衅的英雄，强制所有怪物锁定该英雄为攻击目标
+      const tauntHero = this._fieldGetTauntHero()
+      if (tauntHero) {
+        nearestHero = tauntHero
+        const tb = (this.battleSystem.battleHeroes || []).find(b => b.hero === tauntHero)
+        nearestHeroPos = tb && tb.getPos ? tb.getPos() : { x: this.playerX, y: this.playerY }
       }
       if (!nearestHero || !nearestHeroPos) continue
       const mainHero = nearestHero
@@ -2570,7 +2823,7 @@ export function installFieldBattleSystem(FieldSceneClass) {
     }
 
     const doMelee = (mult) => {
-      const dmg = Math.max(1, Math.floor(monster.atk * (mult || skill.power || 1) - this._getHeroDef(hero) * 0.3))
+      const dmg = Math.max(1, Math.floor(monster.atk * (monster._atkMul || 1) * (mult || skill.power || 1) - this._getHeroDef(hero) * 0.3))
       const res = this._applyHeroDamage(hero, dmg, this.playerX, this.playerY)
       if (res.hpDamage > 0) {
         this.battleSystem.damageTexts.push({
@@ -2613,7 +2866,15 @@ export function installFieldBattleSystem(FieldSceneClass) {
         _startY: monster.y - this.cameraY - 60 * this.dpr
       })
     } else if (skill.type === 'buff') {
-      if (this.game.showToast) this.game.showToast(`${monster.name} 使用 ${skill.name}！`)
+      // ★ 暗影突袭：隐身（不可被玩家/队友选中，持续 duration 秒）
+      if (skill.effect === 'invisible') {
+        monster._invisible = true
+        monster._invisibleTimer = skill.duration || 5
+        console.log(`[FieldBattle] ${monster.name} 施放${skill.name}：进入隐身（${monster._invisibleTimer}s）`)
+        if (this.game.showToast) this.game.showToast(`${monster.name} 隐入暗影！`)
+      } else {
+        if (this.game.showToast) this.game.showToast(`${monster.name} 使用 ${skill.name}！`)
+      }
     } else if (skill.type === 'summon') {
       if (this.game.showToast) this.game.showToast(`${monster.name} 召唤了帮手！`)
     } else {
@@ -2783,7 +3044,16 @@ export function installFieldBattleSystem(FieldSceneClass) {
    *   所有怪物伤害入口都应走这里，避免绕过护盾逻辑。
    *   返回 { hpDamage, absorbed }
    */
-  proto._applyHeroDamage = function(hero, rawDamage, sx, sy) {
+  proto._applyHeroDamage = function(hero, rawDamage, sx, sy, attacker) {
+    // ★ 守护(guard)：队友受击时伤害转由守护者承担
+    const guardTarget = this._fieldResolveGuard(hero)
+    if (guardTarget !== hero) {
+      hero = guardTarget
+      if (sx != null) {
+        const gbh = (this.battleSystem.battleHeroes || []).find(b => b.hero === guardTarget)
+        if (gbh && gbh.getPos) { const gp = gbh.getPos(); sx = gp.x; sy = gp.y }
+      }
+    }
     let hpDamage = rawDamage
     let absorbed = 0
     if (hero._shield && hero._shield > 0) {
@@ -2812,6 +3082,10 @@ export function installFieldBattleSystem(FieldSceneClass) {
         _startY: screenY - this.cameraY - 90 * this.dpr
       })
     }
+    // ★ 反击(counter)：被击中的英雄若处于反击状态，向攻击者反弹伤害
+    if (hpDamage > 0 && attacker && attacker.alive !== false) {
+      this._fieldApplyCounterReflect(attacker, hpDamage, hero)
+    }
     return { hpDamage, absorbed }
   }
 
@@ -2821,11 +3095,17 @@ export function installFieldBattleSystem(FieldSceneClass) {
   proto._dealMonsterDamage = function(monster, hero) {
     if (!hero || hero.hp <= 0 || monster.hasDealtDamage) return
 
+    // ★ 守护(guard)：队友受击时伤害转由守护者承担（守护者即被击中的英雄）
+    const guardTarget = this._fieldResolveGuard(hero)
+    if (guardTarget !== hero) {
+      hero = guardTarget
+    }
+
     // 标记已造成伤害（防止同一攻击动画造成多次伤害）
     monster.hasDealtDamage = true
 
-    // 计算伤害（★ 使用含 buff 加成的实际防御）
-    const damage = Math.max(1, monster.atk - Math.floor(this._getHeroDef(hero) * 0.4))
+    // 计算伤害（★ 使用含 buff 加成的实际防御；虚弱状态 atk_down 降低怪物攻击）
+    const damage = Math.max(1, Math.floor(monster.atk * (monster._atkMul || 1)) - Math.floor(this._getHeroDef(hero) * 0.4))
 
     // 暴击判定
     const isCrit = Math.random() < (monster.crit || 0.05)
@@ -2842,6 +3122,8 @@ export function installFieldBattleSystem(FieldSceneClass) {
       if (hero._shield <= 0) hero._shield = 0
     }
     hero.hp = Math.max(0, hero.hp - hpDamage)
+    // ★ 标记本英雄最近受击时间（供 AI 条件优先级决策：自身/主角挨打时主动放护盾）
+    hero._lastHitTime = Date.now() / 1000
     // ★ 阵亡标记：hp<=0 时同步 hero.alive（否则 AI 角色死亡后不会消失）
     if (hero.hp <= 0 && hero.alive !== false) {
       hero.alive = false
@@ -2878,6 +3160,11 @@ export function installFieldBattleSystem(FieldSceneClass) {
         _startY: screenY - 90 * this.dpr,
         isCrit: false
       })
+    }
+
+    // ★ 反击(counter)：被击中的英雄若处于反击状态，向攻击者反弹伤害
+    if (hpDamage > 0 && monster.alive !== false) {
+      this._fieldApplyCounterReflect(monster, hpDamage, hero)
     }
 
     console.log(`[FieldBattle] ${monster.name} 攻击 ${hero.name}，造成 ${finalDamage} 点伤害${isCrit ? '（暴击！）' : ''}，剩余HP: ${hero.hp}`)
@@ -3169,6 +3456,8 @@ export function installFieldBattleSystem(FieldSceneClass) {
 
     for (const monster of this.mapMonsters) {
       if (!monster.alive) continue
+      // ★ 隐身怪物不可被选中（暗影突袭）
+      if (monster._invisible) continue
       const dx = Math.abs(originX - monster.x)
       const dy = Math.abs(originY - monster.y)
       // X 轴距离必须InRange；Y 轴按配置决定是否判断
