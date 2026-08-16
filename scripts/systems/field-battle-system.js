@@ -628,6 +628,12 @@ export function installFieldBattleSystem(FieldSceneClass) {
     //   避免"挨打的同时还能反手普攻/放技能"的不合理手感。
     if (mainHero._hurtLock && mainHero._hurtLock > 0) return
 
+    // ★ 剑气风暴进行中：完全锁定，期间不允许释放任何其他技能/普攻（含再次触发剑气风暴）。
+    //   配合 _castBladeStorm 设置的 castLockTimer（X+Y 全锁），实现"大招站桩释放，
+    //   既不能走位、也不能切其他技能"。首帧施放时 playerAnim 尚未变为 blade_storm，故不误拦。
+    const _paBoot = this.battleSystem.playerAnim
+    if (_paBoot && _paBoot.type === 'blade_storm' && _paBoot.timer > 0) return
+
     // ★ 施法 token：标记本次施法（普攻/技能都算），供"非霸体技能被打断时取消其待结算效果"使用。
     //   token 每次施法自增；霸体(superArmor)技能不受打断影响；被打断时置 _castInterrupted。
     mainHero._castToken = (mainHero._castToken || 0) + 1
@@ -964,11 +970,13 @@ export function installFieldBattleSystem(FieldSceneClass) {
       }
     }
 
-    // ★ 锁 Y 轴（整个技能期间：蓄力1s + 突刺 + 收尾）
+    // ★ 完全锁定移动（X+Y 全锁，整个技能期间：蓄力1s + 突刺 + 收尾）：
+    //   剑气风暴是站桩大招，释放期间不允许移动（避免"放技能还能走位"）。
+    //   用 castLockTimer（玩家主控制的移动锁），由 _updateBattle 每帧递减。
     const dashTotal = (skill.combo || 5) * 0.18
     const finishTotal = 0.5
     const total = 1.0 + dashTotal + finishTotal
-    sys.castAxisLockTimer = Math.max(sys.castAxisLockTimer, total)
+    sys.castLockTimer = Math.max(sys.castLockTimer || 0, total)
 
     // ★ 进入攻击渲染态（主角由 CharacterSprite 渲染，zhenbao 的 attack 状态会映射到
     //   HERO_ZHENBAO_ATTACK_XX 帧；下面每帧直接控制 animFrame 指定具体帧 02/03/07）
@@ -1079,6 +1087,8 @@ export function installFieldBattleSystem(FieldSceneClass) {
         // ★ 动画结束恢复 idle
         const sp = this.mainCharacterSprite
         if (sp) { sp.state = 'idle'; sp.animFrame = 0; sp.animTimer = 0 }
+        // ★ 霸体状态随大招结束而解除（避免残留 _castSuperArmor 影响后续受击判定）
+        if (ctrl && ctrl.hero) ctrl.hero._castSuperArmor = false
       }
     }
   }
@@ -1283,6 +1293,7 @@ export function installFieldBattleSystem(FieldSceneClass) {
         bh.hero._aiAttackTimer -= dt
         if (bh.hero._aiAttackTimer <= 0) {
           bh.hero._aiAttacking = false
+          bh.hero._castSuperArmor = false  // ★ 施法霸体随施法结束解除（剑气风暴等）
           sprite.state = 'idle'
           sprite.animFrame = 0
         }
@@ -1327,25 +1338,38 @@ export function installFieldBattleSystem(FieldSceneClass) {
       if (!isFollowerHero) {
         const apos = bh.getPos()
         if (apos) {
-          let mt = null
-          if (this.aiRecall) {
-            const ctrl = this._getCurrentControlHero && this._getCurrentControlHero()
-            if (ctrl) { const cp = ctrl.getPos(); if (cp) mt = { x: cp.x, y: cp.y } }
-          } else {
-            // ★ 解散(aiRecall=false)：盟友自行寻怪，使用全图搜索（与 cats 的 _getAllyCombatTarget「全图寻怪」一致），
-            //   否则搜索半径太小会找不到较远的怪、表现为"解散后原地不动"。大半径保证盟友能走到最近怪物处开打。
-            const nm = this._findNearestMonsterFromPos(1500 * this.dpr, 'xy', apos.x, apos.y, 400 * this.dpr)
-            if (nm) mt = { x: nm.x, y: nm.y }
-          }
-          if (mt) {
-            const mdx = mt.x - apos.x, mdy = mt.y - apos.y
-            const md = Math.hypot(mdx, mdy)
-            const arrive = (this.battleSystem.attackRange || 100) * this.dpr * 0.7
-            if (md > arrive) {
-              const sp = (this.playerSpeed || 200) * 0.95
-              apos.x += (mdx / md) * sp * dt
-              apos.y += (mdy / md) * sp * dt
-              if (bh.sprite) { bh.sprite.facingLeft = mdx < 0; bh.sprite.isMoving = true }
+          const hero = bh.hero
+          // ★ 施法锁定：释放技能期间不允许自由移动（与被控角色一致：BUFF/heal 完全锁，其余 Y 轴锁）。
+          //   _castLock：完全锁定（不能移动）；_castAxisLock：仅锁 Y 轴（可小幅 X 走位）。
+          //   不在此检查的话，_aiAttacking 的 0.8s 窗口结束后英雄会立刻恢复自由 XY 移动，
+          //   表现为"放技能（尤其剑气风暴）还能走位"。
+          const fullLock = hero._castLock && hero._castLock > 0
+          const axisLock = hero._castAxisLock && hero._castAxisLock > 0
+          if (!fullLock) {
+            let mt = null
+            if (this.aiRecall) {
+              const ctrl = this._getCurrentControlHero && this._getCurrentControlHero()
+              if (ctrl) { const cp = ctrl.getPos(); if (cp) mt = { x: cp.x, y: cp.y } }
+            } else {
+              // ★ 解散(aiRecall=false)：盟友自行寻怪，使用全图搜索（与 cats 的 _getAllyCombatTarget「全图寻怪」一致），
+              //   否则搜索半径太小会找不到较远的怪、表现为"解散后原地不动"。大半径保证盟友能走到最近怪物处开打。
+              const nm = this._findNearestMonsterFromPos(1500 * this.dpr, 'xy', apos.x, apos.y, 400 * this.dpr)
+              if (nm) mt = { x: nm.x, y: nm.y }
+            }
+            if (mt) {
+              const mdx = mt.x - apos.x, mdy = mt.y - apos.y
+              const md = Math.hypot(mdx, mdy)
+              const arrive = (this.battleSystem.attackRange || 100) * this.dpr * 0.7
+              if (md > arrive) {
+                const sp = (this.playerSpeed || 200) * 0.95
+                const moveX = (mdx / md) * sp * dt
+                const moveY = axisLock ? 0 : (mdy / md) * sp * dt  // ★ Y 轴锁：施法期间只能 X 轴移动
+                apos.x += moveX
+                apos.y += moveY
+                if (bh.sprite) { bh.sprite.facingLeft = mdx < 0; bh.sprite.isMoving = true }
+              } else if (bh.sprite) {
+                bh.sprite.isMoving = false
+              }
             } else if (bh.sprite) {
               bh.sprite.isMoving = false
             }
@@ -1472,6 +1496,10 @@ export function installFieldBattleSystem(FieldSceneClass) {
     if (!hero || !hero.skills || !hero.skills.length) return false
     const inBattle = this.battleSystem.active
     if (!inBattle) return false
+
+    // ★ 完全施法锁定期间（BUFF / 剑气风暴等大招的 _castLock）不允许开始新技能，
+    //   保证大招站桩释放期间 AI 不会穿插其他技能（与玩家一致：释放时不能放别的）。
+    if (hero._castLock && hero._castLock > 0) return false
 
     // 第一遍：收集所有"当前可用"的技能（含 BUFF）
     const available = []
@@ -1638,9 +1666,20 @@ export function installFieldBattleSystem(FieldSceneClass) {
     hero._aiCastingSkill = skill  // ★ 记录正在释放的技能，供"被打断"时查霸体标记
     hero._aiAttackTimer = 0.8
 
+    // ★ 施法移动锁定：与被控角色一致（castLock 完全锁 / castAxisLock 仅 Y 轴锁）
+    //   - BUFF/heal：完全锁（不可移动）
+    //   - 剑气风暴(blade_storm)：完全锁（大招站桩释放，期间不可移动，避免"放技能还能走位"）
+    //   - 其余伤害/魔法/AOE：仅锁 Y 轴（可小幅 X 走位）
+    if (skill.type === 'buff' || skill.type === 'heal') {
+      hero._castLock = 0.8
+    } else if (skill.type === 'blade_storm') {
+      hero._castLock = 1.2
+    } else {
+      hero._castAxisLock = 0.9
+    }
+
     // ★ BUFF / 治疗类：与被控角色一致，释放期间完全锁定移动
     if (skill.type === 'buff' || skill.type === 'heal') {
-      hero._castLock = 0.8  // 施法锁定（不能移动），对齐被控角色 castLockTimer=0.8
       // ★ 应用 buff 效果（def_up / def_up_self / heal 等），复用被控角色同一入口
       this._applyHeroBuff(skill, hero)
       // ★ 刷新角色卡，立即显示 BUFF 状态
@@ -2953,6 +2992,7 @@ export function installFieldBattleSystem(FieldSceneClass) {
     // 进入施法状态（供渲染播放 skill 动画）
     monster.isCastingSkill = true
     monster.skillCastId = skill.id
+    monster._castingSkill = skill // ★ 记录本次施放技能（供"霸体光环"判定 superArmor）
     monster.skillAnimTimer = 800 // 默认 800ms 技能动画
     monster.animFrame = 0
     // 设置技能冷却（秒）
@@ -2969,10 +3009,11 @@ export function installFieldBattleSystem(FieldSceneClass) {
       }
     }
 
-    // ★ jump_attack（跳跃攻击）特殊处理：先落下预警区域，延迟 1 秒后再结算，给玩家躲避时间
+    // ★ jump_attack（跳跃攻击）特殊处理：先落下预警区域，延迟 warnDuration（秒）后再结算，给玩家躲避时间
     if (skill.type === 'jump_attack') {
-      const warnMs = skill.warnDuration || 1000 // 预警时长（毫秒）
-      const r = (skill.aoeRadius || skill.dashDistance || 110) * this.dpr
+      // ★ 配置 warnDuration 单位为秒（如 slime_cat:1.5 / shadow_mouse:1.0，与 light_charge 一致），不要当成毫秒
+      const warnSec = (skill.warnDuration != null ? skill.warnDuration : 1.0)
+      const r = (skill.aoeRadius || skill.damageRadius || skill.dashDistance || 110) * this.dpr
       const tx = this.playerX
       const ty = this.playerY
       // 跳跃落点 = 玩家当前位置（预警圈中心）；但预警阶段怪物原地不动，等预警结束才跳过去
@@ -2980,7 +3021,7 @@ export function installFieldBattleSystem(FieldSceneClass) {
       if (!this.battleSystem.warningZones) this.battleSystem.warningZones = []
       this.battleSystem.warningZones.push({
         x: tx, y: ty, r,
-        timer: warnMs / 1000, total: warnMs / 1000,
+        timer: warnSec, total: warnSec,
         power: skill.power || 1,
         atk: monster.atk, def: monster.def,
         monsterName: monster.name,
@@ -2988,8 +3029,8 @@ export function installFieldBattleSystem(FieldSceneClass) {
         monsterRef: monster, // 预警结束时跳跃落地的怪物引用
         ownerId: monster.enemyId
       })
-      // 施法状态与预警时长对齐
-      monster.skillAnimTimer = warnMs
+      // 施法状态与预警时长对齐（skillAnimTimer 为毫秒）
+      monster.skillAnimTimer = warnSec * 1000
       monster._jumpWarn = true
       console.log(`[FieldBattle] ${monster.name} 跳跃攻击预警：${skill.name}，1秒后落在 (${Math.round(tx)},${Math.round(ty)})`)
       return
@@ -3068,6 +3109,7 @@ export function installFieldBattleSystem(FieldSceneClass) {
   proto._startLightCharge = function(monster, skill, dx, dy, dist) {
     monster.isCastingSkill = true
     monster.skillCastId = skill.id
+    monster._castingSkill = skill // ★ 记录本次施放技能（供"霸体光环"判定 superArmor）
     monster.skillAnimTimer = 999999        // 由状态机自行管理，避免被通用施法计时重置
     monster._jumpWarn = true              // 施法期间不黏住玩家
     monster._energyCharge = true          // 渲染：全身能量聚集特效

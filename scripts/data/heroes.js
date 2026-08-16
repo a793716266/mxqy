@@ -81,6 +81,7 @@ export const HEROES = [
         mpCost: 25,
         range: 0,
         cooldown: 3,          // 冷却（秒）
+        superArmor: true,     // ★ 霸体：释放期间不被打断（受击硬直/打断均无效，效果照常结算）
         combo: 5,              // 突刺次数
         power: 0.85,           // 单次突刺伤害系数
         lungeDist: 46,         // 每次突刺前冲距离（像素，明显可见）

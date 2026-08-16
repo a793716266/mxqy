@@ -1471,6 +1471,9 @@ baseRadius: 50 * this.dpr,    // 底座半径（缩小）
    */
   _triggerHeroHurt(hero, isKnockback) {
     if (!hero) return
+    // ★ 霸体(superArmor)：释放霸体技能（剑气风暴等）期间不受击硬直、不切受击动画，
+    //   保证连续突刺等动画不被怪物攻击打断（伤害仍正常结算，只是不被打断动作）。
+    if (hero._castSuperArmor) return
     let sprite = null
     if (this.mainCharacterSprite && this.mainCharacter && hero.id === this.mainCharacter.id) {
       sprite = this.mainCharacterSprite
@@ -3885,6 +3888,31 @@ baseRadius: 50 * this.dpr,    // 底座半径（缩小）
       }
     }
 
+    // ── layer=2：霸体技能光环（英雄施放霸体技能期间显示，按世界Y排序）─
+    if (this.battleSystem) {
+      const saAt = (wx, wy, hero, isMain) => {
+        if (!hero) return
+        if (!this._heroSuperArmorOn(hero, isMain)) return
+        engine.addEntity({
+          layer: 2,
+          sortY: wy / this.dpr,
+          type: 'superArmorAura',
+          render: (ctx) => this._renderSuperArmorAura(ctx, wx - this.cameraX, wy - this.cameraY, false)
+        })
+      }
+      const saMainPos = (this._heroWorldPos && this._heroWorldPos[0]) ? this._heroWorldPos[0] : { x: this.playerX, y: this.playerY }
+      if (!(this.battleSystem.active && this.party[0] && this.party[0].hp <= 0)) saAt(saMainPos.x, saMainPos.y, this.party[0], true)
+      if (this.followers && Array.isArray(this.followers)) {
+        for (let i = 0; i < this.followers.length; i++) {
+          const f = this.followers[i]
+          if (!f || !f.character) continue
+          if (this.battleSystem.active && f.character.hp <= 0) continue
+          const fPos = (this._heroWorldPos && this._heroWorldPos[i + 1]) ? this._heroWorldPos[i + 1] : { x: f.x, y: f.y }
+          saAt(fPos.x, fPos.y, f.character, false)
+        }
+      }
+    }
+
     // ── layer=2：怪物异常状态视觉（脚底圈/身体染色/头顶标记，按世界Y排序）─
     if (this.battleSystem && this.battleSystem.active && this.mapMonsters) {
       for (const m of this.mapMonsters) {
@@ -3898,6 +3926,22 @@ baseRadius: 50 * this.dpr,    // 底座半径（缩小）
           render: (ctx) => {
             this._renderMonsterStatusAura(ctx, mx, my, m)
           }
+        })
+      }
+    }
+
+    // ── layer=2：怪物霸体技能光环（红色，提示敌方大招不可打断）─
+    if (this.battleSystem && this.battleSystem.active && this.mapMonsters) {
+      for (const m of this.mapMonsters) {
+        if (!m.alive) continue
+        if (!this._monsterSuperArmorOn(m)) continue
+        const mx = m.x - this.cameraX
+        const my = m.y - this.cameraY
+        engine.addEntity({
+          layer: 2,
+          sortY: m.y / this.dpr,
+          type: 'superArmorAuraMonster',
+          render: (ctx) => this._renderSuperArmorAura(ctx, mx, my, true)
         })
       }
     }
@@ -5489,6 +5533,118 @@ baseRadius: 50 * this.dpr,    // 底座半径（缩小）
     ctx.lineWidth = 1 * this.dpr
     ctx.stroke()
     ctx.restore()
+  }
+
+  /**
+   * ★ 霸体技能视觉特效：英雄/怪物施放霸体(superArmor)技能期间，在身周绘制金色/红色
+   *   护盾光环 + 旋转碎片 + 头顶「霸体」盾牌标记，直观提示"本次施法不可被打断"。
+   *   (screenX, screenY) 为实体脚底屏幕坐标；isMonster=true 用红色（敌方霸体大招）。
+   */
+  _renderSuperArmorAura(ctx, screenX, screenY, isMonster) {
+    const t = this.time || 0
+    const dpr = this.dpr || 1
+    const pulse = 0.5 + 0.5 * Math.sin(t * 6)
+    const bodyH = 80 * dpr
+    const cx = screenX
+    const feetY = screenY
+    const cy = screenY - bodyH * 0.5 // 身体中心
+    const main = isMonster ? '255,72,72' : '255,196,64'   // 英雄=金，怪物=红
+    const sub = isMonster ? '255,150,96' : '77,208,225'   // 副色
+    ctx.save()
+    ctx.globalCompositeOperation = 'lighter'
+
+    // 1) 全身柔光
+    const glowR = bodyH * 0.9
+    const grad = ctx.createRadialGradient(cx, cy, glowR * 0.1, cx, cy, glowR)
+    grad.addColorStop(0, 'rgba(' + main + ',' + (0.10 + 0.10 * pulse) + ')')
+    grad.addColorStop(0.7, 'rgba(' + main + ',' + (0.05 + 0.05 * pulse) + ')')
+    grad.addColorStop(1, 'rgba(' + main + ',0)')
+    ctx.fillStyle = grad
+    ctx.beginPath()
+    ctx.arc(cx, cy, glowR, 0, Math.PI * 2)
+    ctx.fill()
+
+    // 2) 脚底旋转双环（椭圆）
+    for (let ring = 0; ring < 2; ring++) {
+      const dir = ring === 0 ? 1 : -1
+      const rr = (34 + ring * 6) * dpr * (0.95 + 0.05 * pulse)
+      ctx.save()
+      ctx.translate(cx, feetY)
+      ctx.scale(1, 0.34)
+      ctx.strokeStyle = 'rgba(' + main + ',' + (0.55 + 0.3 * (ring === 0 ? pulse : 1 - pulse)) + ')'
+      ctx.lineWidth = (3 - ring) * dpr
+      ctx.beginPath()
+      ctx.arc(0, 0, rr, t * dir * 2 + (ring ? Math.PI : 0), t * dir * 2 + (ring ? Math.PI : 0) + Math.PI * 1.4)
+      ctx.stroke()
+      ctx.restore()
+    }
+
+    // 3) 身体周围旋转护盾碎片（6 片）
+    const shards = 6
+    for (let i = 0; i < shards; i++) {
+      const ang = t * 1.6 + (Math.PI * 2 * i) / shards
+      const orbit = (bodyH * 0.55) * (0.9 + 0.1 * Math.sin(t * 3 + i))
+      const px = cx + Math.cos(ang) * orbit
+      const py = cy + Math.sin(ang) * orbit * 0.5
+      ctx.save()
+      ctx.translate(px, py)
+      ctx.rotate(ang + t)
+      ctx.fillStyle = 'rgba(' + sub + ',' + (0.5 + 0.4 * pulse) + ')'
+      ctx.beginPath()
+      ctx.moveTo(0, -5 * dpr)
+      ctx.lineTo(4 * dpr, 0)
+      ctx.lineTo(0, 5 * dpr)
+      ctx.lineTo(-4 * dpr, 0)
+      ctx.closePath()
+      ctx.fill()
+      ctx.restore()
+    }
+
+    // 4) 头顶「霸体」盾牌标记
+    const labelY = screenY - bodyH - 16 * dpr
+    ctx.save()
+    ctx.translate(cx, labelY)
+    ctx.fillStyle = 'rgba(' + main + ',0.85)'
+    ctx.strokeStyle = 'rgba(255,255,255,0.9)'
+    ctx.lineWidth = 1.5 * dpr
+    const s = 9 * dpr
+    ctx.beginPath()
+    ctx.moveTo(0, -s)
+    ctx.lineTo(s, -s * 0.5)
+    ctx.lineTo(s, s * 0.3)
+    ctx.quadraticCurveTo(s, s, 0, s * 1.4)
+    ctx.quadraticCurveTo(-s, s, -s, s * 0.3)
+    ctx.lineTo(-s, -s * 0.5)
+    ctx.closePath()
+    ctx.fill()
+    ctx.stroke()
+    ctx.restore()
+    ctx.font = 'bold ' + (12 * dpr) + 'px sans-serif'
+    ctx.textAlign = 'center'
+    ctx.textBaseline = 'middle'
+    ctx.fillStyle = 'rgba(' + main + ',0.95)'
+    ctx.fillText('霸体', cx, labelY - 16 * dpr)
+
+    ctx.restore()
+  }
+
+  /**
+   * ★ 判定英雄此刻是否处于「霸体技能施法中」（用于叠加霸体光环）。
+   *   isMain=true（主控玩家）：走 playerAnim.timer 通道；
+   *   isMain=false（AI 队友）：走 _aiCastingSkill 通道。
+   */
+  _heroSuperArmorOn(hero, isMain) {
+    if (!hero) return false
+    if (!isMain) return !!(hero._aiCastingSkill && hero._aiCastingSkill.superArmor)
+    return !!(this.battleSystem && this.battleSystem.playerAnim && this.battleSystem.playerAnim.timer > 0 && hero._castSuperArmor)
+  }
+
+  /**
+   * ★ 判定怪物此刻是否处于「霸体技能施法中」（用于叠加红色霸体光环）。
+   */
+  _monsterSuperArmorOn(monster) {
+    if (!monster) return false
+    return !!(monster.isCastingSkill && monster.skillAnimTimer > 0 && monster._castingSkill && monster._castingSkill.superArmor)
   }
 
   /**

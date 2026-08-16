@@ -44,7 +44,7 @@ module.exports = {
       warnDuration: 1.0, // 红色警示区存在/延迟时间（1秒后落下）
       aoeRadius: 95, // 落地 AOE 半径（像素，未乘 dpr）
       knockback: true, // 击飞
-      knockbackHeight: 130, // 击飞抛物高度（像素，未乘 dpr），原 70 → 130 更夸张
+      knockbackHeight: 200, // 击飞抛物高度（像素，未乘 dpr），原 70 → 130 更夸张
       stun: 1.0, // 落地眩晕秒数
       superArmor: true // 蓄力期间霸体不被打断
     },

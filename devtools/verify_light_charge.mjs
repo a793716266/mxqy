@@ -188,7 +188,7 @@ if (sawImpact) {
   assert(hero0.hp < hp0, '落地区域内英雄受到 HP 伤害', `hp ${hp0}→${hero0.hp}`)
 }
 assert(kbSeen, '落地瞬间英雄获得击飞(_knockback)', `kbSeen=${kbSeen}`)
-assert(kbHeight === 130 * dpr, '击飞高度提高为 130*dpr', `kbHeight=${kbHeight}, 期望=${130 * dpr}`)
+assert(kbHeight === lcSkill.knockbackHeight * dpr, '击飞高度=配置 knockbackHeight*dpr（引擎正确套用配置，不写死数值）', `kbHeight=${kbHeight}, 期望=${lcSkill.knockbackHeight * dpr}`)
 assert(stunObserved, '击飞结束后转入眩晕(_stunned>0, 落地眩晕1秒)', `stunObserved=${stunObserved}`)
 
 // ---- 收尾：状态机复位 + 红色警示区被独占清理 ----
