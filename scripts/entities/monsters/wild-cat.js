@@ -1,10 +1,26 @@
-const { ENEMIES_CH1 } = require('../../data/enemies.js')
-
+/**
+ * 野猫 - 怪物配置（单一数据源）
+ * 属性 / 技能 / AI / 动画 / 渲染配置均在此定义；enemies.js 仅做聚合。
+ */
 module.exports = {
-  // === 基础属性（从 enemies.js 迁移）===
+  // === 基础属性（原 enemies.js ENEMIES_CH1.wild_cat）===
   id: 'wild_cat',
   name: '野猫',
-  ...ENEMIES_CH1.wild_cat,
+  assetPrefix: 'SLIME_CAT', // ★ 复用史莱姆猫素材
+  level: 1,
+  maxHp: 50,
+  atk: 12,
+  def: 5,
+  spd: 9,
+  crit: 0.05,
+  aiPattern: 'aggressive', // 激进：猛扑不退
+  exp: 15,
+  gold: 8,
+  skills: [
+    { name: '抓挠', power: 1.2, type: 'attack' },
+    { name: '狂抓', power: 1.5, type: 'attack' }
+  ],
+  drop: [{ id: 'fish', name: '小鱼干', chance: 0.3 }],
 
   // === 动画配置（野猫复用史莱姆猫资源）===
   animationConfig: {
@@ -18,7 +34,7 @@ module.exports = {
 
   // === 渲染配置 ===
   renderConfig: {
-    assetPrefix: 'SLIME_CAT',  // 野猫复用史莱姆猫资源
+    assetPrefix: 'SLIME_CAT', // 野猫复用史莱姆猫资源
     spriteType: 'wild_cat',
     targetHeight: 80,
     flipRule: 'opposite',

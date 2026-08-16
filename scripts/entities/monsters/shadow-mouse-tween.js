@@ -4,12 +4,12 @@
  * walk 由 8 帧补到 15 帧（frame_01~frame_15，pad 2），移动动画更顺滑。
  * 其余动画仍复用原始资源。
  */
-const { ENEMIES_CH1 } = require('../../data/enemies.js')
+const shadowMouse = require('./shadow-mouse.js')
 
 module.exports = {
   id: 'shadow_mouse_smooth',
   name: '暗影鼠·顺滑',
-  ...ENEMIES_CH1.shadow_mouse,
+  ...shadowMouse,
 
   animationConfig: {
     idle:   { start: 1, end: 6, path: 'subpackages/battle/images/characters_anim/transparent/shadow_mouse/idle/',   framePad: 2, frameDuration: 150 },

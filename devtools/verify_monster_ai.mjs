@@ -78,6 +78,18 @@ function runMonster(enemyId, label){
   scene.battleSystem.showBattleUI = true
   scene._buildBattleHeroes()
   scene._initBattleUI()
+  // ★ 每个怪物独立测试：重置参战英雄状态（满血、清除眩晕/击飞），
+  //   否则上一轮死亡的英雄会带入本轮，导致 nearestHero 为空、怪物无法索敌施法。
+  for (const bh of scene.battleSystem.battleHeroes) {
+    const h = bh.hero
+    if (!h) continue
+    h.hp = (h.maxHp != null) ? h.maxHp : (h.hp || 100)
+    h.alive = true
+    h._stunned = 0
+    h._knockback = null
+    h._kbOffsetX = 0
+    h._kbOffsetY = 0
+  }
   const m = makeMonster(enemyId, 3)
   scene.mapMonsters = [m]
   castLog = []

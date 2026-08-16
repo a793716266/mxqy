@@ -4,7 +4,7 @@
  * 三个同模异色变体：赤焰(20°)、碧波(180°)、魅紫(300°)
  * 复用 slime_cat 的 AI / 技能 / 属性结构，仅替换资源路径与显示名。
  */
-const { ENEMIES_CH1 } = require('../../data/enemies.js')
+const slimeCat = require('./slime-cat.js')
 
 const SKIN_BASE = 'subpackages/battle/images/characters_anim/transparent/slime_cat_skins'
 
@@ -13,7 +13,7 @@ function buildSkin(id, name, hueTag, tint, assetPrefix) {
     id,
     name,
     tint, // 渲染时的色调提示（供 battle-scene 着色参考）
-    ...ENEMIES_CH1.slime_cat,
+    ...slimeCat,
 
     animationConfig: {
       idle:   { start: 1,  end: 7,  path: `${SKIN_BASE}/${hueTag}/idle/`,   framePad: 1, frameDuration: 150 },

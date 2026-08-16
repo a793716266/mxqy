@@ -1,69 +1,46 @@
 /**
- * 暗影鼠 - 怪物配置
- * 属性 + AI行为 + 动画配置
+ * 暗影鼠 - 怪物配置（单一数据源）
+ * 属性 / 技能 / AI / 动画 / 渲染配置均在此定义；enemies.js 仅做聚合。
+ * ★ skills 以战斗实际使用的版本为准（暗影咬=跳跃+生命偷取 / 暗影突袭=隐身 buff），
+ *   不再另写一套未被战斗读取的技能定义。
  */
-const { ENEMIES_CH1 } = require('../../data/enemies.js')
-
 module.exports = {
-  // === 基础属性（从 enemies.js 迁移）===
+  // === 基础属性（原 enemies.js ENEMIES_CH1.shadow_mouse）===
   id: 'shadow_mouse',
   name: '暗影鼠',
-  ...ENEMIES_CH1.shadow_mouse,
-  
-  // === AI行为配置 ===
-  aiConfig: {
-    // 巡逻行为
-    patrolSpeed: 1.8,  // 高速移动
-    patrolRadius: 100,
-    
-    // 追击行为
-    chaseSpeed: 3.5,     // 很快
-    chaseRange: 150,       // 发现距离较远
-    loseRange: 250,        // 脱离距离也远
-    
-    // 攻击行为
-    attackRange: 60,       // 近战
-    attackCD: 800,         // 攻击CD短
-    attackDuration: 400,    // 攻击动画快
-    
-    // 技能行为
-    skillCDs: {
-      '暗影咬': 15000,    // 15秒CD
-      '暗影突袭': 20000    // 20秒CD（隐身）
-    },
-    
-    // 特殊行为
-    canInvisible: true,     // 可以隐身
-    invisibleDuration: 5,   // 隐身持续时间
-    invisibleCD: 20000      // 隐身CD
+  level: 3,
+  maxHp: 80,
+  atk: 16,
+  def: 10,
+  spd: 17,
+  crit: 0.12,
+  aiPattern: 'aggressive', // 激进：高速突袭
+  exp: 25,
+  gold: 12,
+  isElite: true, // 升级为精英怪
+  equipment: {
+    // 精英自带装备
+    name: '暗影匕首',
+    type: 'weapon',
+    stats: { atk: 4, crit: 0.04 }
   },
-  
-  // === 技能定义（参考 heroes.js 的格式）===
   skills: [
     {
-      id: 'shadow_bite',
       name: '暗影咬',
+      power: 1.4,
       type: 'jump_attack',
-      power: 1.5,
-      cooldown: 25,  // 秒（提高CD时间）
-      desc: '跳跃到玩家位置，造成150%攻击力的暴击伤害',
-      range: 90,       // 降低攻击范围到合理值
-      dashDistance: 90  // 跳跃距离
+      range: 500, // 跳跃距离500像素
+      cooldown: 15, // CD 15秒
+      effect: 'drain', // 生命偷取效果
+      drainPercent: 1.0, // 偷取100%伤害
+      target: 'single', // 单体目标
+      warnDuration: 1.0, // 预警时间1秒
+      damageRadius: 50 // 很小的范围（实际上是单体）
     },
-    {
-      id: 'shadow_raid',
-      name: '暗影突袭',
-      type: 'buff',
-      power: 0,
-      cooldown: 30,  // 秒（提高CD时间）
-      desc: '隐身5秒，提升30%攻击力，持续10秒',
-      range: 80,       // 自身增益技：仅近战距离内释放（不再全屏）
-      effect: 'atk_up',
-      value: 0.3,
-      duration: 10
-    }
+    { name: '暗影突袭', type: 'buff', effect: 'invisible', duration: 5, cooldown: 20, power: 0 } // 隐身5秒
   ],
-  
+  drop: [{ id: 'cheese', name: '奶酪', chance: 0.45 }],
+
   // === 动画配置 ===
   animationConfig: {
     idle: {
@@ -109,7 +86,7 @@ module.exports = {
       frameDuration: 100
     }
   },
-  
+
   // === 渲染配置 ===
   renderConfig: {
     assetPrefix: 'SHADOW_MOUSE',
@@ -120,19 +97,10 @@ module.exports = {
     idleFrameOffset: 1,
     walkFramePad: 2,
     idleFramePad: 2,
-    flipRule: 'same', // ★ 暗影鼠素材原样朝右（与史莱姆猫相反），面向左时需翻转
-    assetFacing: 'right', // 与 flipRule:'same' 语义一致：素材朝右
+    flipRule: 'same', // ★ 暗影鼠素材原样朝右，面向左时需翻转
+    assetFacing: 'right', // 与 flipRule:'same' 语义一致
     shadow: true,
-    targetHeight: 80,     // 渲染目标高度（像素），修改此值调整精灵大小
+    targetHeight: 80,
     frameDuration: 0.15
-  },
-  
-  // === 掉落配置 ===
-  dropConfig: [
-    { id: 'cheese', name: '奶酪', chance: 0.45 }
-  ],
-  
-  // === 经验值配置 ===
-  exp: 25,
-  gold: 12
+  }
 }
