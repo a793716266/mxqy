@@ -113,6 +113,20 @@ export function installFieldBattleSystem(FieldSceneClass) {
     list[1] = cur
     sys.currentControlIndex = 0
 
+    // ★★★ 关键修复：同步重排 this.followers，使 AI 跟随/召回逻辑与 battleHeroes 保持一致
+    //   原逻辑只重排 battleHeroes，导致切换后 followers 顺序与 battleHeroes 错位：
+    //   被控角色(原 followers[1]) 仍被 AI 跟随循环当成 followers[0] 队友去指挥，
+    //   新被控角色被两套逻辑抢控，表现为"切换后召回/解散失效、队友乱跑"。
+    if (this.followers && this.followers.length >= 2) {
+      const fi0 = this.followers.indexOf(cur.followerRef)
+      const fi1 = this.followers.indexOf(nxt.followerRef)
+      if (fi0 !== -1 && fi1 !== -1) {
+        const tmp = this.followers[fi0]
+        this.followers[fi0] = this.followers[fi1]
+        this.followers[fi1] = tmp
+      }
+    }
+
     // ★★ 关键：重置双方的 AI 攻击/动画状态
     //   原被控者（cur）将转为 AI 角色：清掉残留的普攻 CD，让 AI 立即可攻击；
     //   新被控者（nxt）原本是 AI 角色，可能正卡在 attack 状态（_aiAttacking=true 且不再被 AI 计时清理），
@@ -1183,22 +1197,31 @@ export function installFieldBattleSystem(FieldSceneClass) {
         bh.hero.mp = Math.min(bh.hero.maxMp, (bh.hero.mp || 0) + regenRate * dt * 0.5)
       }
 
-      // ★ 队友搜索范围放大：队友在主角身后约 followerDistance，主角贴脸攻击时队友距离可能超出攻击范围，
-      //   因此队友用更大的搜索半径（约 1.8 倍），确保能锁定主角附近的怪物
+      // ★ 队友搜索范围：近战用真实短手（attackRange*1.05），远程用放大搜索半径（*1.8）
+      //   修复：原逻辑只用 X 轴距离 + 220*dpr 的 Y 容差，导致"不同 X 轴隔空就能打到怪物"。
       const baseRange = (this.battleSystem.attackRange || 100) * this.dpr
-      const range = baseRange * 1.8
-      // ★ 队友 Y 轴容差放大：队友在主角身后跟随（间距约 followerDistance），Y 轴天然错位，
-      //    默认 80*dpr(=240) 的容差经常不够，导致队友永远找不到怪物。这里用 220*dpr 放宽。
-      const allyYTol = 220 * this.dpr
+      const isRangedRole = (bh.hero.role === 'mage' || bh.hero.role === 'healer')
+      // ★ 近战：真实欧氏距离短手，避免隔轴打怪；远程：允许更大搜索半径锁定远处怪
+      const range = isRangedRole ? (baseRange * 1.8) : (baseRange * 1.05)
+      // ★ Y 轴容差收紧到角色身高量级（约 60*dpr），杜绝上下错位太远还能攻击
+      const allyYTol = isRangedRole ? (120 * this.dpr) : (60 * this.dpr)
 
       // ★ 优先集火玩家锁定的目标（battleTarget）：让队友与玩家打同一只怪，
       //   使队友施加的灼烧/冰冻/感电等状态都汇聚到面板显示的怪身上
       let monster = null
       const bt = this.battleSystem.battleTarget
-      if (bt && bt.alive && Math.abs(bt.x - pos.x) <= range && Math.abs(bt.y - pos.y) <= allyYTol) {
+      const _reachable = (m) => {
+        if (!m || !m.alive) return false
+        const ddx = m.x - pos.x
+        const ddy = m.y - pos.y
+        // ★ 近战用真实欧氏距离；远程仅放宽为 1.8 倍半径（仍看 Y 轴）
+        return Math.sqrt(ddx * ddx + ddy * ddy) <= range && Math.abs(ddy) <= allyYTol
+      }
+      if (bt && _reachable(bt)) {
         monster = bt
       } else {
-        monster = this._findNearestMonsterFromPos(range, 'x', pos.x, pos.y, allyYTol)
+        // ★ 用欧氏距离选怪（axis='xy'），近战不再退化成"只看 X 轴"
+        monster = this._findNearestMonsterFromPos(range, 'xy', pos.x, pos.y, allyYTol)
       }
       if (!monster) continue
 
@@ -1299,11 +1322,63 @@ export function installFieldBattleSystem(FieldSceneClass) {
     }
     if (available.length === 0) return false
 
-    // 轮转选技能
-    if (hero._aiLastSkillIdx === undefined) hero._aiLastSkillIdx = -1
-    const pickIdx = (hero._aiLastSkillIdx + 1) % available.length
-    const skill = available[pickIdx]
-    hero._aiLastSkillIdx = pickIdx
+    // =======================================================================
+    // ★ 智能决策：条件优先级（替代原盲目轮转），解决"有护盾/治疗技能不放"
+    //   优先级：① 紧急治疗/护盾(自身或队友低血) → ② 主角正挨打且有防御buff →
+    //           ③ 多怪AOE → ④ 轮转攻击技能
+    // =======================================================================
+    const nowSec = Date.now() / 1000
+    const aliveHeroes = (this.battleSystem.battleHeroes || [])
+      .map(b => b.hero).filter(h => h && h.hp > 0)
+    const hpRatio = (h) => (h.maxHp ? (h.hp / h.maxHp) : 1)
+    const lowestRatio = aliveHeroes.length
+      ? Math.min(...aliveHeroes.map(hpRatio)) : 1
+    // 主角（被控角色）是否正在挨打：最近 2.5 秒内受过击
+    const ctrlHero = (this.battleSystem.battleHeroes && this.battleSystem.battleHeroes[0])
+      ? this.battleSystem.battleHeroes[0].hero : null
+    const ctrlUnderAttack = ctrlHero && ctrlHero._lastHitTime &&
+      (nowSec - ctrlHero._lastHitTime) <= 2.5
+    // 全图存活怪物数（判断是否多怪，放 AOE）
+    const aliveMonsters = (this.mapMonsters || []).filter(m => m.alive)
+    const monsterCount = aliveMonsters.length
+
+    const classify = (s) => {
+      if (s.type === 'heal' || s.effect === 'heal') return 'heal'
+      if (s.type === 'buff' || s.effect === 'def_up' || s.effect === 'def_up_self' ||
+          s.effect === 'atk_up' || s.effect === 'atk_up_self' || s.effect === 'shield' ||
+          s.effect === 'speed_up' || s.effect === 'stun') return 'buff'
+      if (s.aoe || (s.range && s.range >= 150)) return 'aoe'
+      return 'attack'
+    }
+    const has = (type) => available.find(s => classify(s) === type)
+
+    let skill = null
+
+    // ① 紧急治疗/护盾：自身或任一队友血量 < 45% → 优先保命
+    if (lowestRatio < 0.45) {
+      skill = has('heal') || has('buff')
+    }
+    // ② 主角正挨打且自己有防御类 buff（如李小宝魔力护盾）→ 立即护盾
+    if (!skill && ctrlUnderAttack) {
+      skill = has('buff')
+    }
+    // ③ 多怪（≥3 只）且有 AOE → 清场
+    if (!skill && monsterCount >= 3) {
+      skill = has('aoe')
+    }
+    // ④ 否则：轮转攻击技能（保证攻击类技能正常输出）
+    if (!skill) {
+      const attacks = available.filter(s => classify(s) === 'attack' || classify(s) === 'aoe')
+      const pool = attacks.length ? attacks : available
+      if (hero._aiLastSkillIdx === undefined) hero._aiLastSkillIdx = -1
+      const pickIdx = (hero._aiLastSkillIdx + 1) % pool.length
+      skill = pool[pickIdx]
+      hero._aiLastSkillIdx = pickIdx
+    } else {
+      // 命中条件优先级分支时，也推进轮转游标，避免下次仍在同技能
+      const idx = available.indexOf(skill)
+      if (idx >= 0) hero._aiLastSkillIdx = idx
+    }
 
     // 释放技能：扣 MP、设冷却 + 统一锁
     const cpos = bh.getPos()

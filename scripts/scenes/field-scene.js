@@ -1468,6 +1468,9 @@ baseRadius: 50 * this.dpr,    // 底座半径（缩小）
     if (!monster || !hero || hero.hp <= 0) return
 
     // 计算伤害（参考玩家攻击公式，考虑暴击）
+    // ★ 记录英雄受击时间戳，供 AI 队友判断"主角正在挨打"并主动放防御/治疗（智能决策用）
+    hero._lastHitTime = Date.now() / 1000
+
     let base = Math.max(1, monster.atk - Math.floor(this._getHeroDef(hero) * 0.5))
     const isCrit = Math.random() < (monster.crit || 0.05)
     let damage = isCrit ? Math.floor(base * 1.5) : base
@@ -2028,7 +2031,9 @@ baseRadius: 50 * this.dpr,    // 底座半径（缩小）
       //   否则会把被控角色强行拽回输出位，导致切换控制"看起来没反应"
       const ctrlHero = (this.battleSystem && this.battleSystem.battleHeroes &&
                         this.battleSystem.battleHeroes[0]) || null
-      const isControlled = ctrlHero && ctrlHero.partyIndex === (i + 1)
+      // ★ 修复：用引用相等判定被控角色（切换控制后 battleHeroes 与 followers 已同步重排，
+      //   原 partyIndex === i+1 的写法恒为 false，导致被控角色从未被跳过、被 AI 逻辑抢控）
+      const isControlled = ctrlHero && ctrlHero.followerRef && follower === ctrlHero.followerRef
       if (this.battleSystem && this.battleSystem.active && isControlled) {
         // 被控角色：坐标由摇杆/切换逻辑维护，这里只同步到 follower 供渲染，不做 AI 移动
         follower.x = this._heroWorldPos[i + 1] ? this._heroWorldPos[i + 1].x : follower.x

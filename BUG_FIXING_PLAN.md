@@ -4379,3 +4379,24 @@ _checkBattleEnd() {
 - **影响范围**：修复后李小宝魔力护盾、群体增益、治疗等所有需经技能按钮手动释放的 buff/heal 类技能均真正生效（增益挂到 `battleHeroes` 全体并参与 `_getHeroDef`/`_getHeroAtk` 减伤计算）。
 - **修改文件**：`scripts/scenes/field-scene.js`
 - **状态**：✅ 已通过 Babel 语法检查；真实战斗路径（skill 按钮点击）验证 `_applyHeroBuff` 被调用、全体 `def_up` 生效、怪物伤害减伤生效
+
+## 2026-08-16 更新：AI 角色控制整体修复（召回/解散错位 + 近战隔轴打怪 + AI 智能决策）
+
+### fix: 切换角色后召回/解散失效
+- **现象**：从臻宝切换到李小宝后，李小宝点召回/解散无效（队友乱跑、不跟随）。
+- **根因**：`_switchControl` 只重排 `battleSystem.battleHeroes`，未同步重排 `this.followers`；且 `field-scene.js` AI 跟随循环里 `isControlled` 用 `ctrlHero.partyIndex === i+1` 判定（恒为 false），导致被控角色从未被跳过、被 AI 跟随逻辑抢控。
+- **修复**：`_switchControl` 同步重排 `this.followers` 与 `battleHeroes`；`isControlled` 改为引用相等 `follower === ctrlHero.followerRef`。
+- **修改文件**：`scripts/systems/field-battle-system.js`（`_switchControl`）、`scripts/scenes/field-scene.js`（跟随循环）
+
+### fix: AI 近战攻击范围过离谱（不同 X 轴都能打到怪物）
+- **现象**：队友在 Y 轴错位很远（如上下 300px）仍攻击到怪物。
+- **根因**：AI 攻击触发用 `_findNearestMonsterFromPos(range, 'x', ...)` 只看 X 轴距离 + 220*dpr 的 Y 容差，近战判定退化为"X 轴在范围内即可"。
+- **修复**：近战用真实欧氏距离短手（`attackRange*1.05`）、Y 容差收紧到 60*dpr；远程搜索半径 `*1.8`、Y 容差 120*dpr。目标选取改 `axis='xy'`。
+- **修改文件**：`scripts/systems/field-battle-system.js`（`_updateAllyAI` 攻击触发段）
+
+### fix: AI 有护盾/治疗技能不放（智能决策）
+- **现象**：主角被打，李小宝有魔力护盾却不释放。
+- **根因**：`_allyTryCastSkill` 按 CD 盲目轮转选技能，无任何战况触发条件。
+- **修复**：改为条件优先级决策——①自身/队友 HP<45% 放治疗/护盾 → ②主角 2.5 秒内挨打且有防御 buff 立即放护盾 → ③怪物≥3 只放 AOE → ④否则轮转攻击。怪物伤害结算处新增 `hero._lastHitTime` 时间戳供 AI 判断"主角正挨打"。
+- **修改文件**：`scripts/systems/field-battle-system.js`（`_allyTryCastSkill`）、`scripts/scenes/field-scene.js`（`_dealMonsterDamage`）
+- **状态**：✅ 三项均通过真实战斗路径（FieldScene 实例化）验证：切换同步、隔轴不命中/贴脸命中、主角挨打自动放护盾
