@@ -15,6 +15,7 @@ export const SOUNDS = {
   bgm_title:    null,                         // 标题画面（待制作）
   bgm_town:      'subpackages/sound/game_bgm/town_village.mp3',   // 小镇/主城
   bgm_explore:   'subpackages/sound/game_bgm/fantasy_explore.mp3',    // 野外/探索
+  bgm_grassland: 'subpackages/sound/game_bgm/grassland.mp3',          // 阳光草原副本（专属明亮欢快曲）
   bgm_tower:     'subpackages/sound/game_bgm/brainiac_maniac.mp3',// 塔防战斗
   bgm_battle:    'subpackages/sound/game_bgm/fantasy_battle.mp3',     // 普通战斗
   bgm_boss:      'subpackages/sound/game_bgm/fantasy_boss.mp3',        // BOSS战

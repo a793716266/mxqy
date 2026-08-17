@@ -393,8 +393,8 @@ export class TownScene {
     const dungeons = [
       {
         id: 'grassland',
-        name: '探索阳光草原',
-        desc: '等级 1-3 | 已解锁艾米',
+        name: '☀ 阳光草原副本',
+        desc: '清剿全部敌人通关 | 已解锁艾米',
         area: 'grassland',
         unlocked: true,
         color: '#2ecc71'

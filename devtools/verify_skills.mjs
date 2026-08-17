@@ -372,6 +372,7 @@ const trackingCtx = new Proxy({}, {
   get(t, p) {
     if (p === 'canvas') return undefined
     if (p === 'measureText') return (s) => ({ width: (s ? String(s).length : 0) * 8 })
+    if (p === 'createLinearGradient' || p === 'createRadialGradient') return () => ({ addColorStop() {} })
     return (...args) => { drawCalls.push(p); }
   },
   set() { return true }

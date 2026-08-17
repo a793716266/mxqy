@@ -208,6 +208,22 @@ export class FieldScene extends SceneBase {
       this.mapMonsters = this._generateMonsters()
     }
 
+    // ★ 副本模式（阳光草原）：不依赖恢复存档，进入即用已加载的怪物批次（通关后清档→下次全新）；
+    //   播副本 BGM。注意：不在此二次调用 _generateMonsters()，以免打乱确定性测试的 seeded RNG。
+    if (this.areaInfo.isDungeon) {
+      this.dungeonCleared = false
+      this.showDungeonClear = false
+      this.dungeonClearTimer = 0
+      this._returningToTown = false
+      this.dungeonTotal = this.mapMonsters.length
+      this.dungeonReward = 80
+      const _a = this.game.audio
+      if (_a && typeof _a.playBGM === 'function') _a.playBGM('bgm_grassland')
+    } else {
+      const _a = this.game.audio
+      if (_a && typeof _a.playBGM === 'function') _a.playBGM('bgm_explore')
+    }
+
     // UI
     this.showMinimap = true
     this.showMenu = false
@@ -242,7 +258,8 @@ export class FieldScene extends SceneBase {
         enemyData: ENEMIES_CH1,  // 敌人数据源
         color: '#5daE4a',
         minEnemies: 1,  // 最少敌人数量
-        maxEnemies: 2   // 最多敌人数量
+        maxEnemies: 2,  // 最多敌人数量
+        isDungeon: true // ★ 阳光草原即副本：不刷新怪物、可通关、有目标HUD/奖励
       },
       magic_tower: {
         name: '魔法塔',
@@ -885,6 +902,8 @@ baseRadius: 50 * this.dpr,    // 底座半径（缩小）
 
     // 检查并补充怪物
     this._checkAndRespawnMonsters()
+    // ★ 副本：检测通关 / 通关后回城倒计时
+    this._checkDungeonClear(dt)
 
     // 更新切换提示计时器
     if (this.showSwitchTip) {
@@ -1764,6 +1783,8 @@ baseRadius: 50 * this.dpr,    // 底座半径（缩小）
   }
 
   _checkAndRespawnMonsters() {
+    // ★ 副本模式：不刷新怪物，保证可通关（击败全部即胜利）
+    if (this.areaInfo && this.areaInfo.isDungeon) return
     if (!this.mapMonsters || !Array.isArray(this.mapMonsters)) return
     const aliveCount = this.mapMonsters.filter(m => m.alive).length
     const minMonsters = 10 // 最少保留10只怪物
@@ -2844,6 +2865,13 @@ baseRadius: 50 * this.dpr,    // 底座半径（缩小）
   }
 
   _handleTap(tap) {
+    // ★ 副本通关遮罩：点击任意处立即返回城镇
+    if (this.showDungeonClear) {
+      this._returningToTown = true
+      this.game.changeScene('town')
+      return
+    }
+
     // ★ 战斗UI按钮（攻击/技能）优先处理（王者荣耀式操作）
     if (this.battleSystem && this.battleSystem.active && this._handleBattleUITap(tap)) return
 
@@ -3772,6 +3800,8 @@ baseRadius: 50 * this.dpr,    // 底座半径（缩小）
     
     // 顶部UI
     this._renderTopUI(ctx)
+    // ★ 副本目标 HUD（阳光草原）
+    this._renderDungeonHUD(ctx)
     
     // 摇杆
     this._renderJoystick(ctx)
@@ -3947,6 +3977,8 @@ baseRadius: 50 * this.dpr,    // 底座半径（缩小）
       this._renderTargetPanel(ctx)
       this._renderCombo(ctx)
     }
+    // ★ 副本通关遮罩（最上层）
+    this._renderDungeonClear(ctx)
   }
 
   /**
@@ -3978,6 +4010,133 @@ baseRadius: 50 * this.dpr,    // 底座半径（缩小）
     ctx.fillStyle = 'rgba(255,255,255,0.85)'
     ctx.font = `bold ${Math.floor(13 * dpr)}px sans-serif`
     ctx.fillText('COMBO', cx, cy + 26 * dpr)
+    ctx.restore()
+  }
+
+  /**
+   * ★ 副本（阳光草原）目标 HUD：顶部居中显示"清剿进度 + 进度条"
+   * 通关后（dungeonCleared）隐藏，避免与通关遮罩重叠。
+   */
+  _renderDungeonHUD(ctx) {
+    if (!this.areaInfo || !this.areaInfo.isDungeon || this.dungeonCleared) return
+    if (!this.mapMonsters) return
+    const dpr = this.dpr
+    const total = this.dungeonTotal || this.mapMonsters.length
+    const alive = this.mapMonsters.filter(m => m.alive).length
+    const killed = total - alive
+    const ratio = total > 0 ? Math.max(0, Math.min(1, killed / total)) : 1
+
+    const w = Math.min(360 * dpr, this.width * 0.82)
+    const x = (this.width - w) / 2
+    const y = 16 * dpr
+    const h = 34 * dpr
+    ctx.save()
+    // 背板
+    ctx.fillStyle = 'rgba(0,0,0,0.42)'
+    this._roundRect(ctx, x, y, w, h, 8 * dpr)
+    ctx.fill()
+    // 标题
+    ctx.textAlign = 'center'
+    ctx.textBaseline = 'middle'
+    ctx.font = `bold ${14 * dpr}px sans-serif`
+    ctx.fillStyle = '#ffe9a8'
+    ctx.fillText(`🗺️ 副本目标：清剿阳光草原  ${killed}/${total}`, x + w / 2, y + 12 * dpr)
+    // 进度条
+    const barX = x + 14 * dpr
+    const barY = y + h - 11 * dpr
+    const barW = w - 28 * dpr
+    const barH = 7 * dpr
+    ctx.fillStyle = 'rgba(255,255,255,0.18)'
+    this._roundRect(ctx, barX, barY, barW, barH, 3 * dpr)
+    ctx.fill()
+    ctx.fillStyle = '#4caf50'
+    this._roundRect(ctx, barX, barY, Math.max(barH, barW * ratio), barH, 3 * dpr)
+    ctx.fill()
+    ctx.restore()
+  }
+
+  /**
+   * ★ 副本通关检测
+   * - 未通关：所有怪物 alive=false → 标记通关、发金币奖励、切胜利BGM、弹遮罩、清怪物存档（可重复挑战）
+   * - 已通关：倒计时 dungeonClearTimer，到点自动返回城镇
+   */
+  _checkDungeonClear(dt) {
+    if (!this.areaInfo || !this.areaInfo.isDungeon) return
+    if (this.dungeonCleared) {
+      this.dungeonClearTimer -= dt
+      if (this.dungeonClearTimer <= 0 && !this._returningToTown) {
+        this._returningToTown = true
+        this.game.changeScene('town')
+      }
+      return
+    }
+    if (!this.mapMonsters || this.mapMonsters.length === 0) return
+    const alive = this.mapMonsters.filter(m => m.alive).length
+    if (alive === 0) {
+      this.dungeonCleared = true
+      this.showDungeonClear = true
+      this.dungeonClearTimer = 3.5
+      // 奖励：金币（game.data 持久化，HUD 暂未展示，向前兼容）
+      const reward = this.dungeonReward || 80
+      const coins = (this.game.data.get('coins') || 0) + reward
+      this.game.data.set('coins', coins)
+      this.game.data.set(`dungeon_cleared_${this.areaId}`, true)
+      // 清掉怪物存档，下次进入重新生成（可重复挑战）
+      this.game.data.set(`fieldMonsters_${this.areaId}`, null)
+      // 切换胜利 BGM + 金币音效（兼容测试 mock：方法可能不存在）
+      const a = this.game.audio
+      if (a) {
+        if (typeof a.stopBGM === 'function') a.stopBGM()
+        if (typeof a.playBGM === 'function') a.playBGM('bgm_victory')
+        if (typeof a.playSFX === 'function') a.playSFX('reward_coin')
+      }
+    }
+  }
+
+  /**
+   * ★ 副本通关遮罩（最上层绘制）
+   * 半透明黑底 + 居中面板：标题 / 战果 / 奖励 / 返回提示
+   */
+  _renderDungeonClear(ctx) {
+    if (!this.showDungeonClear) return
+    const dpr = this.dpr
+    ctx.save()
+    ctx.fillStyle = 'rgba(0,0,0,0.6)'
+    ctx.fillRect(0, 0, this.width, this.height)
+
+    const pw = Math.min(420 * dpr, this.width * 0.86)
+    const ph = 240 * dpr
+    const px = (this.width - pw) / 2
+    const py = (this.height - ph) / 2
+    const grad = ctx.createLinearGradient(0, py, 0, py + ph)
+    grad.addColorStop(0, '#2d5a2d')
+    grad.addColorStop(1, '#16331a')
+    ctx.fillStyle = grad
+    this._roundRect(ctx, px, py, pw, ph, 16 * dpr)
+    ctx.fill()
+    ctx.strokeStyle = '#ffd36b'
+    ctx.lineWidth = 3 * dpr
+    ctx.stroke()
+
+    ctx.textAlign = 'center'
+    ctx.textBaseline = 'middle'
+    // 标题
+    ctx.fillStyle = '#ffe9a8'
+    ctx.font = `bold ${26 * dpr}px sans-serif`
+    ctx.fillText('🎉 副本通关！', this.width / 2, py + 50 * dpr)
+    // 战果
+    ctx.fillStyle = '#ffffff'
+    ctx.font = `bold ${16 * dpr}px sans-serif`
+    ctx.fillText('清剿了阳光草原的所有敌人', this.width / 2, py + 96 * dpr)
+    // 奖励
+    ctx.fillStyle = '#ffd36b'
+    ctx.font = `bold ${21 * dpr}px sans-serif`
+    ctx.fillText(`💰 获得金币 +${this.dungeonReward || 80}`, this.width / 2, py + 142 * dpr)
+    // 提示
+    ctx.fillStyle = 'rgba(255,255,255,0.82)'
+    ctx.font = `${14 * dpr}px sans-serif`
+    const sec = Math.max(0, Math.ceil(this.dungeonClearTimer))
+    ctx.fillText(`点击任意处 / ${sec}s 后返回城镇`, this.width / 2, py + 188 * dpr)
     ctx.restore()
   }
 
