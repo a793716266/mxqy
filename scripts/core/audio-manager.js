@@ -170,6 +170,65 @@ export class AudioManager {
   }
 
   /**
+   * 合成打击音（WebAudio 实时合成，无需音频文件）
+   * 用于战斗命中反馈：低频"咚" + 短噪声爆，暴击更亮更短促。
+   * 复用单个 WebAudioContext（懒创建），自动降级（无 wx/静音时 no-op）。
+   * @param {Object} opts - { crit?: boolean, volumeScale?: number }
+   */
+  playHitSynth(opts = {}) {
+    if (this._muted) return
+    if (typeof wx === 'undefined' || !wx.createWebAudioContext) {
+      // 非微信环境（Node 模拟/浏览器）静默跳过
+      return
+    }
+    try {
+      if (!this._webaudio) {
+        this._webaudio = wx.createWebAudioContext()
+      }
+      const actx = this._webaudio
+      // 微信 WebAudioContext 可能初始为 suspended（需用户手势恢复）
+      if (actx.state === 'suspended' && actx.resume) {
+        try { actx.resume() } catch (e) {}
+      }
+      const now = actx.currentTime
+      const master = actx.createGain()
+      master.gain.value = Math.max(0, Math.min(1, this._sfxVolume)) * (opts.volumeScale || 1)
+      master.connect(actx.destination)
+
+      // 1)  tonal thump：三角/方波快速下扫，营造"砸中"的实体感
+      const osc = actx.createOscillator()
+      osc.type = opts.crit ? 'square' : 'triangle'
+      const f0 = opts.crit ? 340 : 200
+      osc.frequency.setValueAtTime(f0, now)
+      osc.frequency.exponentialRampToValueAtTime(55, now + 0.12)
+      const og = actx.createGain()
+      og.gain.setValueAtTime(0.0001, now)
+      og.gain.exponentialRampToValueAtTime(1, now + 0.005)
+      og.gain.exponentialRampToValueAtTime(0.0001, now + (opts.crit ? 0.16 : 0.13))
+      osc.connect(og); og.connect(master)
+      osc.start(now); osc.stop(now + 0.18)
+
+      // 2)  噪声爆（attack 质感）：极短白噪声经低通，模拟击打瞬态
+      const dur = 0.06
+      const buf = actx.createBuffer(1, Math.max(1, Math.ceil(actx.sampleRate * dur)), actx.sampleRate)
+      const data = buf.getChannelData(0)
+      for (let i = 0; i < data.length; i++) {
+        data[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / data.length, 2)
+      }
+      const noise = actx.createBufferSource()
+      noise.buffer = buf
+      const ng = actx.createGain()
+      ng.gain.setValueAtTime(opts.crit ? 0.6 : 0.4, now)
+      ng.gain.exponentialRampToValueAtTime(0.0001, now + dur)
+      noise.connect(ng); ng.connect(master)
+      noise.start(now); noise.stop(now + dur)
+    } catch (e) {
+      // 合成失败不应影响游戏（如低端机不支持 WebAudio）
+      console.warn('[Audio] playHitSynth 失败:', e)
+    }
+  }
+
+  /**
    * 设置BGM音量
    * @param {number} v - 0.0 ~ 1.0
    */

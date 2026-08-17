@@ -3137,6 +3137,17 @@ baseRadius: 50 * this.dpr,    // 底座半径（缩小）
           type: 'projectile',
           render: (ctx) => {
             ctx.save()
+            // ★ P2 弹道拖尾：施加 translate 前用世界坐标绘制近期位置渐隐残影
+            if (p._trail && p._trail.length > 1) {
+              for (let ti = 0; ti < p._trail.length; ti++) {
+                const tp = p._trail[ti]
+                const a = ti / (p._trail.length - 1)
+                ctx.fillStyle = `rgba(${isBasic ? '150,210,255' : '255,150,60'}, ${0.3 * a})`
+                ctx.beginPath()
+                ctx.arc(tp.x - this.cameraX, tp.y - this.cameraY, (isBasic ? 5 : 6) * this.dpr * (0.4 + 0.6 * a), 0, Math.PI * 2)
+                ctx.fill()
+              }
+            }
             ctx.translate(sx, sy)
             if (isBasic) {
               // ★ 普攻冲击波：蓝白色能量弹 + 环绕粒子
@@ -3300,6 +3311,62 @@ baseRadius: 50 * this.dpr,    // 底座半径（缩小）
               ctx.arc(-p.castDir * 16 * this.dpr, 0, 3 * this.dpr, 0, Math.PI * 2)
               ctx.fill()
             }
+            ctx.restore()
+          }
+        })
+      }
+    }
+
+    // ★ P2 命中环（命中瞬间扩散圈，世界坐标，按 Y 排序随单位遮挡）
+    if (this.battleSystem && this.battleSystem.hitRings && this.battleSystem.hitRings.length > 0) {
+      for (const r of this.battleSystem.hitRings) {
+        const sx = r.x - this.cameraX
+        const sy = r.y - this.cameraY
+        engine.addEntity({
+          layer: 2,
+          sortY: r.y / this.dpr,
+          type: 'hitRing',
+          render: (ctx) => {
+            const prog = r.life > 0 ? Math.min(1, r.age / r.life) : 1
+            const rad = r.r0 + (r.r1 - r.r0) * prog
+            const alpha = (1 - prog) * 0.85
+            ctx.save()
+            ctx.strokeStyle = `rgba(${r.color}, ${alpha})`
+            ctx.lineWidth = (3 + 2 * (1 - prog)) * this.dpr
+            ctx.beginPath()
+            ctx.arc(sx, sy, rad, 0, Math.PI * 2)
+            ctx.stroke()
+            ctx.restore()
+          }
+        })
+      }
+    }
+
+    // ★ P2 远程蓄力发光（受控英雄身上脉冲光环，起手蓄力到弹丸飞出）
+    if (this.battleSystem && this.battleSystem._chargeGlow) {
+      const cg = this.battleSystem._chargeGlow
+      const hero = cg.hero
+      if (hero && hero.getPos) {
+        const hp = hero.getPos()
+        const sx = hp.x - this.cameraX
+        const sy = hp.y - this.cameraY
+        engine.addEntity({
+          layer: 1,
+          sortY: hp.y / this.dpr,
+          type: 'chargeGlow',
+          render: (ctx) => {
+            const prog = cg.maxTimer > 0 ? Math.max(0, cg.timer / cg.maxTimer) : 0
+            const pulse = 0.75 + 0.25 * Math.sin(Date.now() / 80)
+            const R = (38 + 16 * (1 - prog)) * this.dpr * pulse
+            const alpha = 0.22 + 0.28 * prog
+            ctx.save()
+            const g = ctx.createRadialGradient(sx, sy, 0, sx, sy, R)
+            g.addColorStop(0, `rgba(${cg.color}, ${alpha})`)
+            g.addColorStop(1, `rgba(${cg.color}, 0)`)
+            ctx.fillStyle = g
+            ctx.beginPath()
+            ctx.arc(sx, sy, R, 0, Math.PI * 2)
+            ctx.fill()
             ctx.restore()
           }
         })
@@ -3878,7 +3945,40 @@ baseRadius: 50 * this.dpr,    // 底座半径（缩小）
     // ★ 新增：渲染 DNF 式固定目标面板（当前攻击怪物：头像 + 名字 + 血条 + 状态）
     if (this.battleSystem) {
       this._renderTargetPanel(ctx)
+      this._renderCombo(ctx)
     }
+  }
+
+  /**
+   * ★ P2 连击计数 HUD：连续命中累计，断连窗口内超时清零（由 battleSystem.combo 驱动）
+   * 至少 2 连才显示，避免平A常驻干扰；居中偏上，带渐变与缩放。
+   */
+  _renderCombo(ctx) {
+    const bs = this.battleSystem
+    if (!bs || !bs.combo || bs.combo < 2) return
+    const dpr = this.dpr
+    const cx = this.width / 2
+    const cy = 64 * dpr
+    const n = bs.combo
+    const scale = 1 + Math.min(0.5, (n - 2) * 0.035)
+    ctx.save()
+    ctx.textAlign = 'center'
+    ctx.textBaseline = 'middle'
+    // 连击数（橙金渐变 + 描边增强可读性）
+    const grad = ctx.createLinearGradient(cx - 60 * dpr, 0, cx + 60 * dpr, 0)
+    grad.addColorStop(0, '#ffd36b')
+    grad.addColorStop(1, '#ff7b3d')
+    ctx.font = `bold ${Math.floor(36 * dpr * scale)}px sans-serif`
+    ctx.lineWidth = 4 * dpr
+    ctx.strokeStyle = 'rgba(0,0,0,0.55)'
+    ctx.strokeText(`${n}`, cx, cy)
+    ctx.fillStyle = grad
+    ctx.fillText(`${n}`, cx, cy)
+    // COMBO 标签
+    ctx.fillStyle = 'rgba(255,255,255,0.85)'
+    ctx.font = `bold ${Math.floor(13 * dpr)}px sans-serif`
+    ctx.fillText('COMBO', cx, cy + 26 * dpr)
+    ctx.restore()
   }
 
   /**

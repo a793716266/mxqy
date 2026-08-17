@@ -40,7 +40,11 @@ export function installFieldBattleSystem(FieldSceneClass) {
       _bufferedAttack: false,   // ★ 普攻输入缓冲标记（挥砍中再点普攻时置位）
       _bufferedAttackPending: null, // ★ 上一击结束瞬间要接的缓冲普攻目标（null=无）
       _hitStop: 0,              // ★ 命中顿帧计时（秒）：>0 时冻结战斗实体一小会儿
-      _shake: 0                 // ★ 命中震屏强度（像素），渲染时叠加到相机偏移并衰减
+      _shake: 0,                // ★ 命中震屏强度（像素），渲染时叠加到相机偏移并衰减
+      combo: 0,                 // ★ 连击计数（连续命中累计，窗口内超时清零）
+      comboTimer: 0,            // ★ 连击窗口计时（秒）：>0 维持连击，归零则清零
+      hitRings: [],             // ★ 命中环（命中瞬间扩散圈，渲染层读取并衰减）
+      _chargeGlow: null         // ★ 远程蓄力发光（{hero,timer,maxTimer,color}，null=无）
     }
     console.log('[FieldBattle] 战斗系统初始化完成')
   }
@@ -390,6 +394,24 @@ export function installFieldBattleSystem(FieldSceneClass) {
     this.battleSystem._shake = Math.max(this.battleSystem._shake || 0, amp)
     // 闪白：怪物受击瞬间全身泛白（渲染层读取 _hitFlash 绘制半透明白覆盖）
     monster._hitFlash = 1
+    // ★ P2 连击累计：每次成功命中 +1，并刷新连击窗口（断连超时清零）
+    this.battleSystem.combo = (this.battleSystem.combo || 0) + 1
+    this.battleSystem.comboTimer = 2.2
+    // ★ P2 命中环：在怪物位置生成扩散圈（暴击更大更亮）
+    if (!this.battleSystem.hitRings) this.battleSystem.hitRings = []
+    this.battleSystem.hitRings.push({
+      x: monster.x,
+      y: monster.y - 20 * this.dpr,
+      age: 0,
+      life: isCrit ? 0.45 : 0.32,
+      r0: 8 * this.dpr,
+      r1: (isCrit ? 42 : 30) * this.dpr,
+      color: isCrit ? '255, 220, 90' : '170, 220, 255'
+    })
+    // ★ P2 合成打击音（WebAudio，无需音频文件）
+    if (this.game && this.game.audio && this.game.audio.playHitSynth) {
+      this.game.audio.playHitSynth({ crit: isCrit })
+    }
   }
 
   proto._updateBattleSystem = function(dt) {
@@ -656,6 +678,25 @@ export function installFieldBattleSystem(FieldSceneClass) {
         m._hitFlash = Math.max(0, m._hitFlash - dt * 5)
       }
     }
+    // 7. ★ P2 连击窗口：超时清零（连续命中重置计时 → 维持连击）
+    if (this.battleSystem.comboTimer > 0) {
+      this.battleSystem.comboTimer -= dt
+      if (this.battleSystem.comboTimer <= 0) this.battleSystem.combo = 0
+    }
+    // 8. ★ P2 命中环衰减（age 推进，到寿命移除）
+    if (this.battleSystem.hitRings && this.battleSystem.hitRings.length) {
+      const rings = this.battleSystem.hitRings
+      for (let i = rings.length - 1; i >= 0; i--) {
+        rings[i].age += dt
+        if (rings[i].age >= rings[i].life) rings.splice(i, 1)
+      }
+    }
+    // 9. ★ P2 远程蓄力发光衰减（计时结束清除）
+    if (this.battleSystem._chargeGlow) {
+      const cg = this.battleSystem._chargeGlow
+      cg.timer -= dt
+      if (cg.timer <= 0) this.battleSystem._chargeGlow = null
+    }
   }
 
   // ==========================================================================
@@ -826,6 +867,8 @@ export function installFieldBattleSystem(FieldSceneClass) {
       const cpos = ctrl.getPos()
       const castDir = this.facingLeft ? -1 : 1   // 施法方向（X轴）
       if (aoed.aoeType === 'lineX') {
+        // ★ P2 远程蓄力发光（火球）：起手蓄力亮起，持续到弹丸飞出（0.55s）
+        this.battleSystem._chargeGlow = { hero: mainHero, timer: 0.55, maxTimer: 0.55, color: '255, 150, 60' }
         // ★ 火球延迟发射：等攻击动画（1.0s）中后段（0.55s）才真正生成弹道，动作与飞出协调
         this._scheduleProjectile({
           delay: 0.55,
@@ -859,7 +902,8 @@ export function installFieldBattleSystem(FieldSceneClass) {
         //   playerAnim 共 0.6s/8帧，第4帧(0.3s)为挥砍最猛瞬间；
         //   位移曲线用 sin(prog*PI)：0→0.5前冲、0.5→1回弹归位
         const lungeDir = sprite.facingLeft ? -1 : 1
-        this.battleSystem._attackLunge = { dir: lungeDir, amount: 26 * this.dpr, last: 0 }
+        // ★ P2 前冲加大：26→48（约 1.85x），挥砍跟进更带感（仍按 sin 曲线前冲后回弹归位）
+        this.battleSystem._attackLunge = { dir: lungeDir, amount: 48 * this.dpr, last: 0 }
         // 预计算伤害 + 延迟命中（对齐第4帧挥砍最猛瞬间 = 0.3s 结算）
         const baseDmg = Math.max(1, this._getHeroAtk(mainHero) - Math.floor(monster.def * 0.5))
         const meleeCrit = Math.random() < (mainHero.crit || 0.05)
@@ -883,6 +927,8 @@ export function installFieldBattleSystem(FieldSceneClass) {
       //   后期若动画倍率/攻速变化（frameDuration 改变），延迟自动跟随
       const frameDur = (this.frameDuration || 0.15)
       const cpos0 = ctrl.getPos()
+      // ★ P2 远程蓄力发光：起手即亮，持续到弹丸飞出（delay 时长）
+      this.battleSystem._chargeGlow = { hero: mainHero, timer: 6 * frameDur, maxTimer: 6 * frameDur, color: '154, 205, 255' }
       this._scheduleProjectile({
         delay: 6 * frameDur,  // ★ 第6帧释放点飞出，随帧率动态对齐
         _hero: mainHero,
@@ -2420,6 +2466,12 @@ export function installFieldBattleSystem(FieldSceneClass) {
       p.y += p.vy * dt
       p.life -= dt
       p.age = (p.age || 0) + dt
+      // ★ P2 弹道拖尾：记录近期位置（剑气已有自身残影，跳过），供渲染层绘制渐隐残影
+      if (!p.bladeStorm) {
+        if (!p._trail) p._trail = []
+        p._trail.push({ x: p.x, y: p.y })
+        if (p._trail.length > 10) p._trail.shift()
+      }
       // 命中判定：与怪物 X 轴带碰撞（火球Y固定，命中 Y 带内的敌人）
       let hitMonster = null
       if (p.bladeStorm) {
