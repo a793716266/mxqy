@@ -14,6 +14,7 @@ import { AudioManager } from './core/audio-manager.js'
 import { AssetManager, ASSETS } from './core/asset-manager.js'
 import { SkillEffectManager } from './core/skill-effect-manager.js'
 import { SettingsPanel } from './ui/settings-panel.js'
+import { computeDeltaTime } from './utils/time.js'
 
 // 场景类型
 export const SCENE = {
@@ -198,7 +199,7 @@ export class Game {
 
   _loop() {
     const now = Date.now()
-    this.deltaTime = (now - this.lastTime) / 1000
+    this.deltaTime = computeDeltaTime(now, this.lastTime)
     this.lastTime = now
 
     // FPS 计算
