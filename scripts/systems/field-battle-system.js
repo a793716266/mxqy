@@ -36,7 +36,11 @@ export function installFieldBattleSystem(FieldSceneClass) {
       buffShockwaves: [],       // buff 生效冲击波（视觉粒子）
       castLockTimer: 0,         // 施法锁定计时（BUFF释放期间锁摇杆）
       castAxisLockTimer: 0,     // 施法轴锁定计时（普攻/伤害技能期间限制Y轴移动）
-      pendingProjectiles: []    // 待发射投射物（延迟到攻击动画完成后才真正飞出）
+      pendingProjectiles: [],   // 待发射投射物（延迟到攻击动画完成后才真正飞出）
+      _bufferedAttack: false,   // ★ 普攻输入缓冲标记（挥砍中再点普攻时置位）
+      _bufferedAttackPending: null, // ★ 上一击结束瞬间要接的缓冲普攻目标（null=无）
+      _hitStop: 0,              // ★ 命中顿帧计时（秒）：>0 时冻结战斗实体一小会儿
+      _shake: 0                 // ★ 命中震屏强度（像素），渲染时叠加到相机偏移并衰减
     }
     console.log('[FieldBattle] 战斗系统初始化完成')
   }
@@ -372,8 +376,39 @@ export function installFieldBattleSystem(FieldSceneClass) {
   // ==========================================================================
   // 4. 更新战斗系统
   // ==========================================================================
+  /**
+   * ★ 命中打击感反馈：顿帧 + 震屏 + 怪物闪白（复用回合制 BattleScene 的同类语义）。
+   *   在「玩家命中怪物」的结算点调用（近战 pendingDamages / 远程投射物命中）。
+   */
+  proto._onHitFeedback = function(monster, isCrit) {
+    if (!monster) return
+    // 顿帧：命中瞬间冻结战斗实体 ~60-90ms（暴击更久）→ 打击重量感
+    const hs = isCrit ? 0.09 : 0.06
+    this.battleSystem._hitStop = Math.max(this.battleSystem._hitStop || 0, hs)
+    // 震屏：命中小幅震屏，暴击更强（渲染层读取 _shake 叠加到相机偏移）
+    const amp = (isCrit ? 6 : 3) * this.dpr
+    this.battleSystem._shake = Math.max(this.battleSystem._shake || 0, amp)
+    // 闪白：怪物受击瞬间全身泛白（渲染层读取 _hitFlash 绘制半透明白覆盖）
+    monster._hitFlash = 1
+  }
+
   proto._updateBattleSystem = function(dt) {
     if (!this.battleSystem.active) return
+
+    // ★ 命中顿帧（hitstop）：冻结战斗实体一小会儿（含玩家挥砍/怪物），
+    //   仅渲染继续 → 命中瞬间"卡帧"的打击重量感。下一帧再解冻。
+    if (this.battleSystem._hitStop > 0) {
+      this.battleSystem._hitStop = Math.max(0, this.battleSystem._hitStop - dt)
+      return
+    }
+
+    // ★ 普攻输入缓冲：上一击结束瞬间立即接下一击（连贯连击，手感不再"点了没反应"）
+    if (this.battleSystem._bufferedAttackPending != null) {
+      const tgt = this.battleSystem._bufferedAttackPending
+      this.battleSystem._bufferedAttackPending = null
+      this.battleSystem.playerAttackCD = 0  // 跳过冷却，使缓冲普攻立即接续
+      this._playerAttackMonster(tgt, null)
+    }
 
     // 1. 更新玩家攻击冷却
     if (this.battleSystem.playerAttackCD > 0) {
@@ -428,6 +463,11 @@ export function installFieldBattleSystem(FieldSceneClass) {
           }
           this.battleSystem._attackLunge = null
         }
+        // ★ 普攻输入缓冲：本击结束，若有缓存的普攻请求，下一帧立即接上
+        if (this.battleSystem._bufferedAttack) {
+          this.battleSystem._bufferedAttack = false
+          this.battleSystem._bufferedAttackPending = this.battleSystem.battleTarget || null
+        }
         this.battleSystem.playerAnim = null
       }
       }
@@ -467,6 +507,8 @@ export function installFieldBattleSystem(FieldSceneClass) {
           if (m && m.alive) {
             const dealt = this._damageMonster(m, pd.damage)
             if (dealt > 0) {
+              // ★ 命中打击感：顿帧 + 震屏 + 闪白
+              this._onHitFeedback(m, pd.isCrit)
               // ★ 诅咒：对命中怪物施加降攻（虚弱）状态
               if (pd.debuff && pd.debuff.type === 'atk_down') {
                 this._applyMonsterStatus(m, 'atk_down', { duration: pd.debuff.duration || 3, value: pd.debuff.value || 0.3 }, pd.hero)
@@ -604,6 +646,16 @@ export function installFieldBattleSystem(FieldSceneClass) {
 
     // 5. 更新怪物攻击（攻击最近的参战英雄）
     this._updateMonsterAttack(dt)
+
+    // 6. 打击感衰减：震屏强度递减 + 怪物受击闪白递减（仅渲染读取，不影响逻辑）
+    if (this.battleSystem._shake > 0) {
+      this.battleSystem._shake = Math.max(0, this.battleSystem._shake - dt * 60)
+    }
+    for (const m of (this.mapMonsters || [])) {
+      if (m._hitFlash && m._hitFlash > 0) {
+        m._hitFlash = Math.max(0, m._hitFlash - dt * 5)
+      }
+    }
   }
 
   // ==========================================================================
@@ -666,7 +718,12 @@ export function installFieldBattleSystem(FieldSceneClass) {
     //   —— 例外：技能可打断普攻/技能（skill !== null），否则普攻 8帧动画(约1.2s)期间无法放技能
     const battleStates = ['attack', 'shield', 'skill', 'buff', 'support']
     if (sprite && battleStates.includes(sprite.state)) {
-      if (!skill) return   // 普攻不能打断
+      if (!skill) {
+        // ★ 普攻输入缓冲：挥砍中再点普攻 → 缓存，本击结束瞬间立即接下一击。
+        //   仅普攻挥砍(attack)期间缓冲普攻；技能(skill)后不自动追加普攻。
+        if (sprite.state === 'attack') this.battleSystem._bufferedAttack = true
+        return
+      }
       // 技能打断：直接覆盖为技能动画（不 return，继续走下方统一逻辑）
       if (animState === sprite.state) {
         // 同状态技能（如连续普攻型技能）也允许重放
@@ -692,7 +749,8 @@ export function installFieldBattleSystem(FieldSceneClass) {
       //   时长对齐真实动画(8帧×frameDuration)，由 _updateBattle 跟随 playerAnim.timer 维持
       if (!isBuff) {
         const fd = (this.frameDuration || 0.15)
-        this.battleSystem.castAxisLockTimer = 8 * fd
+        // ★ 普攻用 5 帧（比技能 8 帧更短、更跟手）；技能仍 8 帧
+        this.battleSystem.castAxisLockTimer = (skill ? 8 : 5) * fd
       }
       sprite.state = animState
       sprite.animFrame = 0
@@ -715,7 +773,8 @@ export function installFieldBattleSystem(FieldSceneClass) {
     // ★ 攻击/技能动画时长对齐真实渲染时长（8帧 × frameDuration = 1.2s @150ms），
     //   避免锁定时长(旧0.6/0.7s)比动画短一半导致"动画未播完Y轴就解锁、角色在飘"
     const frameDur = (this.frameDuration || 0.15)
-    const animLen = (8 * frameDur) // 普攻/技能统一8帧
+    // ★ 普攻 5 帧（更跟手），技能 8 帧；霸体/大招不受影响
+    const animLen = (skill ? 8 : 5) * frameDur
     this.battleSystem.playerAnim = {
       type: animState,
       timer: animLen,
@@ -807,7 +866,8 @@ export function installFieldBattleSystem(FieldSceneClass) {
         const finalDmg = meleeCrit ? Math.floor(baseDmg * 1.5) : baseDmg
         if (!this.battleSystem.pendingDamages) this.battleSystem.pendingDamages = []
         this.battleSystem.pendingDamages.push({
-          timer: 0.3,
+          // ★ 命中帧提前到约 32% 挥砍处（更跟手，原 0.3s 偏晚）
+          timer: (5 * (this.frameDuration || 0.15)) * 0.32,
           monster: monster,
           damage: finalDmg,
           heroName: mainHero.name,
@@ -2405,6 +2465,8 @@ export function installFieldBattleSystem(FieldSceneClass) {
           dmg = this._calcSkillDamageToMonster(hitMonster, p.skill, p.hero, isCrit)
         }
         this._damageMonster(hitMonster, dmg)
+        // ★ 命中打击感：顿帧 + 震屏 + 闪白
+        this._onHitFeedback(hitMonster, isCrit)
         // 灼烧状态（仅技能火球）
         if (p.burn) this._applyMonsterStatus(hitMonster, 'burn', p.burn, p.hero)
         this._pushDamageText(hitMonster, dmg, isCrit, p.isBasicAttack ? '#ffffff' : '#ff6b35')

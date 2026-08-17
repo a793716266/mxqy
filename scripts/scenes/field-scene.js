@@ -3620,6 +3620,19 @@ baseRadius: 50 * this.dpr,    // 底座半径（缩小）
         } else {
           self._renderEmojiMonster(ctx, monster, sx, jumpY)
         }
+        // ★ 受击闪白：命中瞬间在怪物身体位置叠半透明白覆盖
+        //   （_hitFlash 由战斗系统 _onHitFeedback 置 1，并在 _updateBattleSystem 递减）
+        if (monster._hitFlash && monster._hitFlash > 0) {
+          const cfg = self._getMonsterConfig(monster.enemyId)
+          const th = ((cfg && cfg.renderConfig && cfg.renderConfig.targetHeight) || 80) * self.dpr
+          ctx.save()
+          ctx.globalAlpha = Math.min(0.85, monster._hitFlash * 0.9)
+          ctx.fillStyle = '#ffffff'
+          ctx.beginPath()
+          ctx.ellipse(sx, jumpY - th * 0.45, th * 0.45, th * 0.5, 0, 0, Math.PI * 2)
+          ctx.fill()
+          ctx.restore()
+        }
         // ★ 怪物头顶血条已移除（用户要求）：怪物血条统一在左下目标面板
         //   （召回/解散按钮下方，_renderTargetPanel）显示，含扣血追赶效果
       },
@@ -3661,6 +3674,12 @@ baseRadius: 50 * this.dpr,    // 底座半径（缩小）
         ef._ySorted = false
       }
     }
+    // ══ 世界层（背景 + 实体）震屏包裹：命中/受击时整屏轻震，仅世界层、不动 HUD ══
+    const _shake = (this.battleSystem && this.battleSystem._shake) || 0
+    ctx.save()
+    if (_shake > 0) {
+      ctx.translate((Math.random() - 0.5) * 2 * _shake, (Math.random() - 0.5) * 2 * _shake)
+    }
     // 地图背景（程序化渲染只画草地纹理）
     if (this.areaInfo.fieldBg) {
       const bgImage = this.game.assets.get(this.areaInfo.fieldBg)
@@ -3682,6 +3701,7 @@ baseRadius: 50 * this.dpr,    // 底座半径（缩小）
     // ══ 统一Y轴排序渲染（伪3D层次感）══
     // 树木/装饰/宝箱/怪物/队友/主角 全部按底部Y坐标排序后绘制
     this._renderYSortedEntities(ctx)
+    ctx.restore()
     
     // 顶部UI
     this._renderTopUI(ctx)
