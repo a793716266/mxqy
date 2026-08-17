@@ -3234,21 +3234,26 @@ export function installFieldBattleSystem(FieldSceneClass) {
       if ((hdx * hdx + hdy * hdy) <= r * r) {
         const dmg = Math.max(1, Math.floor(monster.atk * (monster._atkMul || 1) * (sk.power || 1) - this._getHeroDef(bh.hero) * 0.3))
         this._applyHeroDamage(bh.hero, dmg, hp.x, hp.y, monster)
-        // 击飞 + 落地眩晕
-        let nx = hdx, ny = hdy
-        const len = Math.sqrt(nx * nx + ny * ny) || 1
-        nx /= len; ny /= len
-        const kb = 90 * this.dpr
-        bh.hero._knockback = {
-          t: 0, dur: 0.45,
-          fromX: hp.x, fromY: hp.y,
-          toX: hp.x + nx * kb, toY: hp.y + ny * kb,
-          height: (sk.knockbackHeight || 70) * this.dpr,
-          stunAfter: sk.stun || 1.0,
-          partyIndex: bh.partyIndex
+        // ★ 霸体(superArmor)：免疫击飞与落地眩晕（仅承伤、动作不中断、不被打飞）。
+        //   否则剑气风暴等贴地突进技能会被光明冲锋抛飞，连续突刺观感断裂；
+        //   isHeroSuperArmor 已随 combat-state 单一真相源在文件顶部 import。
+        if (!isHeroSuperArmor({ hero: bh.hero })) {
+          // 击飞 + 落地眩晕
+          let nx = hdx, ny = hdy
+          const len = Math.sqrt(nx * nx + ny * ny) || 1
+          nx /= len; ny /= len
+          const kb = 90 * this.dpr
+          bh.hero._knockback = {
+            t: 0, dur: 0.45,
+            fromX: hp.x, fromY: hp.y,
+            toX: hp.x + nx * kb, toY: hp.y + ny * kb,
+            height: (sk.knockbackHeight || 70) * this.dpr,
+            stunAfter: sk.stun || 1.0,
+            partyIndex: bh.partyIndex
+          }
+          // ★ 被击飞 → 受击动画使用 hurt_02（覆盖 _applyHeroDamage 设置的 hurt_01）
+          this._triggerHeroHurt(bh.hero, true)
         }
-        // ★ 被击飞 → 受击动画使用 hurt_02（覆盖 _applyHeroDamage 设置的 hurt_01）
-        this._triggerHeroHurt(bh.hero, true)
       }
     }
     this.battleSystem.damageTexts.push({
