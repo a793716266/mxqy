@@ -53,6 +53,10 @@
       },
       {
         "type": "folder",
+        "value": "devtools"
+      },
+      {
+        "type": "folder",
         "value": "docs"
       },
       {
