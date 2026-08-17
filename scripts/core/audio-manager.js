@@ -171,9 +171,11 @@ export class AudioManager {
 
   /**
    * 合成打击音（WebAudio 实时合成，无需音频文件）
-   * 用于战斗命中反馈：低频"咚" + 短噪声爆，暴击更亮更短促。
-   * 复用单个 WebAudioContext（懒创建），自动降级（无 wx/静音时 no-op）。
-   * @param {Object} opts - { crit?: boolean, volumeScale?: number }
+   * 按武器类型区分音色，并每次随机微调音高/噪声，避免"单一机械感"：
+   *  - type='slash'（剑击，臻宝近战）：明亮金属"铛~" + 高频刮擦噪声，贴合刀剑劈砍
+   *  - type='magic'（魔法，李小宝远程）：能量"啾~"上扫 + 柔光噪声尾，金属感低
+   * 暴击(crit)更亮、更短促、音量更大。复用单个 WebAudioContext，自动降级。
+   * @param {Object} opts - { type?: 'slash'|'magic', crit?: boolean, volumeScale?: number }
    */
   playHitSynth(opts = {}) {
     if (this._muted) return
@@ -191,40 +193,120 @@ export class AudioManager {
         try { actx.resume() } catch (e) {}
       }
       const now = actx.currentTime
+      const type = (opts.type === 'magic') ? 'magic' : 'slash'
+      const crit = !!opts.crit
+      // ★ 随机微调（±12% 音高抖动），消除"每下都一样"的单调感
+      const detune = 1 + (Math.random() * 0.24 - 0.12)
+      const vol = Math.max(0, Math.min(1, this._sfxVolume)) * (opts.volumeScale || 1)
       const master = actx.createGain()
-      master.gain.value = Math.max(0, Math.min(1, this._sfxVolume)) * (opts.volumeScale || 1)
+      master.gain.value = vol
       master.connect(actx.destination)
 
-      // 1)  tonal thump：三角/方波快速下扫，营造"砸中"的实体感
-      const osc = actx.createOscillator()
-      osc.type = opts.crit ? 'square' : 'triangle'
-      const f0 = opts.crit ? 340 : 200
-      osc.frequency.setValueAtTime(f0, now)
-      osc.frequency.exponentialRampToValueAtTime(55, now + 0.12)
-      const og = actx.createGain()
-      og.gain.setValueAtTime(0.0001, now)
-      og.gain.exponentialRampToValueAtTime(1, now + 0.005)
-      og.gain.exponentialRampToValueAtTime(0.0001, now + (opts.crit ? 0.16 : 0.13))
-      osc.connect(og); og.connect(master)
-      osc.start(now); osc.stop(now + 0.18)
-
-      // 2)  噪声爆（attack 质感）：极短白噪声经低通，模拟击打瞬态
-      const dur = 0.06
-      const buf = actx.createBuffer(1, Math.max(1, Math.ceil(actx.sampleRate * dur)), actx.sampleRate)
-      const data = buf.getChannelData(0)
-      for (let i = 0; i < data.length; i++) {
-        data[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / data.length, 2)
+      if (type === 'magic') {
+        // 魔法能量命中：锯齿波快速上扫(啾~) + 柔光噪声尾
+        const osc = actx.createOscillator()
+        osc.type = 'sawtooth'
+        const f0 = (crit ? 760 : 560) * detune
+        osc.frequency.setValueAtTime(f0, now)
+        osc.frequency.exponentialRampToValueAtTime(f0 * 0.45, now + (crit ? 0.22 : 0.18))
+        const lp = actx.createBiquadFilter()
+        lp.type = 'lowpass'
+        lp.frequency.value = crit ? 2600 : 1800
+        const og = actx.createGain()
+        og.gain.setValueAtTime(0.0001, now)
+        og.gain.exponentialRampToValueAtTime(crit ? 0.9 : 0.7, now + 0.012)
+        og.gain.exponentialRampToValueAtTime(0.0001, now + (crit ? 0.26 : 0.2))
+        osc.connect(lp); lp.connect(og); og.connect(master)
+        osc.start(now); osc.stop(now + 0.3)
+        // 能量"嘶"噪声层（带通）
+        const ndur = 0.12
+        const nbuf = actx.createBuffer(1, Math.max(1, Math.ceil(actx.sampleRate * ndur)), actx.sampleRate)
+        const nd = nbuf.getChannelData(0)
+        for (let i = 0; i < nd.length; i++) nd[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / nd.length, 1.5)
+        const noise = actx.createBufferSource(); noise.buffer = nbuf
+        const nf = actx.createBiquadFilter(); nf.type = 'bandpass'; nf.frequency.value = 1800 * detune; nf.Q.value = 0.8
+        const ng = actx.createGain(); ng.gain.setValueAtTime(crit ? 0.35 : 0.22, now); ng.gain.exponentialRampToValueAtTime(0.0001, now + ndur)
+        noise.connect(nf); nf.connect(ng); ng.connect(master)
+        noise.start(now); noise.stop(now + ndur)
+      } else {
+        // 'slash' 剑击：明亮金属"铛~"（方波下扫）+ 剑刃共鸣泛音（三角波）+ 高频刮擦噪声
+        // 1) 金属主音：方波高频快速下扫，带"铛"的实体金属感
+        const osc = actx.createOscillator()
+        osc.type = 'square'
+        const f0 = (crit ? 1500 : 1050) * detune
+        osc.frequency.setValueAtTime(f0, now)
+        osc.frequency.exponentialRampToValueAtTime(f0 * 0.5, now + 0.09)
+        const og = actx.createGain()
+        og.gain.setValueAtTime(0.0001, now)
+        og.gain.exponentialRampToValueAtTime(crit ? 0.8 : 0.6, now + 0.004)
+        og.gain.exponentialRampToValueAtTime(0.0001, now + (crit ? 0.12 : 0.1))
+        osc.connect(og); og.connect(master)
+        osc.start(now); osc.stop(now + 0.14)
+        // 2) 剑刃共鸣泛音：三角波更高频短促，增强金属亮感
+        const osc2 = actx.createOscillator()
+        osc2.type = 'triangle'
+        const f1 = (crit ? 2400 : 1700) * detune
+        osc2.frequency.setValueAtTime(f1, now)
+        osc2.frequency.exponentialRampToValueAtTime(f1 * 0.7, now + 0.06)
+        const og2 = actx.createGain()
+        og2.gain.setValueAtTime(0.0001, now)
+        og2.gain.exponentialRampToValueAtTime(crit ? 0.4 : 0.3, now + 0.003)
+        og2.gain.exponentialRampToValueAtTime(0.0001, now + 0.07)
+        osc2.connect(og2); og2.connect(master)
+        osc2.start(now); osc2.stop(now + 0.09)
+        // 3) 刮擦噪声（剑刃划过）：高通短噪
+        const sdur = crit ? 0.1 : 0.07
+        const sbuf = actx.createBuffer(1, Math.max(1, Math.ceil(actx.sampleRate * sdur)), actx.sampleRate)
+        const sd = sbuf.getChannelData(0)
+        for (let i = 0; i < sd.length; i++) sd[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / sd.length, 2)
+        const snoise = actx.createBufferSource(); snoise.buffer = sbuf
+        const sf = actx.createBiquadFilter(); sf.type = 'highpass'; sf.frequency.value = 2500 * detune
+        const sg = actx.createGain(); sg.gain.setValueAtTime(crit ? 0.5 : 0.35, now); sg.gain.exponentialRampToValueAtTime(0.0001, now + sdur)
+        snoise.connect(sf); sf.connect(sg); sg.connect(master)
+        snoise.start(now); snoise.stop(now + sdur)
       }
-      const noise = actx.createBufferSource()
-      noise.buffer = buf
-      const ng = actx.createGain()
-      ng.gain.setValueAtTime(opts.crit ? 0.6 : 0.4, now)
-      ng.gain.exponentialRampToValueAtTime(0.0001, now + dur)
-      noise.connect(ng); ng.connect(master)
-      noise.start(now); noise.stop(now + dur)
     } catch (e) {
       // 合成失败不应影响游戏（如低端机不支持 WebAudio）
       console.warn('[Audio] playHitSynth 失败:', e)
+    }
+  }
+
+  /**
+   * 合成挥击声（WebAudio 实时合成，无需音频文件）
+   * 近战（剑）起手挥砍时播放：带通噪声随扫频上移再回落 → "呼~" 破风声。
+   * 复用 playHitSynth 的 WebAudioContext，自动降级（无 wx/静音时 no-op）。
+   * @param {Object} opts - { volumeScale?: number }
+   */
+  playSwingSynth(opts = {}) {
+    if (this._muted) return
+    if (typeof wx === 'undefined' || !wx.createWebAudioContext) return
+    try {
+      if (!this._webaudio) this._webaudio = wx.createWebAudioContext()
+      const actx = this._webaudio
+      if (actx.state === 'suspended' && actx.resume) { try { actx.resume() } catch (e) {} }
+      const now = actx.currentTime
+      const vol = Math.max(0, Math.min(1, this._sfxVolume)) * (opts.volumeScale || 1) * 0.5
+      if (vol <= 0) return
+      const detune = 1 + (Math.random() * 0.2 - 0.1)
+      const dur = 0.22 * detune
+      // 白噪声缓冲（破风底噪）
+      const buf = actx.createBuffer(1, Math.max(1, Math.ceil(actx.sampleRate * dur)), actx.sampleRate)
+      const d = buf.getChannelData(0)
+      for (let i = 0; i < d.length; i++) d[i] = (Math.random() * 2 - 1)
+      const noise = actx.createBufferSource(); noise.buffer = buf
+      // 带通扫频：500→1600→700Hz，模拟挥剑由慢到快再到收的破风
+      const bp = actx.createBiquadFilter(); bp.type = 'bandpass'; bp.Q.value = 0.9
+      bp.frequency.setValueAtTime(500 * detune, now)
+      bp.frequency.exponentialRampToValueAtTime(1600 * detune, now + dur * 0.5)
+      bp.frequency.exponentialRampToValueAtTime(700 * detune, now + dur)
+      const g = actx.createGain()
+      g.gain.setValueAtTime(0.0001, now)
+      g.gain.exponentialRampToValueAtTime(vol, now + 0.04)
+      g.gain.exponentialRampToValueAtTime(0.0001, now + dur)
+      noise.connect(bp); bp.connect(g); g.connect(actx.destination)
+      noise.start(now); noise.stop(now + dur)
+    } catch (e) {
+      console.warn('[Audio] playSwingSynth 失败:', e)
     }
   }
 

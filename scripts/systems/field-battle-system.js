@@ -384,7 +384,7 @@ export function installFieldBattleSystem(FieldSceneClass) {
    * ★ 命中打击感反馈：顿帧 + 震屏 + 怪物闪白（复用回合制 BattleScene 的同类语义）。
    *   在「玩家命中怪物」的结算点调用（近战 pendingDamages / 远程投射物命中）。
    */
-  proto._onHitFeedback = function(monster, isCrit) {
+  proto._onHitFeedback = function(monster, isCrit, hitType) {
     if (!monster) return
     // 顿帧：命中瞬间冻结战斗实体 ~60-90ms（暴击更久）→ 打击重量感
     const hs = isCrit ? 0.09 : 0.06
@@ -408,9 +408,9 @@ export function installFieldBattleSystem(FieldSceneClass) {
       r1: (isCrit ? 42 : 30) * this.dpr,
       color: isCrit ? '255, 220, 90' : '170, 220, 255'
     })
-    // ★ P2 合成打击音（WebAudio，无需音频文件）
+    // ★ P2 合成打击音（WebAudio，无需音频文件）：按武器类型区分音色
     if (this.game && this.game.audio && this.game.audio.playHitSynth) {
-      this.game.audio.playHitSynth({ crit: isCrit })
+      this.game.audio.playHitSynth({ type: hitType || 'slash', crit: isCrit })
     }
   }
 
@@ -530,7 +530,7 @@ export function installFieldBattleSystem(FieldSceneClass) {
             const dealt = this._damageMonster(m, pd.damage)
             if (dealt > 0) {
               // ★ 命中打击感：顿帧 + 震屏 + 闪白
-              this._onHitFeedback(m, pd.isCrit)
+              this._onHitFeedback(m, pd.isCrit, 'slash')
               // ★ 诅咒：对命中怪物施加降攻（虚弱）状态
               if (pd.debuff && pd.debuff.type === 'atk_down') {
                 this._applyMonsterStatus(m, 'atk_down', { duration: pd.debuff.duration || 3, value: pd.debuff.value || 0.3 }, pd.hero)
@@ -904,6 +904,10 @@ export function installFieldBattleSystem(FieldSceneClass) {
         const lungeDir = sprite.facingLeft ? -1 : 1
         // ★ P2 前冲加大：26→48（约 1.85x），挥砍跟进更带感（仍按 sin 曲线前冲后回弹归位）
         this.battleSystem._attackLunge = { dir: lungeDir, amount: 48 * this.dpr, last: 0 }
+        // ★ 近战挥剑破风声（剑击起手 whoosh，与挥砍动画同步）
+        if (this.game && this.game.audio && this.game.audio.playSwingSynth) {
+          this.game.audio.playSwingSynth({ volumeScale: 1 })
+        }
         // 预计算伤害 + 延迟命中（对齐第4帧挥砍最猛瞬间 = 0.3s 结算）
         const baseDmg = Math.max(1, this._getHeroAtk(mainHero) - Math.floor(monster.def * 0.5))
         const meleeCrit = Math.random() < (mainHero.crit || 0.05)
@@ -2518,7 +2522,7 @@ export function installFieldBattleSystem(FieldSceneClass) {
         }
         this._damageMonster(hitMonster, dmg)
         // ★ 命中打击感：顿帧 + 震屏 + 闪白
-        this._onHitFeedback(hitMonster, isCrit)
+        this._onHitFeedback(hitMonster, isCrit, 'magic')
         // 灼烧状态（仅技能火球）
         if (p.burn) this._applyMonsterStatus(hitMonster, 'burn', p.burn, p.hero)
         this._pushDamageText(hitMonster, dmg, isCrit, p.isBasicAttack ? '#ffffff' : '#ff6b35')
