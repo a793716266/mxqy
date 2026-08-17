@@ -68,9 +68,15 @@ def save_mp3(sig, path):
         sig = sig / peak * 0.85
     wav = (sig * 32767).astype(np.int16)
     tmp = path.replace('.mp3','_t.wav')
-    wavfile.write(tmp, SR, wav)
-    os.system(f'ffmpeg -y -i "{tmp}" -codec:a libmp3lame -qscale:a 2 "{path}" 2>/dev/null')
-    os.remove(tmp)
+    try:
+        wavfile.write(tmp, SR, wav)
+        # 使用更兼容的立体声 CBR 128kbps，避免微信开发者工具转码失败
+        rc = os.system(f'ffmpeg -y -i "{tmp}" -ar 44100 -ac 2 -b:a 128k -codec:a libmp3lame "{path}" 2>/dev/null')
+        if rc != 0 or not os.path.exists(path) or os.path.getsize(path) == 0:
+            raise RuntimeError(f'ffmpeg 转码失败: {path}')
+    finally:
+        if os.path.exists(tmp):
+            os.remove(tmp)
 
 def export(sig, filename):
     print(f"  ✓ {filename}")
