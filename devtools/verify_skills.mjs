@@ -23,6 +23,26 @@ globalThis.require = (p) => {
   }
 }
 
+// ★ 确定性 RNG：怪物 AI / 暴击 / 伤害浮动 / 走位方向等大量依赖 Math.random。
+//   为避免「偶发 1 失败」的 flaky，用固定种子覆盖 Math.random（仅测试环境，零游戏代码改动）。
+//   复现某次运行：VERIFY_SEED=0x<hex> node devtools/verify_skills.mjs
+function mulberry32(a) {
+  return function () {
+    a |= 0; a = (a + 0x6D2B79F5) | 0
+    let t = Math.imul(a ^ (a >>> 15), 1 | a)
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296
+  }
+}
+const VERIFY_SEED = (function () {
+  const raw = process.env.VERIFY_SEED
+  if (raw == null || raw === '') return 0xC0FFEE
+  const n = raw.startsWith('0x') ? parseInt(raw, 16) : Number(raw)
+  return Number.isFinite(n) ? (n | 0) : 0xC0FFEE
+})()
+Math.random = mulberry32(VERIFY_SEED)
+console.log(`[skills] RNG 已用种子 0x${VERIFY_SEED.toString(16)} 固定（设 VERIFY_SEED 环境变量可复现/变异）`)
+
 const canvasCtx = new Proxy({}, {
   get(t, p) {
     if (p === 'canvas') return undefined
