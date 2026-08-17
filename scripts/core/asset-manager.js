@@ -321,6 +321,8 @@ export const ASSETS = {
   ...buildFrames('HERO_LIXIAOBAO', 'images/characters_anim/transparent/lixiaobao', [
     { action: 'walk',         frames: 8 },
     { action: 'idle',         frames: 8 },
+    // ★ 野外实时战斗受击帧：hurt_01 普通受击 / hurt_02 被击飞（2026-08-17 AI 生成）
+    { action: 'hurt',         frames: 2 },
   ]),
 
   // --- 李小宝命中特效（key 前缀不含 action，目录名≠文件前缀）---
