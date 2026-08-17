@@ -2,6 +2,9 @@
  * field-battle-system.js - 野外战斗系统
  * 负责：伤害计算、攻击判定、血条渲染、伤害数字
  */
+
+import { getHeroMoveLock, isHeroCasting, isHeroSuperArmor } from './combat-state.js'
+
 export function installFieldBattleSystem(FieldSceneClass) {
   // 防止重复安装
   if (FieldSceneClass._battleSystemInstalled) {
@@ -632,7 +635,8 @@ export function installFieldBattleSystem(FieldSceneClass) {
     //   配合 _castBladeStorm 设置的 castLockTimer（X+Y 全锁），实现"大招站桩释放，
     //   既不能走位、也不能切其他技能"。首帧施放时 playerAnim 尚未变为 blade_storm，故不误拦。
     const _paBoot = this.battleSystem.playerAnim
-    if (_paBoot && _paBoot.type === 'blade_storm' && _paBoot.timer > 0) return
+    // ★ 改用 combat-state 单一真相源判断「玩家此刻是否在施放某类型技能」
+    if (_paBoot && isHeroCasting({ battleSystem: this.battleSystem, isMain: true, skillType: 'blade_storm' }) && _paBoot.timer > 0) return
 
     // ★ 施法 token：标记本次施法（普攻/技能都算），供"非霸体技能被打断时取消其待结算效果"使用。
     //   token 每次施法自增；霸体(superArmor)技能不受打断影响；被打断时置 _castInterrupted。
@@ -1172,7 +1176,8 @@ export function installFieldBattleSystem(FieldSceneClass) {
   proto._interruptCastingForHero = function(hero) {
     if (!hero) return
     // ★ 霸体技能：释放期间不被打断（如 BOSS 大招 / 配置 superArmor 的技能），效果照常结算
-    if (hero._castSuperArmor) return
+    // ★ 改用 combat-state 单一真相源判断霸体（superArmor）
+    if (isHeroSuperArmor({ hero })) return
     // ★ 当前没有进行中的施法（已被打断 / 本就在普攻外）→ 无需处理
     if (!hero._castToken) return
     // ★ 标记本次施法被打断：所有挂在该 token 上的待结算效果（延迟伤害 / 延迟弹道 / 技能过程 / BUFF）一律作废
@@ -1343,9 +1348,9 @@ export function installFieldBattleSystem(FieldSceneClass) {
           //   _castLock：完全锁定（不能移动）；_castAxisLock：仅锁 Y 轴（可小幅 X 走位）。
           //   不在此检查的话，_aiAttacking 的 0.8s 窗口结束后英雄会立刻恢复自由 XY 移动，
           //   表现为"放技能（尤其剑气风暴）还能走位"。
-          const fullLock = hero._castLock && hero._castLock > 0
-          const axisLock = hero._castAxisLock && hero._castAxisLock > 0
-          if (!fullLock) {
+          // ★ 统一移动锁收口到 combat-state.getHeroMoveLock（含 AI 的 _castLock/_castAxisLock 历史不对称）
+          const _moveLock = getHeroMoveLock({ hero })
+          if (!_moveLock.full) {
             let mt = null
             if (this.aiRecall) {
               const ctrl = this._getCurrentControlHero && this._getCurrentControlHero()
@@ -1363,7 +1368,7 @@ export function installFieldBattleSystem(FieldSceneClass) {
               if (md > arrive) {
                 const sp = (this.playerSpeed || 200) * 0.95
                 const moveX = (mdx / md) * sp * dt
-                const moveY = axisLock ? 0 : (mdy / md) * sp * dt  // ★ Y 轴锁：施法期间只能 X 轴移动
+                const moveY = _moveLock.axisY ? 0 : (mdy / md) * sp * dt  // ★ Y 轴锁：施法期间只能 X 轴移动
                 apos.x += moveX
                 apos.y += moveY
                 if (bh.sprite) { bh.sprite.facingLeft = mdx < 0; bh.sprite.isMoving = true }
@@ -1499,7 +1504,10 @@ export function installFieldBattleSystem(FieldSceneClass) {
 
     // ★ 完全施法锁定期间（BUFF / 剑气风暴等大招的 _castLock）不允许开始新技能，
     //   保证大招站桩释放期间 AI 不会穿插其他技能（与玩家一致：释放时不能放别的）。
-    if (hero._castLock && hero._castLock > 0) return false
+    // ★ 完全施法锁定期间（BUFF / 剑气风暴等大招的 _castLock）不允许开始新技能，
+    //   保证大招站桩释放期间 AI 不会穿插其他技能（与玩家一致：释放时不能放别的）。
+    //   ★ 改用 combat-state 单一真相源判断移动锁
+    if (getHeroMoveLock({ hero }).full) return false
 
     // 第一遍：收集所有"当前可用"的技能（含 BUFF）
     const available = []

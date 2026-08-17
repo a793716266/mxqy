@@ -4,6 +4,7 @@
 
 import { ENEMIES_CH1, ENEMIES_CH2, getEnemyByLevel } from '../data/enemies.js'
 import { installFieldBattleSystem } from '../systems/field-battle-system.js'
+import { getHeroMoveLock, isHeroSuperArmor } from '../systems/combat-state.js'
 import { HEROES } from '../data/heroes.js'
 import { getMapCollisionsSync } from '../data/map_collisions.js'
 import { isPointInObstacle as _isPointInGrasslandObstacle, generateGrasslandCollisions as _genGrassCollisions, GRASSLAND_MAP_CONFIG, GRASSLAND_MAP_OBJECTS, GLAND_OBJ_TYPE } from '../data/grassland-map-data.js'
@@ -775,13 +776,11 @@ baseRadius: 50 * this.dpr,    // 底座半径（缩小）
     this.isMoving = false
 
     if (this.joystick.active) {
-      // ★ 施法锁定：BUFF 释放期间完全锁定摇杆移动（跳过整个移动逻辑）
-      const castLock = this.battleSystem && this.battleSystem.castLockTimer > 0
-      // ★ 被控英雄眩晕（击飞落地后）或被击中硬直：冻结摇杆移动
+      // ★ 统一移动锁收口到 combat-state.getHeroMoveLock（单一真相源，含玩家/AI 历史不对称）：
+      //   castLockTimer(全锁) / _stunned(击飞硬直) / _hurtLock(受击硬直) / castAxisLockTimer(Y 轴锁)
       const ctrlHero = this._getCurrentControlHero && this._getCurrentControlHero()
-      const stunned = !!(ctrlHero && ctrlHero.hero && ctrlHero.hero._stunned > 0)
-      const hurtLocked = !!(ctrlHero && ctrlHero.hero && ctrlHero.hero._hurtLock > 0)
-      if (castLock || stunned || hurtLocked) {
+      const _moveLock = getHeroMoveLock({ hero: (ctrlHero && ctrlHero.hero) || {}, battleSystem: this.battleSystem, isMain: true })
+      if (_moveLock.full) {
         this.isMoving = false
       } else {
         const jx = this.joystick.currentX - this.joystickConfig.centerX
@@ -791,8 +790,7 @@ baseRadius: 50 * this.dpr,    // 底座半径（缩小）
 
         // ★ 伤害技能/普攻施法期间：只允许 X 轴移动（Y 分量被限制为 0）
         //   对应 castAxisLockTimer（field-battle-system 在普攻/伤害技能释放时设置）
-        const axisLock = this.battleSystem && this.battleSystem.castAxisLockTimer > 0
-        if (axisLock) {
+        if (_moveLock.axisY) {
           dy = 0
           dist = Math.abs(jx)
           if (dist < 1) dist = 0
@@ -1473,7 +1471,8 @@ baseRadius: 50 * this.dpr,    // 底座半径（缩小）
     if (!hero) return
     // ★ 霸体(superArmor)：释放霸体技能（剑气风暴等）期间不受击硬直、不切受击动画，
     //   保证连续突刺等动画不被怪物攻击打断（伤害仍正常结算，只是不被打断动作）。
-    if (hero._castSuperArmor) return
+    // ★ 改用 combat-state 单一真相源判断霸体（superArmor）
+    if (isHeroSuperArmor({ hero })) return
     let sprite = null
     if (this.mainCharacterSprite && this.mainCharacter && hero.id === this.mainCharacter.id) {
       sprite = this.mainCharacterSprite
@@ -2194,8 +2193,10 @@ baseRadius: 50 * this.dpr,    // 底座半径（缩小）
           //   _castAxisLock > 0：普攻/伤害技能施法期间限制 Y 轴（只能 X 轴移动）
           const oldX = follower.x
           const oldY = follower.y
-          if (!follower._castLock || follower._castLock <= 0) {
-            if (follower._castAxisLock && follower._castAxisLock > 0) {
+          // ★ 统一移动锁收口到 combat-state.getHeroMoveLock（随从/AI 共享同一判断逻辑）
+          const _fLock = getHeroMoveLock({ hero: follower })
+          if (!_fLock.full) {
+            if (_fLock.axisY) {
               // 仅 X 轴移动
               follower.x += moveX
             } else {
@@ -2394,8 +2395,10 @@ baseRadius: 50 * this.dpr,    // 底座半径（缩小）
               const moveY = (dy / dist) * speed * dt
               const oldX = px.x
               const oldY = px.y
-              if (!px._castLock || px._castLock <= 0) {
-                if (px._castAxisLock && px._castAxisLock > 0) {
+              // ★ 统一移动锁收口到 combat-state.getHeroMoveLock
+              const _pLock = getHeroMoveLock({ hero: px })
+              if (!_pLock.full) {
+                if (_pLock.axisY) {
                   px.x += moveX   // 仅 X 轴
                 } else {
                   px.x += moveX

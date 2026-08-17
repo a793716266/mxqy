@@ -52,11 +52,19 @@ export function getHeroMoveLock({ hero, battleSystem = null, isMain = false } = 
  * 以保证迁移零回归。游戏中 playerAnim 在 timer 归零的同帧被置 null，
  * 故真实状态等价；timer>0 的更精细语义留待 Phase 3 接管状态机后再引入。
  */
-export function isHeroCasting({ hero, battleSystem = null, isMain = false } = {}) {
+export function isHeroCasting({ hero, battleSystem = null, isMain = false, skillType = null } = {}) {
   if (isMain) {
-    return !!(battleSystem && battleSystem.playerAnim)
+    const pa = battleSystem && battleSystem.playerAnim
+    // ★ skillType：可选，限定「只关心某类型施法」（如 blade_storm）。不传则任意施法都算。
+    return !!(pa && (!skillType || pa.type === skillType))
   }
+  // AI 路径不区分技能类型（_aiCastingSkill 已含具体技能对象，调用方可自行判断）
   return !!(hero._aiCastingSkill) || !!(hero._aiAttacking)
+}
+
+/** 该英雄此刻是否处于霸体（superArmor）状态。霸体期间免疫受击硬直 / 施法被打断。 */
+export function isHeroSuperArmor({ hero } = {}) {
+  return !!(hero && hero._castSuperArmor)
 }
 
 /** 该英雄此刻的施法能否被「命中打断」（作废待结算效果 + 切受击）。霸体免疫。 */

@@ -18,7 +18,7 @@ function assert(cond, name, extra = '') {
 }
 
 const {
-  CombatState, getHeroMoveLock, isHeroCasting,
+  CombatState, getHeroMoveLock, isHeroCasting, isHeroSuperArmor,
   canHeroBeInterrupted, canHeroAct, getHeroCombatState,
 } = await import('../scripts/systems/combat-state.js')
 
@@ -115,6 +115,25 @@ assert(canHeroAct({ hero: { hp: 1, _hurtLock: 0 }, battleSystem: { castLockTimer
 assert(canHeroAct({ hero: { hp: 1, _hurtLock: 0.2 }, battleSystem: {}, isMain: true }) === false, '硬直不可行动')
 assert(canHeroAct({ hero: { hp: 0 }, battleSystem: {}, isMain: true }) === false, '死亡不可行动')
 assert(canHeroAct({ hero: { hp: 1, _castLock: 1 }, isMain: false }) === false, 'AI 全锁不可行动')
+
+// ---- G3 新增谓词覆盖：isHeroSuperArmor + isHeroCasting(skillType) ----
+for (const sa of [false, true]) {
+  assert(isHeroSuperArmor({ hero: { _castSuperArmor: sa } }) === sa, `isHeroSuperArmor ${sa}`)
+}
+assert(isHeroSuperArmor({ hero: null }) === false, 'isHeroSuperArmor null→false')
+assert(isHeroSuperArmor({ hero: {} }) === false, 'isHeroSuperArmor 空对象→false')
+
+// isHeroCasting 的 skillType 过滤（Phase 2 剑气风暴守卫迁移依赖此分支）
+const anims2 = [null, { type: 'blade_storm', timer: 1 }, { type: 'heal', timer: 1 }, { type: 'blade_storm', timer: 0 }]
+for (const pa of anims2) {
+  const bs2 = { playerAnim: pa }
+  const base = !!(bs2.playerAnim)
+  assert(isHeroCasting({ battleSystem: bs2, isMain: true }) === base, `isHeroCasting 无skillType pa=${JSON.stringify(pa)}`)
+  const wantBlade = !!(pa && pa.type === 'blade_storm')
+  assert(isHeroCasting({ battleSystem: bs2, isMain: true, skillType: 'blade_storm' }) === wantBlade, `isHeroCasting blade_storm pa=${JSON.stringify(pa)}`)
+}
+// skillType 对 AI 路径无影响（AI 不区分类型）
+assert(isHeroCasting({ hero: { _aiCastingSkill: { id: 'x' } }, isMain: false, skillType: 'blade_storm' }) === true, 'AI isHeroCasting 忽略 skillType')
 
 console.log(`\nRESULT: ${passed} passed, ${failed} failed`)
 process.exit(failed === 0 ? 0 : 1)
