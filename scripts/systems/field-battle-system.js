@@ -1773,6 +1773,46 @@ export function installFieldBattleSystem(FieldSceneClass) {
    *       与被控角色行为一致：普攻/伤害技能设 X 轴锁定，BUFF 设移动锁定。
    * @returns {boolean} 是否成功释放了技能
    */
+  // ★ 智能选择进攻技能：在多个进攻技能（AOE/魔法/普攻）中按情境与 MP 择优，
+  //   并在"候选集"内轮换游标，避免卡死单一技能（火球连发 / 雷击连发 同类毛病）。
+  proto._allyPickOffensive = function(hero, offensive, monsterCount, lastIdx) {
+    if (!offensive || offensive.length === 0) return { skill: null, idx: lastIdx }
+    const mp = hero.mp || 0
+    const maxMp = hero.maxMp || 1
+    const affordable = offensive.filter(s => mp >= (s.mpCost || 0))
+    const pool = affordable.length ? affordable : offensive
+    if (pool.length === 1) return { skill: pool[0], idx: 0 }
+    const has = (t) => pool.find(s => s.aoe && s.aoe.aoeType === t)
+    const thunder = has('area'), ice = has('iceWave'), fire = has('lineX')
+    const basic = pool.find(s => s.type === 'attack')
+    // 危险动作（施法/冲锋/跳跃）→ 冰封打断，最高优先
+    const danger = (this.mapMonsters || []).some(m => m.alive &&
+      (m._casting || m._charging || m._lightCharge || m._jumping))
+    if (danger && ice) return { skill: ice, idx: pool.indexOf(ice) }
+
+    // 按情境选出"本回合候选集"，再在候选集内轮换（保证不卡死单一技能）
+    let candidates
+    if (monsterCount >= 2) {
+      // 群战：优先群伤/控场法术（雷击/冰晶/火球），跳过普攻；MP<40% 把雷击移出候选
+      candidates = [thunder, ice, fire].filter(Boolean)
+      if (thunder && (mp / maxMp) < 0.4) candidates = candidates.filter(s => s !== thunder)
+    } else {
+      // 单怪：直线火球性价比高，雷击仅在 MP 充裕(≥50%)时入候选，否则普攻/冰晶轮换
+      candidates = [fire, ice, thunder, basic].filter(Boolean)
+      if (thunder && (mp / maxMp) < 0.5) candidates = candidates.filter(s => s !== thunder)
+    }
+    if (candidates.length === 0) candidates = pool
+
+    // 在候选集内按游标轮换（游标基于完整 pool 索引，保证跨情境连续）
+    let idx = (typeof lastIdx === 'number' && lastIdx >= 0) ? lastIdx : -1
+    idx = (idx + 1) % pool.length
+    let guard = 0
+    while (!candidates.includes(pool[idx]) && guard < pool.length) {
+      idx = (idx + 1) % pool.length; guard++
+    }
+    return { skill: pool[idx], idx }
+  }
+
   proto._allyTryCastSkill = function(bh, monster, castDir) {
     const hero = bh.hero
     if (!hero || !hero.skills || !hero.skills.length) return false
@@ -1901,18 +1941,20 @@ export function installFieldBattleSystem(FieldSceneClass) {
     if (!skill && goldBuffs.length && !buffTypeActive('gold_up') && lowestRatio > 0.6) {
       skill = goldBuffs[0]
     }
-    // ⑥ 多怪（≥2 只）且有 AOE → 清场（阈值由 3 降到 2）
+    // ⑥ 多怪（≥2 只）→ 智能选进攻技能（不再永远火球：按情境选雷击群伤/冰晶控场/火球，并轮换保证全技能都用到）
     if (!skill && monsterCount >= 2) {
-      skill = aoeSkills[0] || null
+      const r = this._allyPickOffensive(hero, aoeSkills.concat(atkSkills), monsterCount, hero._aiOffIdx)
+      skill = r.skill
+      if (skill) hero._aiOffIdx = r.idx
     }
-    // ⑦ 否则：轮转攻击技能（仅从可用技能中选，避免空转未实现的 buff）
+    // ⑦ 否则：智能轮转进攻技能（火球/冰晶/雷击/普攻全覆盖，避免只放单一技能或空转未实现buff）
     if (!skill) {
-      const pool = atkSkills.length ? atkSkills : usable
-      if (pool.length === 0) return false   // 没有任何可用技能（只剩未实现buff），不浪费MP
-      if (hero._aiLastSkillIdx === undefined) hero._aiLastSkillIdx = -1
-      const pickIdx = (hero._aiLastSkillIdx + 1) % pool.length
-      skill = pool[pickIdx]
-      hero._aiLastSkillIdx = pickIdx
+      const off = aoeSkills.concat(atkSkills)
+      if (off.length === 0) return false   // 没有任何可用进攻技能，不浪费MP
+      const r = this._allyPickOffensive(hero, off, monsterCount, hero._aiOffIdx)
+      skill = r.skill
+      if (!skill) return false
+      hero._aiOffIdx = r.idx
     } else {
       // 命中条件优先级分支时，也推进轮转游标，避免下次仍在同技能
       const idx = available.indexOf(skill)
