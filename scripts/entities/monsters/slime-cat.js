@@ -34,7 +34,7 @@ module.exports = {
       type: 'jump_attack',
       effect: 'jump_attack',
       range: 300, // ★ 跳跃距离（像素）
-      cooldown: 3, // ★ 冷却时间改为3秒（方便测试）
+      cooldown: 6, // ★ 冷却时间6秒（方便测试）
       warnDuration: 1.5, // 预警时间（秒）
       damageRadius: 100 // ★ 伤害范围（像素）
     }
