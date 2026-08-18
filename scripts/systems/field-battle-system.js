@@ -2908,7 +2908,8 @@ export function installFieldBattleSystem(FieldSceneClass) {
         }, p.hero)
       }
       if (fx && fx.playHitEffect) {
-        fx.playHitEffect('magic_impact', m.x - this.cameraX, m.y - this.cameraY - 30 * this.dpr, this.dpr)
+        // ★ 世界坐标锚定：闪光钉在怪物身上，李小宝移动/相机滚动时不再漂走
+        fx.playHitEffect('magic_impact', m.x, m.y - 30 * this.dpr, this.dpr, null, { world: true })
       }
     }
     console.log(`[FieldBattle] ${p.hero.name} 落雷命中 ${targets.length} 只（区域内无差别）`)

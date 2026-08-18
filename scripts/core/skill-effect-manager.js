@@ -38,6 +38,10 @@ export class SkillEffectManager {
       type: config.type,
       x: config.x || 0,
       y: config.y || 0,
+      // ★ 世界坐标锚定（可选）：设置后由渲染端每帧减去相机重投影，
+      //   使特效始终钉在目标世界位置（如落雷闪光跟随怪物），不受相机滚动影响
+      worldX: (config.worldX !== undefined) ? config.worldX : undefined,
+      worldY: (config.worldY !== undefined) ? config.worldY : undefined,
       frameCount: images.length, // 使用实际加载的帧数
       currentFrame: 0,
       frameDuration: config.frameDuration || 50, // 默认50ms一帧（20fps）
@@ -316,7 +320,7 @@ export class SkillEffectManager {
    * @param {number} dpr - 设备像素比
    * @param {Function} onComplete - 可选完成回调
    */
-  playHitEffect(effectType, x, y, dpr, onComplete) {
+  playHitEffect(effectType, x, y, dpr, onComplete, opts) {
     // 命中特效类型映射
     const hitTypeMap = {
       'magic_impact': 'lightning_hit',
@@ -327,9 +331,14 @@ export class SkillEffectManager {
     }
     const mappedType = hitTypeMap[effectType] || effectType || 'slash_hit'
 
+    // ★ world:true 时 x/y 当作世界坐标，特效锚定到世界位置（每帧随相机重投影）
+    const useWorld = !!(opts && opts.world)
     const effectId = this.createEffect({
       type: mappedType,
-      x, y,
+      x: useWorld ? 0 : x,
+      y: useWorld ? 0 : y,
+      worldX: useWorld ? x : undefined,
+      worldY: useWorld ? y : undefined,
       scale: dpr > 1 ? 1.2 : 1,
       frameDuration: 40,
       loop: false,

@@ -3151,14 +3151,16 @@ baseRadius: 50 * this.dpr,    // 底座半径（缩小）
         if (!currentImage) continue
         const efW = currentImage.width * (ef.scale || 1)
         const efH = currentImage.height * (ef.scale || 1)
-        // 特效屏幕坐标（已是屏幕坐标）+ 世界坐标Y用于排序
-        const sx = ef.x
-        const sy = ef.y
+        // ★ 世界锚定特效：每帧用世界坐标减相机重投影（钉在目标身上，相机滚动不漂走）
+        //   非世界锚定：沿用创建时冻结的屏幕坐标（兼容旧逻辑）
+        const isWorld = ef.worldX !== undefined && ef.worldY !== undefined
+        const sx = isWorld ? (ef.worldX - this.cameraX) : ef.x
+        const sy = isWorld ? (ef.worldY - this.cameraY) : ef.y
         ef._ySorted = true   // ★ 本帧已由 Y 排序渲染，防止 effects.render() 重复绘制
         // ★ 2.5D 层级对齐：特效脚底锚定在世界坐标 (world.y)，与角色/怪物一致
         //   角色/怪物 sortY 取脚底 pos.y/dpr，故特效也用 world.y 作为锚点，
         //   绘制时按脚底对齐（sy - efH + efH/2 使底部贴 world.y，而非中心贴 world.y）
-        const worldY = ef.y + this.cameraY
+        const worldY = isWorld ? ef.worldY : (ef.y + this.cameraY)
         engine.addEntity({
           layer: 2,
           sortY: worldY / this.dpr,
