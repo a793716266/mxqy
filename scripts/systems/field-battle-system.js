@@ -1237,8 +1237,8 @@ export function installFieldBattleSystem(FieldSceneClass) {
     m._preDamageHp = (typeof m.hp === 'number') ? m.hp : m._preDamageHp
     m.hp = Math.max(0, m.hp - real)
     // ★ 受击硬直：怪物被打中瞬间短暂无法行动（不能移动/攻击/放技能）。
-    //   时长 0.22s；状态 DOT（灼烧等）刷新此锁也符合预期——燃烧期间被持续压制。
-    m._hurtLock = Math.max(m._hurtLock || 0, 0.22)
+    //   时长 0.3s（手感更实）；状态 DOT（灼烧等）刷新此锁也符合预期——燃烧期间被持续压制。
+    m._hurtLock = Math.max(m._hurtLock || 0, 0.3)
     // ★ 非霸体施法被打断：怪物正在放非霸体技能时受到 HP 伤害，技能放不出来
     this._interruptCastingForMonster(m)
     // ★ 记录"最近受伤的怪"：无论致死与否都记录，
@@ -1250,24 +1250,50 @@ export function installFieldBattleSystem(FieldSceneClass) {
     return real
   }
 
-  // ★ 怪物施法被打断：当前正在释放技能且非霸体（superArmor）时，清除施法状态
-  //   使技能放不出来（动画中止、伤害不再结算）。霸体技能（BOSS 大招等）不受影响。
+  // ★ 怪物被打断：当前正在"施法 / 跳跃攻击 / 光明冲锋 / 普攻"且非霸体（superArmor）时，
+  //   中止该动作并使对应效果不再结算（伤害/控制/落雷均作废）。霸体动作（BOSS 大招等）不受影响。
+  //   覆盖所有非霸体怪物动作，统一判定，修复"跳跃攻击/光明冲锋无法被打断"的 bug。
   proto._interruptCastingForMonster = function(m) {
-    if (!m || !m.isCastingSkill) return
-    // 查当前释放技能的霸体标记
+    if (!m) return
+    const casting = !!m.isCastingSkill
+    const acting = casting || !!m._jumpState || !!m._lightCharge ||
+      (m.isAttacking && !m.hasDealtDamage)   // ★ 普攻：仅在"命中帧之前"可被取消（已提交命中不可回退）
+    if (!acting) return
+    // 查当前释放动作的霸体标记（普攻无 skillCastId → 非霸体，可被断）
     const sk = (m.skills && m.skillCastId)
       ? m.skills.find(s => s.id === m.skillCastId)
       : null
     if (sk && sk.superArmor) return  // 霸体：不被打断
-    // ★ 打断：清除所有施法状态，恢复可行动
+    // ★ 跳跃攻击：移除预警落点，伤害不再结算（避免中断后落雷仍落下）
+    if (m._jumpPrepZone && this.battleSystem.warningZones) {
+      const zi = this.battleSystem.warningZones.indexOf(m._jumpPrepZone)
+      if (zi !== -1) this.battleSystem.warningZones.splice(zi, 1)
+    }
+    m._jumpPrepZone = null
+    if (m._jumpState) { m._jumpState = null; m._jumpOffsetY = 0 }  // 空中跳跃也一并取消
+    // ★ 光明冲锋：清状态机 + 移除红色警示区，避免冲锋照常完成并 AOE 落地
+    if (m._lightCharge) {
+      if (this.battleSystem.warningZones) {
+        const li = this.battleSystem.warningZones.findIndex(
+          z => z.type === 'light_charge' && z.monsterRef === m)
+        if (li !== -1) this.battleSystem.warningZones.splice(li, 1)
+      }
+      m._lightCharge = null
+    }
+    // ★ 普攻：取消挥击（命中帧前）
+    if (m.isAttacking && !m.hasDealtDamage) {
+      m.isAttacking = false
+      m.attackAnimTimer = 0
+    }
+    // ★ 清通用施法状态，恢复可行动
     m.isCastingSkill = false
     m.skillCastId = null
     m.skillAnimTimer = 0
+    m._jumpWarn = false
+    m.hasDealtDamage = false
     m.isMoving = false
     m.animFrame = 0
-    m.hasDealtDamage = false
-    // 受击表现：轻微位移抖动由渲染层处理，这里仅中断施法
-    console.log(`[FieldBattle] 怪物 ${m.name} 施法被打断（非霸体）`)
+    console.log(`[FieldBattle] 怪物 ${m.name} 施法/攻击被打断（非霸体）`)
   }
 
   // ★ 我方英雄施法【不再】因受击被打断。
@@ -3496,7 +3522,7 @@ export function installFieldBattleSystem(FieldSceneClass) {
       // 跳跃落点 = 玩家当前位置（预警圈中心）；但预警阶段怪物原地不动，等预警结束才跳过去
       // （tx/ty 仅作为警示圈中心保存，怪物此刻不移动）
       if (!this.battleSystem.warningZones) this.battleSystem.warningZones = []
-      this.battleSystem.warningZones.push({
+      const jumpZone = {
         x: tx, y: ty, r,
         timer: warnSec, total: warnSec,
         power: skill.power || 1,
@@ -3505,10 +3531,16 @@ export function installFieldBattleSystem(FieldSceneClass) {
         skillName: skill.name,
         monsterRef: monster, // 预警结束时跳跃落地的怪物引用
         ownerId: monster.enemyId
-      })
-      // 施法状态与预警时长对齐（skillAnimTimer 为毫秒）
-      monster.skillAnimTimer = warnSec * 1000
+      }
+      this.battleSystem.warningZones.push(jumpZone)
+      // ★ 进入施法状态：使预警期间可被玩家打断（修复"跳跃攻击无法被打断"bug）
+      //   skillAnimTimer 设为极大值，由预警区倒计时独占驱动，避免被通用施法计时(800ms)提前清零
+      monster.isCastingSkill = true
+      monster.skillCastId = skill.id
+      monster._castingSkill = skill // ★ 供"霸体光环"判定 superArmor：配置 superArmor 的跳跃攻击(如BOSS)仍不可打断
+      monster.skillAnimTimer = 999999
       monster._jumpWarn = true
+      monster._jumpPrepZone = jumpZone // ★ 供打断时移除该预警区，避免中断后落雷仍落下
       console.log(`[FieldBattle] ${monster.name} 跳跃攻击预警：${skill.name}，1秒后落在 (${Math.round(tx)},${Math.round(ty)})`)
       return
     }
@@ -3842,6 +3874,7 @@ export function installFieldBattleSystem(FieldSceneClass) {
         // 落地：清除跳跃状态，结算伤害
         monster._jumpState = null
         monster._jumpOffsetY = 0
+        monster._jumpPrepZone = null   // ★ 预警区已结算，清引用避免打断时误移除
         monster.y = j.toY - 6 * this.dpr
         this._settleJumpDamage(j.zone, monster)
       }

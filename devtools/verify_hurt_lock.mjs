@@ -162,7 +162,7 @@ const mon = {
 scene.mapMonsters.push(mon)
 scene._damageMonster(mon, 10)
 assert(mon._hurtLock > 0)
-assert(Math.abs(mon._hurtLock - 0.22) < 1e-6)
+assert(Math.abs(mon._hurtLock - 0.3) < 1e-6)
 
 // 6. monster cannot act while locked
 console.log('\n=== 6. monster cannot act while locked ===')
