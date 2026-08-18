@@ -2134,6 +2134,28 @@ baseRadius: 50 * this.dpr,    // 底座半径（缩小）
         }
       }
       
+      // ★ 智能规避：躲预警区/投射物/残血风筝/远程kite/避免扎堆（与 _updateAllyAI 共用 _computeAllyAvoidance）
+      if (this.battleSystem && this.battleSystem.active) {
+        const fLock = getHeroMoveLock({ hero: follower })
+        if (!fLock.full) {
+          const fAllies = []
+          for (const o of this.followers) {
+            if (o === follower) continue
+            if (!o.character || o.character.hp <= 0) continue
+            fAllies.push({ x: o.x, y: o.y })
+          }
+          const fav = this._computeAllyAvoidance(follower.x, follower.y, follower.character, this.battleSystem, fAllies, this.dpr)
+          let fx = fav.ex * 1.6 + fav.mx * 0.5
+          let fy = fav.ey * 1.6 + fav.my * 0.5
+          if (fLock.axisY) fy = 0
+          if (fx !== 0 || fy !== 0) {
+            follower.x += fx * dt
+            follower.y += fy * dt
+            if (Math.hypot(fx, fy) > 1) follower.isMoving = true
+          }
+        }
+      }
+
       // 队友移动状态滞后（与主角相同的防闪烁机制）
       if (follower.isMoving) {
         follower._effectiveMoving = true

@@ -1441,49 +1441,11 @@ export function installFieldBattleSystem(FieldSceneClass) {
       //   解决"切换控制后召回/解散对原主角(人类英雄)失效"：人类英雄不在 this.followers 里，
       //   原 _updateAllyAI 只管攻击、不管移动 → 切换后原主角原地不动、也不响应召回/解散。
       //   aiRecall=true → 聚拢到被控角色；false(解散) → 自行靠近最近怪物。
+      // ★ 智能移动：召回/解散走向 + 危险感知规避（躲预警区/投射物/残血风筝/远程kite/避免扎堆）。
+      //   逻辑下沉到 _allyUpdateMovement（与 cats 的 _updateFollowers 共用 _computeAllyAvoidance）。
       const isFollowerHero = bh.followerRef && this.followers && this.followers.indexOf(bh.followerRef) !== -1
       if (!isFollowerHero) {
-        const apos = bh.getPos()
-        if (apos) {
-          const hero = bh.hero
-          // ★ 施法锁定：释放技能期间不允许自由移动（与被控角色一致：BUFF/heal 完全锁，其余 Y 轴锁）。
-          //   _castLock：完全锁定（不能移动）；_castAxisLock：仅锁 Y 轴（可小幅 X 走位）。
-          //   不在此检查的话，_aiAttacking 的 0.8s 窗口结束后英雄会立刻恢复自由 XY 移动，
-          //   表现为"放技能（尤其剑气风暴）还能走位"。
-          // ★ 统一移动锁收口到 combat-state.getHeroMoveLock（含 AI 的 _castLock/_castAxisLock 历史不对称）
-          const _moveLock = getHeroMoveLock({ hero })
-          if (!_moveLock.full) {
-            let mt = null
-            if (this.aiRecall) {
-              const ctrl = this._getCurrentControlHero && this._getCurrentControlHero()
-              if (ctrl) { const cp = ctrl.getPos(); if (cp) mt = { x: cp.x, y: cp.y } }
-            } else {
-              // ★ 解散(aiRecall=false)：盟友自行寻怪，使用全图搜索（与 cats 的 _getAllyCombatTarget「全图寻怪」一致），
-              //   否则搜索半径太小会找不到较远的怪、表现为"解散后原地不动"。大半径保证盟友能走到最近怪物处开打。
-              const nm = this._findNearestMonsterFromPos(1500 * this.dpr, 'xy', apos.x, apos.y, 400 * this.dpr)
-              if (nm) mt = { x: nm.x, y: nm.y }
-            }
-            if (mt) {
-              const mdx = mt.x - apos.x, mdy = mt.y - apos.y
-              const md = Math.hypot(mdx, mdy)
-              const arrive = (this.battleSystem.attackRange || 100) * this.dpr * 0.7
-              if (md > arrive) {
-                const sp = (this.playerSpeed || 200) * 0.95
-                const moveX = (mdx / md) * sp * dt
-                const moveY = _moveLock.axisY ? 0 : (mdy / md) * sp * dt  // ★ Y 轴锁：施法期间只能 X 轴移动
-                apos.x += moveX
-                apos.y += moveY
-                if (bh.sprite) { bh.sprite.facingLeft = mdx < 0; bh.sprite.isMoving = true }
-              } else if (bh.sprite) {
-                bh.sprite.isMoving = false
-              }
-            } else if (bh.sprite) {
-              bh.sprite.isMoving = false
-            }
-          } else if (bh.sprite) {
-            bh.sprite.isMoving = false
-          }
-        }
+        this._allyUpdateMovement(bh, dt)
       }
 
       // ★ 队友搜索范围：近战用真实短手（attackRange*1.05），远程用放大搜索半径（*1.8）
@@ -1510,7 +1472,9 @@ export function installFieldBattleSystem(FieldSceneClass) {
         monster = bt
       } else {
         // ★ 用欧氏距离选怪（axis='xy'），近战不再退化成"只看 X 轴"
-        monster = this._findNearestMonsterFromPos(range, 'xy', pos.x, pos.y, allyYTol)
+        const nearest = this._findNearestMonsterFromPos(range, 'xy', pos.x, pos.y, allyYTol)
+        // ★ 智能选怪：范围内优先「残血怪集火(finish off)」「施法怪打断」，否则打最近
+        monster = this._allyPickSmartTarget(pos.x, pos.y, range, allyYTol, nearest)
       }
       if (!monster) continue
 
@@ -1585,6 +1549,217 @@ export function installFieldBattleSystem(FieldSceneClass) {
       bh.hero._aiAttackCD = this.battleSystem.playerAttackInterval
       console.log(`[FieldBattle] ${hero.name}（AI）普攻 ${monster.name}${isRanged ? '（投射物）' : ''}，伤害 ${finalDmg}`)
     }
+  }
+
+  // ==========================================================================
+  // 5.5c ★ 队友智能走位 / 危险感知规避（人类英雄与猫咪队友共用同一套逻辑）
+  // ==========================================================================
+
+  /**
+   * ★ 计算队友智能规避位移向量（只算向量，不改位置，调用方叠加到坐标）。
+   *   两类向量：
+   *     emergency (ex,ey)：紧急危险（怪物跳跃/冲锋预警区、来袭投射物）→ 强避让、主导走位
+   *     micro     (mx,my)：站位优化（残血风筝后撤、远程保持中距、避免与队友扎堆）→ 弱微调
+   * @param {number} selfX, selfY  队友当前世界坐标
+   * @param {Object} selfHero      队友英雄数据（含 hp/maxHp/role）
+   * @param {Object} battleSystem  战斗系统（含 warningZones / projectiles / mapMonsters）
+   * @param {Array}  alliesPos     [{x,y}] 其他存活队友坐标（避免扎堆用），不含自己
+   * @param {number} dpr
+   * @returns {{ex:number,ey:number,mx:number,my:number}}
+   */
+  proto._computeAllyAvoidance = function(selfX, selfY, selfHero, battleSystem, alliesPos, dpr) {
+    let ex = 0, ey = 0, mx = 0, my = 0
+    const selfRatio = (selfHero && selfHero.maxHp) ? (selfHero.hp / selfHero.maxHp) : 1
+    const isRanged = !!(selfHero && (selfHero.role === 'mage' || selfHero.role === 'healer'))
+
+    // ① 怪物预警区（跳跃攻击 / 光明冲锋）强避让：圈内越靠近中心推得越狠
+    const zones = battleSystem.warningZones
+    if (zones && zones.length) {
+      for (const z of zones) {
+        const dx = selfX - z.x, dy = selfY - z.y
+        const d = Math.hypot(dx, dy)
+        const dangerR = (z.r || 0) + 26 * dpr
+        if (d < dangerR) {
+          const nx = d > 0.01 ? dx / d : (Math.random() - 0.5)
+          const ny = d > 0.01 ? dy / d : (Math.random() - 0.5)
+          const w = (1 - d / dangerR) * 260
+          ex += nx * w; ey += ny * w
+        }
+      }
+    }
+
+    // ② 怪物投射物（owner!=='hero'）垂直闪避：预测 0.22s 后弹道位置，命中则横移
+    const projs = battleSystem.projectiles
+    if (projs && projs.length) {
+      for (const p of projs) {
+        if (p.owner === 'hero') continue
+        const t = 0.22
+        const px = p.x + (p.vx || 0) * t
+        const py = p.y + (p.vy || 0) * t
+        const dx = selfX - px, dy = selfY - py
+        const d = Math.hypot(dx, dy)
+        const hitR = 34 * dpr
+        if (d < hitR) {
+          const sp = Math.hypot(p.vx || 0, p.vy || 0) || 1
+          let nx = -(p.vy || 0) / sp, ny = (p.vx || 0) / sp
+          if (nx * dx + ny * dy < 0) { nx = -nx; ny = -ny }  // 取与"自身-弹道"同向侧闪
+          const w = (1 - d / hitR) * 240
+          ex += nx * w; ey += ny * w
+        }
+      }
+    }
+
+    // ③ 残血风筝后撤：自身血量 < 40% 时远离最近怪物（求生欲）
+    if (selfRatio < 0.4) {
+      const nm = this._nearestMonsterPos(selfX, selfY, battleSystem, 600 * dpr)
+      if (nm) {
+        const dx = selfX - nm.x, dy = selfY - nm.y
+        const d = Math.hypot(dx, dy) || 1
+        const w = (0.4 - selfRatio) / 0.4 * 150
+        mx += (dx / d) * w; my += (dy / d) * w
+      }
+    }
+
+    // ④ 远程保持中距（kite）：与最近怪物过近则后撤，避免贴脸挨打
+    if (isRanged) {
+      const nm = this._nearestMonsterPos(selfX, selfY, battleSystem, 800 * dpr)
+      if (nm) {
+        const dx = selfX - nm.x, dy = selfY - nm.y
+        const d = Math.hypot(dx, dy) || 1
+        const keep = (battleSystem.attackRange || 120) * dpr * 1.35
+        if (d < keep) {
+          const w = (1 - d / keep) * 90
+          mx += (dx / d) * w; my += (dy / d) * w
+        }
+      }
+    }
+
+    // ⑤ 避免与队友扎堆：分散站位，防止被怪物 AOE 一锅端
+    if (alliesPos && alliesPos.length) {
+      for (const a of alliesPos) {
+        const dx = selfX - a.x, dy = selfY - a.y
+        const d = Math.hypot(dx, dy)
+        const minSpread = 70 * dpr
+        if (d < minSpread && d > 0.01) {
+          const w = (1 - d / minSpread) * 60
+          mx += (dx / d) * w; my += (dy / d) * w
+        }
+      }
+    }
+
+    return { ex, ey, mx, my }
+  }
+
+  proto._nearestMonsterPos = function(x, y, battleSystem, maxRange) {
+    if (!battleSystem.mapMonsters) return null
+    let best = null, bd = (maxRange || 9999)
+    for (const m of battleSystem.mapMonsters) {
+      if (!m.alive) continue
+      const d = Math.hypot(m.x - x, m.y - y)
+      if (d < bd) { bd = d; best = m }
+    }
+    return best
+  }
+
+  proto._collectAllyPositions = function(selfBh) {
+    const out = []
+    const heroes = this.battleSystem.battleHeroes
+    if (!heroes) return out
+    for (const b of heroes) {
+      if (b === selfBh) continue
+      if (!b.hero || b.hero.hp <= 0) continue
+      const p = b.getPos && b.getPos()
+      if (p) out.push({ x: p.x, y: p.y })
+    }
+    return out
+  }
+
+  /**
+   * ★ 人类英雄（非控）智能移动：召回/解散走向 + 危险感知规避。
+   *   逻辑下沉到此，与 cats 的 _updateFollowers 共用 _computeAllyAvoidance。
+   */
+  proto._allyUpdateMovement = function(bh, dt) {
+    const hero = bh.hero
+    const _moveLock = getHeroMoveLock({ hero })
+    if (_moveLock.full) { if (bh.sprite) bh.sprite.isMoving = false; return }
+    const apos = bh.getPos()
+    if (!apos) return
+    const sp = (this.playerSpeed || 200) * 0.95
+    let dvx = 0, dvy = 0, facingLeft = bh.sprite ? bh.sprite.facingLeft : false
+    let hasTarget = false
+    if (this.aiRecall) {
+      const ctrl = this._getCurrentControlHero && this._getCurrentControlHero()
+      if (ctrl) { const cp = ctrl.getPos(); if (cp) { dvx = cp.x - apos.x; dvy = cp.y - apos.y; hasTarget = true } }
+    } else {
+      const nm = this._findNearestMonsterFromPos(1500 * this.dpr, 'xy', apos.x, apos.y, 400 * this.dpr)
+      if (nm) { dvx = nm.x - apos.x; dvy = nm.y - apos.y; hasTarget = true }
+    }
+    if (hasTarget) {
+      const d = Math.hypot(dvx, dvy)
+      const arrive = (this.battleSystem.attackRange || 100) * this.dpr * 0.7
+      if (d > arrive) { dvx = dvx / d * sp; dvy = dvy / d * sp; facingLeft = dvx < 0 }
+      else { dvx = 0; dvy = 0 }
+    }
+    // ★ 治疗职业：队友(非自己)低血时优先贴近最低血友方施以保护/治疗
+    if (hero.role === 'healer') {
+      const lowPos = this._lowestHpAllyPos(bh)
+      if (lowPos) {
+        dvx = lowPos.x - apos.x; dvy = lowPos.y - apos.y
+        hasTarget = true
+        const d = Math.hypot(dvx, dvy)
+        const arrive = (this.battleSystem.attackRange || 100) * this.dpr * 0.7
+        if (d > arrive) { dvx = dvx / d * sp; dvy = dvy / d * sp; facingLeft = dvx < 0 }
+        else { dvx = 0; dvy = 0 }
+      }
+    }
+    const a = this._computeAllyAvoidance(apos.x, apos.y, hero, this.battleSystem, this._collectAllyPositions(bh), this.dpr)
+    let mvx = dvx + a.ex * 1.6 + a.mx * 0.5
+    let mvy = dvy + a.ey * 1.6 + a.my * 0.5
+    if (_moveLock.axisY) mvy = 0
+    apos.x += mvx * dt
+    apos.y += mvy * dt
+    if (bh.sprite) {
+      bh.sprite.isMoving = Math.hypot(mvx, mvy) > 1
+      bh.sprite.facingLeft = facingLeft
+    }
+  }
+
+  /**
+   * ★ 智能选怪：范围内优先「残血友方集火(finish off)」「正在施法的怪(打断)」，其次最近。
+   *   fallback 保证行为不退化（仍会打最近怪）。
+   */
+  proto._allyPickSmartTarget = function(x, y, range, yTol, fallback) {
+    if (!this.mapMonsters) return fallback
+    let bestFinish = null, bestFinishRatio = 1
+    let bestCasting = null, bestCastingDist = Infinity
+    for (const m of this.mapMonsters) {
+      if (!m.alive) continue
+      const ddx = m.x - x, ddy = m.y - y
+      const d = Math.hypot(ddx, ddy)
+      if (d > range || Math.abs(ddy) > yTol) continue
+      const ratio = m.maxHp ? m.hp / m.maxHp : 1
+      if (ratio < 0.3 && ratio < bestFinishRatio) { bestFinishRatio = ratio; bestFinish = m }
+      if (m.isCastingSkill && d < bestCastingDist) { bestCastingDist = d; bestCasting = m }
+    }
+    return bestFinish || bestCasting || fallback
+  }
+
+  /**
+   * ★ 找出血量最低(且 <70%)的队友坐标，供治疗职业走位靠近施以保护/治疗。
+   */
+  proto._lowestHpAllyPos = function(selfBh) {
+    if (!this.battleSystem.battleHeroes) return null
+    let best = null, bestRatio = 0.7
+    for (const b of this.battleSystem.battleHeroes) {
+      if (b === selfBh) continue
+      if (!b.hero || b.hero.hp <= 0 || !b.hero.maxHp) continue
+      const r = b.hero.hp / b.hero.maxHp
+      if (r < bestRatio) {
+        const p = b.getPos && b.getPos()
+        if (p) { bestRatio = r; best = p }
+      }
+    }
+    return best
   }
 
   // ==========================================================================
@@ -2913,31 +3088,33 @@ export function installFieldBattleSystem(FieldSceneClass) {
         continue
       }
 
-      // ★ 找最近的存活参战英雄作为攻击目标
+      // ★ 智能选目标：嘲讽 > 最低血/脆皮(集火弱目标) > 最近
       let nearestHero = null
       let nearestHeroPos = null
-      let minHDist = Infinity
-      for (const bh of battleHeroes) {
-        if (!bh.hero || bh.hero.hp <= 0) continue
-        const hp = bh.getPos()
-        const hdx = hp.x - monster.x
-        const hdy = hp.y - monster.y
-        const hdist = Math.sqrt(hdx * hdx + hdy * hdy)
-        if (hdist < minHDist) {
-          minHDist = hdist
-          nearestHero = bh.hero
-          nearestHeroPos = hp
-        }
-      }
-      // ★ 挑衅(taunt)：若存在正在挑衅的英雄，强制所有怪物锁定该英雄为攻击目标
       const tauntHero = this._fieldGetTauntHero()
       if (tauntHero) {
         nearestHero = tauntHero
         const tb = (this.battleSystem.battleHeroes || []).find(b => b.hero === tauntHero)
         nearestHeroPos = tb && tb.getPos ? tb.getPos() : { x: this.playerX, y: this.playerY }
+      } else {
+        const pick = this._fieldPickSmartHeroTarget(monster, battleHeroes, aggroRange)
+        if (pick) { nearestHero = pick.hero; nearestHeroPos = pick.pos }
       }
       if (!nearestHero || !nearestHeroPos) continue
       const mainHero = nearestHero
+
+      // ★ 残血保命判定：血量极低且无就绪保命技能时，进入撤退状态（由 _fieldMonsterCombatMove 拉开距离）
+      //   - 嘲讽中的怪不可撤退（被强制锁定）
+      //   - 有自愈/隐身等保命技能且已就绪 → 不撤退，交给 _fieldChooseMonsterSkill 优先释放
+      const mhp = monster.maxHp ? monster.hp / monster.maxHp : 1
+      let _survivalReady = false
+      for (const s of (monster.skills || [])) {
+        if (s.type === 'heal_self' || (s.type === 'buff' && s.effect === 'invisible')) {
+          const cd = (monster.skillCDs && monster.skillCDs[s.id] != null) ? monster.skillCDs[s.id] : 0
+          if (cd <= 0) { _survivalReady = true; break }
+        }
+      }
+      monster._woundedRetreat = (!tauntHero && mhp < 0.18 && !_survivalReady)
 
       // ★ 光明冲锋专用状态机：施法全程由 _updateLightCharge 驱动（蓄力/预警/瞬移/落地）
       if (monster._lightCharge) {
@@ -3009,6 +3186,81 @@ export function installFieldBattleSystem(FieldSceneClass) {
   }
 
   /**
+   * ★ 怪物智能选英雄目标：仇恨范围内，优先「残血英雄(finish them off)」「脆皮(mage/healer)」，
+   *   再按距离加权，形成对弱目标的集火压制。无合适目标返回 null（走原 fallback）。
+   */
+  proto._fieldPickSmartHeroTarget = function(monster, battleHeroes, aggroRange) {
+    if (!battleHeroes) return null
+    let best = null, bestScore = -Infinity
+    for (const bh of battleHeroes) {
+      if (!bh.hero || bh.hero.hp <= 0) continue
+      const hp = bh.getPos(); if (!hp) continue
+      const d = Math.hypot(hp.x - monster.x, hp.y - monster.y)
+      if (d > aggroRange) continue   // 超出仇恨范围不打
+      const hero = bh.hero
+      const hpRatio = hero.maxHp ? hero.hp / hero.maxHp : 1
+      let score = 0
+      score += (1 - hpRatio) * 100            // 残血优先（血越少分越高）
+      if (hero.role === 'healer' || hero.role === 'mage') score += 40   // 脆皮优先
+      score -= (d / (aggroRange || 400)) * 30  // 距离近优先（避免跨越全场去打远处脆皮）
+      if (score > bestScore) { bestScore = score; best = { hero, pos: hp } }
+    }
+    return best
+  }
+
+  /**
+   * ★ 怪物智能规避：躲避「英雄方」的威胁（与盟友 _computeAllyAvoidance 镜像，方向相反）。
+   *   ① 英雄投射物（owner==='hero'，含剑气收尾月牙）垂直闪避；
+   *   ② 英雄剑气风暴（blade_storm）直线前方走廊危险，侧移出 Y 命中带 + 后退脱离吸附范围。
+   *   返回 {ex, ey}（速度量纲，叠加到怪物移动向量上，权重足够大即可盖过普通走位）。
+   */
+  proto._computeMonsterAvoidance = function(mx, my, dpr) {
+    let ex = 0, ey = 0
+    const bs = this.battleSystem
+    if (!bs) return { ex, ey }
+
+    // ① 英雄投射物（owner==='hero'）：预测 0.22s 后弹道位置，命中则垂直侧闪
+    const projs = bs.projectiles
+    if (projs && projs.length) {
+      for (const p of projs) {
+        if (p.owner !== 'hero') continue
+        const t = 0.22
+        const px = p.x + (p.vx || 0) * t
+        const py = p.y + (p.vy || 0) * t
+        const dx = mx - px, dy = my - py
+        const d = Math.hypot(dx, dy)
+        const hitR = 38 * dpr
+        if (d < hitR) {
+          const sp = Math.hypot(p.vx || 0, p.vy || 0) || 1
+          let nx = -(p.vy || 0) / sp, ny = (p.vx || 0) / sp
+          if (nx * dx + ny * dy < 0) { nx = -nx; ny = -ny }  // 取与"自身-弹道"同向侧闪
+          const w = (1 - d / hitR) * 220
+          ex += nx * w; ey += ny * w
+        }
+      }
+    }
+
+    // ② 英雄剑气风暴：直线前方走廊（吸附范围 pullRange 内、Y 容差约 75dpr）即危险，
+    //   后退脱离吸附圈 + 侧移出 Y 命中带（突刺只打正前方 ±70dpr 的敌人）
+    const pa = bs.playerAnim
+    if (pa && pa.type === 'blade_storm' && pa.skill) {
+      const pcx = this.playerX, pcy = this.playerY
+      const dir = this.facingLeft ? -1 : 1
+      const relX = (mx - pcx) * dir   // 前方为正
+      const relY = my - pcy
+      const pullR = (pa.skill.pullRange || 220) * dpr
+      const yTol = 78 * dpr
+      if (relX > -25 * dpr && relX < pullR && Math.abs(relY) < yTol) {
+        ex += (-dir) * 210          // 后退脱离吸附/突刺前方
+        const side = relY >= 0 ? 1 : -1
+        ey += side * 250            // 侧移出 Y 命中带（最稳妥的逃生方向）
+      }
+    }
+
+    return { ex, ey }
+  }
+
+  /**
    * ★ 野外怪物战斗走位：贴近攻击距离并带横向绕圈，避免站桩/被甩脱
    */
   proto._fieldMonsterCombatMove = function(monster, dx, dy, dist, attackRange, dt) {
@@ -3039,6 +3291,23 @@ export function installFieldBattleSystem(FieldSceneClass) {
       vx += nx * spd * 1.2
       vy += ny * spd * 1.2
     }
+
+    // ★ 残血保命撤退：无保命技能且血量极低时，拉大到 1.7 倍攻击距离的中距并后撤，求生不硬刚
+    if (monster._woundedRetreat) {
+      const safe = attackRange * 1.7
+      if (dist < safe) {
+        vx = -nx * spd * 2.4 + px * monster.strafeDir * spd * 1.2
+        vy = -ny * spd * 2.4 + py * monster.strafeDir * spd * 1.2
+      } else {
+        vx = px * monster.strafeDir * spd * 1.0
+        vy = py * monster.strafeDir * spd * 1.0
+      }
+    }
+
+    // ★ 智能规避：躲英雄投射物 / 剑气风暴走廊（权重盖过普通走位）
+    const av = this._computeMonsterAvoidance(monster.x, monster.y, this.dpr)
+    vx += av.ex; vy += av.ey
+
     monster.x += vx * dt
     monster.y += vy * dt
     // 标记移动状态，使渲染播放 walk 动画
@@ -3091,11 +3360,18 @@ export function installFieldBattleSystem(FieldSceneClass) {
       }
       if (s.type === 'debuff' && dist < attackRange) score += 1.4
       if (s.type === 'buff' || s.type === 'heal_self' || s.type === 'summon') score += 1.1
+      // ★ 残血保命优先：低血量时大幅加权自愈/隐身/防御增益，形成"求生本能"
+      if (s.type === 'heal_self' && hpRatio < 0.45) score += 4.0 + (0.45 - hpRatio) * 8
+      if (s.type === 'buff' && s.effect === 'invisible' && hpRatio < 0.3) score += 5.0
+      if (s.type === 'buff' && s.effect === 'def_up' && hpRatio < 0.35) score += 2.0
       if (score > best) { best = score; chosen = s }
     }
     // 评分达标即放；或普攻累计 3 次后强制穿插技能（兜底，保证技能必出现）
     const forceSkill = (monster.skillUseCount || 0) >= 3
-    if (chosen && (best > 1.0 || forceSkill)) return chosen
+    // ★ 残血时保命技能（自愈/隐身/防御）即便评分不达标也优先释放
+    const isSurvival = chosen && (chosen.type === 'heal_self' ||
+      (chosen.type === 'buff' && (chosen.effect === 'invisible' || chosen.effect === 'def_up')))
+    if (chosen && (best > 1.0 || forceSkill || (hpRatio < 0.3 && isSurvival))) return chosen
     return null
   }
 
@@ -3132,8 +3408,17 @@ export function installFieldBattleSystem(FieldSceneClass) {
       // ★ 配置 warnDuration 单位为秒（如 slime_cat:1.5 / shadow_mouse:1.0，与 light_charge 一致），不要当成毫秒
       const warnSec = (skill.warnDuration != null ? skill.warnDuration : 1.0)
       const r = (skill.aoeRadius || skill.damageRadius || skill.dashDistance || 110) * this.dpr
-      const tx = this.playerX
-      const ty = this.playerY
+      // ★ 落点预判(lead target)：基于玩家近期移动方向外推，让"直线跑位躲避"更难白躲
+      let tx = this.playerX, ty = this.playerY
+      const ph = this.playerHistory
+      if (ph && ph.length >= 2) {
+        const vx = ph[0].x - ph[1].x
+        const vy = ph[0].y - ph[1].y
+        const leadFrames = Math.max(1, Math.round((skill.warnDuration || 1.0) / (this.frameDuration || 0.15)))
+        const maxLead = 120 * this.dpr
+        tx += Math.max(-maxLead, Math.min(maxLead, vx * leadFrames))
+        ty += Math.max(-maxLead, Math.min(maxLead, vy * leadFrames))
+      }
       // 跳跃落点 = 玩家当前位置（预警圈中心）；但预警阶段怪物原地不动，等预警结束才跳过去
       // （tx/ty 仅作为警示圈中心保存，怪物此刻不移动）
       if (!this.battleSystem.warningZones) this.battleSystem.warningZones = []
