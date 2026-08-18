@@ -281,20 +281,23 @@ scene.mapMonsters[2].y = cpos.y + 20 * scene.dpr
 sys.skillProcesses = []
 game.effects.effects = []
 scene._playerAttackMonster(null, thunder)
-assert(sys.skillProcesses.length === 1 && sys.skillProcesses[0].type === 'thunder', '雷击注册过程')
-// 感电状态立即挂上
+const tp = sys.skillProcesses[0]
+assert(tp && tp.type === 'thunder', '雷击注册区域过程')
+assert(tp.strikesTotal === 3, '雷击3次落雷', `strikesTotal=${tp && tp.strikesTotal}`)
+// 施法瞬间区域覆盖范围内怪（用于后续无差别命中断言）
+const inZoneInit = scene.mapMonsters.filter(m => m.alive && Math.hypot(m.x - tp.x, m.y - tp.y) <= tp.radius)
+assert(inZoneInit.length >= 3, '雷击区域覆盖至少3只怪', `inZone=${inZoneInit.length}`)
+// 驱动0.6s → 首次落雷(0.5s预警后落地)对区域内怪无差别命中并挂感电
+for (let f = 0; f < 36; f++) scene.update(1/60)
 const elecMonsters = scene.mapMonsters.filter(m => m.statusEffects && m.statusEffects.some(e => e.type === 'electrify'))
-console.log(`  [diag] mapMonsters=${scene.mapMonsters.length}, 感电=${elecMonsters.length}, alive=${scene.mapMonsters.filter(m=>m.alive).length}`)
-// ★ 感电作用于范围内所有怪（用 _castThunderAoE 锁定的 targets 数量判定）
-const thunderTargets = (sys.skillProcesses[0] && sys.skillProcesses[0].targets) || []
-assert(thunderTargets.length >= 3, '雷击锁定范围内至少3只怪', `targets=${thunderTargets.length}`)
-assert(elecMonsters.length === thunderTargets.length, '范围内怪全部挂上感电状态', `感电=${elecMonsters.length} targets=${thunderTargets.length}`)
-// 驱动雷击（3次 * 0.8s = 2.4s）
-for (let f = 0; f < 180; f++) scene.update(1/60)   // 3s
-const aliveMonsters = scene.mapMonsters.filter(m => m.alive)
-const totalHpLost = scene.mapMonsters.reduce((s, m) => s + (500 - m.hp), 0)
-assert(totalHpLost > 0, '雷击造成伤害', `总损失HP=${totalHpLost}`)
+console.log(`  [diag] mapMonsters=${scene.mapMonsters.length}, 感电=${elecMonsters.length}, 区域=${inZoneInit.length}`)
+assert(elecMonsters.length === inZoneInit.length && elecMonsters.length >= 3, '落雷对区域内怪无差别命中并挂感电', `感电=${elecMonsters.length} 区域=${inZoneInit.length}`)
 assert(game.effects.effects.some(e => e.type === 'magic_impact'), '雷击播放 magic_impact 命中特效')
+const totalHpLost1 = scene.mapMonsters.reduce((s, m) => s + (500 - m.hp), 0)
+assert(totalHpLost1 > 0, '首次落雷造成伤害', `损失HP=${totalHpLost1}`)
+// 驱动到3秒末：区域应结束并移除过程
+for (let f = 0; f < 150; f++) scene.update(1/60)
+assert(sys.skillProcesses.length === 0, '雷击区域3秒后结束并移除', `剩余=${sys.skillProcesses.length}`)
 // 感电易伤：验证 _calcSkillDamageToMonster 对感电怪物伤害加成
 const elecM = scene.mapMonsters.find(m => m.statusEffects && m.statusEffects.some(e => e.type === 'electrify'))
 if (elecM) {

@@ -186,17 +186,19 @@ export const HEROES = [
         type: 'magic',
         power: 2.0,
         mpCost: 15,
-        desc: '雷云降下闪电，对范围内敌人无差别攻击，每个敌人最多承受3次雷击并进入感电状态（受击伤害+20%）',
-        // ★ 野外战斗AOE配置（可调）：范围雷击，多次命中 + 感电易伤
+        desc: '在施法位置生成持续雷击区域：每次落雷前0.5秒黄色预警，0.5秒后雷劈落下对区域内敌人无差别攻击并施加感电（受击伤害+20%），区域持续3秒',
+        // ★ 野外战斗AOE配置（可调）：固定区域持续雷击 + 预警 + 无差别群伤
         aoe: {
           enabled: true,
-          aoeType: 'area',         // 圆形范围
+          aoeType: 'area',         // 圆形范围（施法位置为固定中心，不跟随）
           radius: 300,             // 作用半径（逻辑像素）
-          strikeCount: 3,          // 每个敌人最多雷击次数
-          duration: 5,             // 雷击持续（秒）
-          strikeInterval: 0.8,     // 每次雷击间隔（秒）
+          strikeCount: 3,          // 3秒内共3次落雷
+          duration: 3,             // 区域持续（秒）后消失
+          warnDuration: 0.5,       // 每次落雷前黄色预警时长（秒）
+          strikeInterval: 1.0,     // 相邻两次落雷间隔（秒，含预警）
           electrify: {
             enabled: true,
+            duration: 3,           // 感电持续（秒）
             damageMult: 0.2        // 感电易伤：受击额外伤害比例
           }
         },

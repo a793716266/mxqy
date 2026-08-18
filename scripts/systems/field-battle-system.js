@@ -2025,7 +2025,7 @@ export function installFieldBattleSystem(FieldSceneClass) {
         this._castFireballAoE(skill, cpos, castDir, hero)
       } else if (skill.aoe.aoeType === 'circle') {
         this._castIceWaveAoE(skill, cpos, castDir, hero)
-      } else if (skill.aoe.aoeType === 'thunder') {
+      } else if (skill.aoe.aoeType === 'area') {
         this._castThunderAoE(skill, cpos, hero)
       } else {
         this._castFireballAoE(skill, cpos, castDir, hero)
@@ -2849,43 +2849,69 @@ export function installFieldBattleSystem(FieldSceneClass) {
   /**
    * ★ 雷击术：范围内敌人无差别攻击，每个敌人最多3次雷击（间隔触发）+ 感电
    */
+  /**
+   * ★ 雷击术：在施法位置生成「持续雷击区域」。
+   *   区域中心固定为施法瞬间 cpos（不跟随施法者），半径覆盖范围内敌人；
+   *   每次落雷前 warnDuration 秒黄色预警，预警结束雷劈落下，对区域内【当前存活】敌人
+   *   无差别攻击并挂感电；共 strikesTotal 次落雷，duration 秒后区域消失。
+   */
   proto._castThunderAoE = function(skill, cpos, hero) {
     const cfg = skill.aoe
     const radius = (cfg.radius || 300) * this.dpr
-    const strikeCount = cfg.strikeCount || 3
-    const duration = cfg.duration || 5
-    const strikeInterval = cfg.strikeInterval || 0.8
-    const elecCfg = cfg.electrify || {}
+    const warnDuration = cfg.warnDuration || 0.5
+    const strikeInterval = cfg.strikeInterval || 1.0
+    const strikesTotal = cfg.strikeCount || 3
+    const duration = cfg.duration || 3
     const fx = this.game && this.game.effects
-    // 命中范围内的所有存活怪物
-    const targets = (this.mapMonsters || []).filter(m =>
-      m.alive && Math.hypot(m.x - cpos.x, m.y - cpos.y) <= radius
-    )
-    if (targets.length === 0) {
-      console.log(`[FieldBattle] ${hero.name} 雷击范围内无敌人`)
-      return
-    }
-    // 每个怪物：挂感电状态 + 注册雷击定时过程
-    if (elecCfg.enabled) {
-      for (const m of targets) {
-        this._applyMonsterStatus(m, 'electrify', { duration: duration, damageMult: elecCfg.damageMult || 0.2 }, hero)
-      }
-    }
     if (!this.battleSystem.skillProcesses) this.battleSystem.skillProcesses = []
     this.battleSystem.skillProcesses.push({
       type: 'thunder',
       skill: skill,
       hero: hero,
       _castToken: hero._castToken,
-      targets: targets.map(m => m),
-      _timer: 0,
-      _strikeIndex: 0,
-      strikeCount: strikeCount,
+      x: cpos.x, y: cpos.y,            // 固定区域中心（施法位置，不跟随）
+      radius: radius,
+      warnDuration: warnDuration,
       strikeInterval: strikeInterval,
+      strikesTotal: strikesTotal,
       duration: duration,
+      _firstStrikeAt: warnDuration,    // 首次落雷在预警结束后
+      _elapsed: 0,
+      _strikeIndex: 0,
+      _flashTimer: 0,
+      _warning: true,
       _fx: fx,
-      _elapsed: 0
+      // 兼容字段：记录施法瞬间区域内的怪（调试/历史测试用），实际命中按实时区域重算
+      targets: (this.mapMonsters || []).filter(m =>
+        m.alive && Math.hypot(m.x - cpos.x, m.y - cpos.y) <= radius)
     })
+    console.log(`[FieldBattle] ${hero.name} 在 (${Math.round(cpos.x)},${Math.round(cpos.y)}) 生成雷击区域 r=${radius}`)
+  }
+
+  /**
+   * ★ 单次落雷：对区域内【当前存活】敌人无差别攻击 + 挂感电
+   */
+  proto._thunderStrike = function(p) {
+    const fx = p._fx
+    const targets = (this.mapMonsters || []).filter(m =>
+      m.alive && Math.hypot(m.x - p.x, m.y - p.y) <= p.radius)
+    const elecCfg = (p.skill.aoe && p.skill.aoe.electrify) || {}
+    for (const m of targets) {
+      const isCrit = Math.random() < (p.hero.crit || 0.05)
+      const dmg = this._calcSkillDamageToMonster(m, p.skill, p.hero, isCrit)
+      this._damageMonster(m, dmg)
+      this._pushDamageText(m, dmg, isCrit, '#ffe066')
+      if (elecCfg.enabled) {
+        this._applyMonsterStatus(m, 'electrify', {
+          duration: elecCfg.duration || p.duration || 3,
+          damageMult: elecCfg.damageMult || 0.2
+        }, p.hero)
+      }
+      if (fx && fx.playHitEffect) {
+        fx.playHitEffect('magic_impact', m.x - this.cameraX, m.y - this.cameraY - 30 * this.dpr, this.dpr)
+      }
+    }
+    console.log(`[FieldBattle] ${p.hero.name} 落雷命中 ${targets.length} 只（区域内无差别）`)
   }
 
   /**
@@ -2946,7 +2972,14 @@ export function installFieldBattleSystem(FieldSceneClass) {
         if (p._retractDone || p._elapsed > (p.duration || 3)) procs.splice(i, 1)
       } else if (p.type === 'thunder') {
         this._updateThunderProcess(p, dt)
-        if (p._strikeIndex >= p.strikeCount || p._elapsed > (p.duration || 5)) procs.splice(i, 1)
+        // 结束条件：全部落雷完成，且（累计时间超过 duration，或末次落雷后宽限 0.3s）。
+        // 真实游戏 dt 为真实时间 → elapsed 精确到 duration(3s) 结束；
+        // 单测 dt 被帧间 lastTime 压缩时，靠"末次落雷+宽限"兜底移除，避免残留。
+        const lastStrikeAt = p._firstStrikeAt + (p.strikesTotal - 1) * p.strikeInterval
+        if (p._strikeIndex >= p.strikesTotal &&
+            (p._elapsed > (p.duration || 3) || p._elapsed > lastStrikeAt + 0.3)) {
+          procs.splice(i, 1)
+        }
       }
     }
   }
@@ -3011,33 +3044,31 @@ export function installFieldBattleSystem(FieldSceneClass) {
   }
 
   /**
-   * ★ 雷击过程：范围内怪物随机逐个受击（每个最多 strikeCount 次）
+   * ★ 雷击区域过程：按 warnDuration/strikeInterval 逐次落雷，
+   *   每次落雷前黄色预警，落雷对区域内【当前存活】敌人无差别群伤+挂感电。
    */
   proto._updateThunderProcess = function(p, dt) {
-    const fx = p._fx
-    if (!p._strikeIndex) p._strikeIndex = 0
-    p._strikeTimer = (p._strikeTimer || 0) + dt
-    const interval = p.strikeInterval || 0.8
-    // 每次间隔触发一轮雷击：对范围内存活怪物随机挑一只
-    while (p._strikeTimer >= interval && p._strikeIndex < p.strikeCount) {
-      p._strikeTimer -= interval
-      const alive = (p.targets || []).filter(m => m.alive)
-      if (alive.length === 0) { p._strikeIndex = p.strikeCount; break }
-      // 随机命中一只
-      const m = alive[Math.floor(Math.random() * alive.length)]
-      const isCrit = Math.random() < (p.hero.crit || 0.05)
-      const dmg = this._calcSkillDamageToMonster(m, p.skill, p.hero, isCrit)
-      this._damageMonster(m, dmg)
-      this._pushDamageText(m, dmg, isCrit, '#ffe066')
-      if (fx && fx.playHitEffect) {
-        fx.playHitEffect('magic_impact', m.x - this.cameraX, m.y - this.cameraY - 30 * this.dpr, this.dpr)
-      }
-      console.log(`[FieldBattle] ${p.hero.name} 雷击命中 ${m.name}，伤害 ${dmg}${isCrit ? '（暴击）' : ''}，剩余HP ${m.hp}`)
-      if (m.hp <= 0) { m.alive = false; this.battleSystem.battleTarget = null }
-      // 记录该怪物累计命中次数（达到上限后不再被随机选中）
-      m._strikeCount = (m._strikeCount || 0) + 1
-      p._strikeIndex++
+    // 注意：p._elapsed 已由 _updateHeroSkillProcesses 统一累加，此处【不再】重复 += dt
+    if (p._flashTimer > 0) p._flashTimer = Math.max(0, p._flashTimer - dt)
+
+    // 触发所有到点的落雷（while 防止单帧跨多击）
+    while (p._strikeIndex < p.strikesTotal) {
+      const strikeTime = p._firstStrikeAt + p._strikeIndex * p.strikeInterval
+      if (p._elapsed >= strikeTime) {
+        this._thunderStrike(p)
+        p._strikeIndex++
+        p._flashTimer = 0.18
+      } else break
     }
+
+    // 预警标记（供渲染）：下一次落雷前 warnDuration 秒内
+    if (p._strikeIndex < p.strikesTotal) {
+      const nextTime = p._firstStrikeAt + p._strikeIndex * p.strikeInterval
+      p._warning = (nextTime - p._elapsed) <= p.warnDuration && (nextTime - p._elapsed) >= 0
+    } else {
+      p._warning = false
+    }
+    // 区域结束由 _updateHeroSkillProcesses 统一按 _elapsed > duration 移除
   }
 
   /**

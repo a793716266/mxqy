@@ -3996,6 +3996,9 @@ baseRadius: 50 * this.dpr,    // 底座半径（缩小）
       }
     }
 
+    // ★ 新增：渲染雷击持续区域（区域底 + 落雷前黄色预警 + 落雷闪光）
+    this._renderThunderZones(ctx)
+
     // ★ 新增：渲染 DNF 式固定目标面板（当前攻击怪物：头像 + 名字 + 血条 + 状态）
     if (this.battleSystem) {
       this._renderTargetPanel(ctx)
@@ -4009,6 +4012,69 @@ baseRadius: 50 * this.dpr,    // 底座半径（缩小）
    * ★ P2 连击计数 HUD：连续命中累计，断连窗口内超时清零（由 battleSystem.combo 驱动）
    * 至少 2 连才显示，避免平A常驻干扰；居中偏上，带渐变与缩放。
    */
+  /**
+   * ★ 渲染雷击持续区域：持续区域底 + 落雷前黄色预警 + 落雷闪光
+   */
+  _renderThunderZones(ctx) {
+    const procs = this.battleSystem && this.battleSystem.skillProcesses
+    if (!procs || procs.length === 0) return
+    const dpr = this.dpr
+    for (const p of procs) {
+      if (p.type !== 'thunder') continue
+      const sx = p.x - this.cameraX
+      const sy = p.y - this.cameraY
+      const r = p.radius
+      const el = p._elapsed || 0
+      ctx.save()
+      // 1) 持续区域底（柔和琥珀色，弱脉动）
+      const pulse = 0.08 + 0.04 * Math.sin(el * 4)
+      ctx.fillStyle = `rgba(255, 200, 60, ${pulse})`
+      ctx.beginPath(); ctx.arc(sx, sy, r, 0, Math.PI * 2); ctx.fill()
+      ctx.setLineDash([10 * dpr, 8 * dpr])
+      ctx.lineWidth = 2 * dpr
+      ctx.strokeStyle = 'rgba(255, 200, 80, 0.45)'
+      ctx.beginPath(); ctx.arc(sx, sy, r, 0, Math.PI * 2); ctx.stroke()
+      ctx.setLineDash([])
+      // 2) 落雷前黄色预警（强闪 + 收缩圈 + 十字准星）
+      if (p._warning) {
+        const nextTime = p._firstStrikeAt + p._strikeIndex * p.strikeInterval
+        const remain = Math.max(0, nextTime - el)
+        const prog = p.warnDuration > 0 ? 1 - remain / p.warnDuration : 1 // 0→1
+        const blink = 0.4 + 0.5 * Math.abs(Math.sin(prog * Math.PI * 6))
+        const curR = r * (1.0 - 0.25 * prog)
+        ctx.fillStyle = `rgba(255, 225, 60, ${0.18 + 0.30 * prog})`
+        ctx.beginPath(); ctx.arc(sx, sy, curR, 0, Math.PI * 2); ctx.fill()
+        ctx.lineWidth = 3 * dpr
+        ctx.strokeStyle = `rgba(255, 230, 70, ${blink})`
+        ctx.beginPath(); ctx.arc(sx, sy, curR, 0, Math.PI * 2); ctx.stroke()
+        ctx.strokeStyle = `rgba(255, 230, 70, ${blink})`
+        ctx.lineWidth = 2 * dpr
+        ctx.beginPath()
+        ctx.moveTo(sx - curR, sy); ctx.lineTo(sx + curR, sy)
+        ctx.moveTo(sx, sy - curR); ctx.lineTo(sx, sy + curR)
+        ctx.stroke()
+      }
+      // 3) 落雷闪光残影（短暂全区域亮闪 + 放射闪电）
+      if (p._flashTimer > 0) {
+        const a = p._flashTimer / 0.18
+        ctx.fillStyle = `rgba(255, 255, 200, ${0.5 * a})`
+        ctx.beginPath(); ctx.arc(sx, sy, r, 0, Math.PI * 2); ctx.fill()
+        ctx.strokeStyle = `rgba(255, 255, 180, ${0.9 * a})`
+        ctx.lineWidth = 3 * dpr
+        for (let k = 0; k < 6; k++) {
+          const ang = (k / 6) * Math.PI * 2 + 0.3
+          const bx = sx + Math.cos(ang) * r * 0.7
+          const by = sy + Math.sin(ang) * r * 0.7
+          ctx.beginPath()
+          ctx.moveTo(bx, by)
+          ctx.lineTo(sx + (bx - sx) * 0.15, sy + (by - sy) * 0.15 - 10 * dpr)
+          ctx.stroke()
+        }
+      }
+      ctx.restore()
+    }
+  }
+
   _renderCombo(ctx) {
     const bs = this.battleSystem
     if (!bs || !bs.combo || bs.combo < 2) return
