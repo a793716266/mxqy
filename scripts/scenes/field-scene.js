@@ -3725,6 +3725,11 @@ baseRadius: 50 * this.dpr,    // 底座半径（缩小）
 
     // ★ BUFF 生效冲击波已移至 _renderWorldHealthBars 里统一渲染
 
+    // ★ 世界血条/蓝条：推入 2.5D 排序引擎（与角色/怪物同层级参与深度排序）
+    if (this.battleSystem) {
+      this._renderWorldHealthBars(ctx)
+    }
+
     // 排序 + 统一绘制（通过 hooks 处理特殊类型）
     engine.render(ctx, {
       renderMonster: (ctx, monster, sx, sy) => {
@@ -3950,10 +3955,7 @@ baseRadius: 50 * this.dpr,    // 底座半径（缩小）
     // 调试：显示碰撞区域（临时开启用于排查问题）——已按需求关闭
     // this._renderObstacles(ctx)
 
-    // ★ 新增：渲染世界血条/蓝条（主角+队友，非战斗也始终显示）
-    if (this.battleSystem) {
-      this._renderWorldHealthBars(ctx)
-    }
+    // ★ 世界血条/蓝条已改为按 2.5D Y 轴排序渲染（在 _renderYSortedEntities 中推入引擎），此处不再直接绘制
 
     // ★ 新增：渲染战斗UI
     if (this.battleSystem && this.battleSystem.showBattleUI) {
@@ -4394,72 +4396,79 @@ baseRadius: 50 * this.dpr,    // 底座半径（缩小）
     if (frameDt > 0.1) frameDt = 0.1
     if (!this._heroHpLagMap) this._heroHpLagMap = {}
 
+    // ★ 改为按 2.5D Y 轴排序渲染：把血条/蓝条作为独立实体推入引擎，
+    //   与角色/怪物同 layer(2)、同锚点(中心Y) 参与深度排序，前排角色正确遮挡后排血条
     const drawBar = (wx, wy, hero, isControlled, lagKey) => {
-      const screenX = wx - this.cameraX
-      const screenY = wy - this.cameraY
-      const barWidth = 60 * this.dpr
-      const barHeight = 6 * this.dpr
-      const barX = screenX - barWidth / 2
-      const barY = screenY - 50 * this.dpr
-
-      // HP 背景
-      ctx.fillStyle = 'rgba(0,0,0,0.5)'
-      ctx.fillRect(barX, barY, barWidth, barHeight)
-
-      // HP 条
+      // 扣血追赶残影值：每帧在推入前计算一次（渲染时直接取用，避免深度排序后时序错乱）
       const hpRatio = Math.max(0, (hero.hp || 0) / (hero.maxHp || 1))
-
-      // ★ 扣血追赶残影层：受击瞬间白条保持高位，随后缓慢追回，露出"刚被打掉的血量"
       let lagRatio = this._heroHpLagMap[lagKey]
       if (typeof lagRatio !== 'number' || lagRatio < hpRatio) lagRatio = hpRatio
       else lagRatio = Math.max(hpRatio, lagRatio - 0.2 * frameDt)   // 每秒追回 20% 满血
       this._heroHpLagMap[lagKey] = lagRatio
-      if (lagRatio > hpRatio) {
-        ctx.fillStyle = 'rgba(255, 255, 255, 0.85)'
-        ctx.fillRect(barX, barY, barWidth * lagRatio, barHeight)
-      }
 
-      ctx.fillStyle = hpRatio > 0.5 ? '#2ed573' : (hpRatio > 0.25 ? '#ffa502' : '#ff4757')
-      ctx.fillRect(barX, barY, barWidth * hpRatio, barHeight)
+      this._renderer2d5.addEntity({
+        layer: 2,
+        sortY: wy / this.dpr,   // ★ 与角色实体同锚点(中心Y)，同 layer 参与 2.5D 深度排序
+        type: 'heroHealthBar',
+        render: (ctx) => {
+          const screenX = wx - this.cameraX
+          const screenY = wy - this.cameraY
+          const barWidth = 60 * this.dpr
+          const barHeight = 6 * this.dpr
+          const barX = screenX - barWidth / 2
+          const barY = screenY - 50 * this.dpr
 
-      // HP 边框
-      ctx.strokeStyle = '#ffffff'
-      ctx.lineWidth = 1
-      ctx.strokeRect(barX, barY, barWidth, barHeight)
+          // HP 背景
+          ctx.fillStyle = 'rgba(0,0,0,0.5)'
+          ctx.fillRect(barX, barY, barWidth, barHeight)
 
-      // ★ 护盾条（英雄联盟式白色护盾）：紧贴 HP 条上方显示
-      //   底层黑色底 + 白色填充（按 护盾/护盾上限 比例）+ 蓝色发光描边，确保清晰可见
-      if (hero._shield && hero._shield > 0) {
-        const shMax = hero._shieldMax || hero._shield
-        const shRatio = Math.max(0, Math.min(1, hero._shield / (shMax || 1)))
-        const shY = barY - barHeight - 3 * this.dpr
-        ctx.fillStyle = 'rgba(0,0,0,0.6)'
-        ctx.fillRect(barX, shY, barWidth, barHeight)
-        ctx.fillStyle = '#ffffff'
-        ctx.fillRect(barX, shY, barWidth * shRatio, barHeight)
-        ctx.strokeStyle = '#8ec5ff'
-        ctx.lineWidth = 2
-        ctx.strokeRect(barX + 0.5, shY + 0.5, barWidth - 1, barHeight - 1)
-      }
+          if (lagRatio > hpRatio) {
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.85)'
+            ctx.fillRect(barX, barY, barWidth * lagRatio, barHeight)
+          }
 
-      // ★ MP 蓝条
-      const mpY = barY + barHeight + 2 * this.dpr
-      ctx.fillStyle = 'rgba(0,0,0,0.5)'
-      ctx.fillRect(barX, mpY, barWidth, barHeight)
-      const mpRatio = Math.max(0, (hero.mp || 0) / (hero.maxMp || 1))
-      ctx.fillStyle = '#1e90ff'
-      ctx.fillRect(barX, mpY, barWidth * mpRatio, barHeight)
-      ctx.strokeStyle = '#ffffff'
-      ctx.lineWidth = 1
-      ctx.strokeRect(barX, mpY, barWidth, barHeight)
+          ctx.fillStyle = hpRatio > 0.5 ? '#2ed573' : (hpRatio > 0.25 ? '#ffa502' : '#ff4757')
+          ctx.fillRect(barX, barY, barWidth * hpRatio, barHeight)
 
-      // 名字（被控制者高亮）
-      ctx.fillStyle = isControlled ? '#FFD700' : '#ffffff'
-      ctx.font = `${10 * this.dpr}px sans-serif`
-      ctx.textAlign = 'center'
-      ctx.textBaseline = 'bottom'
-      ctx.fillText(hero.name + (isControlled ? '（控制中）' : ''), screenX, barY - 4 * this.dpr)
-      ctx.textAlign = 'left'
+          // HP 边框
+          ctx.strokeStyle = '#ffffff'
+          ctx.lineWidth = 1
+          ctx.strokeRect(barX, barY, barWidth, barHeight)
+
+          // ★ 护盾条（英雄联盟式白色护盾）：紧贴 HP 条上方显示
+          if (hero._shield && hero._shield > 0) {
+            const shMax = hero._shieldMax || hero._shield
+            const shRatio = Math.max(0, Math.min(1, hero._shield / (shMax || 1)))
+            const shY = barY - barHeight - 3 * this.dpr
+            ctx.fillStyle = 'rgba(0,0,0,0.6)'
+            ctx.fillRect(barX, shY, barWidth, barHeight)
+            ctx.fillStyle = '#ffffff'
+            ctx.fillRect(barX, shY, barWidth * shRatio, barHeight)
+            ctx.strokeStyle = '#8ec5ff'
+            ctx.lineWidth = 2
+            ctx.strokeRect(barX + 0.5, shY + 0.5, barWidth - 1, barHeight - 1)
+          }
+
+          // ★ MP 蓝条
+          const mpY = barY + barHeight + 2 * this.dpr
+          ctx.fillStyle = 'rgba(0,0,0,0.5)'
+          ctx.fillRect(barX, mpY, barWidth, barHeight)
+          const mpRatio = Math.max(0, (hero.mp || 0) / (hero.maxMp || 1))
+          ctx.fillStyle = '#1e90ff'
+          ctx.fillRect(barX, mpY, barWidth * mpRatio, barHeight)
+          ctx.strokeStyle = '#ffffff'
+          ctx.lineWidth = 1
+          ctx.strokeRect(barX, mpY, barWidth, barHeight)
+
+          // 名字（被控制者高亮）
+          ctx.fillStyle = isControlled ? '#FFD700' : '#ffffff'
+          ctx.font = `${10 * this.dpr}px sans-serif`
+          ctx.textAlign = 'center'
+          ctx.textBaseline = 'bottom'
+          ctx.fillText(hero.name + (isControlled ? '（控制中）' : ''), screenX, barY - 4 * this.dpr)
+          ctx.textAlign = 'left'
+        }
+      })
     }
 
     // 主角坐标（战斗中可能非被控者，但始终用真实位置）
@@ -5328,8 +5337,11 @@ baseRadius: 50 * this.dpr,    // 底座半径（缩小）
     const pulse = 0.5 + 0.5 * Math.sin(t * 6)
     const bodyH = 80 * dpr
     const cx = screenX
-    const feetY = screenY
-    const cy = screenY - bodyH * 0.5 // 身体中心
+    // ★ 注意：传入的 screenX/screenY 已是实体「中心」锚点
+    //   （CharacterSprite 与怪物均按中心绘制：footY = screenY + targetHeight/2），
+    //   故光环以身体中心为基准，脚底 = 中心 + 半身高（旧代码误把 screenY 当脚底，整体偏上约半身高）
+    const cy = screenY
+    const feetY = screenY + bodyH * 0.5
     const main = isMonster ? '255,72,72' : '255,196,64'   // 英雄=金，怪物=红
     const sub = isMonster ? '255,150,96' : '77,208,225'   // 副色
     ctx.save()
@@ -5382,8 +5394,8 @@ baseRadius: 50 * this.dpr,    // 底座半径（缩小）
       ctx.restore()
     }
 
-    // 4) 头顶「霸体」盾牌标记
-    const labelY = screenY - bodyH - 16 * dpr
+    // 4) 头顶「霸体」盾牌标记（中心上方半身高处，紧贴头顶）
+    const labelY = screenY - bodyH * 0.5 - 16 * this.dpr
     ctx.save()
     ctx.translate(cx, labelY)
     ctx.fillStyle = 'rgba(' + main + ',0.85)'
