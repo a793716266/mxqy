@@ -1241,8 +1241,44 @@ baseRadius: 50 * this.dpr,    // 底座半径（缩小）
 
       // 更新猫咪动画（无论是否暂停）
       if (useCatAnim) {
+        const _mcfg = this._getMonsterConfig(monster.enemyId)
+        // ★ 暗影鼠·暗影咬（jump_attack）按语义分相驱动 skill 帧：
+        //   预警阶段 = 起跳(帧1-4)，飞跃阶段 = 跳跃至攻击范围(帧5-7)，落地 = 收尾(帧8)
+        const _isShadowBite = monster.isCastingSkill && monster._castingSkill &&
+          monster._castingSkill.type === 'jump_attack' &&
+          (monster.enemyId === 'shadow_mouse' || monster.enemyId === 'shadow_mouse_smooth') &&
+          _mcfg && _mcfg.animationConfig && _mcfg.animationConfig.skill
+        if (_isShadowBite) {
+          const sk = _mcfg.animationConfig.skill
+          let f1
+          if (monster._jumpLandingTimer != null && monster._jumpLandingTimer > 0) {
+            f1 = sk.end // 收尾帧 8
+          } else if (monster._jumpState) {
+            const p = Math.min(1, monster._jumpState.progress)
+            if (p >= 1) f1 = sk.end
+            else f1 = sk.start + 4 + Math.min((sk.end - sk.start) - 4, Math.floor(p * 3)) // 5,6,7
+          } else if (monster._jumpWarn) {
+            const dur = monster._jumpWarnDur || 1
+            const t = monster._jumpWarnTimer != null ? monster._jumpWarnTimer : 0
+            const prog = 1 - Math.max(0, Math.min(dur, t)) / dur
+            f1 = sk.start + Math.min(3, Math.floor(prog * 4)) // 1,2,3,4
+          } else {
+            f1 = sk.start
+          }
+          monster.animFrame = f1 - 1
+          // 落地收尾计时递减与清理
+          if (monster._jumpLandingTimer != null) {
+            monster._jumpLandingTimer -= dt
+            if (monster._jumpLandingTimer <= 0) {
+              monster._jumpLandingTimer = 0
+              monster.isCastingSkill = false
+              monster.skillAnimTimer = 0
+              monster._jumpPrepZone = null
+            }
+          }
+        }
         // ★ 技能动画（优先级最高）
-        if (monster.isCastingSkill && monster.skillAnimTimer > 0 && !monster._lightCharge) {
+        else if (monster.isCastingSkill && monster.skillAnimTimer > 0 && !monster._lightCharge) {
           const enemyConfig = this._getMonsterConfig(monster.enemyId)
           const skillConf = enemyConfig?.animationConfig?.skill
           if (skillConf) {

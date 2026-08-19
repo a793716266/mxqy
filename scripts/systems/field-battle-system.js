@@ -1307,6 +1307,8 @@ export function installFieldBattleSystem(FieldSceneClass) {
     m.skillCastId = null
     m.skillAnimTimer = 0
     m._jumpWarn = false
+    m._jumpWarnTimer = 0
+    m._jumpLandingTimer = 0
     m.hasDealtDamage = false
     m.isMoving = false
     m.animFrame = 0
@@ -3580,6 +3582,9 @@ export function installFieldBattleSystem(FieldSceneClass) {
       monster._castingSkill = skill // ★ 供"霸体光环"判定 superArmor：配置 superArmor 的跳跃攻击(如BOSS)仍不可打断
       monster.skillAnimTimer = 999999
       monster._jumpWarn = true
+      monster._jumpWarnTimer = warnSec      // ★ 起跳准备阶段倒计时（秒），驱动 skill 帧 1-4
+      monster._jumpWarnDur = warnSec
+      monster._jumpLandingTimer = 0         // ★ 落地收尾帧 8 的保持计时（落地后置）
       monster._jumpPrepZone = jumpZone // ★ 供打断时移除该预警区，避免中断后落雷仍落下
       console.log(`[FieldBattle] ${monster.name} 跳跃攻击预警：${skill.name}，1秒后落在 (${Math.round(tx)},${Math.round(ty)})`)
       return
@@ -3873,6 +3878,10 @@ export function installFieldBattleSystem(FieldSceneClass) {
       //   生命周期与渲染倒计时由状态机自行维护，绝不走通用跳跃路径，避免重复结算/二次瞬移
       if (z.type === 'light_charge') continue
       z.timer -= dt
+      // ★ 起跳准备阶段：同步递减怪物侧计时（驱动 skill 帧 1-4）
+      if (z.monsterRef && z.monsterRef._jumpWarn && z.monsterRef._jumpWarnTimer != null) {
+        z.monsterRef._jumpWarnTimer -= dt
+      }
       // 到点（预警消失瞬间）：怪物开始跳跃动画飞向落点（不再瞬移）
       if (z.timer <= 0) {
         // ★ 跳跃动画：从怪物当前位置抛物线飞到预警落点
@@ -3888,8 +3897,9 @@ export function installFieldBattleSystem(FieldSceneClass) {
             zone: z                                 // 落地后结算伤害的预警区
           }
           z.monsterRef.isCastingSkill = true
-          z.monsterRef.skillAnimTimer = 450          // 落地攻击演出时长（毫秒）
-          z.monsterRef._jumpWarn = true              // 跳跃期间不黏住
+          z.monsterRef.skillAnimTimer = 999999       // ★ 保持施法中，直到落地收尾结束才清（避免提前回 idle）
+          z.monsterRef._jumpWarn = false             // ★ 起跳准备阶段结束，进入飞跃阶段
+          z.monsterRef._jumpWarnTimer = 0
         }
         list.splice(i, 1)
       }
@@ -3917,6 +3927,7 @@ export function installFieldBattleSystem(FieldSceneClass) {
         monster._jumpPrepZone = null   // ★ 预警区已结算，清引用避免打断时误移除
         monster.y = j.toY - 6 * this.dpr
         this._settleJumpDamage(j.zone, monster)
+        monster._jumpLandingTimer = 0.15  // ★ 落地收尾帧 8 保持 0.15s（由 field-scene 递减并清 isCastingSkill）
       }
     }
   }
