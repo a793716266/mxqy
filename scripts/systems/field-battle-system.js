@@ -2745,7 +2745,7 @@ export function installFieldBattleSystem(FieldSceneClass) {
             this._damageMonster(m, finalDmg)
             this._pushDamageText(m, finalDmg, isCrit, '#aee6ff')
             if (p._fx && p._fx.playHitEffect) {
-              p._fx.playHitEffect('magic_impact', m.x - this.cameraX, m.y - this.cameraY - 30 * this.dpr, this.dpr)
+              p._fx.playHitEffect('magic_impact', m.x, m.y - 30 * this.dpr, this.dpr, null, { world: true })
             }
             console.log(`[FieldBattle] 剑气命中 ${m.name}，伤害 ${finalDmg}${isCrit ? '（暴击）' : ''}，剩余HP ${m.hp}`)
             this.battleSystem.battleTarget = m
@@ -2782,9 +2782,9 @@ export function installFieldBattleSystem(FieldSceneClass) {
         // 命中特效（普攻=冲击波命中，技能火球=火焰命中）
         if (p._fx && p._fx.playHitEffect) {
           if (p.isBasicAttack) {
-            p._fx.playHitEffect('magic_impact', hitMonster.x - this.cameraX, hitMonster.y - this.cameraY - 30 * this.dpr, this.dpr)
+            p._fx.playHitEffect('magic_impact', hitMonster.x, hitMonster.y - 30 * this.dpr, this.dpr, null, { world: true })
           } else {
-            p._fx.playHitEffect('fire_impact', hitMonster.x - this.cameraX, hitMonster.y - this.cameraY - 30 * this.dpr, this.dpr)
+            p._fx.playHitEffect('fire_impact', hitMonster.x, hitMonster.y - 30 * this.dpr, this.dpr, null, { world: true })
           }
         }
         console.log(`[FieldBattle] ${p.hero.name} ${p.isBasicAttack ? '普攻' : '火球'}命中 ${hitMonster.name}，伤害 ${dmg}${isCrit ? '（暴击）' : ''}，剩余HP ${hitMonster.hp}`)
@@ -3057,7 +3057,7 @@ export function installFieldBattleSystem(FieldSceneClass) {
               if (p.freeze) this._applyMonsterStatus(m, 'freeze', { duration: (p.skill.aoe && p.skill.aoe.freeze && p.skill.aoe.freeze.duration) || 2 }, p.hero)
               this._pushDamageText(m, dmg, isCrit, '#66ddff')
               if (fx && fx.playHitEffect) {
-                fx.playHitEffect('ice_impact', m.x - this.cameraX, m.y - this.cameraY - 30 * this.dpr, this.dpr)
+                fx.playHitEffect('ice_impact', m.x, m.y - 30 * this.dpr, this.dpr, null, { world: true })
               }
               console.log(`[FieldBattle] ${p.hero.name} 冰刃命中 ${m.name}，伤害 ${dmg}，已冰冻`)
               if (m.hp <= 0) { m.alive = false; this.battleSystem.battleTarget = null }
@@ -3066,10 +3066,8 @@ export function installFieldBattleSystem(FieldSceneClass) {
         }
         // 生成冰刃视觉（用闪电命中帧近似冰刃，或按需扩展）
         if (fx && fx.playHitEffect) {
-          const sx = blade.x - this.cameraX
-          const sy = blade.y - this.cameraY - 20 * this.dpr
-          // 冰刃延展视觉：在 blade 范围内播放一个小的 ice_hit
-          fx.playHitEffect('ice_impact', sx, sy, this.dpr)
+          // 冰刃延展视觉：在 blade 范围内播放一个小的 ice_hit（世界锚定，不随相机漂走）
+          fx.playHitEffect('ice_impact', blade.x, blade.y - 20 * this.dpr, this.dpr, null, { world: true })
         }
         p._idx++
       } else {
