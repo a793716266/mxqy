@@ -455,28 +455,7 @@ export function installFieldBattleSystem(FieldSceneClass) {
         }
       } else {
         pa.timer -= dt
-      // ★ 近战攻击位移（lunge）：身体跟随挥砍前冲后回弹
-      if (this.battleSystem._attackLunge) {
-        const ln = this.battleSystem._attackLunge
-        const ctrl = this._getCurrentControlHero()
-        if (ctrl) {
-          const lpos = ctrl.getPos()
-          // 先撤销上一帧偏移
-          if (ln.last) {
-            lpos.x -= ln.last
-            if (ctrl.partyIndex === 0) this.playerX -= ln.last
-          }
-          const prog = pa.maxTimer ? Math.min(1, Math.max(0, 1 - pa.timer / pa.maxTimer)) : 0
-          // committed lunge：ease-out 前冲（sin(prog*PI/2)），prog=1 时停在最大前冲处、不再回弹
-          const off = Math.sin(prog * Math.PI / 2) * ln.amount * ln.dir
-          lpos.x += off
-          if (ctrl.partyIndex === 0) this.playerX += off
-          ln.last = off
-        }
-      }
       if (pa.timer <= 0) {
-        // 攻击结束：前冲位移已"提交"（角色留在挥砍终点，不再滑回起点），仅清除 lunge 状态
-        this.battleSystem._attackLunge = null
         // ★ 普攻输入缓冲：本击结束，若有缓存的普攻请求，下一帧立即接上
         if (this.battleSystem._bufferedAttack) {
           this.battleSystem._bufferedAttack = false
@@ -905,13 +884,6 @@ export function installFieldBattleSystem(FieldSceneClass) {
       if (!isRanged) {
         // ── 近战普攻：目标在攻击距离内则即时结算伤害（延迟到挥砍命中帧） ──
         if (!monster) return   // 近战无目标只播动画
-        // ★ 攻击位移（lunge）：让身体跟随挥砍动画前冲后回弹，解决"剑出去人不动"的僵硬感
-        //   playerAnim 共 0.6s/8帧，第4帧(0.3s)为挥砍最猛瞬间；
-        //   位移曲线用 sin(prog*PI)：0→0.5前冲、0.5→1回弹归位
-        const lungeDir = sprite.facingLeft ? -1 : 1
-        // ★ 近战前冲：committed lunge（挥砍前冲、结束停在终点，不再滑回起点，消除"被拉回"违和感）
-        //   幅度取适度值（26*dpr）：既保留"跟进"实感，又避免连击时持续前漂过远
-        this.battleSystem._attackLunge = { dir: lungeDir, amount: 26 * this.dpr, last: 0 }
         // ★ 近战挥剑破风声（剑击起手 whoosh，与挥砍动画同步）
         if (this.game && this.game.audio && this.game.audio.playSwingSynth) {
           this.game.audio.playSwingSynth({ volumeScale: 1 })
