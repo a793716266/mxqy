@@ -1266,8 +1266,9 @@ baseRadius: 50 * this.dpr,    // 底座半径（缩小）
             f1 = sk.start
           }
           monster.animFrame = f1 - 1
-          // 落地收尾计时递减与清理
-          if (monster._jumpLandingTimer != null) {
+          // 落地收尾计时递减与清理（仅在真正进入落地阶段 _jumpLandingTimer>0 时运行；
+          // 跳跃全程该值为 0，若用 _jumpLandingTimer!=null 判断会每帧误触发、清零施法状态）
+          if (monster._jumpLandingTimer != null && monster._jumpLandingTimer > 0) {
             monster._jumpLandingTimer -= dt
             if (monster._jumpLandingTimer <= 0) {
               monster._jumpLandingTimer = 0
