@@ -42,6 +42,8 @@ export class FieldScene extends SceneBase {
     this.playerX = 200 * this.dpr
     this.playerY = 2900 * this.dpr
     this.playerSpeed = 150 * this.dpr
+    // ★ 主角实际移速倍率（含 slow 减速 debuff，正常=1）：用于同步走路动画播放速度
+    this._playerMoveSpeedMult = 1
     this.playerDirection = 'down'
     this.facingLeft = false // 角色是否朝左（用于翻转）
     
@@ -834,6 +836,7 @@ baseRadius: 50 * this.dpr,    // 底座半径（缩小）
               if (d.effect === 'slow') speedFactor *= (1 - d.value)
             }
           }
+          this._playerMoveSpeedMult = speedFactor
           const moveX = (dx / dist) * this.playerSpeed * speedFactor * dt
           const moveY = (dy / dist) * this.playerSpeed * speedFactor * dt
 
@@ -889,6 +892,8 @@ baseRadius: 50 * this.dpr,    // 底座半径（缩小）
       this.battleSystem.battleHeroes && this.battleSystem.battleHeroes[0] &&
       this.battleSystem.battleHeroes[0].partyIndex !== 0)
     if (this.mainCharacterSprite && isHeroControlled) {
+      // ★ 同步主角实际移速倍率（slow 减速→动画变慢，消除滑步；加速 buff→动画变快）
+      this.mainCharacterSprite._moveSpeedMult = this._playerMoveSpeedMult || 1
       this.mainCharacterSprite.update(dt, this.isMoving, this.facingLeft)
     }
 

@@ -88,6 +88,11 @@ export class CharacterSprite {
     this._hurtVariant = 1
     this._hurtTimer = 0
 
+    // ★ 移速倍率：走路/待机动画帧推进速率 = dt × _moveSpeedMult。
+    //   由外部（场景）按角色实际移速写入（如被 slow 减速→<1，动画变慢消除滑步；
+    //   加速 buff/装备→>1，动画变快）。攻击(attack)状态不乘此值，仍走 _atkSpeedMult。
+    this._moveSpeedMult = 1
+
     // ★ 动画完成检测（用于 BUFF/技能动画播放完成后才应用效果）
     this._prevFrame = -1
     this._frameCount = 0
@@ -243,9 +248,10 @@ export class CharacterSprite {
     }
     
     // 动画帧更新
-    // ★ 攻速：仅普攻(attack)状态按攻速倍率加速挥砍动画（狂暴+60%攻速→挥砍更快）；其余状态正常速度
-    const _atkSpd = (this.state === 'attack') ? (this._atkSpeedMult || 1) : 1
-    this.animTimer += dt * _atkSpd
+    // ★ 攻速：仅普攻(attack)状态按攻速倍率加速挥砍动画（狂暴+60%攻速→挥砍更快）
+    // ★ 移速：walk/idle 等非战斗状态按 _moveSpeedMult 缩放（实际移速变慢则动画变慢，消除滑步）
+    const _spd = (this.state === 'attack') ? (this._atkSpeedMult || 1) : (this._moveSpeedMult || 1)
+    this.animTimer += dt * _spd
     if (this.animTimer >= this.frameDuration) {
       this.animTimer = 0
 
