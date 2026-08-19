@@ -1242,32 +1242,39 @@ baseRadius: 50 * this.dpr,    // 底座半径（缩小）
       // 更新猫咪动画（无论是否暂停）
       if (useCatAnim) {
         const _mcfg = this._getMonsterConfig(monster.enemyId)
-        // ★ 暗影鼠·暗影咬（jump_attack）按语义分相驱动 skill 帧：
-        //   预警阶段 = 起跳(帧1-4)，飞跃阶段 = 跳跃至攻击范围(帧5-7)，落地 = 收尾(帧8)
-        const _isShadowBite = monster.isCastingSkill && monster._castingSkill &&
+        // ★ 跳跃攻击（jump_attack）按语义分相驱动 skill 帧：
+        //   预警阶段 = 起跳准备(frameList 前段)，飞跃阶段 = 跳跃至目标(中段)，落地 = 收尾帧(末帧)。
+        //   注：此前此逻辑硬编码限定 shadow_mouse，导致其它会跳跃的猫怪(如史莱姆猫)放跳跃攻击时
+        //   走不到分相、_jumpLandingTimer 清理不执行 → isCastingSkill 不复位、skill 帧永久卡死。
+        //   现改为对所有 jump_attack 猫怪通用，并基于 frameList 索引(0-based)推进，兼容任意帧表。
+        const _isJumpAttack = monster.isCastingSkill && monster._castingSkill &&
           monster._castingSkill.type === 'jump_attack' &&
-          (monster.enemyId === 'shadow_mouse' || monster.enemyId === 'shadow_mouse_smooth') &&
           _mcfg && _mcfg.animationConfig && _mcfg.animationConfig.skill
-        if (_isShadowBite) {
+        if (_isJumpAttack) {
           const sk = _mcfg.animationConfig.skill
-          let f1
-          if (monster._jumpLandingTimer != null && monster._jumpLandingTimer > 0) {
-            f1 = sk.end // 收尾帧 8
-          } else if (monster._jumpState) {
-            const p = Math.min(1, monster._jumpState.progress)
-            if (p >= 1) f1 = sk.end
-            else f1 = sk.start + 4 + Math.min((sk.end - sk.start) - 4, Math.floor(p * 3)) // 5,6,7
-          } else if (monster._jumpWarn) {
-            const dur = monster._jumpWarnDur || 1
-            const t = monster._jumpWarnTimer != null ? monster._jumpWarnTimer : 0
-            const prog = 1 - Math.max(0, Math.min(dur, t)) / dur
-            f1 = sk.start + Math.min(3, Math.floor(prog * 4)) // 1,2,3,4
-          } else {
-            f1 = sk.start
+          const _skillFrames = sk.frameList ||
+            (sk.end != null ? Array.from({ length: sk.end - sk.start + 1 }, (_, i) => sk.start + i) : [])
+          const _sfTotal = _skillFrames.length
+          let idx = 0
+          if (_sfTotal > 0) {
+            if (monster._jumpLandingTimer != null && monster._jumpLandingTimer > 0) {
+              idx = _sfTotal - 1 // 落地收尾帧
+            } else if (monster._jumpState) {
+              const p = Math.min(1, monster._jumpState.progress)
+              if (p >= 1) idx = _sfTotal - 1
+              else idx = Math.min(_sfTotal - 1, 4 + Math.floor(p * 3)) // 飞跃段：第5帧起
+            } else if (monster._jumpWarn) {
+              const dur = monster._jumpWarnDur || 1
+              const t = monster._jumpWarnTimer != null ? monster._jumpWarnTimer : 0
+              const prog = 1 - Math.max(0, Math.min(dur, t)) / dur
+              idx = Math.min(_sfTotal - 1, Math.floor(prog * 4)) // 起跳准备前4帧
+            } else {
+              idx = 0
+            }
           }
-          monster.animFrame = f1 - 1
-          // 落地收尾计时递减与清理（仅在真正进入落地阶段 _jumpLandingTimer>0 时运行；
-          // 跳跃全程该值为 0，若用 _jumpLandingTimer!=null 判断会每帧误触发、清零施法状态）
+          monster.animFrame = idx
+          // 落地收尾计时递减与清理（对所有 jump_attack 猫怪通用；
+          // 该值跳跃全程为0，落地后置0.15s，递减到0才清施法状态，避免提前回 idle）
           if (monster._jumpLandingTimer != null && monster._jumpLandingTimer > 0) {
             monster._jumpLandingTimer -= dt
             if (monster._jumpLandingTimer <= 0) {
@@ -1286,12 +1293,12 @@ baseRadius: 50 * this.dpr,    // 底座半径（缩小）
             if (skillConf.frameList) {
               const total = skillConf.frameList.length
               const progress = 1 - (monster.skillAnimTimer / (total * (skillConf.frameDuration || 100)))
-              const idx = Math.min(Math.floor(progress * total), total - 1)
+              const idx = Math.max(0, Math.min(Math.floor(progress * total), total - 1))
               monster.animFrame = idx
             } else {
               const total = skillConf.end - skillConf.start + 1
               const progress = 1 - (monster.skillAnimTimer / (total * (skillConf.frameDuration || 100)))
-              const idx = Math.min(Math.floor(progress * total), total - 1)
+              const idx = Math.max(0, Math.min(Math.floor(progress * total), total - 1))
               monster.animFrame = idx
             }
           }
@@ -5053,8 +5060,8 @@ baseRadius: 50 * this.dpr,    // 底座半径（缩小）
 
     // ★ 读取怪物配置中的 animationConfig
     if (!enemyConfig || !enemyConfig.animationConfig) {
-      // 配置不存在，降级到 emoji 渲染
-      this._renderEmojiMonster(ctx, monster, screenX, screenY)
+      // 配置不存在，降级到稳定占位（不闪 emoji）
+      this._renderCatPlaceholder(ctx, monster, screenX, screenY, enemyConfig)
       return
     }
 
@@ -5087,7 +5094,7 @@ baseRadius: 50 * this.dpr,    // 底座半径（缩小）
       animType = monster.isMoving ? 'walk' : 'idle'
       animConf = enemyConfig.animationConfig[animType]
       if (!animConf) {
-        this._renderEmojiMonster(ctx, monster, screenX, screenY)
+        this._renderCatPlaceholder(ctx, monster, screenX, screenY, enemyConfig)
         return
       }
     }
@@ -5111,13 +5118,20 @@ baseRadius: 50 * this.dpr,    // 底座半径（缩小）
     // 获取动画帧图片
     let frameImg = this.game.assets.get(frameKey)
     if (!frameImg) {
-      // 资源未加载，降级到 emoji（每个怪物每种 animType 只提示一次，避免刷屏）
+      // ★ 防御性回退：某帧缺失时，优先回退到「同动作首帧 → idle 首帧 → walk 首帧」，
+      //   保证怪物始终有精灵绘制，而不是整只闪成 emoji（flicker 根因：个别帧缺失 / 运行期未加载）。
+      frameImg = this._tryFallbackFrame(monster, enemyConfig, animType, animConf)
+    }
+    if (!frameImg) {
+      // 全部回退仍失败：资源确实缺失，降级为稳定占位（不闪 emoji，每种 animType 只告警一次，附完整状态便于定位）
       if (!monster._warnedFrames) monster._warnedFrames = {}
       if (!monster._warnedFrames[animType]) {
         monster._warnedFrames[animType] = true
-        console.warn(`[Field] 怪物 ${monster.enemyId} 的动画帧未找到: ${frameKey} (animType=${animType})，降级到 emoji`)
+        console.warn(`[Field][placeholder] 怪物 ${monster.enemyId} 动画帧缺失: ${frameKey} ` +
+          `(animType=${animType}, animFrame=${monster.animFrame}, isMoving=${monster.isMoving}, ` +
+          `isCastingSkill=${!!monster.isCastingSkill}, isAttacking=${!!monster.isAttacking})`)
       }
-      this._renderEmojiMonster(ctx, monster, screenX, screenY)
+      this._renderCatPlaceholder(ctx, monster, screenX, screenY, enemyConfig)
       return
     }
 
@@ -5283,12 +5297,12 @@ baseRadius: 50 * this.dpr,    // 底座半径（缩小）
     const configMap = {
       'slime_cat': {
         animationConfig: {
-          idle: { start: 1, end: 7, path: 'images/characters_anim/transparent/slime_cat/idle/', framePad: 1, frameDuration: 150 },
-          walk: { start: 1, end: 12, path: 'images/characters_anim/transparent/slime_cat/walk/', framePad: 2, frameDuration: 120 },
-          attack: { start: 8, end: 22, path: 'images/characters_anim/transparent/slime_cat/attack/', frameList: [8, 10, 12, 14, 16, 18, 20, 22], framePad: 4, frameDuration: 100 },
-          hurt: { start: 1, end: 2, path: 'images/characters_anim/transparent/slime_cat/hurt/', framePad: 1, frameDuration: 80 },
-          death: { start: 1, end: 6, path: 'images/characters_anim/transparent/slime_cat/death/', framePad: 2, frameDuration: 120 },
-          skill: { start: 50, end: 80, path: 'images/characters_anim/transparent/slime_cat/skill/', frameList: [50, 53, 56, 59, 62, 65, 68, 71, 74, 77, 80], framePad: 4, frameDuration: 100 }
+          idle: { start: 1, end: 7, path: 'subpackages/battle/images/characters_anim/transparent/slime_cat/idle/', framePad: 1, frameDuration: 150 },
+          walk: { start: 1, end: 12, path: 'subpackages/battle/images/characters_anim/transparent/slime_cat/walk/', framePad: 2, frameDuration: 120 },
+          attack: { start: 8, end: 22, path: 'subpackages/battle/images/characters_anim/transparent/slime_cat/attack/', frameList: [8, 10, 12, 14, 16, 18, 20, 22], framePad: 4, frameDuration: 100 },
+          hurt: { start: 1, end: 2, path: 'subpackages/battle/images/characters_anim/transparent/slime_cat/hurt/', framePad: 1, frameDuration: 80 },
+          death: { start: 1, end: 6, path: 'subpackages/battle/images/characters_anim/transparent/slime_cat/death/', framePad: 2, frameDuration: 120 },
+          skill: { start: 50, end: 80, path: 'subpackages/battle/images/characters_anim/transparent/slime_cat/skill/', frameList: [50, 53, 56, 59, 62, 65, 68, 71, 74, 77, 80], framePad: 4, frameDuration: 100 }
         },
         renderConfig: {
           targetHeight: 80
@@ -5296,12 +5310,12 @@ baseRadius: 50 * this.dpr,    // 底座半径（缩小）
       },
       'shadow_mouse': {
         animationConfig: {
-          idle: { start: 1, end: 6, path: 'images/characters_anim/transparent/shadow_mouse/idle/', framePad: 2, frameDuration: 150 },
-          walk: { start: 1, end: 8, path: 'images/characters_anim/transparent/shadow_mouse/walk/', framePad: 2, frameDuration: 100 },
-          attack: { start: 1, end: 7, path: 'images/characters_anim/transparent/shadow_mouse/attack/', framePad: 2, frameDuration: 80 },
-          hurt: { start: 1, end: 2, path: 'images/characters_anim/transparent/shadow_mouse/hurt/', framePad: 2, frameDuration: 80 },
-          death: { start: 1, end: 6, path: 'images/characters_anim/transparent/shadow_mouse/death/', framePad: 2, frameDuration: 120 },
-          skill: { start: 1, end: 8, path: 'images/characters_anim/transparent/shadow_mouse/skill/', framePad: 2, frameDuration: 100 }
+          idle: { start: 1, end: 6, path: 'subpackages/battle/images/characters_anim/transparent/shadow_mouse/idle/', framePad: 2, frameDuration: 150 },
+          walk: { start: 1, end: 8, path: 'subpackages/battle/images/characters_anim/transparent/shadow_mouse/walk/', framePad: 2, frameDuration: 100 },
+          attack: { start: 1, end: 7, path: 'subpackages/battle/images/characters_anim/transparent/shadow_mouse/attack/', framePad: 2, frameDuration: 80 },
+          hurt: { start: 1, end: 2, path: 'subpackages/battle/images/characters_anim/transparent/shadow_mouse/hurt/', framePad: 2, frameDuration: 80 },
+          death: { start: 1, end: 6, path: 'subpackages/battle/images/characters_anim/transparent/shadow_mouse/death/', framePad: 2, frameDuration: 120 },
+          skill: { start: 1, end: 8, path: 'subpackages/battle/images/characters_anim/transparent/shadow_mouse/skill/', framePad: 2, frameDuration: 100 }
         },
         renderConfig: {
           targetHeight: 80
@@ -5310,8 +5324,8 @@ baseRadius: 50 * this.dpr,    // 底座半径（缩小）
       'wild_cat': {
         // 复用史莱姆猫的资源
         animationConfig: {
-          idle: { start: 1, end: 7, path: 'images/characters_anim/transparent/slime_cat/idle/', framePad: 1, frameDuration: 150 },
-          walk: { start: 1, end: 12, path: 'images/characters_anim/transparent/slime_cat/walk/', framePad: 2, frameDuration: 120 }
+          idle: { start: 1, end: 7, path: 'subpackages/battle/images/characters_anim/transparent/slime_cat/idle/', framePad: 1, frameDuration: 150 },
+          walk: { start: 1, end: 12, path: 'subpackages/battle/images/characters_anim/transparent/slime_cat/walk/', framePad: 2, frameDuration: 120 }
         },
         renderConfig: {
           targetHeight: 80
@@ -5348,6 +5362,30 @@ baseRadius: 50 * this.dpr,    // 底座半径（缩小）
     // frameIdx 是实际文件名中的帧号（如 8, 10, 12... 或 1, 2, 3...）
     const frameNum = String(frameIdx).padStart(framePad, '0')
     return `${prefix}_${action}_${frameNum}`
+  }
+
+  /**
+   * 动画帧缺失时的防御性回退：依次尝试「同动作首帧 → idle 首帧 → walk 首帧」，
+   * 返回首个在 game.assets 中存在的图片；全部缺失则返回 null。
+   * 目的：个别帧缺失/运行期未加载时，怪物仍绘制一个有效精灵，避免整只闪成 emoji。
+   */
+  _tryFallbackFrame(monster, enemyConfig, animType, animConf) {
+    const cands = []
+    if (animConf) {
+      if (animConf.frameList) cands.push([animType, animConf.frameList[0], animConf.framePad])
+      else if (animConf.start != null) cands.push([animType, animConf.start, animConf.framePad])
+    }
+    const ac = enemyConfig && enemyConfig.animationConfig
+    if (ac) {
+      if (animType !== 'idle' && ac.idle) cands.push(['idle', ac.idle.start, ac.idle.framePad])
+      if (animType !== 'walk' && ac.walk) cands.push(['walk', ac.walk.start, ac.walk.framePad])
+    }
+    for (const [at, fi, fp] of cands) {
+      const k = this._buildFrameKey(monster.enemyId, at, fi, fp)
+      const img = this.game.assets.get(k)
+      if (img) return img
+    }
+    return null
   }
 
   /**
@@ -5388,6 +5426,36 @@ baseRadius: 50 * this.dpr,    // 底座半径（缩小）
 
     // 靠近警告
     this._renderMonsterWarning(ctx, monster, screenX, screenY, 32)
+  }
+
+  /**
+   * 猫咪怪物资源缺失时的「稳定占位」渲染（替代 emoji，杜绝一闪一闪的抖动观感）。
+   * 画一个稳定的纯色圆 + 名称；真正的精灵会在资源进入运行包后自动恢复。
+   * 缺失的精确 key 由调用方此前打印的 [Field][placeholder] 日志给出，便于定位。
+   */
+  _renderCatPlaceholder(ctx, monster, screenX, screenY, enemyConfig) {
+    const bob = Math.sin(this.time * monster.bobSpeed + monster.bobOffset) * 4 * this.dpr
+    const r = (enemyConfig?.renderConfig?.targetHeight || 80) * this.dpr * 0.4
+    // 底部阴影
+    ctx.beginPath()
+    ctx.ellipse(screenX, screenY + r + 6 * this.dpr, r * 0.8, 6 * this.dpr, 0, 0, Math.PI * 2)
+    ctx.fillStyle = 'rgba(0,0,0,0.3)'
+    ctx.fill()
+    // 主体圆（优先用配置色，否则默认史莱姆绿）
+    const color = enemyConfig?.renderConfig?.color || '#7ED957'
+    ctx.beginPath()
+    ctx.arc(screenX, screenY + bob, r, 0, Math.PI * 2)
+    ctx.fillStyle = color
+    ctx.fill()
+    ctx.lineWidth = 2 * this.dpr
+    ctx.strokeStyle = 'rgba(255,255,255,0.6)'
+    ctx.stroke()
+    // 名称
+    ctx.font = `${12 * this.dpr}px sans-serif`
+    ctx.fillStyle = '#ffffff'
+    ctx.textAlign = 'center'
+    ctx.textBaseline = 'middle'
+    ctx.fillText(monster.name, screenX, screenY + r + 22 * this.dpr)
   }
 
   /**

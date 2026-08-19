@@ -46,42 +46,42 @@ module.exports = {
     idle: {
       start: 1,
       end: 6,
-      path: 'images/characters_anim/transparent/shadow_mouse/idle/',
+      path: 'subpackages/battle/images/characters_anim/transparent/shadow_mouse/idle/',
       framePad: 2,
       frameDuration: 150
     },
     walk: {
       start: 1,
       end: 8,
-      path: 'images/characters_anim/transparent/shadow_mouse/walk/',
+      path: 'subpackages/battle/images/characters_anim/transparent/shadow_mouse/walk/',
       framePad: 2,
       frameDuration: 100
     },
     attack: {
       start: 1,
       end: 7,
-      path: 'images/characters_anim/transparent/shadow_mouse/attack/',
+      path: 'subpackages/battle/images/characters_anim/transparent/shadow_mouse/attack/',
       framePad: 2,
       frameDuration: 80
     },
     hurt: {
       start: 1,
       end: 2,
-      path: 'images/characters_anim/transparent/shadow_mouse/hurt/',
+      path: 'subpackages/battle/images/characters_anim/transparent/shadow_mouse/hurt/',
       framePad: 2,
       frameDuration: 80
     },
     death: {
       start: 1,
       end: 6,
-      path: 'images/characters_anim/transparent/shadow_mouse/death/',
+      path: 'subpackages/battle/images/characters_anim/transparent/shadow_mouse/death/',
       framePad: 2,
       frameDuration: 120
     },
     skill: {
       start: 1,
       end: 8,
-      path: 'images/characters_anim/transparent/shadow_mouse/skill/',
+      path: 'subpackages/battle/images/characters_anim/transparent/shadow_mouse/skill/',
       framePad: 2,
       frameDuration: 100
     }

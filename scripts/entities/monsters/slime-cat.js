@@ -46,21 +46,21 @@ module.exports = {
     idle: {
       start: 1,
       end: 7,
-      path: 'images/characters_anim/transparent/slime_cat/idle/',
+      path: 'subpackages/battle/images/characters_anim/transparent/slime_cat/idle/',
       framePad: 1,
       frameDuration: 150
     },
     walk: {
       start: 1,
       end: 12,
-      path: 'images/characters_anim/transparent/slime_cat/walk/',
+      path: 'subpackages/battle/images/characters_anim/transparent/slime_cat/walk/',
       framePad: 2,
       frameDuration: 120
     },
     attack: {
       start: 8,
       end: 22,
-      path: 'images/characters_anim/transparent/slime_cat/attack/',
+      path: 'subpackages/battle/images/characters_anim/transparent/slime_cat/attack/',
       frameList: [8, 10, 12, 14, 16, 18, 20, 22],
       framePad: 4, // ★ 实际文件名 attack_0008.png ~ attack_0022.png 为4位补零
       frameDuration: 100
@@ -68,21 +68,21 @@ module.exports = {
     hurt: {
       start: 1,
       end: 2,
-      path: 'images/characters_anim/transparent/slime_cat/hurt/',
+      path: 'subpackages/battle/images/characters_anim/transparent/slime_cat/hurt/',
       framePad: 1,
       frameDuration: 80
     },
     death: {
       start: 1,
       end: 6,
-      path: 'images/characters_anim/transparent/slime_cat/death/',
+      path: 'subpackages/battle/images/characters_anim/transparent/slime_cat/death/',
       framePad: 2,
       frameDuration: 120
     },
     skill: {
       start: 50,
       end: 80,
-      path: 'images/characters_anim/transparent/slime_cat/skill/',
+      path: 'subpackages/battle/images/characters_anim/transparent/slime_cat/skill/',
       frameList: [50, 53, 56, 59, 62, 65, 68, 71, 74, 77, 80],
       framePad: 4, // ★ 实际文件名 skill_0050.png ~ skill_0080.png 为4位补零
       frameDuration: 100

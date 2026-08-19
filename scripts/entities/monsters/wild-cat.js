@@ -24,12 +24,12 @@ module.exports = {
 
   // === 动画配置（野猫复用史莱姆猫资源）===
   animationConfig: {
-    idle: { start: 1, end: 7, path: 'images/characters_anim/transparent/slime_cat/idle/', framePad: 1, frameDuration: 150 },
-    walk: { start: 1, end: 12, path: 'images/characters_anim/transparent/slime_cat/walk/', framePad: 2, frameDuration: 120 },
-    attack: { start: 8, end: 22, path: 'images/characters_anim/transparent/slime_cat/attack/', frameList: [8, 10, 12, 14, 16, 18, 20, 22], framePad: 4, frameDuration: 100 },
-    hurt: { start: 1, end: 2, path: 'images/characters_anim/transparent/slime_cat/hurt/', framePad: 1, frameDuration: 80 },
-    death: { start: 1, end: 6, path: 'images/characters_anim/transparent/slime_cat/death/', framePad: 2, frameDuration: 120 },
-    skill: { start: 50, end: 80, path: 'images/characters_anim/transparent/slime_cat/skill/', frameList: [50, 53, 56, 59, 62, 65, 68, 71, 74, 77, 80], framePad: 4, frameDuration: 100 }
+    idle: { start: 1, end: 7, path: 'subpackages/battle/images/characters_anim/transparent/slime_cat/idle/', framePad: 1, frameDuration: 150 },
+    walk: { start: 1, end: 12, path: 'subpackages/battle/images/characters_anim/transparent/slime_cat/walk/', framePad: 2, frameDuration: 120 },
+    attack: { start: 8, end: 22, path: 'subpackages/battle/images/characters_anim/transparent/slime_cat/attack/', frameList: [8, 10, 12, 14, 16, 18, 20, 22], framePad: 4, frameDuration: 100 },
+    hurt: { start: 1, end: 2, path: 'subpackages/battle/images/characters_anim/transparent/slime_cat/hurt/', framePad: 1, frameDuration: 80 },
+    death: { start: 1, end: 6, path: 'subpackages/battle/images/characters_anim/transparent/slime_cat/death/', framePad: 2, frameDuration: 120 },
+    skill: { start: 50, end: 80, path: 'subpackages/battle/images/characters_anim/transparent/slime_cat/skill/', frameList: [50, 53, 56, 59, 62, 65, 68, 71, 74, 77, 80], framePad: 4, frameDuration: 100 }
   },
 
   // === 渲染配置 ===

@@ -14,23 +14,54 @@ export class AssetManager {
   }
 
   // 加载单张图片
+  // ★ 分包资源加载失败时，自动回退到主包同名资源（主包存有副本时），
+  //   彻底消除「分包图片未打进包/未挂载 → get 返回 undefined → 野外渲染降级 emoji」的问题。
+  //   分包路径仍是首选，主包仅在分包 onerror 时兜底，正常情况零行为变更。
   loadImage(key, path) {
-    return new Promise((resolve, reject) => {
-      try {
-        const img = wx.createImage()
-        img.onload = () => {
-          this.images[key] = img
-          resolve(img)
+    const fallbacks = []
+    if (path.startsWith(BATTLE_PKG)) {
+      fallbacks.push(path.slice(BATTLE_PKG.length))
+    }
+    return this._loadWithFallback(key, [path, ...fallbacks])
+  }
+
+  _loadWithFallback(key, paths) {
+    return new Promise((resolve) => {
+      let idx = 0
+      const tryNext = () => {
+        if (idx >= paths.length) {
+          console.error(`[AssetManager] 资源加载彻底失败（已尝试所有候选路径）: ${key}`)
+          resolve(null)
+          return
         }
-        img.onerror = (err) => {
-          console.error(`[AssetManager] 加载失败: ${path}`, err)
-          resolve(null) // 失败也继续
+        const p = paths[idx++]
+        try {
+          const img = wx.createImage()
+          img.onload = () => {
+            this.images[key] = img
+            resolve(img)
+          }
+          img.onerror = (err) => {
+            if (idx < paths.length) {
+              // 当前路径失败，尝试下一个候选（如主包副本）
+              console.warn(`[AssetManager] 路径加载失败，回退重试: ${p}`)
+              tryNext()
+            } else {
+              console.error(`[AssetManager] 加载失败: ${p}`, err)
+              resolve(null) // 失败也继续
+            }
+          }
+          img.src = p
+        } catch (error) {
+          if (idx < paths.length) {
+            tryNext()
+          } else {
+            console.error(`[AssetManager] 创建图片失败: ${key}`, error)
+            resolve(null)
+          }
         }
-        img.src = path
-      } catch (error) {
-        console.error(`[AssetManager] 创建图片失败: ${key}`, error)
-        resolve(null)
       }
+      tryNext()
     })
   }
 

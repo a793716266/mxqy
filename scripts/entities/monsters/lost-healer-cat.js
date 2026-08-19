@@ -81,15 +81,15 @@ module.exports = {
 
   // === 动画配置（使用艾米资源）===
   animationConfig: {
-    idle: { start: 1, end: 8, path: 'images/characters_anim/transparent/aimi/idle/', framePad: 2, frameDuration: 150 },
-    walk: { start: 1, end: 8, path: 'images/characters_anim/transparent/aimi/walk/', framePad: 2, frameDuration: 120 },
-    attack: { start: 1, end: 8, path: 'images/characters_anim/transparent/aimi/attack/', framePad: 2, frameDuration: 100 },
-    hurt: { start: 1, end: 2, path: 'images/characters_anim/transparent/aimi/hurt/', framePad: 2, frameDuration: 80 },
-    death: { start: 1, end: 8, path: 'images/characters_anim/transparent/aimi/death/', framePad: 2, frameDuration: 150 },
-    skill: { start: 1, end: 8, path: 'images/characters_anim/transparent/aimi/skill/', framePad: 2, frameDuration: 100 },
-    buff: { start: 1, end: 8, path: 'images/characters_anim/transparent/aimi/buff/', framePad: 2, frameDuration: 100 },
-    support: { start: 1, end: 8, path: 'images/characters_anim/transparent/aimi/support/', framePad: 2, frameDuration: 100 },
-    cast: { start: 1, end: 4, path: 'images/characters_anim/transparent/aimi/cast/', framePad: 2, frameDuration: 120 }
+    idle: { start: 1, end: 8, path: 'subpackages/battle/images/characters_anim/transparent/aimi/idle/', framePad: 2, frameDuration: 150 },
+    walk: { start: 1, end: 8, path: 'subpackages/battle/images/characters_anim/transparent/aimi/walk/', framePad: 2, frameDuration: 120 },
+    attack: { start: 1, end: 8, path: 'subpackages/battle/images/characters_anim/transparent/aimi/attack/', framePad: 2, frameDuration: 100 },
+    hurt: { start: 1, end: 2, path: 'subpackages/battle/images/characters_anim/transparent/aimi/hurt/', framePad: 2, frameDuration: 80 },
+    death: { start: 1, end: 8, path: 'subpackages/battle/images/characters_anim/transparent/aimi/death/', framePad: 2, frameDuration: 150 },
+    skill: { start: 1, end: 8, path: 'subpackages/battle/images/characters_anim/transparent/aimi/skill/', framePad: 2, frameDuration: 100 },
+    buff: { start: 1, end: 8, path: 'subpackages/battle/images/characters_anim/transparent/aimi/buff/', framePad: 2, frameDuration: 100 },
+    support: { start: 1, end: 8, path: 'subpackages/battle/images/characters_anim/transparent/aimi/support/', framePad: 2, frameDuration: 100 },
+    cast: { start: 1, end: 4, path: 'subpackages/battle/images/characters_anim/transparent/aimi/cast/', framePad: 2, frameDuration: 120 }
   },
 
   // === 渲染配置 ===
