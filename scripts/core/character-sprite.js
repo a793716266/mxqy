@@ -243,7 +243,9 @@ export class CharacterSprite {
     }
     
     // 动画帧更新
-    this.animTimer += dt
+    // ★ 攻速：仅普攻(attack)状态按攻速倍率加速挥砍动画（狂暴+60%攻速→挥砍更快）；其余状态正常速度
+    const _atkSpd = (this.state === 'attack') ? (this._atkSpeedMult || 1) : 1
+    this.animTimer += dt * _atkSpd
     if (this.animTimer >= this.frameDuration) {
       this.animTimer = 0
 

@@ -73,7 +73,7 @@ export const HEROES = [
         }
       },
       { id: 'war_cry', name: '战吼', type: 'buff', mpCost: 8, range: 0, desc: '提升全体攻击力', effect: 'atk_up', turns: 3, value: 0.3 },
-      { id: 'berserk', name: '狂暴', type: 'buff', mpCost: 15, range: 0, desc: '大幅提升自身攻击', effect: 'atk_up_self', turns: 3, value: 0.5 },
+      { id: 'berserk', name: '狂暴', type: 'buff', mpCost: 15, range: 0, desc: '大幅提升自身攻击与攻击速度', effect: 'atk_up_self', turns: 3, value: 0.5, atkSpeed: 0.6 },
       {
         id: 'blade_storm',
         name: '剑气风暴',

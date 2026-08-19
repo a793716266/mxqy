@@ -22,9 +22,9 @@ export function installFieldBattleSystem(FieldSceneClass) {
       active: false,          // 是否处于战斗状态
       attackButton: null,     // 攻击按钮
       skillButtons: [],       // 技能按钮
-      playerAttackCD: 0,            // 玩家普攻冷却（恒为 0，无冷却）
-      playerBasicAttackInterval: 0, // 玩家普攻间隔（毫秒）：0 = 无冷却，点按即触发
-      playerAttackInterval: 800,    // 队友 AI 普攻间隔（毫秒），避免队友每帧普攻
+      playerAttackCD: 0,            // 玩家普攻冷却（运行时设为"挥砍时长/攻速"，非固定值）
+      playerAttackInterval: 800,    // 队友 AI 普攻间隔基准（毫秒），按攻速缩放；避免队友每帧普攻
+      _playerSwingBase: 0,          // ★ 玩家本次普攻挥砍时长（供攻击按钮冷却条按比例收缩）
       damageTexts: [],        // 伤害数字数组
       pendingDamages: [],     // 延迟伤害队列（动画命中帧时结算）
       battleTarget: null,      // 当前战斗目标
@@ -712,6 +712,10 @@ export function installFieldBattleSystem(FieldSceneClass) {
     const mainHero = ctrl.hero
     const sprite = ctrl.sprite
 
+    // ★ 攻速倍率（狂暴等增益提升）：影响普攻节奏/挥砍时长/伤害命中帧。
+    //   基础攻速 1.0，狂暴 +60% → 1.6。仅作用于普攻（不加速技能）。
+    const _atkSpd = this._getHeroAtkSpeedMult(mainHero)
+
     // ★ 受击硬直：被击中瞬间无法攻击/放技能（与怪物/队友统一规则），
     //   避免"挨打的同时还能反手普攻/放技能"的不合理手感。
     if (mainHero._hurtLock && mainHero._hurtLock > 0) return
@@ -785,11 +789,14 @@ export function installFieldBattleSystem(FieldSceneClass) {
         // ★ 普攻帧数：臻宝 3 帧（只播 ATTACK 01~03，更跟手），其他英雄 5 帧；技能仍 8 帧
         const atkFrames = (!skill && mainHero && mainHero.id === 'zhenbao') ? 3 : 5
         this._zbAtkFrames = atkFrames
-        this.battleSystem.castAxisLockTimer = (skill ? 8 : atkFrames) * fd
+        // ★ 普攻挥砍锁定时长按攻速缩放（狂暴+60%攻速→锁定更短）；技能不加速
+        this.battleSystem.castAxisLockTimer = (skill ? 8 : atkFrames / _atkSpd) * fd
       }
       sprite.state = animState
       sprite.animFrame = 0
       sprite.animTimer = 0
+      // ★ 攻速：仅普攻(attack)按攻速倍率加速挥砍动画；技能不加速
+      sprite._atkSpeedMult = (skill || animState !== 'attack') ? 1 : _atkSpd
       // 朝向目标（buff无目标时保持当前朝向）
       if (monster) {
         const pos = ctrl.getPos()
@@ -800,6 +807,7 @@ export function installFieldBattleSystem(FieldSceneClass) {
       sprite.onAnimationComplete = function(state) {
         sprite.state = 'idle'
         sprite.animFrame = 0
+        sprite._atkSpeedMult = 1   // ★ 攻速倍率仅作用于普攻动画，结束后复位
         sprite.onAnimationComplete = prevCallback
       }
     }
@@ -810,7 +818,8 @@ export function installFieldBattleSystem(FieldSceneClass) {
     const frameDur = (this.frameDuration || 0.15)
     // ★ 普攻帧数：臻宝 3 帧（更跟手），其他英雄 5 帧；技能 8 帧；霸体/大招不受影响
     const atkFrames2 = (skill ? 8 : (this._zbAtkFrames || 5))
-    const animLen = atkFrames2 * frameDur
+    // ★ 普攻挥砍动画时长按攻速缩放（狂暴+60%攻速→挥砍更快）；技能不加速
+    const animLen = atkFrames2 * frameDur / (skill ? 1 : _atkSpd)
     this.battleSystem.playerAnim = {
       type: animState,
       timer: animLen,
@@ -888,7 +897,10 @@ export function installFieldBattleSystem(FieldSceneClass) {
     //   - 近战（warrior 臻宝）：即时近战伤害（挥砍命中，不发射投射物）
     //   - 远程（mage 李小宝）：发射法杖冲击波投射物，且等抬手动作完成（0.5s）后才飞出
     if (!skill) {
-      this.battleSystem.playerAttackCD = this.battleSystem.playerBasicAttackInterval
+      // ★ 普攻节奏 = 挥砍时长 / 攻速倍率（既消除"无冷却→点按越快越无上限"，又让狂暴+60%攻速直接加快出手）
+      const _swing = (this._zbAtkFrames || 5) * (this.frameDuration || 0.15) / _atkSpd
+      this.battleSystem.playerAttackCD = _swing
+      this.battleSystem._playerSwingBase = _swing
       const isRanged = (mainHero.role === 'mage') || (mainHero.role === 'archer') || (mainHero.role === 'assassin')
       if (!isRanged) {
         // ── 近战普攻：目标在攻击距离内则即时结算伤害（延迟到挥砍命中帧） ──
@@ -910,8 +922,8 @@ export function installFieldBattleSystem(FieldSceneClass) {
         const finalDmg = meleeCrit ? Math.floor(baseDmg * 1.5) : baseDmg
         if (!this.battleSystem.pendingDamages) this.battleSystem.pendingDamages = []
         this.battleSystem.pendingDamages.push({
-          // ★ 命中帧提前到约 32% 挥砍处（更跟手）；臻宝普攻 3 帧，其他英雄 5 帧
-          timer: ((this._zbAtkFrames || 5) * (this.frameDuration || 0.15)) * 0.32,
+          // ★ 命中帧提前到约 32% 挥砍处（更跟手）；臻宝普攻 3 帧，其他英雄 5 帧；攻速越高命中越早
+          timer: ((this._zbAtkFrames || 5) * (this.frameDuration || 0.15) * 0.32) / _atkSpd,
           monster: monster,
           damage: finalDmg,
           heroName: mainHero.name,
@@ -1001,7 +1013,8 @@ export function installFieldBattleSystem(FieldSceneClass) {
       mainHero.mp = Math.max(0, mainHero.mp - (skill.mpCost || 0))
     } else {
       damage = Math.max(1, this._getHeroAtk(mainHero) - Math.floor(monster.def * 0.5))
-      this.battleSystem.playerAttackCD = this.battleSystem.playerBasicAttackInterval
+      // ★ 普攻节奏 = 挥砍时长/攻速（与上方 _playerAttackMonster 普攻分支一致）
+      this.battleSystem.playerAttackCD = (this._zbAtkFrames || 5) * (this.frameDuration || 0.15) / _atkSpd
     }
 
     // 暴击判定
@@ -1524,8 +1537,11 @@ export function installFieldBattleSystem(FieldSceneClass) {
       sprite.animTimer = 0
       sprite.facingLeft = (monster.x < pos.x)
       bh.hero._aiAttacking = true
-      // ★ cast_universal.png 精灵表 8 帧（每帧≈0.15s），攻击动画时长设为 0.8s 让施法动作播放约 5 帧更完整
-      bh.hero._aiAttackTimer = 0.8  // 攻击动画持续 0.8 秒后自动恢复
+      // ★ 攻速：队友普攻同样按攻速倍率加速（狂暴+60%攻速→出手更快、动画更短）
+      const _allyAtkSpd = this._getHeroAtkSpeedMult(bh.hero)
+      sprite._atkSpeedMult = _allyAtkSpd
+      // ★ cast_universal.png 精灵表 8 帧（每帧≈0.15s），攻击动画时长设为 0.8s 让施法动作播放约 5 帧更完整（按攻速缩放）
+      bh.hero._aiAttackTimer = 0.8 / _allyAtkSpd  // 攻击动画持续（按攻速）后自动恢复
       // ★ 施法 token：AI 普攻也标记，供"非霸体施法被打断时取消待结算效果"
       bh.hero._castToken = (bh.hero._castToken || 0) + 1
       bh.hero._castSuperArmor = false
@@ -1576,7 +1592,8 @@ export function installFieldBattleSystem(FieldSceneClass) {
           _castToken: hero._castToken
         })
       }
-      bh.hero._aiAttackCD = this.battleSystem.playerAttackInterval
+      // ★ 队友普攻冷却按攻速缩放（狂暴+60%攻速→冷却更短，出手更频繁）
+      bh.hero._aiAttackCD = this.battleSystem.playerAttackInterval / _allyAtkSpd
       console.log(`[FieldBattle] ${hero.name}（AI）普攻 ${monster.name}${isRanged ? '（投射物）' : ''}，伤害 ${finalDmg}`)
     }
   }
@@ -2317,6 +2334,22 @@ export function installFieldBattleSystem(FieldSceneClass) {
   }
 
   /**
+   * ★ 英雄攻击速度倍率（攻速）：影响普攻节奏/挥砍时长/伤害命中帧/队友AI出手频率。
+   *   默认 1.0；叠加身上所有【生效中】的攻速增益（如狂暴 +60% → 1.6）。
+   *   ⚠️ 仅作用于普攻（attack），不加速技能(skill)动画。
+   * @param {Object} hero
+   * @returns {number} 攻速倍率（>=1）
+   */
+  proto._getHeroAtkSpeedMult = function(hero) {
+    if (!hero || !hero._buffs) return 1
+    let mult = 1
+    for (const b of hero._buffs) {
+      if (b._active && b.atkSpeed) mult += b.atkSpeed
+    }
+    return mult
+  }
+
+  /**
    * ★ 给英雄挂 buff（魔力护盾/金盾/铁壁等）
    * @param {Object} skill 技能配置（effect/value/duration/turns）
    * @param {Object} caster 施法者（buff 技能以施法者为基准）
@@ -2355,10 +2388,11 @@ export function installFieldBattleSystem(FieldSceneClass) {
       }
       console.log(`[FieldBattle] ${caster ? caster.name : ''} 施放${skill.name}：全体攻击+${Math.round(value * 100)}%（持续${dur}s）`)
     } else if (effect === 'atk_up_self') {
-      // ★ 臻宝狂暴：仅自身攻击力大幅提升
+      // ★ 臻宝狂暴：仅自身攻击力大幅提升 + 攻击速度提升（atkSpeed 由技能配置决定，默认 0）
       if (caster) {
-        this._addHeroBuff(caster, { type: 'atk_up_self', value: value, duration: dur, _castToken: castToken })
-        console.log(`[FieldBattle] ${caster.name} 施放${skill.name}：自身攻击+${Math.round(value * 100)}%（持续${dur}s）`)
+        const atkSpd = (skill && skill.atkSpeed != null) ? skill.atkSpeed : 0
+        this._addHeroBuff(caster, { type: 'atk_up_self', value: value, atkSpeed: atkSpd, duration: dur, _castToken: castToken })
+        console.log(`[FieldBattle] ${caster.name} 施放${skill.name}：自身攻击+${Math.round(value * 100)}%、攻击速度+${Math.round(atkSpd * 100)}%（持续${dur}s）`)
       }
     } else if (effect === 'heal' || skill.type === 'heal') {
       // ★ 群体治疗（艾米治愈之光等）：base + matk*系数，回复全队生命并飘治疗字
@@ -2479,6 +2513,7 @@ export function installFieldBattleSystem(FieldSceneClass) {
     const existing = hero._buffs.find(b => b.type === buff.type)
     if (existing) {
       existing.value = buff.value
+      existing.atkSpeed = buff.atkSpeed != null ? buff.atkSpeed : 0  // ★ 攻速增益（狂暴+60%等）随刷新保留
       existing.duration = buff.duration
       existing._remaining = buff.duration
       existing._active = true
@@ -2488,6 +2523,7 @@ export function installFieldBattleSystem(FieldSceneClass) {
       hero._buffs.push({
         type: buff.type,
         value: buff.value,
+        atkSpeed: buff.atkSpeed != null ? buff.atkSpeed : 0,  // ★ 攻速增益（狂暴+60%等）写入buff
         duration: buff.duration,
         _remaining: buff.duration,
         _active: true,
@@ -4146,7 +4182,9 @@ export function installFieldBattleSystem(FieldSceneClass) {
 
     // 冷却遮罩
     if (this.battleSystem.playerAttackCD > 0) {
-      const cooldownRatio = this.battleSystem.playerAttackCD / this.battleSystem.playerBasicAttackInterval
+      // ★ 普攻节奏 = 挥砍时长/攻速，遮罩按"剩余/本次挥砍时长"比例收缩
+      const _base = this.battleSystem._playerSwingBase || 1
+      const cooldownRatio = Math.min(1, this.battleSystem.playerAttackCD / _base)
       ctx.fillStyle = 'rgba(0,0,0,0.5)'
       ctx.beginPath()
       this._roundRect(
