@@ -110,6 +110,8 @@ export class CharacterSprite {
     // ★ zhenbao 的 skill 用 ATTACK 帧（SLASH 已弃用），需修正帧数
     if (this.spriteType === 'zhenbao') {
       this._totalFramesMap.skill = 8
+      // ★ 臻宝普攻只播放 ATTACK 01~03（更跟手、打击感更利落），不影响技能(skill=8帧)
+      this._totalFramesMap.attack = 3
       // idle/walk/attack=337px, shield=232px, buff=380px(角色仅占64%)
       this._animScaleCompensation.shield = 337 / 232        // shield 图片矮，放大
       this._animScaleCompensation.buff = 337 / (380 * 0.64) // buff 角色仅占64%，补偿

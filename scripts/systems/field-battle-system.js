@@ -781,8 +781,10 @@ export function installFieldBattleSystem(FieldSceneClass) {
       //   时长对齐真实动画(8帧×frameDuration)，由 _updateBattle 跟随 playerAnim.timer 维持
       if (!isBuff) {
         const fd = (this.frameDuration || 0.15)
-        // ★ 普攻用 5 帧（比技能 8 帧更短、更跟手）；技能仍 8 帧
-        this.battleSystem.castAxisLockTimer = (skill ? 8 : 5) * fd
+        // ★ 普攻帧数：臻宝 3 帧（只播 ATTACK 01~03，更跟手），其他英雄 5 帧；技能仍 8 帧
+        const atkFrames = (!skill && mainHero && mainHero.id === 'zhenbao') ? 3 : 5
+        this._zbAtkFrames = atkFrames
+        this.battleSystem.castAxisLockTimer = (skill ? 8 : atkFrames) * fd
       }
       sprite.state = animState
       sprite.animFrame = 0
@@ -805,8 +807,9 @@ export function installFieldBattleSystem(FieldSceneClass) {
     // ★ 攻击/技能动画时长对齐真实渲染时长（8帧 × frameDuration = 1.2s @150ms），
     //   避免锁定时长(旧0.6/0.7s)比动画短一半导致"动画未播完Y轴就解锁、角色在飘"
     const frameDur = (this.frameDuration || 0.15)
-    // ★ 普攻 5 帧（更跟手），技能 8 帧；霸体/大招不受影响
-    const animLen = (skill ? 8 : 5) * frameDur
+    // ★ 普攻帧数：臻宝 3 帧（更跟手），其他英雄 5 帧；技能 8 帧；霸体/大招不受影响
+    const atkFrames2 = (skill ? 8 : (this._zbAtkFrames || 5))
+    const animLen = atkFrames2 * frameDur
     this.battleSystem.playerAnim = {
       type: animState,
       timer: animLen,
@@ -900,14 +903,14 @@ export function installFieldBattleSystem(FieldSceneClass) {
         if (this.game && this.game.audio && this.game.audio.playSwingSynth) {
           this.game.audio.playSwingSynth({ volumeScale: 1 })
         }
-        // 预计算伤害 + 延迟命中（对齐第4帧挥砍最猛瞬间 = 0.3s 结算）
+        // 预计算伤害 + 延迟命中（对齐挥砍命中帧 = 约 32% 处，更跟手）
         const baseDmg = Math.max(1, this._getHeroAtk(mainHero) - Math.floor(monster.def * 0.5))
         const meleeCrit = Math.random() < (mainHero.crit || 0.05)
         const finalDmg = meleeCrit ? Math.floor(baseDmg * 1.5) : baseDmg
         if (!this.battleSystem.pendingDamages) this.battleSystem.pendingDamages = []
         this.battleSystem.pendingDamages.push({
-          // ★ 命中帧提前到约 32% 挥砍处（更跟手，原 0.3s 偏晚）
-          timer: (5 * (this.frameDuration || 0.15)) * 0.32,
+          // ★ 命中帧提前到约 32% 挥砍处（更跟手）；臻宝普攻 3 帧，其他英雄 5 帧
+          timer: ((this._zbAtkFrames || 5) * (this.frameDuration || 0.15)) * 0.32,
           monster: monster,
           damage: finalDmg,
           heroName: mainHero.name,
