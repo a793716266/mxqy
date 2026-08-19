@@ -22,8 +22,9 @@ export function installFieldBattleSystem(FieldSceneClass) {
       active: false,          // 是否处于战斗状态
       attackButton: null,     // 攻击按钮
       skillButtons: [],       // 技能按钮
-      playerAttackCD: 0,      // 玩家攻击冷却
-      playerAttackInterval: 800, // 玩家攻击间隔（毫秒）
+      playerAttackCD: 0,            // 玩家普攻冷却（恒为 0，无冷却）
+      playerBasicAttackInterval: 0, // 玩家普攻间隔（毫秒）：0 = 无冷却，点按即触发
+      playerAttackInterval: 800,    // 队友 AI 普攻间隔（毫秒），避免队友每帧普攻
       damageTexts: [],        // 伤害数字数组
       pendingDamages: [],     // 延迟伤害队列（动画命中帧时结算）
       battleTarget: null,      // 当前战斗目标
@@ -887,7 +888,7 @@ export function installFieldBattleSystem(FieldSceneClass) {
     //   - 近战（warrior 臻宝）：即时近战伤害（挥砍命中，不发射投射物）
     //   - 远程（mage 李小宝）：发射法杖冲击波投射物，且等抬手动作完成（0.5s）后才飞出
     if (!skill) {
-      this.battleSystem.playerAttackCD = this.battleSystem.playerAttackInterval
+      this.battleSystem.playerAttackCD = this.battleSystem.playerBasicAttackInterval
       const isRanged = (mainHero.role === 'mage') || (mainHero.role === 'archer') || (mainHero.role === 'assassin')
       if (!isRanged) {
         // ── 近战普攻：目标在攻击距离内则即时结算伤害（延迟到挥砍命中帧） ──
@@ -1000,7 +1001,7 @@ export function installFieldBattleSystem(FieldSceneClass) {
       mainHero.mp = Math.max(0, mainHero.mp - (skill.mpCost || 0))
     } else {
       damage = Math.max(1, this._getHeroAtk(mainHero) - Math.floor(monster.def * 0.5))
-      this.battleSystem.playerAttackCD = this.battleSystem.playerAttackInterval
+      this.battleSystem.playerAttackCD = this.battleSystem.playerBasicAttackInterval
     }
 
     // 暴击判定
@@ -4145,7 +4146,7 @@ export function installFieldBattleSystem(FieldSceneClass) {
 
     // 冷却遮罩
     if (this.battleSystem.playerAttackCD > 0) {
-      const cooldownRatio = this.battleSystem.playerAttackCD / this.battleSystem.playerAttackInterval
+      const cooldownRatio = this.battleSystem.playerAttackCD / this.battleSystem.playerBasicAttackInterval
       ctx.fillStyle = 'rgba(0,0,0,0.5)'
       ctx.beginPath()
       this._roundRect(

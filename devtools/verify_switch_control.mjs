@@ -143,7 +143,7 @@ sys.playerAttackCD = 0
 scene._playerAttackMonster(null, null)  // 无目标普攻，只播动画（模拟玩家点击）
 assert(sys.playerAnim !== null && sys.playerAnim.type === 'attack', '普攻播放 attack 动画')
 assert(newCtrl.sprite.state === 'attack', '李小宝 sprite 进入 attack 动画', `实际: ${newCtrl.sprite.state}`)
-assert(sys.playerAttackCD === sys.playerAttackInterval, '普攻设置冷却')
+assert(sys.playerAttackCD === sys.playerBasicAttackInterval, '普攻设置冷却（玩家普攻间隔）')
 
 // ============ 怪物攻击目标 ============
 // 切换后怪物近战应攻击【最近的英雄】，而非硬编码 party[0]
