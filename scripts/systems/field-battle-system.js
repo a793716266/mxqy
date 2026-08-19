@@ -1101,13 +1101,17 @@ export function installFieldBattleSystem(FieldSceneClass) {
     const total = 1.0 + dashTotal + finishTotal
     sys.castLockTimer = Math.max(sys.castLockTimer || 0, total)
 
-    // ★ 进入攻击渲染态（主角由 CharacterSprite 渲染，zhenbao 的 attack 状态会映射到
-    //   HERO_ZHENBAO_ATTACK_XX 帧；下面每帧直接控制 animFrame 指定具体帧 02/03/07）
+    // ★ 进入技能渲染态（state='skill'，与 AI 剑气风暴一致）：zhenbao 的 skill 状态经
+    //   CharacterSprite 的 actionMap 同样映射到 HERO_ZHENBAO_ATTACK_XX 帧；下面每帧直接
+    //   控制 animFrame 指定具体帧 02/03/07。
+    //   注意：必须用 'skill'（8 帧）而非 'attack'——臻宝普攻已改为只播 ATTACK_01~03
+    //   （_totalFramesMap.attack=3），若用 'attack' 状态，收尾帧 07 会被
+    //   (animFrame % 3)+1 折叠成 ATTACK_01，导致剑气风暴收尾动作丢失。
     //   注意：ctrl.hero 是 party[0] 数据对象，没有 .sprite 字段；主角 sprite 直接用
     //   this.mainCharacterSprite（FieldScene 实例上即为主角精灵）。
     const mainSprite = this.mainCharacterSprite
     if (mainSprite) {
-      mainSprite.state = 'attack'
+      mainSprite.state = 'skill'
       mainSprite.animTimer = 0
       mainSprite.animFrame = 1   // 0-based：第 1 帧 = attack_02.png
     }
