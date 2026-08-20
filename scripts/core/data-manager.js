@@ -148,6 +148,21 @@ export class DataManager {
     return !!this.data.progression.flags[key]
   }
 
+  /**
+   * 剧情标记设置（别名：与 devtools 测试 mock 的 setFlag 契约保持一致）
+   * 等价于 addFlag(key, value)，写入 progression.flags[key]
+   */
+  setFlag(key, value = true) {
+    this.addFlag(key, value)
+  }
+
+  /**
+   * 剧情标记清除（别名：与 devtools 测试 mock 的 delFlag 契约保持一致）
+   */
+  delFlag(key) {
+    delete this.data.progression.flags[key]
+  }
+
   // ================================================================
   // dot-notation 解析器
   // ================================================================
