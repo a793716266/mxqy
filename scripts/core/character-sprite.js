@@ -540,6 +540,72 @@ export class CharacterSprite {
     ctx.restore()
   }
   
+  /**
+   * ★ 受击泛红：将当前帧【整体染红】后绘制到主画布。
+   *   用于角色被攻击时"全身变红一下"的反馈——红 tint 覆盖整张精灵本体（保留透明轮廓），
+   *   而不是在脚底画一圈红椭圆。
+   * 实现：把当前帧绘到一张复用的离屏 canvas → 用 source-atop 仅对已有像素填红 → 合成回主画布。
+   * @param {CanvasRenderingContext2D} ctx 主画布
+   * @param {number} screenX 屏幕X（角色中心点）
+   * @param {number} screenY 屏幕Y（角色中心点，脚底 = screenY + targetHeight/2）
+   * @param {number} alpha 红覆盖透明度（0~1，越大越红）
+   */
+  renderTintedRed(ctx, screenX, screenY, alpha) {
+    if (alpha <= 0) return
+    const frameImg = this.getCurrentFrameImage()
+    if (!frameImg) return
+    const targetHeight = this.targetHeight
+
+    // 与 render 一致的基准高度 / 缩放逻辑
+    if (!this._baseImgHeight) {
+      const idleKey = `${this.assetPrefix}_IDLE_${String(this.idleFrameOffset).padStart(this.idleFramePad, '0')}`
+      const idleImg = this.game.assets?.get?.(idleKey)
+      this._baseImgHeight = idleImg ? idleImg.height : frameImg.height
+    }
+    const comp = this._getScaleCompensation(frameImg)
+    const scale = (targetHeight / this._baseImgHeight) * comp
+    const renderWidth = frameImg.width * scale
+    const renderHeight = frameImg.height * scale
+    const footY = screenY + targetHeight / 2
+
+    // ★ 复用离屏缓冲（每个精灵一张，避免每帧分配）
+    const needW = Math.ceil(renderWidth) + 4
+    const needH = Math.ceil(renderHeight) + 4
+    if (!this._tintCanvas || this._tintCanvas.width < needW || this._tintCanvas.height < needH) {
+      const cv = (typeof wx !== 'undefined' && wx.createCanvas) ? wx.createCanvas() : document.createElement('canvas')
+      cv.width = needW
+      cv.height = needH
+      this._tintCanvas = cv
+      this._tintCtx = cv.getContext('2d')
+    }
+    const tctx = this._tintCtx
+    const offX = this._tintCanvas.width / 2
+    const offY = this._tintCanvas.height / 2
+    tctx.clearRect(0, 0, this._tintCanvas.width, this._tintCanvas.height)
+    tctx.save()
+    const shouldFlip = this._shouldFlip()
+    if (shouldFlip) {
+      tctx.translate(offX, offY)
+      tctx.scale(-1, 1)
+      if (frameImg._isSpriteSheet) tctx.drawImage(frameImg._sheet, frameImg._sx, frameImg._sy, frameImg._sw, frameImg._sh, -renderWidth / 2, -renderHeight, renderWidth, renderHeight)
+      else tctx.drawImage(frameImg, -renderWidth / 2, -renderHeight, renderWidth, renderHeight)
+    } else {
+      if (frameImg._isSpriteSheet) tctx.drawImage(frameImg._sheet, frameImg._sx, frameImg._sy, frameImg._sw, frameImg._sh, offX - renderWidth / 2, offY - renderHeight, renderWidth, renderHeight)
+      else tctx.drawImage(frameImg, offX - renderWidth / 2, offY - renderHeight, renderWidth, renderHeight)
+    }
+    // ★ 整张精灵本体染红：source-atop 只在已有像素（角色轮廓内）着色，保留透明背景
+    tctx.globalCompositeOperation = 'source-atop'
+    tctx.fillStyle = '#ff2424'
+    tctx.fillRect(0, 0, this._tintCanvas.width, this._tintCanvas.height)
+    tctx.restore()
+
+    // 合成到主画布（离屏中心 → 角色脚底中心）
+    ctx.save()
+    ctx.globalAlpha = alpha
+    ctx.drawImage(this._tintCanvas, screenX - offX, footY - offY)
+    ctx.restore()
+  }
+  
   // ==================== 战斗场景相关方法 ====================
   
   /**
