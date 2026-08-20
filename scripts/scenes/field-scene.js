@@ -4008,6 +4008,8 @@ baseRadius: 50 * this.dpr,    // 底座半径（缩小）
           const mainShakeX = self.mainCharacterSprite._shakeOffsetX || 0
           const mainShakeY = self.mainCharacterSprite._shakeOffsetY || 0
           self.mainCharacterSprite.render(ctx, mainRenderX + mainShakeX, mainRenderY + mainShakeY)
+          // ★ 主角受击泛红
+          self._renderHeroHurtFlash(ctx, mainRenderX + mainShakeX, mainRenderY + mainShakeY, mainHero, self.dpr)
           // ★ 主角 BUFF 光环已移至 _renderWorldHealthBars 里统一渲染（确保每帧必调）
 
           // ★ 眩晕指示（被击飞落地后）：头顶旋转星星 + 轻微暗化
@@ -4069,6 +4071,8 @@ baseRadius: 50 * this.dpr,    // 底座半径（缩小）
               const fShakeX = follower.sprite._shakeOffsetX || 0
               const fShakeY = follower.sprite._shakeOffsetY || 0
               follower.sprite.render(ctx, fRenderX + fShakeX, fRenderY + fShakeY)
+              // ★ 队友受击泛红
+              self._renderHeroHurtFlash(ctx, fRenderX + fShakeX, fRenderY + fShakeY, fHero, self.dpr)
               // ★ 眩晕指示（被击飞落地后）
               if (fStunned) {
                 self._renderHeroStun(ctx, fRenderX, fRenderY)
@@ -5067,6 +5071,8 @@ baseRadius: 50 * this.dpr,    // 底座半径（缩小）
       //   在分包资源加载时机/缓存下返回 null 而只显示血条蓝条，改用此路径彻底修复）
       if (follower.sprite) {
         follower.sprite.render(ctx, screenX, screenY)
+        // ★ 队友受击泛红（探索状态理论无受击，_hurtFlash 默认 0 不绘制，战斗路径已覆盖）
+        this._renderHeroHurtFlash(ctx, screenX, screenY, follower.character, this.dpr)
         continue
       }
 
@@ -5197,6 +5203,8 @@ baseRadius: 50 * this.dpr,    // 底座半径（缩小）
 
     // 使用 CharacterSprite 渲染队友（自动处理动画、翻转、阴影）
     follower.sprite.render(ctx, screenX, screenY)
+    // ★ 队友受击泛红
+    this._renderHeroHurtFlash(ctx, screenX, screenY, follower.character, this.dpr)
   }
   
   /**
@@ -5917,6 +5925,21 @@ baseRadius: 50 * this.dpr,    // 底座半径（缩小）
       const sy = screenY - 80 * this.dpr + Math.sin(ang) * orbitR * 0.5
       this._drawStar(ctx, sx, sy, 5 * this.dpr, '#FFE66D')
     }
+    ctx.restore()
+  }
+
+  // ★ 英雄受击泛红：身体瞬间罩一层半透明红覆盖（与怪物受击闪白同一椭圆思路）
+  //   hero._hurtFlash 由战斗系统 _applyHeroDamage/_dealMonsterDamage 置 1，并在 _updateBattleSystem 递减。
+  //   (x, y) 为角色脚底屏幕坐标（与 sprite.render 同一锚点）。
+  _renderHeroHurtFlash(ctx, x, y, hero, dpr) {
+    if (!hero || !hero._hurtFlash || hero._hurtFlash <= 0) return
+    const th = 120 * dpr
+    ctx.save()
+    ctx.globalAlpha = Math.min(0.7, hero._hurtFlash * 0.85)
+    ctx.fillStyle = '#ff2a2a'
+    ctx.beginPath()
+    ctx.ellipse(x, y - th * 0.45, th * 0.42, th * 0.5, 0, 0, Math.PI * 2)
+    ctx.fill()
     ctx.restore()
   }
 

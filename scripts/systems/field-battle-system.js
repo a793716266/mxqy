@@ -517,7 +517,11 @@ export function installFieldBattleSystem(FieldSceneClass) {
           // 命中帧到达，结算伤害
           const m = pd.monster
           if (m && m.alive) {
-            const dealt = this._damageMonster(m, pd.damage)
+            const dealt = this._damageMonster(m, pd.damage, {
+              knockback: true,
+              fromX: (pd.hero && pd.hero.getPos ? pd.hero.getPos().x : this.playerX),
+              fromY: (pd.hero && pd.hero.getPos ? pd.hero.getPos().y : this.playerY)
+            })
             if (dealt > 0) {
               // ★ 命中打击感：顿帧 + 震屏 + 闪白
               this._onHitFeedback(m, pd.isCrit, 'slash')
@@ -565,7 +569,8 @@ export function installFieldBattleSystem(FieldSceneClass) {
               if (!mm.alive || mm === m) continue
               const ic = Math.random() < (pd.hero.crit || 0.05)
               const dmg = this._calcSkillDamageToMonster(mm, pd.skill, pd.hero, ic)
-              this._damageMonster(mm, dmg)
+              const ah = (pd.hero && pd.hero.getPos) ? pd.hero.getPos() : { x: this.playerX, y: this.playerY }
+              this._damageMonster(mm, dmg, { knockback: true, fromX: ah.x, fromY: ah.y })
               this._pushDamageText(mm, dmg, ic, '#c08bff')
               if (mm.hp <= 0) { mm.alive = false; this.battleSystem.battleTarget = null }
             }
@@ -669,6 +674,14 @@ export function installFieldBattleSystem(FieldSceneClass) {
     for (const m of (this.mapMonsters || [])) {
       if (m._hitFlash && m._hitFlash > 0) {
         m._hitFlash = Math.max(0, m._hitFlash - dt * 5)
+      }
+    }
+    // ★ 英雄受击泛红衰减（_hurtFlash 由 _applyHeroDamage/_dealMonsterDamage 置 1，渲染层读取）
+    if (this.battleSystem.battleHeroes) {
+      for (const bh of this.battleSystem.battleHeroes) {
+        if (bh.hero && bh.hero._hurtFlash > 0) {
+          bh.hero._hurtFlash = Math.max(0, bh.hero._hurtFlash - dt * 4)
+        }
       }
     }
     // 7. ★ P2 连击窗口：超时清零（连续命中重置计时 → 维持连击）
@@ -1227,10 +1240,53 @@ export function installFieldBattleSystem(FieldSceneClass) {
     }
   }
 
+  // ★ 怪物受击击退：朝远离攻击者方向轻推一点（仅非霸体怪物）。
+  //   障碍/边界处理：落点撞到障碍物则整段取消（不把怪物推入墙）；
+  //   越出地图则钳制在地图内（不把怪物推出地图外）。
+  proto._fieldKnockbackMonster = function(m, fromX, fromY, distance) {
+    if (!m || !m.alive) return
+    // 霸体（永久标记，如部分 Boss）或正在施放霸体技能 → 免疫击退
+    if (m.superArmor) return
+    const casting = (m.skills && m.skillCastId)
+      ? m.skills.find(s => s.id === m.skillCastId) : null
+    if (casting && casting.superArmor) return
+    // 跳跃攻击 / 光明冲锋 等自身位移动作：不叠加击退，避免穿模错乱
+    if (m._jumpState || m._lightCharge) return
+    // 方向：攻击者 → 怪物（怪物被推离攻击者）
+    let nx = m.x - fromX
+    let ny = m.y - fromY
+    const len = Math.hypot(nx, ny)
+    if (len < 0.001) {
+      // 攻击者中心完全重合：按怪物相对地图中心的水平方向兜底推开
+      nx = (m.x < (this.mapWidth || 6000 * this.dpr) / 2) ? 1 : -1
+      ny = 0
+    } else {
+      nx /= len; ny /= len
+    }
+    const d = distance * this.dpr
+    let tx = m.x + nx * d
+    let ty = m.y + ny * d
+    // 障碍物：落点撞墙则整段取消（不把怪物推入障碍）
+    if (this._collisionEngine && typeof this._collisionEngine.checkStaticCollision === 'function') {
+      if (this._collisionEngine.checkStaticCollision(tx, ty, { radius: 18 * this.dpr, footOffsetY: 36 * this.dpr })) {
+        return
+      }
+    }
+    // 地图边界：钳制在地图内（不把怪物推出地图外）
+    const mw = this.mapWidth || 6000 * this.dpr
+    const mh = this.mapHeight || 4000 * this.dpr
+    const margin = 30 * this.dpr
+    tx = Math.max(margin, Math.min(mw - margin, tx))
+    ty = Math.max(margin, Math.min(mh - margin, ty))
+    m.x = tx
+    m.y = ty
+  }
+
   // ★ 统一对怪物造成伤害：所有怪物扣血必须走此方法，并在此处聚焦目标面板
   //   （确保玩家手动攻击 / AI 队友攻击 / 技能 / 持续伤害 都让面板跟随当前交战的怪，
   //    解决"面板只随玩家手动锁定才更新、AI 输出时血条跳变无扣血效果"的问题）
-  proto._damageMonster = function(m, dmg) {
+  //   opts: { knockback?:boolean, fromX?, fromY?, knockbackDistance? } —— 直击类伤害传 knockback 触发受击轻推
+  proto._damageMonster = function(m, dmg, opts) {
     if (!m) return 0
     // ★ 隐身无敌（暗影突袭）：隐身期间完全免疫，不掉血、不被打断、不锁目标
     if (m._invisible) {
@@ -1257,6 +1313,12 @@ export function installFieldBattleSystem(FieldSceneClass) {
     m._hurtLock = Math.max(m._hurtLock || 0, 0.3)
     // ★ 非霸体施法被打断：怪物正在放非霸体技能时受到 HP 伤害，技能放不出来
     this._interruptCastingForMonster(m)
+    // ★ 受击击退：非霸体怪物被角色攻击命中时，朝远离攻击者方向轻推一点；
+    //   霸体 / 正在施放霸体技能 / 跳跃攻击 / 光明冲锋 的怪物免疫；
+    //   落点撞障碍则取消，越界则钳制在地图内（不把怪物推入墙 / 推出地图）。
+    if (opts && opts.knockback && opts.fromX != null) {
+      this._fieldKnockbackMonster(m, opts.fromX, (opts.fromY != null ? opts.fromY : 0), opts.knockbackDistance || 18)
+    }
     // ★ 记录"最近受伤的怪"：无论致死与否都记录，
     //   面板据此稳定锁定正在交战的怪，并能把残影追赶到 0（致死也显示完整扣血过程）
     this.battleSystem._lastDamagedMonster = m
@@ -1373,7 +1435,7 @@ export function installFieldBattleSystem(FieldSceneClass) {
         const dmg = Math.max(1, Math.floor(this._getHeroAtk(ctrl.hero) * power - Math.floor(m.def * 0.5)))
         const isCrit = Math.random() < (ctrl.hero.crit || 0.05)
         const finalDmg = isCrit ? Math.floor(dmg * 1.5) : dmg
-        this._damageMonster(m, finalDmg)
+        this._damageMonster(m, finalDmg, { knockback: true, fromX: cpos.x, fromY: cpos.y })
         this._pushDamageText(m, finalDmg, isCrit, '#fff0a0')
         if (m.hp <= 0) { m.alive = false; this.battleSystem.battleTarget = null }
       }
@@ -2320,11 +2382,16 @@ export function installFieldBattleSystem(FieldSceneClass) {
       // ★ 击退：沿释放者朝向 X 轴推开 KNOCK 像素
       m.x += dir * KNOCK
       console.log(`[FieldBattle] ${m.name} 被鸡腿击退 ${KNOCK}px（X 轴方向 ${dir}）`)
-      // 击退后做地形碰撞钳制，避免被推入墙内
-      if (this._collisionEngine && this._collisionEngine.clampToBounds) {
-        const c = this._collisionEngine.clampToBounds(m.x, m.y)
-        m.x = c.x
-        m.y = c.y
+      // 击退后做障碍/边界钳制：落点撞墙则回退本步击退；越界则钳制在地图内（不推出地图）
+      if (this._collisionEngine && typeof this._collisionEngine.checkStaticCollision === 'function'
+          && this._collisionEngine.checkStaticCollision(m.x, m.y, { radius: 18 * dpr, footOffsetY: 36 * dpr })) {
+        m.x -= dir * KNOCK
+      } else {
+        const mw = this.mapWidth || 6000 * dpr
+        const mh = this.mapHeight || 4000 * dpr
+        const margin = 30 * dpr
+        m.x = Math.max(margin, Math.min(mw - margin, m.x))
+        m.y = Math.max(margin, Math.min(mh - margin, m.y))
       }
     }
   }
@@ -2777,7 +2844,7 @@ export function installFieldBattleSystem(FieldSceneClass) {
             const isCrit = Math.random() < (p.hero.crit || 0.05)
             const dmg = Math.max(1, Math.floor(this._getHeroAtk(p.hero) * (p.power || 1.4) - Math.floor(m.def * 0.5)))
             const finalDmg = isCrit ? Math.floor(dmg * 1.5) : dmg
-            this._damageMonster(m, finalDmg)
+            this._damageMonster(m, finalDmg, { knockback: true, fromX: p.x, fromY: p.y })
             this._pushDamageText(m, finalDmg, isCrit, '#aee6ff')
             if (p._fx && p._fx.playHitEffect) {
               p._fx.playHitEffect('magic_impact', m.x, m.y - 30 * this.dpr, this.dpr, null, { world: true })
@@ -2808,7 +2875,7 @@ export function installFieldBattleSystem(FieldSceneClass) {
         } else {
           dmg = this._calcSkillDamageToMonster(hitMonster, p.skill, p.hero, isCrit)
         }
-        this._damageMonster(hitMonster, dmg)
+        this._damageMonster(hitMonster, dmg, { knockback: true, fromX: p.x, fromY: p.y })
         // ★ 命中打击感：顿帧 + 震屏 + 闪白
         this._onHitFeedback(hitMonster, isCrit, 'magic')
         // 灼烧状态（仅技能火球）
@@ -2978,7 +3045,7 @@ export function installFieldBattleSystem(FieldSceneClass) {
     for (const m of targets) {
       const isCrit = Math.random() < (p.hero.crit || 0.05)
       const dmg = this._calcSkillDamageToMonster(m, p.skill, p.hero, isCrit)
-      this._damageMonster(m, dmg)
+      this._damageMonster(m, dmg, { knockback: true, fromX: p.x, fromY: p.y })
       this._pushDamageText(m, dmg, isCrit, '#ffe066')
       // ★ 死亡判定：落雷把血量扣到 0 必须同步置 alive=false，
       //   否则怪物 hp=0 却仍被 AI/渲染当作存活（血条空着不判定死亡）。
@@ -3092,7 +3159,8 @@ export function installFieldBattleSystem(FieldSceneClass) {
               blade._hitSet.add(m.id)
               const isCrit = Math.random() < (p.hero.crit || 0.05)
               const dmg = this._calcSkillDamageToMonster(m, p.skill, p.hero, isCrit)
-              this._damageMonster(m, dmg)
+              const hpos = (p.hero && p.hero.getPos) ? p.hero.getPos() : { x: this.playerX, y: this.playerY }
+              this._damageMonster(m, dmg, { knockback: true, fromX: hpos.x, fromY: hpos.y })
               if (p.freeze) this._applyMonsterStatus(m, 'freeze', { duration: (p.skill.aoe && p.skill.aoe.freeze && p.skill.aoe.freeze.duration) || 2 }, p.hero)
               this._pushDamageText(m, dmg, isCrit, '#66ddff')
               if (fx && fx.playHitEffect) {
@@ -4074,6 +4142,8 @@ export function installFieldBattleSystem(FieldSceneClass) {
     // ★ 受击动画：普通受击 → hurt_01（被击飞由 _lightChargeImpact 调 _triggerHeroHurt(hero,true) 覆盖为 hurt_02）
     if (hpDamage > 0) {
       this._triggerHeroHurt(hero, false)
+      // ★ 受击泛红：身体瞬间泛红（渲染层读取 _hurtFlash 绘制半透明红覆盖）
+      hero._hurtFlash = 1
     }
     const screenX = (sx != null) ? sx : this.playerX
     const screenY = (sy != null) ? sy : this.playerY
@@ -4137,6 +4207,8 @@ export function installFieldBattleSystem(FieldSceneClass) {
     // ★ 受击动画：普通受击 → hurt_01（被击飞由 _lightChargeImpact 调 _triggerHeroHurt(hero,true) 覆盖为 hurt_02）
     if (hpDamage > 0) {
       this._triggerHeroHurt(hero, false)
+      // ★ 受击泛红：身体瞬间泛红（渲染层读取 _hurtFlash 绘制半透明红覆盖）
+      hero._hurtFlash = 1
     }
 
     // ★ 根据被攻击英雄的实际位置显示伤害数字
