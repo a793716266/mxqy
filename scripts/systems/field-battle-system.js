@@ -467,7 +467,9 @@ export function installFieldBattleSystem(FieldSceneClass) {
         this._updateBladeStorm(pa, dt)
         pa.timer -= dt
         if (pa.timer <= 0 && pa.phase !== 'finish') {
-          // 兜底：异常超时也清理
+          // 兜底：异常超时也清理（顺带解除霸体，避免残留）
+          const _saHero = this._getCurrentControlHero && this._getCurrentControlHero()
+          if (_saHero && _saHero.hero) _saHero.hero._castSuperArmor = false
           this.battleSystem.playerAnim = null
           const sp0 = this.mainCharacterSprite
           if (sp0) { sp0.state = 'idle'; sp0.animFrame = 0; sp0.animTimer = 0 }
@@ -477,6 +479,11 @@ export function installFieldBattleSystem(FieldSceneClass) {
         // ★ 盾击突进：在技能前段（lungeDuration 内）沿面向方向位移玩家，受障碍/边界钳制
         if (pa.lungeDist && !pa._lungeDone) this._applyShieldBashLunge(pa, dt)
       if (pa.timer <= 0) {
+        // ★ 修复：玩家霸体技能（盾击等）施法结束必须解除 _castSuperArmor，
+        //   否则 isHeroSuperArmor 永久为 true → 玩家永久霸体（免疫击飞/眩晕/全部控制）。
+        //   （剑气风暴由 _updateBladeStorm 收尾自行解除；此处覆盖通用技能/普攻分支）
+        const _saHero = pa.heroRef || (this._getCurrentControlHero && this._getCurrentControlHero())
+        if (_saHero && _saHero.hero) _saHero.hero._castSuperArmor = false
         // ★ 普攻输入缓冲：本击结束，若有缓存的普攻请求，下一帧立即接上
         if (this.battleSystem._bufferedAttack) {
           this.battleSystem._bufferedAttack = false
@@ -840,7 +847,8 @@ export function installFieldBattleSystem(FieldSceneClass) {
       type: animState,
       timer: animLen,
       maxTimer: animLen,
-      facing: monster ? Math.atan2(monster.y - pos0.y, monster.x - pos0.x) : 0
+      facing: monster ? Math.atan2(monster.y - pos0.y, monster.x - pos0.x) : 0,
+      heroRef: ctrl   // ★ 记录施法英雄(含 .hero 的包装)，供动画结束时复位其 _castSuperArmor（避免永久霸体）
     }
 
     // ★ 盾击突进（lunge）：释放瞬间朝面向方向位移一段（带霸体），受障碍/地图边界钳制

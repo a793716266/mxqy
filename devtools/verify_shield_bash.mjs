@@ -41,6 +41,7 @@ const scenesDir = path.resolve(projectRoot, 'scripts', 'scenes')
 const nodeRequire = createRequire(path.join(scenesDir, 'x.js'))
 globalThis.require = p => { const abs = p.startsWith('.') ? path.resolve(scenesDir, p) : p; return nodeRequire(abs) }
 const { FieldScene } = await import('../scripts/scenes/field-scene.js')
+const { isHeroSuperArmor } = await import('../scripts/systems/combat-state.js')
 
 let passed = 0, failed = 0
 const assert = (c, n, d) => { if (c) { passed++; console.log(`  ✓ ${n}`) } else { failed++; console.log(`  ✗ ${n}  ${d || ''}`) } }
@@ -143,6 +144,39 @@ scene._renderer2d5 = fakeEngine
 scene._renderYSortedEntities(fakeCtx)
 scene._renderer2d5 = realEngine
 assert(!captured.find(e => e.type === 'heroShieldBubble'), '护盾消失后不再渲染气泡实体')
+
+// ============ E. 霸体在动画结束后解除（修复永久霸体 → 永久免疫击飞/眩晕）============
+console.log('\n=== E. 盾击霸体在动画结束后解除（修复永久霸体）===')
+const monster2 = { id: 'm_sb2', name: '坏猫2', alive: true, enemyId: 'wild_cat', x: scene.playerX + 120 * dpr, y: scene.playerY, hp: 500, maxHp: 500, def: 5, atk: 10, level: 1, attackInterval: 9999, attackCDTimer: 9999 }
+scene.mapMonsters = [monster2]
+scene.facingLeft = false
+scene._playerAttackMonster(monster2, sbBtn.skill)
+assert(zhenbao._castSuperArmor === true, '释放瞬间霸体 true', `=${zhenbao._castSuperArmor}`)
+assert(isHeroSuperArmor({ hero: zhenbao }) === true, '释放期间 isHeroSuperArmor=true（霸体生效）')
+// 驱动 90 帧(1.5s) 超过动画时长(8*0.15=1.2s)，确保动画结束
+for (let f = 0; f < 90; f++) scene.update(1 / 60)
+assert(zhenbao._castSuperArmor === false, '动画结束后霸体标记解除（不再永久霸体）', `=${zhenbao._castSuperArmor}`)
+assert(sys.playerAnim === null, '动画结束后 playerAnim 已置空')
+assert(isHeroSuperArmor({ hero: zhenbao }) === false, 'isHeroSuperArmor 复位 false（光明冲锋可施加击飞/眩晕）')
+
+// ============ F. 艾米光明冲锋落地对「非霸体玩家」施加击飞+眩晕 ============
+console.log('\n=== F. 光明冲锋落地击飞+眩晕（非霸体时生效）===')
+if (!sys.damageTexts) sys.damageTexts = []
+const lcHero = sys.battleHeroes[0]
+zhenbao._castSuperArmor = false
+zhenbao._knockback = null
+zhenbao._stunned = 0
+const lcMonster = { name: '艾米', x: scene.playerX, y: scene.playerY, atk: 50, _atkMul: 1 }
+const lc = { skill: { power: 1, knockbackHeight: 70, stun: 1.0 }, targetX: scene.playerX, targetY: scene.playerY, aoeRadius: 120 * dpr }
+scene._lightChargeImpact(lcMonster, lc)
+assert(zhenbao._knockback != null, '非霸体时光明冲锋对玩家施加击飞', `kb=${zhenbao._knockback}`)
+assert(zhenbao._knockback && zhenbao._knockback.stunAfter > 0, '击飞附带眩晕时长(落地后硬直)', `stun=${zhenbao._knockback && zhenbao._knockback.stunAfter}`)
+// 复验：若玩家仍处于霸体（旧 bug 残留），应跳过击飞/眩晕
+zhenbao._knockback = null
+zhenbao._castSuperArmor = true
+scene._lightChargeImpact(lcMonster, lc)
+assert(zhenbao._knockback == null, '处于霸体时光明冲锋跳过击飞/眩晕（豁免逻辑正确）')
+zhenbao._castSuperArmor = false
 
 console.log(`\n=== 结果: ${passed} 通过, ${failed} 失败 ===`)
 process.exit(failed === 0 ? 0 : 1)
