@@ -9,6 +9,7 @@ import { HEROES } from '../data/heroes.js'
 import { getMapCollisionsSync } from '../data/map_collisions.js'
 import { isPointInObstacle as _isPointInGrasslandObstacle, generateGrasslandCollisions as _genGrassCollisions, GRASSLAND_MAP_CONFIG, GRASSLAND_MAP_OBJECTS, GLAND_OBJ_TYPE } from '../data/grassland-map-data.js'
 import { RENDER_LAYER, getRenderLayer, isSortableLayer } from '../data/render-layer-config.js'
+import { GRASSLAND_DUNGEON } from '../data/grassland-dungeon.js'
 import { charStateManager } from '../data/character-state.js'
 import { CharacterState } from '../data/character-state.js'
 import { CharacterInfoPanel } from '../ui/character-info-panel.js'
@@ -1230,7 +1231,15 @@ baseRadius: 50 * this.dpr,    // 底座半径（缩小）
     if (!this.mapMonsters || !Array.isArray(this.mapMonsters)) return
 
     for (const monster of this.mapMonsters) {
-      if (!monster.alive) continue
+      // ★ 击杀掉落：检测怪物「刚死亡」状态跳变（alive=false 且尚未结算），一次性触发。
+      //   覆盖所有击杀路径（普攻 / 技能 / AOE / 落雷），无需在每个 m.alive=false 处散点埋点。
+      if (!monster.alive) {
+        if (!monster._looted) {
+          monster._looted = true
+          this._rollMonsterDrop(monster)
+        }
+        continue
+      }
 
       // ★ 支持序列帧动画的怪物列表（使用 _renderCatMonster 渲染）
       const useCatAnim = ['slime_cat', 'shadow_mouse', 'wild_cat', 'lost_healer_cat', 'flame_slime', 'aqua_slime', 'violet_slime', 'shadow_mouse_smooth'].includes(monster.enemyId)
@@ -3041,9 +3050,59 @@ baseRadius: 50 * this.dpr,    // 底座半径（缩小）
   
   _collectObject(obj) {
     obj.collected = true
-    const gold = 10 + Math.floor(Math.random() * 20)
-    this.game.data.set('gold', (this.game.data.get('gold') || 100) + gold)
+    // ★ 宝箱奖励改为读配置（chestReward），并统一走 _addGold（'gold' 字段）
+    const cr = (GRASSLAND_DUNGEON.chestReward && GRASSLAND_DUNGEON.chestReward.gold) || { min: 10, max: 29 }
+    const gold = cr.min + Math.floor(Math.random() * (cr.max - cr.min + 1))
+    this._addGold(gold)
+    if (this.game.showToast) this.game.showToast(`💰 宝箱获得 ${gold} 金币`)
     console.log(`[Field] 收集宝箱获得 ${gold} 金币`)
+  }
+
+  /**
+   * ★ 统一金币入账：写入 data 的 'gold' 字段（映射 player.gold，HUD / 其它系统均读取它）
+   * 取代各处散落的 this.game.data.set('gold', ...) 与孤立的 'coins' 字段。
+   */
+  _addGold(amount) {
+    if (!amount || !this.game || !this.game.data) return
+    const cur = (this.game.data.get && this.game.data.get('gold')) || 0
+    this.game.data.set('gold', cur + amount)
+  }
+
+  /**
+   * ★ 素材入账：素材库存存于 data 的 'materials'（{ id: count }）
+   */
+  _addMaterial(id, count) {
+    if (!id || !count || !this.game || !this.game.data) return
+    const mats = (this.game.data.get && this.game.data.get('materials')) || {}
+    mats[id] = (mats[id] || 0) + count
+    this.game.data.set('materials', mats)
+  }
+
+  /**
+   * ★ 击杀掉落：按怪物 enemyId 查 GRASSLAND_DUNGEON.lootTable 掷骰。
+   * 由 _updateMonsters 在怪物「刚死亡」时调用一次（monster._looted 守卫）。
+   */
+  _rollMonsterDrop(monster) {
+    if (!monster || !GRASSLAND_DUNGEON.lootTable) return
+    const table = GRASSLAND_DUNGEON.lootTable[monster.enemyId]
+    if (!table || !table.length) return
+    const parts = []
+    for (const entry of table) {
+      if (entry.rate != null && Math.random() > entry.rate) continue
+      if (entry.type === 'gold') {
+        const amt = entry.min + Math.floor(Math.random() * (entry.max - entry.min + 1))
+        this._addGold(amt)
+        parts.push(`💰+${amt}`)
+      } else if (entry.type === 'material') {
+        const c = entry.count || 1
+        this._addMaterial(entry.id, c)
+        parts.push(`🧪${entry.id}×${c}`)
+      }
+    }
+    if (parts.length && this.game.showToast) {
+      this.game.showToast(`击败 ${monster.name}：${parts.join('  ')}`)
+    }
+    console.log(`[Field] ${monster.name}(${monster.enemyId}) 掉落: ${parts.join('  ') || '无'}`)
   }
 
   /**
@@ -4217,11 +4276,19 @@ baseRadius: 50 * this.dpr,    // 底座半径（缩小）
       this.dungeonCleared = true
       this.showDungeonClear = true
       this.dungeonClearTimer = 3.5
-      // 奖励：金币（game.data 持久化，HUD 暂未展示，向前兼容）
-      const reward = this.dungeonReward || 80
-      const coins = (this.game.data.get('coins') || 0) + reward
-      this.game.data.set('coins', coins)
+      // 奖励：金币（统一走 'gold' 字段，HUD / 击杀 / 战斗奖励均读取它；
+      // 原 'coins' 字段为孤儿，无人读取，会导致通关奖励丢失）
+      const reward = (GRASSLAND_DUNGEON.clearReward && GRASSLAND_DUNGEON.clearReward.coins) ?? (this.dungeonReward || 80)
+      this._addGold(reward)
       this.game.data.set(`dungeon_cleared_${this.areaId}`, true)
+      // ★ 通关解锁角色（GDD：第一章通关解锁艾米）。仅阳光草原触发本配置的解锁。
+      if (this.areaId === 'grassland' && GRASSLAND_DUNGEON.clearReward && GRASSLAND_DUNGEON.clearReward.unlocks) {
+        for (const hid of GRASSLAND_DUNGEON.clearReward.unlocks) {
+          const ok = charStateManager.unlockCharacter(hid)
+          if (ok && this.game.showToast) this.game.showToast(`✨ ${hid} 加入队伍！`)
+          console.log(`[Field] 副本通关解锁角色: ${hid} (${ok ? '成功' : '已存在'})`)
+        }
+      }
       // 清掉怪物存档，下次进入重新生成（可重复挑战）
       this.game.data.set(`fieldMonsters_${this.areaId}`, null)
       // 切换胜利 BGM + 金币音效（兼容测试 mock：方法可能不存在）
