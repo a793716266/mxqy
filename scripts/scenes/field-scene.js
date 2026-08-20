@@ -257,7 +257,8 @@ export class FieldScene extends SceneBase {
         fieldBg: null, // 程序化渲染（grassland-map-data.js）
         battleBg: 'BG_GRASSLAND', // 战斗背景
         enemies: ['wild_cat', 'slime_cat', 'shadow_mouse', 'flame_slime', 'aqua_slime', 'violet_slime', 'shadow_mouse_smooth'],
-        bossEnemy: 'lost_healer_cat',  // 添加Boss
+        bossEnemy: 'dark_cat_king',  // 第一章代表 Boss：暗影猫王（替换偏弱的治疗猫）
+        bossLevel: 5,               // 显式覆盖 dark_cat_king 自带的 level 10，避免 HP 按 10 级缩放膨胀
         enemyData: ENEMIES_CH1,  // 敌人数据源
         color: '#5daE4a',
         minEnemies: 1,  // 最少敌人数量
@@ -413,6 +414,7 @@ export class FieldScene extends SceneBase {
     if (this.areaInfo.bossEnemy) {
       const bossId = this.areaInfo.bossEnemy
       const bossData = (this.areaInfo.enemyData || ENEMIES_CH1)[bossId]
+      this.bossDisplayName = bossData ? bossData.name : '首领'
       
       // 检查Boss是否已被击败
       const bossFlag = `${this.areaId}_${bossId}_defeated`
@@ -422,8 +424,8 @@ export class FieldScene extends SceneBase {
         const bossY = this.mapHeight * 0.08
         
         
-        // ★ 使用 getEnemyByLevel 计算最终属性
-        const finalBossData = getEnemyByLevel(bossData, bossData?.level || 5)
+        // ★ 使用 getEnemyByLevel 计算最终属性（bossLevel 显式覆盖自带 level，避免缩放膨胀）
+        const finalBossData = getEnemyByLevel(bossData, this.areaInfo.bossLevel || bossData.level || 5)
 
         // ★ 标准化技能数据
         const normalizedBossSkills = this._normalizeMonsterSkills(finalBossData.skills, bossId)
@@ -3050,12 +3052,25 @@ baseRadius: 50 * this.dpr,    // 底座半径（缩小）
   
   _collectObject(obj) {
     obj.collected = true
-    // ★ 宝箱奖励改为读配置（chestReward），并统一走 _addGold（'gold' 字段）
-    const cr = (GRASSLAND_DUNGEON.chestReward && GRASSLAND_DUNGEON.chestReward.gold) || { min: 10, max: 29 }
-    const gold = cr.min + Math.floor(Math.random() * (cr.max - cr.min + 1))
-    this._addGold(gold)
-    if (this.game.showToast) this.game.showToast(`💰 宝箱获得 ${gold} 金币`)
-    console.log(`[Field] 收集宝箱获得 ${gold} 金币`)
+    // ★ 宝箱奖励读配置（chestReward.entries），按 type 结算：
+    //   gold     → _addGold（写入 'gold' 字段）
+    //   material → _addMaterial（写入 data.materials 库存）
+    const entries = (GRASSLAND_DUNGEON.chestReward && GRASSLAND_DUNGEON.chestReward.entries) || []
+    const msgs = []
+    for (const entry of entries) {
+      const rate = entry.rate != null ? entry.rate : 1
+      if (Math.random() > rate) continue
+      if (entry.type === 'gold') {
+        const g = (entry.min || 0) + Math.floor(Math.random() * ((entry.max || 0) - (entry.min || 0) + 1))
+        if (g > 0) { this._addGold(g); msgs.push(`💰 ${g} 金币`) }
+      } else if (entry.type === 'material') {
+        const cnt = entry.count || 1
+        this._addMaterial(entry.id, cnt)
+        msgs.push(`🧪 ${entry.id} ×${cnt}`)
+      }
+    }
+    if (msgs.length && this.game.showToast) this.game.showToast(`宝箱获得：${msgs.join('，')}`)
+    console.log(`[Field] 收集宝箱获得：${msgs.join('，')}`)
   }
 
   /**
@@ -4226,21 +4241,27 @@ baseRadius: 50 * this.dpr,    // 底座半径（缩小）
     const killed = total - alive
     const ratio = total > 0 ? Math.max(0, Math.min(1, killed / total)) : 1
 
+    // ★ 首领状态（阳光草原等副本含 Boss）
+    const bossTotal = this.mapMonsters.filter(m => m.isBoss).length
+    const bossAlive = this.mapMonsters.filter(m => m.isBoss && m.alive).length
+    const bossDefeated = bossTotal > 0 && bossAlive === 0
+
     const w = Math.min(360 * dpr, this.width * 0.82)
     const x = (this.width - w) / 2
     const y = 16 * dpr
-    const h = 34 * dpr
+    const lineH = 17 * dpr
+    const h = 34 * dpr + (bossTotal > 0 ? lineH : 0)
     ctx.save()
     // 背板
     ctx.fillStyle = 'rgba(0,0,0,0.42)'
     this._roundRect(ctx, x, y, w, h, 8 * dpr)
     ctx.fill()
-    // 标题
+    // 标题（清剿进度）
     ctx.textAlign = 'center'
     ctx.textBaseline = 'middle'
     ctx.font = `bold ${14 * dpr}px sans-serif`
     ctx.fillStyle = '#ffe9a8'
-    ctx.fillText(`🗺️ 副本目标：清剿阳光草原  ${killed}/${total}`, x + w / 2, y + 12 * dpr)
+    ctx.fillText(`🗺️ 清剿进度  ${killed}/${total}`, x + w / 2, y + 12 * dpr)
     // 进度条
     const barX = x + 14 * dpr
     const barY = y + h - 11 * dpr
@@ -4252,7 +4273,31 @@ baseRadius: 50 * this.dpr,    // 底座半径（缩小）
     ctx.fillStyle = '#4caf50'
     this._roundRect(ctx, barX, barY, Math.max(barH, barW * ratio), barH, 3 * dpr)
     ctx.fill()
+    // 首领状态行
+    if (bossTotal > 0) {
+      ctx.font = `bold ${13 * dpr}px sans-serif`
+      ctx.fillStyle = bossDefeated ? '#7cff7c' : '#ff8a8a'
+      ctx.fillText(bossDefeated ? `👑 首领已击败` : `👑 击败 ${this.bossDisplayName || '首领'}`, x + w / 2, y + 26 * dpr)
+    }
     ctx.restore()
+
+    // ★ 接近首领提示（仅在首领存活时）
+    if (!bossDefeated && this.playerX != null) {
+      const boss = this.mapMonsters.find(m => m.isBoss && m.alive)
+      if (boss) {
+        const dx = this.playerX - boss.x
+        const dy = this.playerY - boss.y
+        if (Math.sqrt(dx * dx + dy * dy) < 300 * dpr) {
+          ctx.save()
+          ctx.textAlign = 'center'
+          ctx.textBaseline = 'middle'
+          ctx.font = `bold ${16 * dpr}px sans-serif`
+          ctx.fillStyle = 'rgba(255,90,90,0.95)'
+          ctx.fillText(`⚔️ ${boss.name || '首领'}就在附近！`, this.width / 2, this.height - 120 * dpr)
+          ctx.restore()
+        }
+      }
+    }
   }
 
   /**
@@ -5784,6 +5829,16 @@ baseRadius: 50 * this.dpr,    // 底座半径（缩小）
     const playerLogicX = Math.floor(this.playerX / this.dpr)
     const playerLogicY = Math.floor(this.playerY / this.dpr)
     ctx.fillText(`坐标: (${playerLogicX}, ${playerLogicY})`, this.width - 20 * this.dpr, 45 * this.dpr)
+
+    // ★ 金币常驻显示（读取 data 的 'gold' 字段，让玩家资产可见）
+    const goldNow = (this.game.data.get && this.game.data.get('gold')) || 0
+    ctx.save()
+    ctx.textAlign = 'right'
+    ctx.textBaseline = 'middle'
+    ctx.fillStyle = '#ffd86b'
+    ctx.font = `bold ${18 * this.dpr}px sans-serif`
+    ctx.fillText(`💰 ${goldNow}`, this.width - 20 * this.dpr, 65 * this.dpr)
+    ctx.restore()
   }
   
   _renderJoystick(ctx) {

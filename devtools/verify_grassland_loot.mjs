@@ -19,7 +19,7 @@ function check(name, cond, extra = '') {
 
 // 草原真实敌人池 + Boss（取自 field-scene _getAreaInfo）
 const GRASSLAND_ENEMIES = ['wild_cat', 'slime_cat', 'shadow_mouse', 'flame_slime', 'aqua_slime', 'violet_slime', 'shadow_mouse_smooth']
-const GRASSLAND_BOSS = 'lost_healer_cat'
+const GRASSLAND_BOSS = 'dark_cat_king'
 
 console.log('\n[1] 掉落表覆盖校验')
 const pool = [...GRASSLAND_ENEMIES, GRASSLAND_BOSS]
@@ -82,14 +82,39 @@ Math.random = _rng
 
 check('slime_cat 掉落写入的是 gold 字段（非孤立 coins）', data.get('gold') > 0 && data.get('materials') != null)
 
-console.log('\n[3] 宝箱奖励区间（镜像 _collectObject + chestReward）')
-const cr = (GRASSLAND_DUNGEON.chestReward && GRASSLAND_DUNGEON.chestReward.gold) || { min: 10, max: 29 }
-let chestOk = true
-for (let i = 0; i < 100; i++) {
-  const g = cr.min + Math.floor(Math.random() * (cr.max - cr.min + 1))
-  if (g < 10 || g > 29) chestOk = false
+console.log('\n[3] 宝箱奖励多样化（镜像 _collectObject + chestReward.entries）')
+const cr = GRASSLAND_DUNGEON.chestReward
+check('chestReward.entries 为多条目数组', Array.isArray(cr.entries) && cr.entries.length >= 2)
+check('宝箱含金币条目', cr.entries.some(e => e.type === 'gold' && e.min && e.max))
+check('宝箱含素材条目', cr.entries.some(e => e.type === 'material' && e.id))
+
+// 镜像 field-scene._collectObject 的 entries 结算逻辑
+function collectChest(data) {
+  const entries = (GRASSLAND_DUNGEON.chestReward && GRASSLAND_DUNGEON.chestReward.entries) || []
+  for (const entry of entries) {
+    const rate = entry.rate != null ? entry.rate : 1
+    if (Math.random() > rate) continue
+    if (entry.type === 'gold') {
+      const g = (entry.min || 0) + Math.floor(Math.random() * ((entry.max || 0) - (entry.min || 0) + 1))
+      if (g > 0) { const cur = data.get('gold') || 0; data.set('gold', cur + g) }
+    } else if (entry.type === 'material') {
+      const c = entry.count || 1
+      const mats = data.get('materials') || {}
+      mats[entry.id] = (mats[entry.id] || 0) + c
+      data.set('materials', mats)
+    }
+  }
 }
-check('宝箱金币在 [10,29]', chestOk)
+// 真随机跑 300 次统计：金币入账、素材掉落是否发生
+const d3 = makeMockData()
+let goldSeen = false, matSeen = false
+for (let i = 0; i < 300; i++) {
+  collectChest(d3)
+  if (d3.get('gold') > 0) goldSeen = true
+  if (Object.keys(d3.get('materials') || {}).length > 0) matSeen = true
+}
+check('宝箱金币可入账（gold 字段）', goldSeen)
+check('宝箱素材可掉落（materials 库存）', matSeen)
 
 console.log('\n[4] 通关奖励 + 艾米解锁链路（真实 charStateManager）')
 const data2 = makeMockData()

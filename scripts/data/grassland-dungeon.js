@@ -76,8 +76,13 @@ export const GRASSLAND_DUNGEON = {
     unlocks: ['amy'],
   },
 
-  /** 宝箱奖励 */
+  /** 宝箱奖励（多条目，按 rate 概率结算；type: gold 走 _addGold，material 走 _addMaterial） */
   chestReward: {
-    gold: { min: 10, max: 29 },
+    entries: [
+      { type: 'gold', min: 20, max: 50, rate: 1.0 },
+      { type: 'material', id: 'slime_gel', count: 1, rate: 0.4 },
+      { type: 'material', id: 'shadow_dust', count: 1, rate: 0.3 },
+      { type: 'material', id: 'flame_core', count: 1, rate: 0.25 },
+    ],
   },
 }

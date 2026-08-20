@@ -548,6 +548,9 @@ export class TownScene {
     
     this._renderTestLogs(ctx)
 
+    // ★ 金币顶栏（常驻显示玩家金币）
+    this._renderTopBar(ctx)
+
     // 调试坐标显示（用于调整资源位置）
     this._renderDebugCoords(ctx)
   }
@@ -918,6 +921,12 @@ export class TownScene {
         ctx.textAlign = 'right'
         ctx.fillText('🔒', btnX + btnW - 15 * this.dpr, btnY + 38 * this.dpr)
       }
+      // ★ 已通关标记（消费 dungeon_cleared_grassland flag，原只写不读，现形成闭环）
+      if (dungeon.id === 'grassland' && this.game.data.get('dungeon_cleared_grassland')) {
+        ctx.font = `${22 * this.dpr}px sans-serif`
+        ctx.textAlign = 'right'
+        ctx.fillText('✅ 已通关', btnX + btnW - 15 * this.dpr, btnY + 38 * this.dpr)
+      }
     }
     
     // 测试按钮
@@ -979,6 +988,26 @@ export class TownScene {
    * 渲染调试坐标信息（用于调整资源位置）
    * 显示玩家当前世界坐标和触摸位置的世界坐标
    */
+  _renderTopBar(ctx) {
+    const dpr = this.dpr
+    ctx.save()
+    // 半透明背景条（右上角）
+    ctx.fillStyle = 'rgba(0,0,0,0.5)'
+    const bw = 150 * dpr
+    const bh = 40 * dpr
+    const bx = this.width - bw - 12 * dpr
+    const by = 12 * dpr
+    ctx.fillRect(bx, by, bw, bh)
+    // 金币（读取 data 的 'gold' 字段）
+    const gold = (this.game.data.get && this.game.data.get('gold')) || 0
+    ctx.textAlign = 'center'
+    ctx.textBaseline = 'middle'
+    ctx.fillStyle = '#ffd86b'
+    ctx.font = `bold ${20 * dpr}px sans-serif`
+    ctx.fillText(`💰 ${gold}`, bx + bw / 2, by + bh / 2)
+    ctx.restore()
+  }
+
   _renderDebugCoords(ctx) {
     const dpr = this.dpr
     const pad = 12 * dpr
