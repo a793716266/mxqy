@@ -198,6 +198,7 @@ const m3 = { id: 'm_sb3', name: '坏猫3', alive: true, enemyId: 'wild_cat', x: 
 scene.mapMonsters = [m3]
 sys.battleTarget = m3          // 重新锁定目标
 scene.facingLeft = false
+scene._updateCamera = function() {}   // 钉住相机：突进起手即结算，避免相机跟随突进移动导致飘字世界坐标还原偏差（专验落点语义）
 const m3x0 = m3.x
 scene._playerAttackMonster(m3, sbBtn.skill)
 // 驱动 40 帧(≈0.67s) 越过突进0.18s + 命中延迟0.4s，确保 _applyShieldBashEffects 击退 + 主伤害结算都完成

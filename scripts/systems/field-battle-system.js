@@ -525,12 +525,6 @@ export function installFieldBattleSystem(FieldSceneClass) {
         if (pd.timer <= 0) {
           // 命中帧到达，结算伤害
           const m = pd.monster
-          // ★ 盾击：先把敌人往前撞（击退）到位移终点，让伤害在敌人停下的位置结算。
-          //   提前到主伤害之前：_applyShieldBashEffects 内部沿朝向推开前方敌人（含主目标 m），
-          //   之后 _damageMonster 用 m 当前坐标（=击退终点）飘字 → 「在停下的位置造成伤害」。
-          if (pd.shieldBash && pd.hero) {
-            this._applyShieldBashEffects(m || null, pd.hero, pd.skill)
-          }
           if (m && m.alive) {
             const dealt = this._damageMonster(m, pd.damage, {
               knockback: !pd.shieldBash,  // ★ 盾击已有专门击退，避免与 _applyShieldBashEffects 双重轻推
@@ -860,6 +854,13 @@ export function installFieldBattleSystem(FieldSceneClass) {
       pa2.lungeDuration = 0.18
       pa2.lungeElapsed = 0
       pa2._lungeDone = false
+      // ★ 起手撞击数据：突进第一帧据此对前方怪物一次性结算（击退+伤害同步）
+      pa2.skill = skill
+      pa2.monster = monster            // 主目标（被盾牌正面撞中的对象）
+      pa2.impactOriginX = pos0.x       // 起手位置（突进前），作为击退/范围基准，避免突进越过怪物后基准反转导致击退失效
+      pa2.impactOriginY = pos0.y
+      pa2.impactDir = ldir
+      pa2._shieldImpactPending = true
       // ★ 突进期间完全锁摇杆（X+Y），避免与玩家输入抢位移；霸体保证不被打断
       this.battleSystem.castLockTimer = Math.max(this.battleSystem.castLockTimer || 0, pa2.lungeDuration)
     }
@@ -1064,6 +1065,15 @@ export function installFieldBattleSystem(FieldSceneClass) {
     const debuff = (skill && skill.type === 'debuff')
       ? { type: 'atk_down', value: (skill.value || 0.3), duration: (skill.turns || 3) }
       : null
+    // ★ 盾击：不在延迟队列结算——突进起手第一帧由 _doShieldBashImpact 一次性结算（击退+伤害同步），
+    //   彻底规避"突进越过怪物后基准反转→击退完全失效"的旧 bug，并满足"起手就把怪撞飞"手感。
+    if (skill && skill.id === 'shield_bash') {
+      if (this.battleSystem.skillButtons) {
+        const sb = this.battleSystem.skillButtons.find(b => b.skill === skill)
+        if (sb) { sb.cooldown = (skill.cooldown || 3) * 1000; sb.cooldownMax = sb.cooldownMax || sb.cooldown }
+      }
+      return
+    }
     const allTarget = !!(skill && skill.target === 'all')
     this.battleSystem.pendingDamages.push({
       monster: monster,
@@ -1311,6 +1321,15 @@ export function installFieldBattleSystem(FieldSceneClass) {
   //   越出地图 → 钳制在边界内（不推出地图）。突进期间由 castLockTimer 全锁，不与摇杆抢位移。
   proto._applyShieldBashLunge = function(pa, dt) {
     if (!pa || !pa.lungeDist || pa._lungeDone) return
+    // ★ 盾击起手撞击：突进第一帧（玩家尚未位移）即对前方怪物击退+伤害，
+    //   击退与盾牌命中同步发生（满足"突进起手就把怪撞飞、击退正好被盾牌击中造成伤害"）。
+    if (pa._shieldImpactPending) {
+      pa._shieldImpactPending = false
+      const impHero = pa.heroRef && pa.heroRef.hero
+      if (impHero && pa.skill) {
+        this._doShieldBashImpact(impHero, pa.skill, pa.monster, pa.impactOriginX, pa.impactOriginY, pa.impactDir)
+      }
+    }
     pa.lungeElapsed = (pa.lungeElapsed || 0) + dt
     const dur = pa.lungeDuration || 0.18
     const total = pa.lungeDist
@@ -2239,6 +2258,9 @@ export function installFieldBattleSystem(FieldSceneClass) {
         isBasicAttack: false,
         _hitSet: new Set()
       })
+    } else if (skill && skill.id === 'shield_bash') {
+      // ★ AI 盾击：施法起手瞬间撞击（击退+伤害同步），不进延迟队列（与被控角色一致）
+      this._doShieldBashImpact(hero, skill, monster, cpos.x, cpos.y, castDir)
     } else {
       const damage = Math.max(1, Math.floor(this._getHeroAtk(hero) * (skill.power || 1) - Math.floor(monster.def * 0.5)))
       const isCrit = Math.random() < (hero.crit || 0.05)
@@ -2253,7 +2275,6 @@ export function installFieldBattleSystem(FieldSceneClass) {
         effectValue: skill.effectValue,
         hero: hero,  // ★ AI 盾击同样需要引用释放者生成护盾/防御提升
         skill: skill,  // ★ AI 盾击读取技能配置
-        shieldBash: skill && skill.id === 'shield_bash',  // ★ AI 盾击附加效果标记（与被控角色一致）
       })
     }
 
@@ -2467,10 +2488,23 @@ export function installFieldBattleSystem(FieldSceneClass) {
    *   @param {Object} hero 技能释放者（臻宝）
    *   @param {Object} skill 技能配置（含 shield/defUp/knock 子配置）
    */
-  proto._applyShieldBashEffects = function(primaryTarget, hero, skill) {
-    if (!hero) return
+  /**
+   * ★ 盾击起手撞击：突进第一帧（或被控/AI 施法起手瞬间）一次性结算「击退 + 伤害」（两者同步）。
+   *   —— 满足"突进起手就把怪物击退，击退正好被盾牌击中造成伤害"。
+   *   originX/originY 必须是【施法起手时的玩家位置】（突进前），dir 为施法朝向(±1)，
+   *   以此作为击退/范围基准，避免突进越过怪物后基准反转导致击退完全失效（旧 bug 根因）。
+   *   主目标（被盾牌正面撞中的对象）无条件击退；其他敌人仅前方 RANGE 内才被波及。
+   * @param {Object} hero 释放者（生成护盾/防御提升/计算伤害）
+   * @param {Object} skill 盾击技能配置（shield/defUp/knock 三段）
+   * @param {Object} primaryTarget 锁定主目标（可空）
+   * @param {number} originX 起手位置世界X
+   * @param {number} originY 起手位置世界Y
+   * @param {number} dir 朝向（1=右，-1=左）
+   */
+  proto._doShieldBashImpact = function(hero, skill, primaryTarget, originX, originY, dir) {
+    if (!hero || !skill) return
     const dpr = this.dpr || 1
-    const cfg = skill || {}
+    const cfg = skill
 
     // ★ 1) 自身护盾：配置 shield.hpPercent（默认 0.30），英雄联盟式白色护盾，释放即出现，持续 duration 秒后自动消失
     const shieldCfg = cfg.shield || {}
@@ -2482,66 +2516,80 @@ export function installFieldBattleSystem(FieldSceneClass) {
       hero._shieldMax = shieldVal
       hero._shieldTimer = shDur   // ★ 护盾持续时间（秒）：每帧衰减，归零自动清空护盾（与是否被攻击无关）
       if (typeof this._refreshCharCard === 'function') this._refreshCharCard(hero)
-      console.log(`[FieldBattle] ${hero.name} 盾击生成护盾 ${shieldVal}（${Math.round(hpPct * 100)}% 生命），持续 ${shDur}s`)
     }
 
-    // ★ 2) 防御提升：配置 defUp.amp（默认 0.70）/ duration（默认 1.0s），复用 def_up_self buff
-    //   ★ 重点：必须用 _addHeroBuff 添加，确保设置 _active:true / _remaining / _color，
-    //   否则 _getHeroDef（要求 b._active）不生效、角色卡也不显示增益（之前直接 push 缺 _active 导致防御加成完全不体现）。
+    // ★ 2) 防御提升：配置 defUp.amp/duration，复用 def_up_self buff（必须 _addHeroBuff 确保 _active 生效）
     const defCfg = cfg.defUp || {}
     if (defCfg.enabled !== false && (defCfg.amp != null || defCfg.value != null)) {
       const amp = (defCfg.amp != null) ? defCfg.amp : (defCfg.value || 0)
       const dur = (defCfg.duration != null) ? defCfg.duration : 1.0
       this._addHeroBuff(hero, { type: 'def_up_self', value: amp, duration: dur, source: 'shield_bash' })
       hero._defUpTimer = Math.max(hero._defUpTimer || 0, dur)
-      console.log(`[FieldBattle] ${hero.name} 盾击防御提升 +${Math.round(amp * 100)}%（${dur}s）`)
     }
 
-    // ★ 3) 前方 X 轴方向：以释放者朝向决定（this.facingLeft 由摇杆实时更新）
+    // ★ 3) 前方敌人集合 + 击退 + 伤害（击退与盾牌命中同步在落点结算）
     const knockCfg = cfg.knock || {}
     if (knockCfg.enabled === false) return
     const RANGE = ((knockCfg.range != null) ? knockCfg.range : 60) * dpr      // 前方 X 轴生效范围
-    const KNOCK = ((knockCfg.distance != null) ? knockCfg.distance : 100) * dpr // 鸡腿击退距离
+    const KNOCK = ((knockCfg.distance != null) ? knockCfg.distance : 50) * dpr // 击退距离
     const STUN_CHANCE = (knockCfg.stunChance != null) ? knockCfg.stunChance : 0.30
     const STUN_DUR = (knockCfg.stunDuration != null) ? knockCfg.stunDuration : 1.0
 
-    const dir = this.facingLeft ? -1 : 1
-    const originX = hero.x != null ? hero.x : (primaryTarget ? primaryTarget.x : 0)
-    const originY = hero.y != null ? hero.y : (primaryTarget ? primaryTarget.y : 0)
+    const d = (dir != null) ? dir : 1
+    const ox = (originX != null) ? originX : (hero.x != null ? hero.x : 0)
+    const oy = (originY != null) ? originY : (hero.y != null ? hero.y : 0)
 
-    // 作用对象：主要目标 + 前方 X 轴范围内所有敌人
-    const targets = []
-    const addTarget = (m) => {
-      if (!m || !m.alive) return
-      const dx = (m.x - originX) * dir   // 朝向前方为正
-      const dy = Math.abs(m.y - originY)
-      // X 轴方向在前方 RANGE 内，且 Y 轴大致同一层（避免越层误击退）
-      if (dx >= 0 && dx <= RANGE && dy <= 60 * dpr) {
-        if (!targets.includes(m)) targets.push(m)
-      }
+    // ★ 盾击伤害（与普攻/技能公式一致：atk*power - def*0.5，暴击×1.5）
+    const calcDmg = (m) => {
+      const base = Math.max(1, Math.floor(this._getHeroAtk(hero) * (skill.power || 1) - Math.floor((m.def || 0) * 0.5)))
+      const isCrit = Math.random() < (hero.crit || 0.05)
+      return { dmg: isCrit ? Math.floor(base * 1.5) : base, isCrit }
     }
-    if (primaryTarget) addTarget(primaryTarget)
-    for (const m of this.mapMonsters || []) addTarget(m)
+
+    // 作用对象：主目标（被撞对象，无条件）+ 前方 RANGE 内同层敌人
+    const targets = []
+    const consider = (m) => {
+      if (!m || !m.alive || targets.includes(m)) return
+      if (m === primaryTarget) { targets.push(m); return }   // ★ 主目标必退（不依赖范围，避免锁定的怪因距离被漏掉）
+      const dx = (m.x - ox) * d   // 朝向前方为正
+      const dy = Math.abs(m.y - oy)
+      if (dx >= 0 && dx <= RANGE && dy <= 60 * dpr) targets.push(m)
+    }
+    if (primaryTarget) consider(primaryTarget)
+    for (const m of this.mapMonsters || []) consider(m)
 
     for (const m of targets) {
       // ★ 眩晕：STUN_CHANCE 几率，持续 STUN_DUR
-      if (Math.random() < STUN_CHANCE) {
-        m._stunned = Math.max(m._stunned || 0, STUN_DUR)
-        console.log(`[FieldBattle] ${m.name} 被盾击眩晕 ${STUN_DUR}s`)
-      }
-      // ★ 击退：沿释放者朝向 X 轴推开 KNOCK 像素
-      m.x += dir * KNOCK
-      console.log(`[FieldBattle] ${m.name} 被鸡腿击退 ${KNOCK}px（X 轴方向 ${dir}）`)
-      // 击退后做障碍/边界钳制：落点撞墙则回退本步击退；越界则钳制在地图内（不推出地图）
+      if (Math.random() < STUN_CHANCE) m._stunned = Math.max(m._stunned || 0, STUN_DUR)
+      // ★ 击退：沿朝向把敌人推 KNOCK（落点钳制障碍/边界）
+      m.x += d * KNOCK
       if (this._collisionEngine && typeof this._collisionEngine.checkStaticCollision === 'function'
           && this._collisionEngine.checkStaticCollision(m.x, m.y, { radius: 18 * dpr, footOffsetY: 36 * dpr })) {
-        m.x -= dir * KNOCK
+        m.x -= d * KNOCK
       } else {
         const mw = this.mapWidth || 6000 * dpr
         const mh = this.mapHeight || 4000 * dpr
         const margin = 30 * dpr
         m.x = Math.max(margin, Math.min(mw - margin, m.x))
         m.y = Math.max(margin, Math.min(mh - margin, m.y))
+      }
+      // ★ 伤害在落点结算（盾牌击中）：飘字用敌人当前坐标（=击退落点），击退已由本函数完成故不再传 knockback 双重轻推
+      const res = calcDmg(m)
+      const dealt = this._damageMonster(m, res.dmg, { knockback: false, fromX: ox, fromY: oy })
+      if (dealt > 0) {
+        if (typeof this._onHitFeedback === 'function') this._onHitFeedback(m, res.isCrit, 'slash')
+        if (!this.battleSystem.damageTexts) this.battleSystem.damageTexts = []
+        const sx = m.x - this.cameraX
+        const sy = m.y - this.cameraY
+        this.battleSystem.damageTexts.push({
+          text: `-${res.dmg}${res.isCrit ? '!' : ''}`,
+          x: sx,
+          y: sy - 40 * this.dpr,
+          color: res.isCrit ? '#FFD700' : '#ff4757',
+          life: 1.0, maxLife: 1.0,
+          _startY: sy - 40 * this.dpr,
+          isCrit: res.isCrit
+        })
       }
     }
   }
