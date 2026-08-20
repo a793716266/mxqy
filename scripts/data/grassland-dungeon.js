@@ -50,12 +50,9 @@ export const GRASSLAND_DUNGEON = {
       { type: 'gold', min: 6, max: 14, rate: 1.0 },
       { type: 'material', id: 'violet_petal', count: 1, rate: 0.45 },
     ],
-    // 草原 Boss：lost_healer_cat（治疗猫，章节代表 Boss）
-    lost_healer_cat: [
-      { type: 'gold', min: 20, max: 40, rate: 1.0 },
-      { type: 'material', id: 'healer_herb', count: 1, rate: 0.7 },
-    ],
-    // 其它区域 Boss（forest/cave），保留以便复用
+    // 草原 Boss 为 dark_cat_king（暗影猫王，见下方 bossStatsOverride）；
+    // 旧 lost_healer_cat（治疗猫）已不作为草原生成 Boss，其掉落条目移除，避免孤儿配置。
+    // 其它区域 Boss（forest/cave 的 stray_leader 等），保留以便复用
     stray_leader: [
       { type: 'gold', min: 15, max: 30, rate: 1.0 },
       { type: 'material', id: 'stray_fang', count: 1, rate: 0.6 },

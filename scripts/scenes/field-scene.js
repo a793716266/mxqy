@@ -267,6 +267,7 @@ export class FieldScene extends SceneBase {
     const areas = {
       grassland: {
         name: '阳光草原',
+        chapter: 1,                 // ★ 章节编号（驱动 unlockChapter 门控解锁 + currentChapter 推进）
         fieldBg: null, // 程序化渲染（grassland-map-data.js）
         battleBg: 'BG_GRASSLAND', // 战斗背景
         enemies: ['wild_cat', 'slime_cat', 'shadow_mouse', 'flame_slime', 'aqua_slime', 'violet_slime', 'shadow_mouse_smooth'],
@@ -282,6 +283,7 @@ export class FieldScene extends SceneBase {
       },
       magic_tower: {
         name: '魔法塔',
+        chapter: 2,                 // ★ 第二章区域
         fieldBg: null, // 程序化渲染
         battleBg: 'BG_GRASSLAND',
         enemies: ['magic_sprite', 'stone_golem', 'ghost_cat'],
@@ -294,6 +296,7 @@ export class FieldScene extends SceneBase {
       },
       forest: {
         name: '迷雾森林',
+        chapter: 2,                 // ★ 第二章区域
         fieldBg: null, // 后续可替换为森林专用图片
         battleBg: 'BG_FOREST',
         enemies: ['slime_cat', 'shadow_mouse', 'wild_cat', 'flame_slime', 'aqua_slime', 'violet_slime', 'shadow_mouse_smooth'],
@@ -305,6 +308,7 @@ export class FieldScene extends SceneBase {
       },
       cave: {
         name: '暗影洞穴',
+        chapter: 3,                 // ★ 第三章区域
         fieldBg: null, // 后续可替换为洞穴专用图片
         battleBg: 'BG_CAVE',
         enemies: ['shadow_mouse', 'slime_cat', 'wild_cat', 'shadow_mouse_smooth', 'flame_slime', 'aqua_slime', 'violet_slime'],
@@ -798,6 +802,10 @@ export class FieldScene extends SceneBase {
       this._initBattleUI()
     }
 
+    // ★ 入场即按章节进度补解锁/补加入（兼容读档后直接进入、或章节已推进的场景）
+    this._checkChapterUnlocks()
+    this._checkNewFollowers()
+
     // 初始化相机位置
     this._updateCamera()
 
@@ -916,38 +924,72 @@ baseRadius: 50 * this.dpr,    // 底座半径（缩小）
   
   /**
    * 检查并添加新加入的队友
+   * ★ 完整加入管线：新角色同时进入 (1) 地图跟随层 followers、(2) 战斗数据层 party、
+   *   (3) 实时战斗 battleHeroes（含 CharacterSprite 精灵）、(4) _heroWorldPos 世界坐标数组。
+   *   旧实现只推了 followers，导致新队友在地图跟随但 HP 条/实时战斗里"不存在"（半成品 bug）。
    */
   _checkNewFollowers() {
     const allChars = charStateManager.getAllCharacters()
     const currentFollowerIds = this.followers.map(f => f.character.id)
-    
+
     // 找出新加入的角色
     for (let i = 1; i < allChars.length; i++) {
       const char = allChars[i]
-      if (!currentFollowerIds.includes(char.id)) {
-        // 新角色加入，添加到followers
-        const newHeroData = HEROES.find(h => h.id === char.id)
-        this.followers.push({
-          character: char,
-          // ★ 缓存翻转规则（与角色 renderConfig.flipRule 一致）
-          flipRule: (newHeroData && newHeroData.renderConfig && newHeroData.renderConfig.flipRule) || 'opposite',
-          x: this.playerX - (this.followers.length + 1) * this.followerDistance,
-          y: this.playerY,
-          animFrame: 0,
-          animTimer: 0,
-          isMoving: false,
-          _effectiveMoving: false,
-          _movingHoldFrames: 0,
-          facingLeft: this.facingLeft
-        })
-        console.log(`[Field] 新角色加入跟随: ${char.name}`)
+      if (currentFollowerIds.includes(char.id)) continue
+      // 新角色加入：缓存翻转规则 + 创建 CharacterSprite（与 _initFollowers 同款）
+      const newHeroData = HEROES.find(h => h.id === char.id)
+      let followerSprite = null
+      if (newHeroData) {
+        const spriteData = { ...newHeroData, ...char }
+        followerSprite = new CharacterSprite(this.game, spriteData)
       }
+      this.followers.push({
+        character: char,
+        sprite: followerSprite, // ★ 关键：实时战斗/渲染需要精灵实例
+        // ★ 缓存翻转规则（与角色 renderConfig.flipRule 一致）
+        flipRule: (newHeroData && newHeroData.renderConfig && newHeroData.renderConfig.flipRule) || 'opposite',
+        x: this.playerX - (this.followers.length + 1) * this.followerDistance,
+        y: this.playerY,
+        animFrame: 0,
+        animTimer: 0,
+        isMoving: false,
+        _effectiveMoving: false,
+        _movingHoldFrames: 0,
+        facingLeft: this.facingLeft
+      })
+      console.log(`[Field] 新角色加入跟随: ${char.name}`)
     }
-    
+
+    // ★ 补全战斗层：刷新 party 与 battleHeroes（重建含新成员精灵 + _heroWorldPos）
+    this.party = this._initParty()
+    if (this.battleSystem) this._buildBattleHeroes()
+
     // 更新主角色（第一个角色）
     if (allChars.length > 0 && this.mainCharacter?.id !== allChars[0].id) {
       this.mainCharacter = allChars[0]
       console.log(`[Field] 主角切换为: ${this.mainCharacter.name}`)
+    }
+  }
+
+  /**
+   * ★ 章节门控解锁：currentChapter 达到角色的 unlockChapter 时自动解锁并加入。
+   * 仅处理 unlockChapter > 1 的角色（第 1 章角色如艾米走 Boss 击败触发，见 _checkDungeonClear）。
+   * 调用后需接 _checkNewFollowers() 完成实际加入。
+   */
+  _checkChapterUnlocks() {
+    const curCh = (this.game.data && typeof this.game.data.get === 'function')
+      ? (this.game.data.get('currentChapter') || 1)
+      : 1
+    for (const hero of HEROES) {
+      if (typeof hero.unlockChapter !== 'number') continue
+      if (hero.unlockChapter <= 1) continue   // 第1章角色走 Boss 击败触发
+      if (hero.unlockChapter > curCh) continue
+      if (charStateManager.getCharacter(hero.id)) continue  // 已解锁
+      const ok = charStateManager.unlockCharacter(hero.id)
+      if (ok) {
+        if (this.game.showToast) this.game.showToast(`✨ ${hero.name} 加入队伍！`)
+        console.log(`[Field] 章节进度解锁角色: ${hero.name} (章节 ${hero.unlockChapter} <= 当前 ${curCh})`)
+      }
     }
   }
   
@@ -4687,6 +4729,19 @@ baseRadius: 50 * this.dpr,    // 底座半径（缩小）
           console.log(`[Field] 副本通关解锁角色: ${hid} (${ok ? '成功' : '已存在'})`)
         }
       }
+      // ★ 章节推进：通关后把进度推进到「本章+1」，驱动 unlockChapter 门控解锁
+      //   currentChapter 经 data-manager 映射读写（progression.currentChapter 单点真相源）
+      const curCh = (this.game.data && typeof this.game.data.get === 'function')
+        ? (this.game.data.get('currentChapter') || 1) : 1
+      const areaCh = (this.areaInfo && this.areaInfo.chapter) || 1
+      if (areaCh >= curCh) {
+        const nextCh = areaCh + 1
+        this.game.data.set('currentChapter', nextCh)
+        console.log(`[Field] 章节进度推进: ${curCh} -> ${nextCh}`)
+      }
+      // 章节门控解锁（unlockChapter<=currentChapter 且尚未解锁的角色）+ 完成实际加入
+      this._checkChapterUnlocks()
+      this._checkNewFollowers()
       // 清掉怪物存档，下次进入重新生成（可重复挑战）
       this.game.data.set(`fieldMonsters_${this.areaId}`, null)
       // 切换胜利 BGM + 金币音效（兼容测试 mock：方法可能不存在）
