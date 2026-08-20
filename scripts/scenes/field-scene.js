@@ -4729,13 +4729,16 @@ baseRadius: 50 * this.dpr,    // 底座半径（缩小）
           console.log(`[Field] 副本通关解锁角色: ${hid} (${ok ? '成功' : '已存在'})`)
         }
       }
-      // ★ 章节推进：通关后把进度推进到「本章+1」，驱动 unlockChapter 门控解锁
+      // ★ 章节进度推进：通关后把进度推进到「已通关章节」(max(当前, 本章))，而非下一章。
+      //   语义：currentChapter = 已通关的最高章节。这样草原(ch1)通关后 currentChapter 仍为 1，
+      //   仅解锁该章 Boss 对应的艾米(走 Boss 击败路径)，安妮(unlockChapter:2) 需待第2章区域
+      //   通关(→currentChapter 2)才解锁，避免"击败草原BOSS顺带放出安妮"。
       //   currentChapter 经 data-manager 映射读写（progression.currentChapter 单点真相源）
       const curCh = (this.game.data && typeof this.game.data.get === 'function')
         ? (this.game.data.get('currentChapter') || 1) : 1
       const areaCh = (this.areaInfo && this.areaInfo.chapter) || 1
       if (areaCh >= curCh) {
-        const nextCh = areaCh + 1
+        const nextCh = Math.max(curCh, areaCh)
         this.game.data.set('currentChapter', nextCh)
         console.log(`[Field] 章节进度推进: ${curCh} -> ${nextCh}`)
       }

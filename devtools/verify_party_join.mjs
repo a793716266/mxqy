@@ -141,12 +141,21 @@ assert((game2.data.get('currentChapter') || 1) === 1, '集成前 currentChapter=
 // 模拟全图怪物已全部死亡（数组非空但全部 alive=false）→ 触发 _checkDungeonClear 的通关分支
 scene2.mapMonsters = [{ id: 'm_dead', name: '已死怪', alive: false, isBoss: true }]
 scene2._checkDungeonClear(1 / 60)
-assert((game2.data.get('currentChapter') || 1) === 2, '草原通关后 currentChapter 推进到 2（1→2）', `=${game2.data.get('currentChapter')}`)
+// ★ 语义修正：草原(ch1)通关后 currentChapter 保持 1（已通关章节），不跳到 2
+assert((game2.data.get('currentChapter') || 1) === 1, '草原通关后 currentChapter 保持 1（非 1→2）', `=${game2.data.get('currentChapter')}`)
 assert(charStateManager.getCharacter('amy'), '草原通关（Boss击败）解锁艾米')
-assert(charStateManager.getCharacter('annie'), '章节推进到2后解锁安妮（门控生效）')
-const ja = joinedFully2(scene2, sys2, 'amy'), jn = joinedFully2(scene2, sys2, 'annie')
-assert(ja.follower && ja.followerSprite && ja.battle && ja.battleSprite, '集成：艾米完整加入（带回合战斗精灵）')
-assert(jn.follower && jn.followerSprite && jn.battle && jn.battleSprite, '集成：安妮完整加入（带回合战斗精灵）')
+// ★ 关键纠正：击败草原BOSS=艾米加入，安妮(unlockChapter:2) 需待第2章区域通关，不应此刻解锁
+assert(!charStateManager.getCharacter('annie'), '草原通关不会误解锁安妮（安妮需第2章区域通关）')
+const ja = joinedFully2(scene2, sys2, 'amy')
+assert(ja.follower && ja.followerSprite && ja.battle && ja.battleSprite, '集成：艾米完整加入（Boss路径，带回合战斗精灵）')
+assert(!joinedFully2(scene2, sys2, 'annie').follower, '集成：草原通关后安妮尚未加入（需第2章区域通关）')
+// ★ 验证门控生效：手动推进到第2章后，安妮通过章节门控解锁并完整加入
+game2.data.set('currentChapter', 2)
+scene2._checkChapterUnlocks()
+scene2._checkNewFollowers()
+assert(charStateManager.getCharacter('annie'), 'currentChapter=2 后安妮经章节门控解锁')
+const jn = joinedFully2(scene2, sys2, 'annie')
+assert(jn.follower && jn.followerSprite && jn.battle && jn.battleSprite, '集成：安妮（第2章门控）完整加入')
 
 function joinedFully2(sc, sy, id) {
   const f = sc.followers.find(x => x.character.id === id)
