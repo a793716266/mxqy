@@ -625,6 +625,9 @@ export function installFieldBattleSystem(FieldSceneClass) {
     // 4.21 ★ 英雄 BUFF 计时更新（魔力护盾防御提升等）
     this._updateHeroBuffs(dt)
 
+    // 4.21a ★ 全员 MP 回复（被控英雄与 AI 队友统一，修复控制切换导致的回蓝不一致）
+    this._regenAllHeroMp(dt)
+
     // 4.212 ★ MP 不足抖动提示更新
     this._updateMpShake(dt)
 
@@ -1419,7 +1422,23 @@ export function installFieldBattleSystem(FieldSceneClass) {
   // ==========================================================================
   // 5.5 队友 AI 自动战斗
   // ==========================================================================
-  proto._updateAllyAI = function(dt) {
+
+  // ★ 全员 MP 回复：被控英雄 + AI 队友统一回收，每帧只跑一次。
+  //   修复「玩家操纵的英雄不回蓝、切到 AI 操纵才回蓝」的不一致——
+  //   被控英雄 MP 只减不增会导致玩家技能很快哑火（李小宝等法师尤其明显）。
+  proto._regenAllHeroMp = function(dt) {
+    const heroes = this.battleSystem.battleHeroes
+    if (!heroes || !heroes.length) return
+    for (const bh of heroes) {
+      if (!bh.hero || bh.hero.alive === false || bh.hero.hp <= 0) continue
+      if ((bh.hero.maxMp || 0) <= 0) continue
+      if ((bh.hero.mp || 0) >= bh.hero.maxMp) continue
+      const regenRate = bh.hero.mpRegen || 5
+      bh.hero.mp = Math.min(bh.hero.maxMp, (bh.hero.mp || 0) + regenRate * dt * 0.5)
+    }
+  }
+
+   proto._updateAllyAI = function(dt) {
     const heroes = this.battleSystem.battleHeroes
     if (!heroes || !heroes.length) return
     const curIdx = this.battleSystem.currentControlIndex % heroes.length
@@ -1472,11 +1491,7 @@ export function installFieldBattleSystem(FieldSceneClass) {
       }
       if (bh.hero._castLock > 0) bh.hero._castLock = Math.max(0, bh.hero._castLock - dt)
 
-      // ★ AI 英雄 MP 回复（与正规战斗一致，避免只减不增导致技能很快哑火）
-      const regenRate = bh.hero.mpRegen || 5
-      if ((bh.hero.maxMp || 0) > 0 && (bh.hero.mp || 0) < bh.hero.maxMp) {
-        bh.hero.mp = Math.min(bh.hero.maxMp, (bh.hero.mp || 0) + regenRate * dt * 0.5)
-      }
+      // ★ MP 回复已统一下沉到 _regenAllHeroMp（被控英雄+队友每帧各回收一次，避免双重回收/控制切换不一致）
 
       // ★ 移动（仅对非 followers 的人类英雄；cats 由 field-scene 的 _updateFollowers 驱动，避免双重移动）
       //   解决"切换控制后召回/解散对原主角(人类英雄)失效"：人类英雄不在 this.followers 里，
