@@ -70,14 +70,16 @@ assert(zhenbao._castSuperArmor !== true, '释放前无霸体标记')
 const x0 = scene.playerX
 scene.facingLeft = false
 scene._playerAttackMonster(monster, sbBtn.skill)
+const cfgLunge = sbBtn.skill.lungeDist * dpr
 assert(sys.playerAnim && sys.playerAnim.type === 'shield', '盾击进入 shield 动画', `type=${sys.playerAnim && sys.playerAnim.type}`)
-assert(sys.playerAnim.lungeDist === 60 * dpr, '突进距离写入 playerAnim(60*dpr)', `lungeDist=${sys.playerAnim && sys.playerAnim.lungeDist}`)
+assert(sys.playerAnim.lungeDist === cfgLunge, `突进距离写入 playerAnim(${sbBtn.skill.lungeDist}*dpr)`, `lungeDist=${sys.playerAnim && sys.playerAnim.lungeDist}`)
 assert(zhenbao._castSuperArmor === true, '释放瞬间即获得霸体(突进全程不被打断)', `=${zhenbao._castSuperArmor}`)
+assert(sys.playerAnim.lungeDist === cfgLunge, `突进距离写入 playerAnim(${sbBtn.skill.lungeDist}*dpr)`, `lungeDist=${sys.playerAnim && sys.playerAnim.lungeDist}`)
 // 驱动 ~0.6s（> 突进0.18s + 命中延迟0.4s）
 for (let f = 0; f < 36; f++) scene.update(1 / 60)
 const x1 = scene.playerX
 const lungeMoved = x1 - x0
-assert(lungeMoved > 45 * dpr && lungeMoved < 70 * dpr, `突进使臻宝向前位移 ≈ ${Math.round(lungeMoved / dpr)}px(逻辑, 配置60)`, `Δ=${Math.round(lungeMoved / dpr)}`)
+assert(lungeMoved > cfgLunge * 0.75 && lungeMoved < cfgLunge * 1.15, `突进使臻宝向前位移 ≈ ${Math.round(lungeMoved / dpr)}px(逻辑, 配置${sbBtn.skill.lungeDist})`, `Δ=${Math.round(lungeMoved / dpr)}`)
 assert(zhenbao._shield > 0, '盾击生成护盾', `shield=${zhenbao._shield}`)
 assert(zhenbao._shieldTimer > 3.0 && zhenbao._shieldTimer <= 4.0, `护盾持续 ≈4s(更长于旧2s): ${zhenbao._shieldTimer.toFixed(2)}s`, `=${zhenbao._shieldTimer}`)
 assert(!!sys.castLockTimer || zhenbao._castSuperArmor, '突进期间移动被锁/霸体覆盖')
@@ -177,6 +179,39 @@ zhenbao._castSuperArmor = true
 scene._lightChargeImpact(lcMonster, lc)
 assert(zhenbao._knockback == null, '处于霸体时光明冲锋跳过击飞/眩晕（豁免逻辑正确）')
 zhenbao._castSuperArmor = false
+
+// ============ G/H. 盾击先击退到前方落点，伤害在落点(停下位置)结算 ============
+console.log('\n=== G/H. 盾击：先把敌人往前撞，在停下的位置造成伤害 ===')
+if (sbBtn) sbBtn.cooldown = 0   // 清零冷却以便重新释放
+sys.active = true              // 确保战斗系统仍在运行（前序测试可能已结束战斗）
+// 把玩家放到地图中部，避免前序测试突进后贴近边界、导致击退被地图边界钳制干扰测量
+scene.playerX = 1000 * dpr
+scene.playerY = 1000 * dpr
+if (!scene._heroWorldPos) scene._heroWorldPos = []
+scene._heroWorldPos[0] = { x: scene.playerX, y: scene.playerY }
+// 复位臻宝受击硬直/精灵状态（前序测试未驱动 update 清理，避免 _hurtLock 残留拦截本次释放）
+zhenbao._hurtLock = 0
+if (sys.battleHeroes[0].sprite) { sys.battleHeroes[0].sprite.state = 'idle'; sys.battleHeroes[0].sprite.animFrame = 0; sys.battleHeroes[0].sprite.animTimer = 0 }
+sys.damageTexts = []
+const KNOCK = (sbBtn.skill.knock.distance || 50) * dpr
+const m3 = { id: 'm_sb3', name: '坏猫3', alive: true, enemyId: 'wild_cat', x: scene.playerX + 40 * dpr, y: scene.playerY, hp: 200, maxHp: 200, def: 5, atk: 10, level: 1, attackInterval: 9999, attackCDTimer: 9999 }
+scene.mapMonsters = [m3]
+sys.battleTarget = m3          // 重新锁定目标
+scene.facingLeft = false
+const m3x0 = m3.x
+scene._playerAttackMonster(m3, sbBtn.skill)
+// 驱动 40 帧(≈0.67s) 越过突进0.18s + 命中延迟0.4s，确保 _applyShieldBashEffects 击退 + 主伤害结算都完成
+for (let f = 0; f < 40; f++) scene.update(1 / 60)
+const knocked = m3.x - m3x0
+assert(knocked > KNOCK * 0.8 && knocked <= KNOCK * 1.5, `盾击把敌人往前撞 ≈${Math.round(knocked / dpr)}px(配置${sbBtn.skill.knock.distance})`, `Δ=${Math.round(knocked / dpr)}px`)
+const hitText = sys.damageTexts.find(t => typeof t.text === 'string' && t.text.startsWith('-'))
+if (hitText) {
+  const wx = hitText.x + scene.cameraX
+  assert(Math.abs(wx - m3.x) < 30 * dpr, `伤害飘字出现在敌人落点(世界x≈${Math.round(wx / dpr)}，落点${Math.round(m3.x / dpr)})`, `wx=${Math.round(wx / dpr)}, 落点=${Math.round(m3.x / dpr)}`)
+  assert(Math.abs(wx - m3x0) >= KNOCK * 0.5, `飘字不在原位(与原位差 ${Math.round((wx - m3x0) / dpr)}px≈击退距离)`, `diff=${Math.round((wx - m3x0) / dpr)}`)
+} else {
+  assert(false, '盾击应产生伤害飘字', '未找到 -数字 飘字')
+}
 
 console.log(`\n=== 结果: ${passed} 通过, ${failed} 失败 ===`)
 process.exit(failed === 0 ? 0 : 1)

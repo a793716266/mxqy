@@ -53,7 +53,7 @@ export const HEROES = [
         range: 80,
         cooldown: 6,
         superArmor: true,     // ★ 霸体：释放期间（含突进）不被打断，护盾/防御照常结算
-        lungeDist: 60,        // ★ 突进距离（逻辑像素，释放瞬间朝面向方向位移；受障碍/边界钳制）
+        lungeDist: 150,        // ★ 突进距离（逻辑像素，释放瞬间朝面向方向位移；受障碍/边界钳制）
         desc: '举盾突进猛击前方敌人：释放期间霸体不可打断；自身获得30%最大生命的白色护盾（持续4秒，被攻击优先抵挡），1秒内防御力提升70%；30%几率眩晕命中的敌人1秒，并将前方X轴范围内的所有敌人击退',
         // ★ 盾击附加效果配置（运行时 _applyShieldBashEffects 读取，数据驱动）
         shield: {
@@ -64,14 +64,14 @@ export const HEROES = [
         defUp: {
           enabled: true,
           amp: 0.70,                // 防御 +70%
-          duration: 1.0,            // 持续 1 秒
+          duration: 1.5,            // 持续 1 秒
         },
         knock: {
           enabled: true,
           range: 60,                // 前方 X 轴生效范围（像素）
-          distance: 100,            // 鸡腿击退距离（像素，X 轴）
+          distance: 50,            // 击退距离（像素，X 轴）
           stunChance: 0.30,         // 眩晕几率 30%
-          stunDuration: 1.0,        // 眩晕持续 1 秒
+          stunDuration: 1.5,        // 眩晕持续 1 秒
         }
       },
       { id: 'war_cry', name: '战吼', type: 'buff', mpCost: 8, range: 0, desc: '提升全体攻击力', effect: 'atk_up', turns: 3, value: 0.3 },

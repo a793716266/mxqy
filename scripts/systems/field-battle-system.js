@@ -525,9 +525,15 @@ export function installFieldBattleSystem(FieldSceneClass) {
         if (pd.timer <= 0) {
           // 命中帧到达，结算伤害
           const m = pd.monster
+          // ★ 盾击：先把敌人往前撞（击退）到位移终点，让伤害在敌人停下的位置结算。
+          //   提前到主伤害之前：_applyShieldBashEffects 内部沿朝向推开前方敌人（含主目标 m），
+          //   之后 _damageMonster 用 m 当前坐标（=击退终点）飘字 → 「在停下的位置造成伤害」。
+          if (pd.shieldBash && pd.hero) {
+            this._applyShieldBashEffects(m || null, pd.hero, pd.skill)
+          }
           if (m && m.alive) {
             const dealt = this._damageMonster(m, pd.damage, {
-              knockback: true,
+              knockback: !pd.shieldBash,  // ★ 盾击已有专门击退，避免与 _applyShieldBashEffects 双重轻推
               fromX: (pd.hero && pd.hero.getPos ? pd.hero.getPos().x : this.playerX),
               fromY: (pd.hero && pd.hero.getPos ? pd.hero.getPos().y : this.playerY)
             })
@@ -583,12 +589,6 @@ export function installFieldBattleSystem(FieldSceneClass) {
               this._pushDamageText(mm, dmg, ic, '#c08bff')
               if (mm.hp <= 0) { mm.alive = false; this.battleSystem.battleTarget = null }
             }
-          }
-          // ★ 盾击附加效果：生成自身护盾 + 防御提升 + 眩晕+击退前方X轴范围敌人
-          //   ★ 移到 if(m&&m.alive) 块之外：即使无锁定目标（m 为空）也要触发——
-          //     盾击是防御向技能，玩家没锁定怪物自保时也该获得护盾/防御，并对前方敌人生效。
-          if (pd.shieldBash && pd.hero) {
-            this._applyShieldBashEffects(m || null, pd.hero, pd.skill)
           }
           // 移除已结算的
           this.battleSystem.pendingDamages.splice(i, 1)
