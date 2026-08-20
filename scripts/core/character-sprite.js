@@ -582,22 +582,27 @@ export class CharacterSprite {
     const offX = this._tintCanvas.width / 2
     const offY = this._tintCanvas.height / 2
     tctx.clearRect(0, 0, this._tintCanvas.width, this._tintCanvas.height)
-    tctx.save()
+    // ★ 画帧：翻转(scale(-1,1))仅作用于"绘制帧"，用 save/restore 隔离，
+    //   避免污染后续整张染红的 fillRect（否则 flip 下填充会被平移，只覆盖离屏一半）。
     const shouldFlip = this._shouldFlip()
     if (shouldFlip) {
+      tctx.save()
       tctx.translate(offX, offY)
       tctx.scale(-1, 1)
       if (frameImg._isSpriteSheet) tctx.drawImage(frameImg._sheet, frameImg._sx, frameImg._sy, frameImg._sw, frameImg._sh, -renderWidth / 2, -renderHeight, renderWidth, renderHeight)
       else tctx.drawImage(frameImg, -renderWidth / 2, -renderHeight, renderWidth, renderHeight)
+      tctx.restore()
     } else {
       if (frameImg._isSpriteSheet) tctx.drawImage(frameImg._sheet, frameImg._sx, frameImg._sy, frameImg._sw, frameImg._sh, offX - renderWidth / 2, offY - renderHeight, renderWidth, renderHeight)
       else tctx.drawImage(frameImg, offX - renderWidth / 2, offY - renderHeight, renderWidth, renderHeight)
     }
-    // ★ 整张精灵本体染红：source-atop 只在已有像素（角色轮廓内）着色，保留透明背景
+    // ★ 整张精灵本体染红：source-atop 只在已有像素（角色轮廓内）着色，保留透明背景。
+    //   必须在【还原 transform 之后】填充，否则 flip 分支下 fillRect 会被 scale(-1) 平移，
+    //   只覆盖离屏的左半/下半，导致受击泛红只显示身体一半。
     tctx.globalCompositeOperation = 'source-atop'
     tctx.fillStyle = '#ff2424'
     tctx.fillRect(0, 0, this._tintCanvas.width, this._tintCanvas.height)
-    tctx.restore()
+    tctx.globalCompositeOperation = 'source-over'
 
     // 合成到主画布（离屏中心 → 角色脚底中心）
     ctx.save()
