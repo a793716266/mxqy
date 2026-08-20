@@ -214,5 +214,24 @@ if (hitText) {
   assert(false, '盾击应产生伤害飘字', '未找到 -数字 飘字')
 }
 
+// ============ I. 盾击致死判定：hp=0 必须同步 alive=false ============
+// 回归背景：_damageMonster 只减 hp 不置 alive（死亡判定统一由调用方负责），
+// 盾击起手路径曾漏判 → 怪物 hp=0 却仍 alive=true（不掉落、不消失、继续攻击）。
+console.log('\n=== I. 盾击致死：hp 归零同步置 alive=false ===')
+if (sbBtn) sbBtn.cooldown = 0
+sys.active = true
+const m4 = { id: 'm_sb4', name: '残血猫', alive: true, enemyId: 'wild_cat', x: scene.playerX + 40 * dpr, y: scene.playerY, hp: 10, maxHp: 10, def: 5, atk: 10, level: 1, attackInterval: 9999, attackCDTimer: 9999 }
+scene.mapMonsters = [m4]
+sys.battleTarget = m4
+scene.facingLeft = false
+sys.damageTexts = []
+zhenbao._hurtLock = 0
+if (sys.battleHeroes[0].sprite) { sys.battleHeroes[0].sprite.state = 'idle'; sys.battleHeroes[0].sprite.animFrame = 0; sys.battleHeroes[0].sprite.animTimer = 0 }
+scene._playerAttackMonster(m4, sbBtn.skill)
+for (let f = 0; f < 40; f++) scene.update(1 / 60)
+assert(m4.hp <= 0, `盾击伤害把 hp 扣到 0`, `hp=${m4.hp}`)
+assert(m4.alive === false, 'hp=0 同步置 alive=false（被判定死亡）', `alive=${m4.alive}`)
+assert(sys.battleTarget !== m4, '击杀后 battleTarget 不再指向已死怪物', `target=${sys.battleTarget && sys.battleTarget.name}`)
+
 console.log(`\n=== 结果: ${passed} 通过, ${failed} 失败 ===`)
 process.exit(failed === 0 ? 0 : 1)

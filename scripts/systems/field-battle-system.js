@@ -2590,6 +2590,15 @@ export function installFieldBattleSystem(FieldSceneClass) {
           _startY: sy - 40 * this.dpr,
           isCrit: res.isCrit
         })
+        // ★ 死亡判定：_damageMonster 只减 hp 不置 alive（死亡判定统一由调用方负责），
+        //   盾击起手路径此前漏判 → 怪物 hp=0 却仍 alive=true（不掉落、不消失、继续攻击）。
+        //   写法与其他击杀路径（pendingDamages/落雷/剑气）一致；掉落由 field-scene
+        //   的中央「刚死亡」检测（alive=false 且 !_looted）自动结算。
+        if (m.hp <= 0) {
+          m.alive = false
+          console.log(`[FieldBattle] ${m.name} 被盾击击败！`)
+          this.battleSystem.battleTarget = null
+        }
       }
     }
   }
