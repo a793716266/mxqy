@@ -38,7 +38,7 @@ class MockGame {
     this.data={ _d:{}, _flags:new Set(), get:k=>this.data._d[k], set:(k,v)=>{this.data._d[k]=v}, del:k=>{delete this.data._d[k]}, hasFlag:k=>this.data._flags.has(k), setFlag:k=>this.data._flags.add(k), delFlag:k=>this.data._flags.delete(k) };
     this.assets={ getImage:()=>({width:64,height:64}), loadSubpackage:async()=>{}, isLoaded:()=>true };
     this.audio={play:()=>{},playSound:()=>{}}; this.input={taps:[],joystick:{active:false,dx:0,dy:0},consumeTaps:()=>this.input.taps.splice(0)};
-    this.showToast=()=>{}; this.sceneManager={changeScene:()=>{}}; }
+    this.showToast=()=>{}; this.sceneManager={changeScene:()=>{}}; this.changeScene=()=>{}; }
 }
 const { FieldScene } = await import('../scripts/scenes/field-scene.js')
 const { ENEMIES_CH1, getEnemyByLevel } = await import('../scripts/data/enemies.js')

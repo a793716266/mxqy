@@ -3516,6 +3516,22 @@ export function installFieldBattleSystem(FieldSceneClass) {
   }
 
   /**
+   * ★ 取英雄世界坐标：优先从 battleHeroes 包装项取 getPos()（锁定目标可能是非被控者），
+   *   找不到时回退被控者 playerX/playerY。用于怪物技能/弹道/落点对齐真实攻击目标，
+   *   而非错误地写死被控者坐标（修复「锁定队友时弹道飞向主角、伤害飘字错位」的 bug）。
+   */
+  proto._fieldHeroPos = function(hero) {
+    const list = this.battleSystem.battleHeroes || []
+    for (const bh of list) {
+      if (bh.hero === hero) {
+        const p = bh.getPos && bh.getPos()
+        if (p) return p
+      }
+    }
+    return { x: this.playerX, y: this.playerY }
+  }
+
+  /**
    * ★ 怪物施放技能（兼容多种 type，直接结算伤害/效果）
    */
   proto._fieldCastMonsterSkill = function(monster, skill, hero, dx, dy, dist) {
@@ -3529,6 +3545,9 @@ export function installFieldBattleSystem(FieldSceneClass) {
     monster._castingSkill = skill // ★ 记录本次施放技能（供"霸体光环"判定 superArmor）
     monster.skillAnimTimer = 800 // 默认 800ms 技能动画
     monster.animFrame = 0
+    // ★ 锁定目标的实际世界坐标（mainHero，可能非被控者）：所有伤害/弹道/落点统一对齐它，
+    //   不再写死被控者 playerX/playerY（修复锁定队友时弹道飞向主角、飘字错位的 bug）。
+    const heroPos = this._fieldHeroPos(hero)
     // 设置技能冷却（秒）
     if (monster.skillCDs) {
       const isBuffLike = (skill.type === 'buff' || skill.type === 'heal_self')
@@ -3548,8 +3567,9 @@ export function installFieldBattleSystem(FieldSceneClass) {
       // ★ 配置 warnDuration 单位为秒（如 slime_cat:1.5 / shadow_mouse:1.0，与 light_charge 一致），不要当成毫秒
       const warnSec = (skill.warnDuration != null ? skill.warnDuration : 1.0)
       const r = (skill.aoeRadius || skill.damageRadius || skill.dashDistance || 110) * this.dpr
-      // ★ 落点预判(lead target)：基于玩家近期移动方向外推，让"直线跑位躲避"更难白躲
-      let tx = this.playerX, ty = this.playerY
+      // ★ 落点预判(lead target)：基于锁定目标(heroPos)当前位置 + 玩家近期移动方向外推，
+      //   让"直线跑位躲避"更难白躲（落点对齐真实锁定目标，而非被控者）
+      let tx = heroPos.x, ty = heroPos.y
       const ph = this.playerHistory
       if (ph && ph.length >= 2) {
         const vx = ph[0].x - ph[1].x
@@ -3590,34 +3610,60 @@ export function installFieldBattleSystem(FieldSceneClass) {
 
     const doMelee = (mult) => {
       const dmg = Math.max(1, Math.floor(monster.atk * (monster._atkMul || 1) * (mult || skill.power || 1) - this._getHeroDef(hero) * 0.3))
-      const res = this._applyHeroDamage(hero, dmg, this.playerX, this.playerY)
+      const res = this._applyHeroDamage(hero, dmg, heroPos.x, heroPos.y)
       if (res.hpDamage > 0) {
         this.battleSystem.damageTexts.push({
           text: `-${res.hpDamage}`,
-          x: this.playerX - this.cameraX,
-          y: this.playerY - this.cameraY - 60 * this.dpr,
+          x: heroPos.x - this.cameraX,
+          y: heroPos.y - this.cameraY - 60 * this.dpr,
           color: '#ff4757',
           life: 1.0, maxLife: 1.0,
-          _startY: this.playerY - this.cameraY - 60 * this.dpr
+          _startY: heroPos.y - this.cameraY - 60 * this.dpr
         })
       }
     }
 
     if (skill.type === 'attack' || skill.type === 'magic') {
+      // ★ target:'all'（如暗影领域）：全屏/AOE 技能，直接遍历所有参战英雄结算，
+      //   不发包弹道（避免只打被控者一人）。单目标技能才发包指向锁定目标的弹道。
+      if (skill.target === 'all') {
+        const allHeroes = this.battleSystem.battleHeroes || []
+        let hitAny = false
+        for (const bh of allHeroes) {
+          if (!bh.hero || bh.hero.hp <= 0) continue
+          const dmg = Math.max(1, Math.floor(monster.atk * (monster._atkMul || 1) * (skill.power || 1) - this._getHeroDef(bh.hero) * 0.3))
+          const p = bh.getPos ? bh.getPos() : heroPos
+          const res = this._applyHeroDamage(bh.hero, dmg, p.x, p.y)
+          if (res.hpDamage > 0) {
+            this.battleSystem.damageTexts.push({
+              text: `-${res.hpDamage}`,
+              x: p.x - this.cameraX,
+              y: p.y - this.cameraY - 60 * this.dpr,
+              color: '#ff4757', life: 1.0, maxLife: 1.0,
+              _startY: p.y - this.cameraY - 60 * this.dpr
+            })
+            hitAny = true
+          }
+        }
+        if (this.game.showToast && hitAny) this.game.showToast(`${monster.name} 释放${skill.name}！`)
+        return
+      }
       // 远程攻击/魔法：必须走抛射物，禁止瞬结算（避免"隔空打人、无投射物"的视觉 bug）
       // 无 projectile 配置时兜底用默认弹道参数，保证有可见飞行过程
       if (!skill.projectile) {
         skill.projectile = { color: skill.type === 'magic' ? '#b15eff' : '#ff7b54' }
       }
-      this._fieldSpawnMonsterProjectile(monster, skill, dx, dy, dist)
+      this._fieldSpawnMonsterProjectile(monster, skill, dx, dy, dist, heroPos, hero)
     } else if (skill.type === 'debuff') {
       this._applyMonsterDebuff(monster, skill)
       if (skill.power > 0) doMelee(skill.power)
     } else if (skill.type === 'light_charge') {
       this._startLightCharge(monster, skill, dx, dy, dist)
       return
-    } else if (skill.type === 'charge') {
-      const dash = Math.min(skill.dashDistance || 120, dist) * this.dpr
+      } else if (skill.type === 'charge') {
+        // ★ 单位修正：dashDistance 是逻辑像素、dist 是物理像素，须各自乘 dpr 后再比较，
+        //   否则 Math.min(逻辑, 物理) 后再 ×dpr 会把距离放大近一倍（冲锋距离翻倍 bug）。
+        const dash = Math.min((skill.dashDistance || 120) * this.dpr, dist)
       if (dist > 1) {
         monster.x += (dx / dist) * dash
         monster.y += (dy / dist) * dash
@@ -3806,14 +3852,16 @@ export function installFieldBattleSystem(FieldSceneClass) {
     })
   }
 
-  proto._fieldSpawnMonsterProjectile = function(monster, skill, dx, dy, dist) {
+  proto._fieldSpawnMonsterProjectile = function(monster, skill, dx, dy, dist, heroPos, targetHero) {
     if (!this.battleSystem.projectiles) this.battleSystem.projectiles = []
     const speed = (skill.projectileSpeed || 220) * this.dpr
+    const tx = (heroPos && heroPos.x != null) ? heroPos.x : this.playerX
+    const ty = (heroPos && heroPos.y != null) ? heroPos.y : this.playerY
     this.battleSystem.projectiles.push({
       x: monster.x,
       y: monster.y,
-      tx: this.playerX,
-      ty: this.playerY,
+      tx: tx,
+      ty: ty,
       vx: (dx / (dist || 1)) * speed,
       vy: (dy / (dist || 1)) * speed,
       power: skill.power || 1,
@@ -3821,7 +3869,8 @@ export function installFieldBattleSystem(FieldSceneClass) {
       def: monster.def,
       life: 2.0,
       color: '#b15eff',
-      owner: 'monster'
+      owner: 'monster',
+      targetHero: targetHero   // ★ 记录弹道锁定英雄：命中结算时优先对齐真正的锁定目标（可能非被控者）
     })
   }
 
@@ -3841,24 +3890,28 @@ export function installFieldBattleSystem(FieldSceneClass) {
       p.x += p.vx * dt
       p.y += p.vy * dt
       p.life -= dt
-      // 命中判定（到达玩家附近）
-      const hdx = this.playerX - p.x
-      const hdy = this.playerY - p.y
-      if (hero && hero.hp > 0 && (hdx * hdx + hdy * hdy) < (40 * this.dpr) ** 2) {
-        const dmg = Math.max(1, Math.floor(p.atk * (p.power || 1) - this._getHeroDef(hero) * 0.3))
-        const res = this._applyHeroDamage(hero, dmg, this.playerX, this.playerY)
-        if (res.hpDamage > 0) {
-          this.battleSystem.damageTexts.push({
-            text: `-${res.hpDamage}`,
-            x: this.playerX - this.cameraX,
-            y: this.playerY - this.cameraY - 60 * this.dpr,
-            color: '#ff4757',
-            life: 1.0, maxLife: 1.0,
-            _startY: this.playerY - this.cameraY - 60 * this.dpr
-          })
+      // ★ 命中判定：优先弹道记录的锁定英雄（targetHero），否则回退被控者（兼容老弹道）
+      const tHero = p.targetHero || hero
+      if (tHero && tHero.hp > 0) {
+        const tPos = this._fieldHeroPos(tHero)
+        const hdx = tPos.x - p.x
+        const hdy = tPos.y - p.y
+        if ((hdx * hdx + hdy * hdy) < (40 * this.dpr) ** 2) {
+          const dmg = Math.max(1, Math.floor(p.atk * (p.power || 1) - this._getHeroDef(tHero) * 0.3))
+          const res = this._applyHeroDamage(tHero, dmg, tPos.x, tPos.y)
+          if (res.hpDamage > 0) {
+            this.battleSystem.damageTexts.push({
+              text: `-${res.hpDamage}`,
+              x: tPos.x - this.cameraX,
+              y: tPos.y - this.cameraY - 60 * this.dpr,
+              color: '#ff4757',
+              life: 1.0, maxLife: 1.0,
+              _startY: tPos.y - this.cameraY - 60 * this.dpr
+            })
+          }
+          this.battleSystem.projectiles.splice(i, 1)
+          continue
         }
-        this.battleSystem.projectiles.splice(i, 1)
-        continue
       }
       if (p.life <= 0) this.battleSystem.projectiles.splice(i, 1)
     }
@@ -3935,22 +3988,25 @@ export function installFieldBattleSystem(FieldSceneClass) {
    */
   proto._settleJumpDamage = function(z, monster) {
     if (!z || !monster || monster.hp <= 0) return
-    const ctrl = this._getCurrentControlHero()
-    const hero = ctrl && ctrl.hero ? ctrl.hero : this.party[0]
-    if (hero && hero.hp > 0) {
-      const hdx = this.playerX - z.x
-      const hdy = this.playerY - z.y
+    // ★ 真·范围伤害（AOE）：遍历所有参战英雄，各自判是否在落点圈内并结算，
+    //   不再只结算被控者一人（修复"跳跃攻击只打被控者、锁定队友却打空"的 bug）。
+    const heroes = this.battleSystem.battleHeroes || []
+    for (const bh of heroes) {
+      if (!bh.hero || bh.hero.hp <= 0) continue
+      const hp = bh.getPos ? bh.getPos() : { x: this.playerX, y: this.playerY }
+      const hdx = hp.x - z.x
+      const hdy = hp.y - z.y
       if ((hdx * hdx + hdy * hdy) <= z.r * z.r) {
-        const dmg = Math.max(1, Math.floor(z.atk * (z.power || 1) - this._getHeroDef(hero) * 0.3))
-        const res = this._applyHeroDamage(hero, dmg, this.playerX, this.playerY)
+        const dmg = Math.max(1, Math.floor(z.atk * (z.power || 1) - this._getHeroDef(bh.hero) * 0.3))
+        const res = this._applyHeroDamage(bh.hero, dmg, hp.x, hp.y)
         if (res.hpDamage > 0) {
           this.battleSystem.damageTexts.push({
             text: `-${res.hpDamage}`,
-            x: this.playerX - this.cameraX,
-            y: this.playerY - this.cameraY - 60 * this.dpr,
+            x: hp.x - this.cameraX,
+            y: hp.y - this.cameraY - 60 * this.dpr,
             color: '#ff4757',
             life: 1.0, maxLife: 1.0,
-            _startY: this.playerY - this.cameraY - 60 * this.dpr
+            _startY: hp.y - this.cameraY - 60 * this.dpr
           })
         }
       }

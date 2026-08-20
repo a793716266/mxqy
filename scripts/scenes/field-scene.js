@@ -1735,7 +1735,11 @@ baseRadius: 50 * this.dpr,    // 底座半径（缩小）
 
 
   /**
-   * ★ 单体怪物战斗 AI：走位 + 技能 + 普攻
+   * ★【非运行路径 / 死代码】单体怪物战斗 AI：走位 + 技能 + 普攻
+   * ⚠️ 警告：野外实时战斗实际运行的是 field-battle-system.js 的 mixin 版本
+   *   （_updateMonsterAttack → _fieldMonsterCombatMove / _fieldChooseMonsterSkill / _fieldCastMonsterSkill）。
+   *   本方法从未被任何调用方触发（mixin 已覆盖怪物 AI）。请勿在此修改战斗逻辑，
+   *   否则改动不会生效且会误导后续维护。要改怪物 AI，去 field-battle-system.js。
    */
   _updateSingleMonsterCombat(monster, dt, hero, dx, dy, dist, attackRange) {
     // 朝向玩家
@@ -1911,7 +1915,8 @@ baseRadius: 50 * this.dpr,    // 底座半径（缩小）
   }
 
   /**
-   * ★ 新增：怪物施放技能
+   * ★【非运行路径 / 死代码】怪物施放技能（同 _updateSingleMonsterCombat，已被
+   *   field-battle-system.js 的 _fieldCastMonsterSkill 取代，请勿在此修改）。
    */
   _castMonsterSkill(monster, skill, hero) {
     if (!monster || !skill || !hero) return
@@ -1995,7 +2000,8 @@ baseRadius: 50 * this.dpr,    // 底座半径（缩小）
   }
 
   /**
-   * ★ 新增：生成怪物远程抛射物（仅视觉 + 延迟结算）
+   * ★【非运行路径 / 死代码】生成怪物远程抛射物（已被 field-battle-system.js 的
+   *   _fieldSpawnMonsterProjectile 取代，请勿在此修改）。
    */
   _spawnMonsterProjectile(monster, skill, dist) {
     if (!this.battleSystem.projectiles) this.battleSystem.projectiles = []
