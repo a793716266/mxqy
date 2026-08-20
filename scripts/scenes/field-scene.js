@@ -220,11 +220,6 @@ export class FieldScene extends SceneBase {
       this._returningToTown = false
       this.dungeonTotal = this.mapMonsters.length
       this.dungeonReward = 80
-      // ★ 安全区 / 回血点（篝火）：逻辑像素配置 ×dpr
-      this.safeZones = (GRASSLAND_DUNGEON.safeZones || []).map(z => ({
-        id: z.id, name: z.name, x: z.x * this.dpr, y: z.y * this.dpr, radius: z.radius * this.dpr,
-      }))
-      this._inSafeZone = false
       this._dropFloaters = []
       this.bossDialogueShown = false
       this.storyDialogue = null
@@ -743,40 +738,6 @@ export class FieldScene extends SceneBase {
     }
   }
 
-  /**
-   * 安全区（篝火）回血：玩家进入任一安全区半径内，全队向 maxHp 持续回升（每秒 30%），
-   * 避免第一章前期无治疗角色时被反复撞怪打至卡死。进入瞬间提示一次。
-   */
-  _updateSafeZoneHeal(dt) {
-    if (!this.safeZones || !this.safeZones.length) return
-    let inZone = false
-    for (const z of this.safeZones) {
-      const dx = this.playerX - z.x
-      const dy = this.playerY - z.y
-      if (Math.sqrt(dx * dx + dy * dy) <= z.radius) { inZone = true; break }
-    }
-    if (inZone) {
-      // ★ 直接操作 persistent 队伍 HP（this.party），而非 battleSystem.battleHeroes：
-      // 后者仅在开战时构建，探索期为空数组，会导致篝火回血在两次战斗之间完全失效。
-      const party = this.party
-      if (party && party.length) {
-        for (const hero of party) {
-          if (!hero || hero.hp == null) continue
-          const maxHp = hero.maxHp || hero.hp
-          if (hero.hp < maxHp) {
-            hero.hp = Math.min(maxHp, hero.hp + maxHp * 0.3 * dt)
-          }
-        }
-      }
-      if (!this._inSafeZone) {
-        this._inSafeZone = true
-        if (this.game.showToast) this.game.showToast('🔥 在篝火旁休息，生命恢复中...')
-      }
-    } else {
-      this._inSafeZone = false
-    }
-  }
-  
   init() {
     // 队友 AI 行为模式：false=自行寻怪战斗不跟随；true=召回（紧跟主角身边）
     this.aiRecall = false
@@ -1015,9 +976,8 @@ baseRadius: 50 * this.dpr,    // 底座半径（缩小）
     // ★ 掉落飘字上浮动画
     this._updateDropFloaters(dt)
 
-    // ★ 副本：安全区回血 + Boss 接近登场对话
+    // ★ 副本：Boss 接近登场对话
     if (this.areaInfo && this.areaInfo.isDungeon) {
-      this._updateSafeZoneHeal(dt)
       this._checkBossApproach()
     }
 
@@ -4270,8 +4230,6 @@ baseRadius: 50 * this.dpr,    // 底座半径（缩小）
     this._renderTopUI(ctx)
     // ★ 副本目标 HUD（阳光草原）
     this._renderDungeonHUD(ctx)
-    // ★ 副本：篝火安全区图标 + 叙事对话气泡
-    if (this.areaInfo && this.areaInfo.isDungeon) this._renderSafeZones(ctx)
     if (this._dropFloaters && this._dropFloaters.length) this._renderDropFloaters(ctx)
     if (this.storyDialogue) this._renderStoryDialogue(ctx)
     
@@ -4633,34 +4591,6 @@ baseRadius: 50 * this.dpr,    // 底座半径（缩小）
           ctx.restore()
         }
       }
-    }
-  }
-
-  /** 篝火安全区图标（世界坐标，转屏幕后绘制光圈 + 🔥 + 名称） */
-  _renderSafeZones(ctx) {
-    if (!this.safeZones || !this.safeZones.length) return
-    const dpr = this.dpr
-    for (const z of this.safeZones) {
-      const sx = z.x - this.cameraX
-      const sy = z.y - this.cameraY
-      if (sx < -220 || sy < -220 || sx > this.width + 220 || sy > this.height + 220) continue
-      // 暖色光圈
-      ctx.save()
-      ctx.globalAlpha = 0.22
-      ctx.fillStyle = '#ff8c42'
-      ctx.beginPath()
-      ctx.arc(sx, sy, z.radius, 0, Math.PI * 2)
-      ctx.fill()
-      ctx.restore()
-      // 篝火图标
-      ctx.font = `${40 * dpr}px sans-serif`
-      ctx.textAlign = 'center'
-      ctx.textBaseline = 'middle'
-      ctx.fillText('🔥', sx, sy)
-      // 名称
-      ctx.font = `${13 * dpr}px sans-serif`
-      ctx.fillStyle = '#fff'
-      ctx.fillText(z.name, sx, sy + 40 * dpr)
     }
   }
 

@@ -4607,16 +4607,17 @@ export function installFieldBattleSystem(FieldSceneClass) {
           tap.y >= btn.y && tap.y <= btn.y + btn.height) {
         console.log('[FieldBattle] 点击攻击按钮')
 
-        // 普攻：先播动画，再判定范围内是否有目标
-        // ★ 近战挥剑弧：命中范围绑在"第3帧挥剑"的剑尖处——前偏(originX 向朝向偏移)、Y 收窄，
-        //   range 比旧(100)略短 + 前向约束 = 不再"影响整个X轴"。
+        // 普攻：先播动画，再判定"朝向侧"范围内是否有目标
+        // ★ 近战挥剑弧：命中范围绑在"剑尖"处（originX 向朝向偏移），仅命中【玩家朝向半球】，
+        //   背后(相对玩家朝向中心投影<0)的怪物一律不可命中 —— 修复"背后能攻击"。
         const meleeRange = 80 * this.dpr
         const yTolMelee = 40 * this.dpr
-        // 先对称搜索决定朝向（避免朝向陈旧导致挥空），再以前向弧选目标
-        const _faceProbe = this._findNearestMonster(meleeRange * 1.3, 'x', ctrlPos.x, ctrlPos.y, 60 * this.dpr)
-        const dir = _faceProbe ? (_faceProbe.x < ctrlPos.x ? -1 : 1) : (this.facingLeft ? -1 : 1)
-        const originX = ctrlPos.x + dir * (28 * this.dpr)  // 剑尖前偏
-        const target = this._findNearestMonsterFromPos(meleeRange, 'x', originX, ctrlPos.y, yTolMelee, dir)
+        // ★ 朝向以玩家真实 facing 为准（this.facingLeft 由摇杆实时更新），
+        //   不再自动翻向最近怪 —— 否则身后有怪时点普攻会把它也打到。
+        const dir = this.facingLeft ? -1 : 1
+        const originX = ctrlPos.x + dir * (28 * this.dpr)  // 剑尖前偏（扩大前向触及）
+        // faceX 传玩家中心，前向判定相对玩家中心(而非剑尖)，避免贴脸前 28px 漏判
+        const target = this._findNearestMonsterFromPos(meleeRange, 'x', originX, ctrlPos.y, yTolMelee, dir, ctrlPos.x)
         this._playerAttackMonster(target)  // target 可为 null，null 时只播动画不造成伤害
         return true
       }
@@ -4678,7 +4679,7 @@ export function installFieldBattleSystem(FieldSceneClass) {
       fromY != null ? fromY : this.playerY)
   }
 
-  proto._findNearestMonsterFromPos = function(maxRange, axis, originX, originY, yTol, dir) {
+  proto._findNearestMonsterFromPos = function(maxRange, axis, originX, originY, yTol, dir, faceX) {
     if (!this.mapMonsters || !Array.isArray(this.mapMonsters)) return null
     const range = maxRange
     const useAxis = axis || 'x'  // 默认只按 X 轴
@@ -4701,10 +4702,12 @@ export function installFieldBattleSystem(FieldSceneClass) {
 
       if (dy > yTolerance) continue  // Y 轴偏差太大，打不到
 
-      // ★ 近战前向约束（dir 传入时生效）：仅命中朝向侧，模拟"挥剑弧"——剑尖前偏、背后仅极小容差。
-      //   避免站桩连击把身后/反方向的怪一起带走（"影响整个X轴"的根因之一）。
+      // ★ 近战前向约束（dir + axis='x' 时生效）：仅命中玩家【朝向半球】。
+      //   faceX 默认取 originX（兼容旧调用/队友AI）；玩家普攻传入玩家中心 ctrlPos.x，
+      //   使背后(monster.x - faceX 与 dir 反向)的怪物一律不可命中 —— 修复"背后能攻击"。
       if (dir && useAxis === 'x') {
-        if (dxSigned * dir < -18 * this.dpr) continue
+        const faceRefX = (faceX !== undefined) ? faceX : originX
+        if ((monster.x - faceRefX) * dir < 0) continue
       }
 
       // 优先：已锁定的目标若在范围内直接选用

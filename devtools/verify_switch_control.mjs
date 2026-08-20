@@ -51,6 +51,10 @@ class MockFieldScene {
 // 安装到 mock 类
 installFieldBattleSystem(MockFieldScene)
 
+// ★ 补齐真实场景里存在、但本 mock 未实现的受击回调（避免 _applyHeroDamage 抛 TypeError）
+MockFieldScene.prototype._triggerHeroHurt = function () {}
+MockFieldScene.prototype._fieldApplyCounterReflect = function () {}
+
 // ============ 准备场景并进入战斗 ============
 const scene = new MockFieldScene()
 const sys = scene.battleSystem

@@ -134,7 +134,7 @@ check('通关解锁艾米（amy）成功', amyUnlocked)
 const second = charStateManager.unlockCharacter('amy')
 check('艾米解锁幂等（重复调用安全）', second === false)
 
-console.log('\n[5] 副本结构配置（区域分层 / 安全区 / 开场对话）')
+console.log('\n[5] 副本结构配置（区域分层 / 开场对话）')
 check('spawnZones 为 3 个区域', GRASSLAND_DUNGEON.spawnZones && GRASSLAND_DUNGEON.spawnZones.length === 3)
 const zoneOk = (GRASSLAND_DUNGEON.spawnZones || []).every(z =>
   z.x >= 0 && z.y >= 0 && z.w > 0 && z.h > 0 &&
@@ -145,24 +145,10 @@ check('每个区域字段合法（坐标/敌人/等级/数量）', zoneOk)
 const zoneTotal = (GRASSLAND_DUNGEON.spawnZones || []).reduce((s, z) => s + z.count, 0)
 check('区域分层怪物总数 = 21（9+7+5）', zoneTotal === 21)
 check('含 Boss 全副本共 22 只', zoneTotal + 1 === 22)
-check('safeZones 为 2 个篝火', GRASSLAND_DUNGEON.safeZones && GRASSLAND_DUNGEON.safeZones.length === 2)
-const szOk = (GRASSLAND_DUNGEON.safeZones || []).every(z => z.x > 0 && z.y > 0 && z.radius > 0 && z.name)
-check('每个篝火字段合法（坐标/半径/名称）', szOk)
+check('已移除篝火安全区（设计调整：safeZones 不再定义）', !GRASSLAND_DUNGEON.safeZones)
 check('开场引导对话存在', GRASSLAND_DUNGEON.introDialogue && GRASSLAND_DUNGEON.introDialogue.name && Array.isArray(GRASSLAND_DUNGEON.introDialogue.lines) && GRASSLAND_DUNGEON.introDialogue.lines.length >= 3)
 
-console.log('\n[6] 安全区回血逻辑（镜像修复后的 _updateSafeZoneHeal：直接操作 this.party）')
-function healTick(hero, dt) {
-  const maxHp = hero.maxHp || hero.hp
-  if (hero.hp < maxHp) hero.hp = Math.min(maxHp, hero.hp + maxHp * 0.3 * dt)
-}
-// 探索期 battleHeroes 为空（修复前此分支无效）：验证回血直接作用于 persistent party 仍可生效
-const party = [{ hp: 50, maxHp: 100 }, { hp: 0, maxHp: 100 }]
-for (let i = 0; i < 10; i++) for (const h of party) healTick(h, 1)
-check('回血作用于 persistent party（即使 battleHeroes 为空也能生效）', party[0].hp >= 100 - 1e-6 && party[1].hp > 0)
-check('回血不超上限', party[0].hp <= 100 + 1e-6)
-check('可复活倒地队员（hp=0 → 回升）', party[1].hp > 0 && party[1].hp <= 100)
-
-console.log('\n[7] 第一章 Boss 属性覆盖（修复 getEnemyByLevel 放大终章数据的 bug）')
+console.log('\n[6] 第一章 Boss 属性覆盖（修复 getEnemyByLevel 放大终章数据的 bug）')
 const GROWTH = { boss: { hp: 0.12, atk: 0.08, def: 0.08, spd: 0.04 } }
 // dark_cat_king 本体按终章 level 10 编写
 const BOSS_BASE = { maxHp: 500, atk: 32, def: 22, spd: 13 }
@@ -179,7 +165,7 @@ check('覆盖后 Boss atk = 17（章节适配）', ov && ov.atk === 17)
 const ultDmg = ov.atk * 3.0 - 10 * 0.3
 check('终章技(power3.0) 仅造成约 48 伤（可生还，非秒杀）', ultDmg >= 40 && ultDmg <= 55)
 
-console.log('\n[8] 配置完整性')
+console.log('\n[7] 配置完整性')
 check('clearReward.unlocks 含 amy', GRASSLAND_DUNGEON.clearReward.unlocks.includes('amy'))
 check('clearReward.coins = 80', GRASSLAND_DUNGEON.clearReward.coins === 80)
 

@@ -102,7 +102,7 @@ export const GRASSLAND_DUNGEON = {
       '臻宝、小宝！阳光草原最近被暗影猫王控制了。',
       '草原上的野猫都变得狂躁，村民们都不敢出门了。',
       '请沿路清剿怪物，直捣东北方的暗影巢穴，击败暗影猫王！',
-      '（提示：左下摇杆移动，攻击键普攻；靠近宝箱点击拾取，营地篝火可回血）',
+      '（提示：左下摇杆移动，攻击键普攻；靠近宝箱点击拾取）',
     ],
   },
 
@@ -115,14 +115,5 @@ export const GRASSLAND_DUNGEON = {
     { id: 'outer', name: '草原外围', x: 150,  y: 1700, w: 1300, h: 1200, level: [1, 2], enemies: ['wild_cat', 'slime_cat'], count: 9 },
     { id: 'mid',   name: '草原深处', x: 1450, y: 700,  w: 1150, h: 1500, level: [2, 3], enemies: ['shadow_mouse', 'flame_slime', 'aqua_slime'], count: 7 },
     { id: 'deep',  name: '暗影领地', x: 2650, y: 150,  w: 1150, h: 1250, level: [3, 4], enemies: ['violet_slime', 'shadow_mouse_smooth', 'flame_slime'], count: 5 },
-  ],
-
-  /**
-   * 安全区 / 回血点（篝火）：玩家靠近持续回血，避免前期无治疗角色卡死。
-   * 坐标/半径均为逻辑像素（field-scene 读取时乘 dpr）。
-   */
-  safeZones: [
-    { id: 'bonfire_spawn', name: '营地篝火',     x: 320,  y: 2680, radius: 170 },
-    { id: 'bonfire_deep',  name: '暗影前哨篝火', x: 3150, y: 1150, radius: 170 },
   ],
 }
