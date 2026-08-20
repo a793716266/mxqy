@@ -2042,8 +2042,11 @@ baseRadius: 50 * this.dpr,    // 底座半径（缩小）
   }
 
   /**
-   * ★【非运行路径 / 死代码】生成怪物远程抛射物（已被 field-battle-system.js 的
-   *   _fieldSpawnMonsterProjectile 取代，请勿在此修改）。
+   * ★ 生成怪物远程抛射物（仍被 _castMonsterSkill 调用，是野外实时战斗的真实运行路径）。
+   *   弹道存入 battleSystem.projectiles，统一由 field-battle-system.js 的
+   *   _fieldUpdateProjectiles 更新并结算伤害——因此它【必须】携带 atk/owner 字段，
+   *   否则 _fieldUpdateProjectiles 用 p.atk(undefined) 算伤害会得到 NaN，
+   *   导致 (NaN>0) 为 false：既不扣血也不会设置 _hurtFlash（即远程不泛红）。
    */
   _spawnMonsterProjectile(monster, skill, dist) {
     if (!this.battleSystem.projectiles) this.battleSystem.projectiles = []
@@ -2057,6 +2060,9 @@ baseRadius: 50 * this.dpr,    // 底座半径（缩小）
       vx: (dx / len) * speed,
       vy: (dy / len) * speed,
       power: skill.power || 1,
+      atk: monster.atk,        // ★ 必须携带：_fieldUpdateProjectiles 用 p.atk 算伤害，缺失→NaN→不泛红不扣血
+      def: monster.def,
+      owner: 'monster',        // 与 _fieldSpawnMonsterProjectile 保持一致，便于后续统一
       life: 2.0, // 秒
       fromMonster: true,
       skillId: skill.id
