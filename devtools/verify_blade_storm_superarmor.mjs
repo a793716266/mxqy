@@ -117,8 +117,20 @@ scene._playerAttackMonster(tA, bsSkill)
 assert(hero._castSuperArmor === true, '施放后 hero._castSuperArmor === true', `super=${hero._castSuperArmor}`)
 assert(hero._castToken > 0, '施放后 castToken 已生成')
 assert(scene.battleSystem.playerAnim && scene.battleSystem.playerAnim.timer > 0, 'playerAnim 进行中（timer>0）')
-assert(scene._heroSuperArmorOn(hero, true) === true, '霸体光环判定为显示（isMain=true）')
-assert(scene._heroSuperArmorOn(hero, false) === false, 'isMain=false 时不误判为主控（区分主控/队友通道）')
+// ★ 新契约（单参数，按"角色身份"自决通道，不再接收 isMain 标志，对应根因2修复）：
+//   被控英雄 → 走 playerAnim 通道；非被控（AI/队友）→ 走 _aiCastingSkill 通道。
+//   因此"是否亮霸体光环"由角色自身状态决定，与当前被控谁无关。
+assert(scene._heroSuperArmorOn(hero) === true, '霸体光环判定为显示（被控英雄走 playerAnim 通道）')
+// 证明被控英雄【不会】误用队友通道：即便挂上 _aiCastingSkill(superArmor)，
+// 只要 playerAnim 不活跃，霸体光环仍为 false（通道由身份决定，而非 _aiCastingSkill 标记）。
+const _paTimerBak = scene.battleSystem.playerAnim ? scene.battleSystem.playerAnim.timer : 0
+const _aiBak = hero._aiCastingSkill
+hero._aiCastingSkill = bsSkill   // 模拟"队友通道"标记存在
+scene.battleSystem.playerAnim.timer = 0
+assert(scene._heroSuperArmorOn(hero) === false, '被控英雄不误用队友通道（playerAnim 不活跃即 false，即便 _aiCastingSkill 存在）')
+// 恢复真实施法状态，确保后续受击/推进用例不受影响
+scene.battleSystem.playerAnim.timer = _paTimerBak > 0 ? _paTimerBak : 2.0
+hero._aiCastingSkill = _aiBak
 
 // 模拟施放期间被怪物打中（HP 伤害 → 触发 _interruptCastingForHero）
 const x = ctrl.getPos().x, y = ctrl.getPos().y

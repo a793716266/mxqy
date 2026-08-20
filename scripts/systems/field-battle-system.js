@@ -1248,7 +1248,8 @@ export function installFieldBattleSystem(FieldSceneClass) {
   //   每帧把 animTimer 归零以冻结 CharacterSprite 的自动推进，确保精确停在指定帧。
   proto._bladeStormSetFrame = function(ctrl, frameNum, pa) {
     pa.frame = frameNum
-    const sp = this.mainCharacterSprite
+    // ★ 支持指定 sprite（AI 路径传 bh，玩家路径传被控 hero；都指向臻宝的 sprite）
+    const sp = (ctrl && ctrl.sprite) ? ctrl.sprite : this.mainCharacterSprite
     if (sp) {
       sp.animFrame = frameNum - 1   // 0-based
       sp.animTimer = 0
@@ -1566,6 +1567,12 @@ export function installFieldBattleSystem(FieldSceneClass) {
 
       // ★ 用独立计时器管理 AI 攻击状态（不再依赖 CharacterSprite.onAnimationComplete，避免回调未触发导致 state 永久卡在 attack）
       if (bh.hero._aiAttacking) {
+        // ★ AI 剑气风暴：由其独立状态机推进（不受 _aiAttackTimer 倒计时约束，
+        //   状态机主动结束时清 _aiAttacking），期间仍跳过移动/重新施法。
+        if (bh.hero._aiBladeStorm) {
+          this._updateAllyBladeStorm(bh, dt)
+          continue
+        }
         bh.hero._aiAttackTimer -= dt
         if (bh.hero._aiAttackTimer <= 0) {
           bh.hero._aiAttacking = false
@@ -2188,7 +2195,9 @@ export function installFieldBattleSystem(FieldSceneClass) {
 
     // 分派
     if (skill.type === 'blade_storm') {
-      this._allyCastBladeStorm(bh, monster, skill)
+      // ★ AI 剑气风暴：启动与玩家一致的三阶段状态机（蓄力→5连突刺→收尾月牙），
+      //   不再是一次性发月牙（旧 _allyCastBladeStorm 已废弃）。
+      this._startAllyBladeStorm(bh, monster, skill)
     } else if (skill.aoe) {
       if (skill.aoe.aoeType === 'lineX') {
         this._castFireballAoE(skill, cpos, castDir, hero)
@@ -2245,36 +2254,122 @@ export function installFieldBattleSystem(FieldSceneClass) {
   }
 
   /**
-   * ★ AI 释放剑气风暴（blade_storm）：生成月牙剑气投射物
+   * ★ AI 释放剑气风暴（blade_storm）：启动与玩家一致的三阶段状态机
+   *   —— 蓄力(charge) → 5 连突刺(dash) → 收尾月牙(finish)，期间霸体站桩、吸附前方怪物。
+   *   不再像旧 _allyCastBladeStorm 那样只发一发月牙（那样看不到突刺/霸体动画）。
+   *   状态机对象存于 hero._aiBladeStorm，由 _updateAllyAI 每帧调 _updateAllyBladeStorm 推进。
    */
-  proto._allyCastBladeStorm = function(bh, monster, skill) {
+  proto._startAllyBladeStorm = function(bh, monster, skill) {
     const hero = bh.hero
     const cpos = bh.getPos()
-    const castDir = (bh.sprite && bh.sprite.facingLeft) ? -1 : 1
-    if (!this.battleSystem.projectiles) this.battleSystem.projectiles = []
-    this.battleSystem.projectiles.push({
-      x: cpos.x + castDir * 20 * this.dpr,
-      y: cpos.y - 25 * this.dpr,
-      vx: castDir * 260 * this.dpr,
-      vy: 0,
-      power: skill.power || 2.2,
-      atk: this._getHeroAtk(hero),
-      def: hero.def || 0,
-      life: 1.2,
-      maxLife: 1.2,
-      color: '#aee6ff',
-      owner: 'hero',
-      hero: hero,
+    const dir = (bh.sprite && bh.sprite.facingLeft) ? -1 : 1
+    // ★ 记录蓄力范围内（世界坐标）的存活怪物，供吸附（与玩家 _castBladeStorm 一致）
+    const pullRange = (skill.pullRange || 220) * this.dpr
+    const pulled = []
+    for (const m of (this.mapMonsters || [])) {
+      if (!m.alive) continue
+      if (Math.hypot(m.x - cpos.x, m.y - cpos.y) <= pullRange) pulled.push(m)
+    }
+    const dashTotal = (skill.combo || 5) * 0.18
+    const finishTotal = 0.5
+    const total = 1.0 + dashTotal + finishTotal
+    // ★ 与玩家路径对齐：全程霸体站桩（_castSuperArmor 已由 _allyTryCastSkill 设 true）
+    hero._aiBladeStorm = {
+      phase: 'charge',
+      chargeMax: 1.0,
+      chargeTimer: 1.0,
+      dashMax: 0.18,
+      dashTimer: 0,
+      dashT: 0,
+      dashStep: 0,
+      combo: skill.combo || 5,
+      finishMax: finishTotal,
+      finishTimer: 0,
       skill: skill,
-      castDir: castDir,
-      isBasicAttack: false,
-      bladeStorm: true,
-      height: 90,
-      width: 55,
-      hitW: 100,
-      hitH: 100,
-      _hitSet: new Set()
-    })
+      dir: dir,
+      pulled: pulled,
+      frame: 2,
+      _dashHitPending: true
+    }
+    hero._aiAttacking = true
+    // ★ _aiAttackTimer 设为略大于整段时长，作为兜底（状态机主动结束时已清 _aiAttacking）；
+    //   期间 _updateAllyAI 的 _aiAttacking 分支会跳过移动/重新施法，保证不被 AI 走位打断。
+    hero._aiAttackTimer = total + 0.3
+    hero._castSuperArmor = !!skill.superArmor
+    hero._aiCastingSkill = skill
+    this._spawnBuffParticles(hero, '#FFD700', 24)
+  }
+
+  /**
+   * ★ 每帧推进 AI 剑气风暴状态机（存于 hero._aiBladeStorm）。
+   *   与玩家路径 _updateBladeStorm 平行，但 ctrl 固定为 bh（臻宝自身 battleHero），
+   *   不依赖 _getCurrentControlHero()（后者返回的是当前被控英雄=李小宝）。
+   *   核心三件套 _bladeStormSetFrame / _bladeStormHit / _spawnBladeStormProjectile 全部复用。
+   */
+  proto._updateAllyBladeStorm = function(bh, dt) {
+    const hero = bh.hero
+    const pa = hero._aiBladeStorm
+    if (!pa) { hero._aiAttacking = false; return }
+    const ctrl = bh
+    const cpos = bh.getPos()
+    const dir = pa.dir
+    const dpr = this.dpr
+
+    // ★ 吸附：被锁定怪物拉向臻宝正前方（与玩家路径一致）
+    const tx = cpos.x + dir * (pa.skill.pullDist || 70) * dpr
+    const ty = cpos.y
+    for (const m of pa.pulled) {
+      if (!m.alive) continue
+      const k = Math.min(1, dt * 8)
+      m.x += (tx - m.x) * k
+      m.y += (ty - m.y) * k
+    }
+
+    if (pa.phase === 'charge') {
+      this._spawnBuffAuraParticles(hero, '#FFD700')
+      this._bladeStormSetFrame(ctrl, 2, pa)
+      pa.chargeTimer -= dt
+      if (pa.chargeTimer <= 0) {
+        pa.phase = 'dash'
+        pa.dashTimer = pa.dashMax
+        pa.dashT = 0
+        pa.dashStep = 0
+        pa._dashHitPending = true
+      }
+    } else if (pa.phase === 'dash') {
+      pa.dashTimer -= dt
+      pa.dashT = Math.min(1, Math.max(0, 1 - pa.dashTimer / pa.dashMax))
+      this._bladeStormSetFrame(ctrl, (pa.dashStep % 2 === 0) ? 2 : 3, pa)
+      if (pa._dashHitPending && pa.dashT >= 0.45) {
+        this._bladeStormHit(ctrl, dir, pa.skill)
+        pa._dashHitPending = false
+      }
+      if (pa.dashTimer <= 0) {
+        pa.dashStep++
+        if (pa.dashStep >= pa.combo) {
+          pa.phase = 'finish'
+          pa.finishTimer = pa.finishMax
+          this._bladeStormSetFrame(ctrl, 3, pa)
+        } else {
+          pa.dashTimer = pa.dashMax
+          pa.dashT = 0
+          pa._dashHitPending = true
+        }
+      }
+    } else if (pa.phase === 'finish') {
+      pa.finishTimer -= dt
+      this._bladeStormSetFrame(ctrl, pa.finishTimer > pa.finishMax * 0.5 ? 3 : 7, pa)
+      if (pa.finishTimer <= 0) {
+        // ★ 收尾月牙（必须在 03/07 收尾播放完之后，与玩家路径一致）
+        this._spawnBladeStormProjectile(ctrl, dir, pa.skill)
+        const sp = bh.sprite
+        if (sp) { sp.state = 'idle'; sp.animFrame = 0; sp.animTimer = 0 }
+        hero._aiAttacking = false
+        hero._castSuperArmor = false
+        hero._aiCastingSkill = null
+        hero._aiBladeStorm = null
+      }
+    }
   }
 
   // ==========================================================================

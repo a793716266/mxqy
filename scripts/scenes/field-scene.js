@@ -3851,9 +3851,9 @@ baseRadius: 50 * this.dpr,    // 底座半径（缩小）
 
     // ── layer=2：霸体技能光环（英雄施放霸体技能期间显示，按世界Y排序）─
     if (this.battleSystem) {
-      const saAt = (wx, wy, hero, isMain) => {
+      const saAt = (wx, wy, hero) => {
         if (!hero) return
-        if (!this._heroSuperArmorOn(hero, isMain)) return
+        if (!this._heroSuperArmorOn(hero)) return
         engine.addEntity({
           layer: 2,
           sortY: wy / this.dpr,
@@ -3862,14 +3862,14 @@ baseRadius: 50 * this.dpr,    // 底座半径（缩小）
         })
       }
       const saMainPos = (this._heroWorldPos && this._heroWorldPos[0]) ? this._heroWorldPos[0] : { x: this.playerX, y: this.playerY }
-      if (!(this.battleSystem.active && this.party[0] && this.party[0].hp <= 0)) saAt(saMainPos.x, saMainPos.y, this.party[0], true)
+      if (!(this.battleSystem.active && this.party[0] && this.party[0].hp <= 0)) saAt(saMainPos.x, saMainPos.y, this.party[0])
       if (this.followers && Array.isArray(this.followers)) {
         for (let i = 0; i < this.followers.length; i++) {
           const f = this.followers[i]
           if (!f || !f.character) continue
           if (this.battleSystem.active && f.character.hp <= 0) continue
           const fPos = (this._heroWorldPos && this._heroWorldPos[i + 1]) ? this._heroWorldPos[i + 1] : { x: f.x, y: f.y }
-          saAt(fPos.x, fPos.y, f.character, false)
+          saAt(fPos.x, fPos.y, f.character)
         }
       }
     }
@@ -6134,10 +6134,19 @@ baseRadius: 50 * this.dpr,    // 底座半径（缩小）
    *   isMain=true（主控玩家）：走 playerAnim.timer 通道；
    *   isMain=false（AI 队友）：走 _aiCastingSkill 通道。
    */
-  _heroSuperArmorOn(hero, isMain) {
+  _heroSuperArmorOn(hero) {
     if (!hero) return false
-    if (!isMain) return !!(hero._aiCastingSkill && hero._aiCastingSkill.superArmor)
-    return !!(this.battleSystem && this.battleSystem.playerAnim && this.battleSystem.playerAnim.timer > 0 && hero._castSuperArmor)
+    // ★ 霸体光环按"角色自身是否在施放霸体技能"判定，与当前被控角色解耦：
+    //   - 若是当前被控英雄（playerAnim 属于它）→ 查 playerAnim.timer + _castSuperArmor
+    //   - 若非被控（AI 托管/队友）→ 查自身 _aiCastingSkill.superArmor
+    //   修复：原主角位写死 isMain=true 导致 AI 托管的臻宝（此时被控的是李小宝）
+    //   霸体光环被错误耦合到 playerAnim（李小宝的施法状态）而永不显示。
+    const ctrl = this._getCurrentControlHero && this._getCurrentControlHero()
+    const isCtrl = ctrl && ctrl.hero === hero
+    if (isCtrl) {
+      return !!(this.battleSystem && this.battleSystem.playerAnim && this.battleSystem.playerAnim.timer > 0 && hero._castSuperArmor)
+    }
+    return !!(hero._aiCastingSkill && hero._aiCastingSkill.superArmor)
   }
 
   /**
