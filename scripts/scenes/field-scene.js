@@ -3874,6 +3874,32 @@ baseRadius: 50 * this.dpr,    // 底座半径（缩小）
       }
     }
 
+    // ── layer=2：英雄护盾气泡（按 2.5D 世界Y排序，包裹身体；与霸体光环同层机制）─
+    //   ★ 护盾（_shield>0）不再只是 HP 条上的白条，而是在世界里以气泡包裹英雄身体显示，
+    //     随角色前后遮挡正确（sortY=脚底世界Y），满足"护盾按 2.5D 层级显示"。
+    if (this.battleSystem) {
+      const shAt = (wx, wy, hero) => {
+        if (!hero || !(hero._shield > 0)) return
+        engine.addEntity({
+          layer: 2,
+          sortY: wy / this.dpr,
+          type: 'heroShieldBubble',
+          render: (ctx) => this._renderHeroShieldBubble(ctx, wx - this.cameraX, wy - this.cameraY, hero)
+        })
+      }
+      const shMainPos = (this._heroWorldPos && this._heroWorldPos[0]) ? this._heroWorldPos[0] : { x: this.playerX, y: this.playerY }
+      if (!(this.battleSystem.active && this.party[0] && this.party[0].hp <= 0)) shAt(shMainPos.x, shMainPos.y, this.party[0])
+      if (this.followers && Array.isArray(this.followers)) {
+        for (let i = 0; i < this.followers.length; i++) {
+          const f = this.followers[i]
+          if (!f || !f.character) continue
+          if (this.battleSystem.active && f.character.hp <= 0) continue
+          const fPos = (this._heroWorldPos && this._heroWorldPos[i + 1]) ? this._heroWorldPos[i + 1] : { x: f.x, y: f.y }
+          shAt(fPos.x, fPos.y, f.character)
+        }
+      }
+    }
+
     // ── layer=2：怪物异常状态视觉（脚底圈/身体染色/头顶标记，按世界Y排序）─
     if (this.battleSystem && this.battleSystem.active && this.mapMonsters) {
       for (const m of this.mapMonsters) {
@@ -5939,6 +5965,51 @@ baseRadius: 50 * this.dpr,    // 底座半径（缩小）
     ctx.fillStyle = '#ff2a2a'
     ctx.beginPath()
     ctx.ellipse(x, y - th * 0.45, th * 0.42, th * 0.5, 0, 0, Math.PI * 2)
+    ctx.fill()
+    ctx.restore()
+  }
+
+  /**
+   * ★ 英雄护盾气泡（2.5D 世界层级显示）：在英雄身体外包一层半透明护盾泡，
+   *   由 _renderYSortedEntities 以 layer=2 / sortY=脚底世界Y 注册，随角色前后正确遮挡。
+   *   (sx, sy) 为英雄脚底屏幕坐标（与 _renderHeroHurtFlash 同一锚点）。
+   */
+  _renderHeroShieldBubble(ctx, sx, sy, hero) {
+    if (!hero || !(hero._shield > 0)) return
+    const dpr = this.dpr || 1
+    const bodyH = 80 * dpr
+    const bodyW = 56 * dpr
+    const cx = sx
+    const cy = sy - bodyH * 0.5   // 身体中心（脚底上方半身高）
+    // 轻微脉动（用护盾剩余时间做相位，无全局时钟也能稳定；越接近消失越弱）
+    const rem = hero._shieldTimer || 0
+    const lifeK = Math.max(0.55, Math.min(1, 0.55 + (hero._shieldMax ? hero._shield / hero._shieldMax : 1) * 0.45))
+    const pulse = 1 + 0.05 * Math.sin((rem * 6) || 0)
+    const rx = bodyW * 0.64 * pulse
+    const ry = bodyH * 0.54 * pulse
+    ctx.save()
+    // ★ 护盾填充（径向渐变，中心透、边缘亮）
+    ctx.globalAlpha = 0.30 * lifeK
+    const grad = ctx.createRadialGradient(cx, cy, ry * 0.2, cx, cy, ry * 1.06)
+    grad.addColorStop(0, 'rgba(150,220,255,0.08)')
+    grad.addColorStop(0.65, 'rgba(120,200,255,0.22)')
+    grad.addColorStop(1, 'rgba(185,235,255,0.40)')
+    ctx.fillStyle = grad
+    ctx.beginPath()
+    ctx.ellipse(cx, cy, rx, ry, 0, 0, Math.PI * 2)
+    ctx.fill()
+    // ★ 护盾外缘高光（越满越亮）
+    ctx.globalAlpha = 0.9 * lifeK
+    ctx.lineWidth = 2 * dpr
+    ctx.strokeStyle = 'rgba(205,240,255,0.85)'
+    ctx.beginPath()
+    ctx.ellipse(cx, cy, rx, ry, 0, 0, Math.PI * 2)
+    ctx.stroke()
+    // ★ 顶端盾尖微光
+    ctx.globalAlpha = 0.5 * lifeK
+    ctx.fillStyle = 'rgba(225,245,255,0.9)'
+    ctx.beginPath()
+    ctx.ellipse(cx, cy - ry, rx * 0.5, ry * 0.12, 0, 0, Math.PI * 2)
     ctx.fill()
     ctx.restore()
   }

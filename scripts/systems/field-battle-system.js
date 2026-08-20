@@ -474,6 +474,8 @@ export function installFieldBattleSystem(FieldSceneClass) {
         }
       } else {
         pa.timer -= dt
+        // ★ 盾击突进：在技能前段（lungeDuration 内）沿面向方向位移玩家，受障碍/边界钳制
+        if (pa.lungeDist && !pa._lungeDone) this._applyShieldBashLunge(pa, dt)
       if (pa.timer <= 0) {
         // ★ 普攻输入缓冲：本击结束，若有缓存的普攻请求，下一帧立即接上
         if (this.battleSystem._bufferedAttack) {
@@ -839,6 +841,19 @@ export function installFieldBattleSystem(FieldSceneClass) {
       timer: animLen,
       maxTimer: animLen,
       facing: monster ? Math.atan2(monster.y - pos0.y, monster.x - pos0.x) : 0
+    }
+
+    // ★ 盾击突进（lunge）：释放瞬间朝面向方向位移一段（带霸体），受障碍/地图边界钳制
+    if (skill && skill.id === 'shield_bash' && skill.lungeDist) {
+      const ldir = monster ? ((monster.x >= pos0.x) ? 1 : -1) : (this.facingLeft ? -1 : 1)
+      const pa2 = this.battleSystem.playerAnim
+      pa2.lungeDist = skill.lungeDist * this.dpr   // 物理像素
+      pa2.dir = ldir
+      pa2.lungeDuration = 0.18
+      pa2.lungeElapsed = 0
+      pa2._lungeDone = false
+      // ★ 突进期间完全锁摇杆（X+Y），避免与玩家输入抢位移；霸体保证不被打断
+      this.battleSystem.castLockTimer = Math.max(this.battleSystem.castLockTimer || 0, pa2.lungeDuration)
     }
 
     // buff类技能（无目标）：只扣 MP + 播放动画，不造成伤害
@@ -1280,6 +1295,38 @@ export function installFieldBattleSystem(FieldSceneClass) {
     ty = Math.max(margin, Math.min(mh - margin, ty))
     m.x = tx
     m.y = ty
+  }
+
+  // ★ 盾击突进（lunge）：在技能前段把被控英雄沿面向方向位移一段。
+  //   约束（与怪物击退/鸡腿盾击一致）：落点撞障碍物 → 整段取消（不穿墙）；
+  //   越出地图 → 钳制在边界内（不推出地图）。突进期间由 castLockTimer 全锁，不与摇杆抢位移。
+  proto._applyShieldBashLunge = function(pa, dt) {
+    if (!pa || !pa.lungeDist || pa._lungeDone) return
+    pa.lungeElapsed = (pa.lungeElapsed || 0) + dt
+    const dur = pa.lungeDuration || 0.18
+    const total = pa.lungeDist
+    const left = total * (1 - Math.min(1, pa.lungeElapsed / dur))
+    if (left <= 0.5 * this.dpr) { pa._lungeDone = true; return }
+    const step = Math.min(left, total * dt / dur) * (pa.dir || 1)
+    const margin = 50 * this.dpr
+    const mw = this.mapWidth || (4000 * this.dpr)
+    const mh = this.mapHeight || (4000 * this.dpr)
+    const nx = Math.max(margin, Math.min(mw - margin, this.playerX + step))
+    const oldY = this.playerY
+    // ★ 障碍检测：落点撞墙则取消剩余突进（不穿墙）
+    if (this._collisionEngine && this._collisionEngine.checkStaticCollision(nx, oldY)) {
+      pa._lungeDone = true
+      return
+    }
+    this.playerX = nx
+    // ★ 同步被控英雄世界坐标（战斗系统下被控者即 playerX/playerY）
+    const bh = this.battleSystem.battleHeroes && this.battleSystem.battleHeroes[0]
+    if (bh && this._heroWorldPos && this._heroWorldPos[bh.partyIndex]) {
+      this._heroWorldPos[bh.partyIndex].x = this.playerX
+      this._heroWorldPos[bh.partyIndex].y = this.playerY
+    }
+    if (typeof this._updateCamera === 'function') this._updateCamera()
+    if (pa.lungeElapsed >= dur) pa._lungeDone = true
   }
 
   // ★ 统一对怪物造成伤害：所有怪物扣血必须走此方法，并在此处聚焦目标面板
