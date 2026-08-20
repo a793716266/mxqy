@@ -62,7 +62,7 @@ export const MAP_NODES = {
     bg: 'images/backgrounds/bg_boss.png',
     x: 650, y: 250,
     connections: ['ch1_road3'],
-    boss: 'dark_cat_king',
+    boss: 'lost_healer_cat',
     defeated: false
   }
 }

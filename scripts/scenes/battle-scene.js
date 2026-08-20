@@ -196,14 +196,7 @@ export class BattleScene extends SceneBase {
     
     // 初始化调试日志系统
     this._initDebugLogSystem()
-    
-    // ★ 强制测试模式：如果敌人是 dark_cat_king，自动替换为 lost_healer_cat
-    if (this.enemies && this.enemies.length > 0 && this.enemies[0].id === 'dark_cat_king') {
-      console.warn('[Battle] 检测到暗影猫王，自动替换为BOSS艾米（测试模式）')
-      this._testMode = true
-      this.enemies = [{ id: 'lost_healer_cat', level: 10 }]
-    }
-    
+
     console.log('[Battle] party:', this.party)
     console.log('[Battle] enemies:', this.enemies)
 

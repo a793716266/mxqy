@@ -266,8 +266,8 @@ export class FieldScene extends SceneBase {
         fieldBg: null, // 程序化渲染（grassland-map-data.js）
         battleBg: 'BG_GRASSLAND', // 战斗背景
         enemies: ['wild_cat', 'slime_cat', 'shadow_mouse', 'flame_slime', 'aqua_slime', 'violet_slime', 'shadow_mouse_smooth'],
-        bossEnemy: 'dark_cat_king',  // 第一章代表 Boss：暗影猫王（替换偏弱的治疗猫）
-        bossLevel: 5,               // 显式覆盖 dark_cat_king 自带的 level 10，避免 HP 按 10 级缩放膨胀
+        bossEnemy: 'lost_healer_cat',  // ★ 第一章 Boss：迷途的治愈猫（艾米），使用艾米动画资源(aimi)
+        bossLevel: 8,                  // lost_healer_cat 自带 level 8；最终属性由 grassland-dungeon 的 bossStatsOverride 锚定其原生值
         // ★ 第一章 Boss 属性覆盖（maxHp/atk/def/spd）已数据驱动地配置在
         //   scripts/data/grassland-dungeon.js 的 bossStatsOverride，由 _generateMonsters 读取应用。
         enemyData: ENEMIES_CH1,  // 敌人数据源
@@ -441,8 +441,8 @@ export class FieldScene extends SceneBase {
         // ★ 使用 getEnemyByLevel 计算最终属性（bossLevel 显式覆盖自带 level，避免缩放膨胀）
         const finalBossData = getEnemyByLevel(bossData, this.areaInfo.bossLevel || bossData.level || 5)
 
-        // ★ 第一章 Boss 属性覆盖：dark_cat_king 本体按终章 level 10 编写，getEnemyByLevel 会进一步放大，
-        //   必须用 GRASSLAND_DUNGEON.bossStatsOverride 把 HP/攻/防/速拉回章节适配值（见配置文件注释）。
+        // ★ 草原 Boss 属性覆盖：boss 为 lost_healer_cat（艾米/迷途的治愈猫），其原生属性已为第一章设计，
+        //   GRASSLAND_DUNGEON.bossStatsOverride 显式锚定其原生值（350/22/16/11），避免 getEnemyByLevel 按 level 缩放膨胀。
         if (GRASSLAND_DUNGEON.bossStatsOverride) {
           const _o = GRASSLAND_DUNGEON.bossStatsOverride
           if (_o.maxHp != null) { finalBossData.maxHp = _o.maxHp; finalBossData.hp = _o.maxHp }
@@ -505,7 +505,7 @@ export class FieldScene extends SceneBase {
         
         // ★ 记录 Boss 登场台词（玩家首次接近时触发一次），复用实体 dialogue 字段前两句
         this.bossDialogue = (bossData && Array.isArray(bossData.dialogue)) ? bossData.dialogue.slice(0, 2) : null
-        this.bossDialogueName = bossData ? bossData.name : '暗影猫王'
+        this.bossDialogueName = bossData ? bossData.name : '迷途的治愈猫'
         this.bossDialogueShown = false
         console.log(`[Field] 生成Boss: ${bossData.name} 在位置 (${bossX}, ${bossY})`)
       }
@@ -733,7 +733,7 @@ export class FieldScene extends SceneBase {
     const dx = this.playerX - boss.x
     const dy = this.playerY - boss.y
     if (Math.sqrt(dx * dx + dy * dy) < 240 * this.dpr) {
-      this._showStoryDialogue(this.bossDialogueName || '暗影猫王', this.bossDialogue)
+      this._showStoryDialogue(this.bossDialogueName || '迷途的治愈猫', this.bossDialogue)
       this.bossDialogueShown = true
     }
   }

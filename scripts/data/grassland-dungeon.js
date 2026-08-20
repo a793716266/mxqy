@@ -50,9 +50,10 @@ export const GRASSLAND_DUNGEON = {
       { type: 'gold', min: 6, max: 14, rate: 1.0 },
       { type: 'material', id: 'violet_petal', count: 1, rate: 0.45 },
     ],
-    // 草原 Boss 为 dark_cat_king（暗影猫王，见下方 bossStatsOverride）；
-    // 旧 lost_healer_cat（治疗猫）已不作为草原生成 Boss，其掉落条目移除，避免孤儿配置。
-    // 其它区域 Boss（forest/cave 的 stray_leader 等），保留以便复用
+    // 草原 Boss 为 lost_healer_cat（迷途的治愈猫 / 艾米 Boss 形态），使用艾米动画资源(aimi)，掉落见下方条目；
+    // 其属性由 bossStatsOverride 锚定艾米原生值（见该字段注释），确保"属性资源"对应艾米。
+    // 暗影猫王(dark_cat_king) 是 cave 区域 Boss，保留各自配置，不混用。
+    // 其它区域 Boss（forest 的 stray_leader 等），保留以便复用
     stray_leader: [
       { type: 'gold', min: 15, max: 30, rate: 1.0 },
       { type: 'material', id: 'stray_fang', count: 1, rate: 0.6 },
@@ -60,6 +61,11 @@ export const GRASSLAND_DUNGEON = {
     dark_cat_king: [
       { type: 'gold', min: 60, max: 100, rate: 1.0 },
       { type: 'material', id: 'shadow_heart', count: 1, rate: 1.0 },
+    ],
+    // 草原 Boss（艾米/迷途的治愈猫）掉落：金币 + 治愈草药（对应其原生 drop）
+    lost_healer_cat: [
+      { type: 'gold', min: 50, max: 90, rate: 1.0 },
+      { type: 'material', id: 'healing_herb', count: 1, rate: 1.0 },
     ],
   },
 
@@ -74,13 +80,12 @@ export const GRASSLAND_DUNGEON = {
   },
 
   /**
-   * ★ 第一章 Boss 属性覆盖：dark_cat_king 本体按终章 level 10 编写（HP 500 / atk 32），
-   * 经 getEnemyByLevel(…,5) 会进一步放大到约 740 血 / 42 攻，且技能为终章级
-   * （暗影之怒 power 3.0 + 霸体、暗影领域全体 1.2），对第一章 1~4 级队伍是「血墙 + 秒杀」不可战胜。
-   * 此处覆盖为章节适配值。伤害公式 dmg = atk*power - heroDef*0.3，故 atk≈17 时
-   * 终章技仅造成约 48 伤，可生还。由 field-scene._generateMonsters 读取应用。
+   * ★ 草原 Boss 属性覆盖（第一章适配锚点）：Boss 为 lost_healer_cat（迷途的治愈猫 / 艾米），
+   * 其原生属性已为第一章设计（maxHp 350 / atk 22 / def 16 / spd 11）。getEnemyByLevel 会按 level
+   * 缩放膨胀，故此处显式锚定其原生值，确保"属性资源"对应艾米，不让暗影猫王时期的压低值(260/17)继续生效。
+   * 由 field-scene._generateMonsters 读取应用。
    */
-  bossStatsOverride: { maxHp: 260, atk: 17, def: 10, spd: 11 },
+  bossStatsOverride: { maxHp: 350, atk: 22, def: 16, spd: 11 },
 
   /** 宝箱奖励（多条目，按 rate 概率结算；type: gold 走 _addGold，material 走 _addMaterial） */
   chestReward: {
@@ -99,9 +104,9 @@ export const GRASSLAND_DUNGEON = {
   introDialogue: {
     name: '猫村长',
     lines: [
-      '臻宝、小宝！阳光草原最近被暗影猫王控制了。',
+      '臻宝、小宝！阳光草原最近被一股暗影力量侵扰，迷途的治愈猫迷失了心智。',
       '草原上的野猫都变得狂躁，村民们都不敢出门了。',
-      '请沿路清剿怪物，直捣东北方的暗影巢穴，击败暗影猫王！',
+      '请沿路清剿怪物，直捣东北方的暗影巢穴，唤醒迷途的治愈猫（艾米）！',
       '（提示：左下摇杆移动，攻击键普攻；靠近宝箱点击拾取）',
     ],
   },

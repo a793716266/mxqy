@@ -148,22 +148,22 @@ check('含 Boss 全副本共 22 只', zoneTotal + 1 === 22)
 check('已移除篝火安全区（设计调整：safeZones 不再定义）', !GRASSLAND_DUNGEON.safeZones)
 check('开场引导对话存在', GRASSLAND_DUNGEON.introDialogue && GRASSLAND_DUNGEON.introDialogue.name && Array.isArray(GRASSLAND_DUNGEON.introDialogue.lines) && GRASSLAND_DUNGEON.introDialogue.lines.length >= 3)
 
-console.log('\n[6] 第一章 Boss 属性覆盖（修复 getEnemyByLevel 放大终章数据的 bug）')
+console.log('\n[6] 第一章 Boss 属性覆盖（草原 Boss = 艾米 lost_healer_cat，属性资源锚定原生）')
 const GROWTH = { boss: { hp: 0.12, atk: 0.08, def: 0.08, spd: 0.04 } }
-// dark_cat_king 本体按终章 level 10 编写
-const BOSS_BASE = { maxHp: 500, atk: 32, def: 22, spd: 13 }
-const lvl = 5, mul = lvl - 1
-const preHp = Math.floor(BOSS_BASE.maxHp * (1 + GROWTH.boss.hp * mul))
-const preAtk = Math.floor(BOSS_BASE.atk * (1 + GROWTH.boss.atk * mul))
-check('未覆盖时 getEnemyByLevel(dark_cat_king,5) 反而放大到 ~740 血（原 bug）', preHp >= 700 && preHp <= 760)
-check('未覆盖时 atk 被放大到 ~42（原 bug）', preAtk >= 40 && preAtk <= 44)
+// 草原 Boss 为 lost_healer_cat（迷途的治愈猫 / 艾米），原生 level 8，原生属性 350/22/16/11
+const AMY_BASE = { maxHp: 350, atk: 22, def: 16, spd: 11 }
+const lvl = 8, mul = lvl - 1  // bossLevel=8（field-scene grassland.bossLevel 设定）
+const preHp = Math.floor(AMY_BASE.maxHp * (1 + GROWTH.boss.hp * mul))
+const preAtk = Math.floor(AMY_BASE.atk * (1 + GROWTH.boss.atk * mul))
+check('未覆盖时 getEnemyByLevel(lost_healer_cat,8) 仍会放大（佐证需 bossStatsOverride 锚定）', preHp > 350 && preAtk > 22)
 const ov = GRASSLAND_DUNGEON.bossStatsOverride
 check('bossStatsOverride 配置存在', !!ov)
-check('覆盖后 Boss HP = 260（章节适配）', ov && ov.maxHp === 260)
-check('覆盖后 Boss atk = 17（章节适配）', ov && ov.atk === 17)
-// 伤害公式 dmg = atk*power - heroDef*0.3；终章技 power 3.0，heroDef 取 10
-const ultDmg = ov.atk * 3.0 - 10 * 0.3
-check('终章技(power3.0) 仅造成约 48 伤（可生还，非秒杀）', ultDmg >= 40 && ultDmg <= 55)
+check('覆盖后 Boss HP = 350（艾米原生）', ov && ov.maxHp === 350)
+check('覆盖后 Boss atk = 22（艾米原生）', ov && ov.atk === 22)
+check('覆盖值与艾米原生属性一致（属性资源不被扭曲）', ov && ov.maxHp === AMY_BASE.maxHp && ov.atk === AMY_BASE.atk && ov.def === AMY_BASE.def && ov.spd === AMY_BASE.spd)
+// 艾米最强攻击技「治愈冲击」power 2.2；伤害公式 dmg = atk*power - heroDef*0.3，heroDef 取 10 模拟
+const ultDmg = ov.atk * 2.2 - 10 * 0.3
+check('艾米最强技(治愈冲击 power2.2) 约 45 伤（可生还，非秒杀）', ultDmg >= 40 && ultDmg <= 50)
 
 console.log('\n[7] 配置完整性')
 check('clearReward.unlocks 含 amy', GRASSLAND_DUNGEON.clearReward.unlocks.includes('amy'))
