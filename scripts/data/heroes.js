@@ -21,11 +21,11 @@ export const HEROES = [
     name: '臻宝',
     title: '勇敢的战士',
     role: 'warrior',
-    maxHp: 120,
+    maxHp: 1200,
     maxMp: 300,
-    atk: 18,
-    def: 12,
-    spd: 10,
+    atk: 180,
+    def: 120,
+    spd: 100,
     avatar: 'HERO_ZHENBAO', // 引用 asset-manager 注册的 key（transparent/zhenbao/idle_01）
     // 渲染配置（用于 CharacterSprite）
     renderConfig: {
