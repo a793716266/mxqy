@@ -429,8 +429,27 @@ export function installFieldBattleSystem(FieldSceneClass) {
     if (this.battleSystem._bufferedAttackPending != null) {
       const tgt = this.battleSystem._bufferedAttackPending
       this.battleSystem._bufferedAttackPending = null
-      this.battleSystem.playerAttackCD = 0  // 跳过冷却，使缓冲普攻立即接续
-      this._playerAttackMonster(tgt, null)
+      // ★ 重新校验距离：缓冲普攻只能命中"仍在近战范围内"的 battleTarget。
+      //   否则会出现「锁定怪物后远距离疯狂按普攻 → 无视距离持续造成伤害」——
+      //   battleTarget 不会因角色远离而自动清除，只能在此越界时解除，
+      //   否则缓冲链每拍都把它当目标重打（上一轮收紧范围后此 bug 才暴露）。
+      const ctrl = this._getCurrentControlHero()
+      const pos = ctrl ? ctrl.getPos() : null
+      if (tgt && tgt.alive && pos) {
+        const dx = Math.abs(pos.x - tgt.x)
+        const dy = Math.abs(pos.y - tgt.y)
+        const meleeRange = 80 * this.dpr
+        const yTol = 40 * this.dpr
+        if (dx <= meleeRange && dy <= yTol) {
+          this.battleSystem.playerAttackCD = 0  // 跳过冷却，使缓冲普攻立即接续
+          this._playerAttackMonster(tgt, null)
+        } else {
+          // 超出近战范围：放弃本次缓冲普攻并解除锁定，避免远距离命中
+          this.battleSystem.battleTarget = null
+        }
+      } else {
+        this.battleSystem.battleTarget = null
+      }
     }
 
     // 1. 更新玩家攻击冷却
@@ -888,14 +907,15 @@ export function installFieldBattleSystem(FieldSceneClass) {
         if (this.game && this.game.audio && this.game.audio.playSwingSynth) {
           this.game.audio.playSwingSynth({ volumeScale: 1 })
         }
-        // 预计算伤害 + 延迟命中（对齐挥砍命中帧 = 约 32% 处，更跟手）
+        // 预计算伤害 + 延迟命中（对齐挥砍命中帧 = 第3帧挥剑接触点）
         const baseDmg = Math.max(1, this._getHeroAtk(mainHero) - Math.floor(monster.def * 0.5))
         const meleeCrit = Math.random() < (mainHero.crit || 0.05)
         const finalDmg = meleeCrit ? Math.floor(baseDmg * 1.5) : baseDmg
         if (!this.battleSystem.pendingDamages) this.battleSystem.pendingDamages = []
         this.battleSystem.pendingDamages.push({
-          // ★ 命中帧提前到约 32% 挥砍处（更跟手）；臻宝普攻 3 帧，其他英雄 5 帧；攻速越高命中越早
-          timer: ((this._zbAtkFrames || 5) * (this.frameDuration || 0.15) * 0.32) / _atkSpd,
+          // ★ 命中帧对齐"第3帧挥剑"实打点：落在倒数第1帧起始 ((frames-1)/frames)，
+          //   即剑完全挥出、接触怪物的瞬间；攻速越高整体越早（比例不变）。臻宝3帧→0.30s=第3帧起。
+          timer: ((this._zbAtkFrames || 5) * (this.frameDuration || 0.15) * ((this._zbAtkFrames || 5) - 1) / (this._zbAtkFrames || 5)) / _atkSpd,
           monster: monster,
           damage: finalDmg,
           heroName: mainHero.name,
@@ -2945,6 +2965,10 @@ export function installFieldBattleSystem(FieldSceneClass) {
       const dmg = this._calcSkillDamageToMonster(m, p.skill, p.hero, isCrit)
       this._damageMonster(m, dmg)
       this._pushDamageText(m, dmg, isCrit, '#ffe066')
+      // ★ 死亡判定：落雷把血量扣到 0 必须同步置 alive=false，
+      //   否则怪物 hp=0 却仍被 AI/渲染当作存活（血条空着不判定死亡）。
+      //   与其它伤害落点（冰刃3063/灼烧2989/全体551/普攻536）保持一致。
+      if (m.hp <= 0) { m.alive = false; this.battleSystem.battleTarget = null }
       if (elecCfg.enabled) {
         this._applyMonsterStatus(m, 'electrify', {
           duration: elecCfg.duration || p.duration || 3,
@@ -4299,8 +4323,15 @@ export function installFieldBattleSystem(FieldSceneClass) {
         console.log('[FieldBattle] 点击攻击按钮')
 
         // 普攻：先播动画，再判定范围内是否有目标
-        const range = (this.battleSystem.attackRange || 100) * this.dpr
-        const target = this._findNearestMonster(range, 'x', ctrlPos.x, ctrlPos.y)
+        // ★ 近战挥剑弧：命中范围绑在"第3帧挥剑"的剑尖处——前偏(originX 向朝向偏移)、Y 收窄，
+        //   range 比旧(100)略短 + 前向约束 = 不再"影响整个X轴"。
+        const meleeRange = 80 * this.dpr
+        const yTolMelee = 40 * this.dpr
+        // 先对称搜索决定朝向（避免朝向陈旧导致挥空），再以前向弧选目标
+        const _faceProbe = this._findNearestMonster(meleeRange * 1.3, 'x', ctrlPos.x, ctrlPos.y, 60 * this.dpr)
+        const dir = _faceProbe ? (_faceProbe.x < ctrlPos.x ? -1 : 1) : (this.facingLeft ? -1 : 1)
+        const originX = ctrlPos.x + dir * (28 * this.dpr)  // 剑尖前偏
+        const target = this._findNearestMonsterFromPos(meleeRange, 'x', originX, ctrlPos.y, yTolMelee, dir)
         this._playerAttackMonster(target)  // target 可为 null，null 时只播动画不造成伤害
         return true
       }
@@ -4362,7 +4393,7 @@ export function installFieldBattleSystem(FieldSceneClass) {
       fromY != null ? fromY : this.playerY)
   }
 
-  proto._findNearestMonsterFromPos = function(maxRange, axis, originX, originY, yTol) {
+  proto._findNearestMonsterFromPos = function(maxRange, axis, originX, originY, yTol, dir) {
     if (!this.mapMonsters || !Array.isArray(this.mapMonsters)) return null
     const range = maxRange
     const useAxis = axis || 'x'  // 默认只按 X 轴
@@ -4374,7 +4405,8 @@ export function installFieldBattleSystem(FieldSceneClass) {
       if (!monster.alive) continue
       // ★ 隐身怪物不可被选中（暗影突袭）
       if (monster._invisible) continue
-      const dx = Math.abs(originX - monster.x)
+      const dxSigned = monster.x - originX
+      const dx = Math.abs(dxSigned)
       const dy = Math.abs(originY - monster.y)
       // X 轴距离必须InRange；Y 轴按配置决定是否判断
       const dist = useAxis === 'xy' ? Math.sqrt(dx * dx + dy * dy) : dx
@@ -4383,6 +4415,12 @@ export function installFieldBattleSystem(FieldSceneClass) {
       const yTolerance = (yTol !== undefined) ? yTol : (useAxis === 'xy' ? Infinity : (80 * this.dpr))
 
       if (dy > yTolerance) continue  // Y 轴偏差太大，打不到
+
+      // ★ 近战前向约束（dir 传入时生效）：仅命中朝向侧，模拟"挥剑弧"——剑尖前偏、背后仅极小容差。
+      //   避免站桩连击把身后/反方向的怪一起带走（"影响整个X轴"的根因之一）。
+      if (dir && useAxis === 'x') {
+        if (dxSigned * dir < -18 * this.dpr) continue
+      }
 
       // 优先：已锁定的目标若在范围内直接选用
       if (this.battleSystem.battleTarget === monster && dist <= range) {
