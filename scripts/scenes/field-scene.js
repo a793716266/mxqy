@@ -220,6 +220,19 @@ export class FieldScene extends SceneBase {
       this._returningToTown = false
       this.dungeonTotal = this.mapMonsters.length
       this.dungeonReward = 80
+      // ★ 安全区 / 回血点（篝火）：逻辑像素配置 ×dpr
+      this.safeZones = (GRASSLAND_DUNGEON.safeZones || []).map(z => ({
+        id: z.id, name: z.name, x: z.x * this.dpr, y: z.y * this.dpr, radius: z.radius * this.dpr,
+      }))
+      this._inSafeZone = false
+      this._dropFloaters = []
+      this.bossDialogueShown = false
+      this.storyDialogue = null
+      // ★ 开场引导对话（首次进入触发，持久化防重复）——自动播放不阻塞操作
+      if (!this.game.data.hasFlag('introShown_grassland')) {
+        this._showStoryDialogue(GRASSLAND_DUNGEON.introDialogue.name, GRASSLAND_DUNGEON.introDialogue.lines)
+        this.game.data.setFlag('introShown_grassland')
+      }
       const _a = this.game.audio
       if (_a && typeof _a.playBGM === 'function') _a.playBGM('bgm_grassland')
     } else {
@@ -259,6 +272,8 @@ export class FieldScene extends SceneBase {
         enemies: ['wild_cat', 'slime_cat', 'shadow_mouse', 'flame_slime', 'aqua_slime', 'violet_slime', 'shadow_mouse_smooth'],
         bossEnemy: 'dark_cat_king',  // 第一章代表 Boss：暗影猫王（替换偏弱的治疗猫）
         bossLevel: 5,               // 显式覆盖 dark_cat_king 自带的 level 10，避免 HP 按 10 级缩放膨胀
+        // ★ 第一章 Boss 属性覆盖（maxHp/atk/def/spd）已数据驱动地配置在
+        //   scripts/data/grassland-dungeon.js 的 bossStatsOverride，由 _generateMonsters 读取应用。
         enemyData: ENEMIES_CH1,  // 敌人数据源
         color: '#5daE4a',
         minEnemies: 1,  // 最少敌人数量
@@ -427,6 +442,16 @@ export class FieldScene extends SceneBase {
         // ★ 使用 getEnemyByLevel 计算最终属性（bossLevel 显式覆盖自带 level，避免缩放膨胀）
         const finalBossData = getEnemyByLevel(bossData, this.areaInfo.bossLevel || bossData.level || 5)
 
+        // ★ 第一章 Boss 属性覆盖：dark_cat_king 本体按终章 level 10 编写，getEnemyByLevel 会进一步放大，
+        //   必须用 GRASSLAND_DUNGEON.bossStatsOverride 把 HP/攻/防/速拉回章节适配值（见配置文件注释）。
+        if (GRASSLAND_DUNGEON.bossStatsOverride) {
+          const _o = GRASSLAND_DUNGEON.bossStatsOverride
+          if (_o.maxHp != null) { finalBossData.maxHp = _o.maxHp; finalBossData.hp = _o.maxHp }
+          if (_o.atk != null) finalBossData.atk = _o.atk
+          if (_o.def != null) finalBossData.def = _o.def
+          if (_o.spd != null) finalBossData.spd = _o.spd
+        }
+
         // ★ 标准化技能数据
         const normalizedBossSkills = this._normalizeMonsterSkills(finalBossData.skills, bossId)
 
@@ -479,11 +504,43 @@ export class FieldScene extends SceneBase {
           isMoving: true
         })
         
+        // ★ 记录 Boss 登场台词（玩家首次接近时触发一次），复用实体 dialogue 字段前两句
+        this.bossDialogue = (bossData && Array.isArray(bossData.dialogue)) ? bossData.dialogue.slice(0, 2) : null
+        this.bossDialogueName = bossData ? bossData.name : '暗影猫王'
+        this.bossDialogueShown = false
         console.log(`[Field] 生成Boss: ${bossData.name} 在位置 (${bossX}, ${bossY})`)
       }
     }
 
-    for (let i = 0; i < maxMonsters; i++) {
+    // ★ 区域分层刷新（grassland 读 GRASSLAND_DUNGEON.spawnZones，难度递进；其它区域保留原随机）
+    if (this.areaId === 'grassland' && GRASSLAND_DUNGEON.spawnZones) {
+      let _idx = 0
+      for (const _zone of GRASSLAND_DUNGEON.spawnZones) {
+        const _zx = _zone.x * this.dpr, _zy = _zone.y * this.dpr
+        const _zw = _zone.w * this.dpr, _zh = _zone.h * this.dpr
+        for (let _i = 0; _i < _zone.count; _i++) {
+          let _att = 0, _valid = false, _x, _y
+          while (!_valid && _att < 50) {
+            _x = _zx + Math.random() * _zw
+            _y = _zy + Math.random() * _zh
+            _valid = true
+            for (const m of monsters) {
+              if (Math.sqrt((_x - m.x) ** 2 + (_y - m.y) ** 2) < minDistance) { _valid = false; break }
+            }
+            if (_valid && collisions && collisions.length > 0) {
+              if (_isPointInGrasslandObstacle(_x / this.dpr, _y / this.dpr, 60, collisions)) _valid = false
+            }
+            _att++
+          }
+          if (!_valid) continue
+          const _eid = _zone.enemies[Math.floor(Math.random() * _zone.enemies.length)]
+          const _lvl = _zone.level[0] + Math.floor(Math.random() * (_zone.level[1] - _zone.level[0] + 1))
+          this._spawnMonsterCommon(monsters, _eid, _x, _y, _lvl, _idx++)
+        }
+      }
+      console.log(`[Field] 区域分层生成了 ${monsters.length} 只怪物（含 Boss）`)
+    } else {
+      for (let i = 0; i < maxMonsters; i++) {
       let attempts = 0
       let validPosition = false
       let x, y
@@ -583,10 +640,137 @@ export class FieldScene extends SceneBase {
           isMoving: Math.random() > 0.3 // 70%概率初始移动
         })
       }
+      }
     }
 
     console.log(`[Field] 生成了 ${monsters.length} 只怪物`)
     return monsters
+  }
+
+  /**
+   * 通用怪物构造（抽自 _generateMonsters 的普通怪分支，供区域分层刷新复用）。
+   * 统一生成完整战斗属性 + AI 巡逻参数，避免重复字面量。
+   */
+  _spawnMonsterCommon(monsters, enemyId, x, y, level, idx) {
+    const enemyData = (this.areaInfo.enemyData || ENEMIES_CH1)[enemyId]
+    if (!enemyData) return
+    const finalEnemyData = getEnemyByLevel(enemyData, level)
+    const normalizedSkills = this._normalizeMonsterSkills(finalEnemyData?.skills, enemyId)
+    monsters.push({
+      id: `${this.areaId}_monster_${idx}`,
+      enemyId,
+      x,
+      y,
+      name: finalEnemyData?.name || '坏猫',
+      isBoss: false,
+      isElite: false,
+      alive: true,
+      level: finalEnemyData?.level || level,
+      maxHp: finalEnemyData?.maxHp || 50,
+      hp: finalEnemyData?.hp || finalEnemyData?.maxHp || 50,
+      atk: finalEnemyData?.atk || 10,
+      def: finalEnemyData?.def || 5,
+      spd: finalEnemyData?.spd || 9,
+      crit: finalEnemyData?.crit || 0.05,
+      aiPattern: finalEnemyData?.aiPattern || 'normal',
+      attackRange: finalEnemyData?.attackRange || 80,
+      attackInterval: finalEnemyData?.attackInterval || 2000,
+      skills: normalizedSkills,
+      skillCDs: this._initSkillCDs(normalizedSkills),
+      isCastingSkill: false,
+      skillAnimTimer: 0,
+      skillCastId: null,
+      inCombat: false,
+      skillUseCount: 0,
+      strafeDir: Math.random() > 0.5 ? 1 : -1,
+      strafeTimer: 0,
+      strafeAngle: Math.random() * Math.PI * 2,
+      bobOffset: Math.random() * Math.PI * 2,
+      bobSpeed: 2 + Math.random(),
+      animTimer: 0,
+      animFrame: 0,
+      attackCDTimer: 0,
+      homeX: x,
+      homeY: y,
+      patrolRadius: (80 + Math.random() * 40) * this.dpr,
+      moveAngle: Math.random() * Math.PI * 2,
+      moveSpeed: (20 + Math.random() * 10) * this.dpr,
+      moveTimer: 0,
+      pauseTimer: 0,
+      isMoving: Math.random() > 0.3,
+    })
+  }
+
+  /**
+   * 启动一段叙事对话（自动逐条播放、不阻塞操作）。
+   * name  : 说话者；lines: 文本数组。每条停留 hold 秒后自动切下一条，全部播完置空。
+   */
+  _showStoryDialogue(name, lines) {
+    if (!lines || !lines.length) return
+    this.storyDialogue = { name, lines, index: 0, timer: 4.0, hold: 4.0 }
+  }
+
+  _updateStoryDialogue(dt) {
+    const d = this.storyDialogue
+    if (!d) return
+    d.timer -= dt
+    if (d.timer <= 0) {
+      d.index++
+      if (d.index >= d.lines.length) {
+        this.storyDialogue = null
+      } else {
+        d.timer = d.hold
+      }
+    }
+  }
+
+  /**
+   * 玩家首次接近存活 Boss 时弹出登场台词（每副本仅一次，由 bossDialogueShown 防重复）。
+   */
+  _checkBossApproach() {
+    if (this.bossDialogueShown || !this.bossDialogue || !this.bossDialogue.length) return
+    const boss = (this.mapMonsters || []).find(m => m.isBoss && m.alive)
+    if (!boss) return
+    const dx = this.playerX - boss.x
+    const dy = this.playerY - boss.y
+    if (Math.sqrt(dx * dx + dy * dy) < 240 * this.dpr) {
+      this._showStoryDialogue(this.bossDialogueName || '暗影猫王', this.bossDialogue)
+      this.bossDialogueShown = true
+    }
+  }
+
+  /**
+   * 安全区（篝火）回血：玩家进入任一安全区半径内，全队向 maxHp 持续回升（每秒 30%），
+   * 避免第一章前期无治疗角色时被反复撞怪打至卡死。进入瞬间提示一次。
+   */
+  _updateSafeZoneHeal(dt) {
+    if (!this.safeZones || !this.safeZones.length) return
+    let inZone = false
+    for (const z of this.safeZones) {
+      const dx = this.playerX - z.x
+      const dy = this.playerY - z.y
+      if (Math.sqrt(dx * dx + dy * dy) <= z.radius) { inZone = true; break }
+    }
+    if (inZone) {
+      // ★ 直接操作 persistent 队伍 HP（this.party），而非 battleSystem.battleHeroes：
+      // 后者仅在开战时构建，探索期为空数组，会导致篝火回血在两次战斗之间完全失效。
+      const party = this.party
+      if (party && party.length) {
+        for (const hero of party) {
+          if (!hero || hero.hp == null) continue
+          const maxHp = hero.maxHp || hero.hp
+          if (hero.hp < maxHp) {
+            hero.hp = Math.min(maxHp, hero.hp + maxHp * 0.3 * dt)
+          }
+        }
+      }
+      if (!this._inSafeZone) {
+        this._inSafeZone = true
+        if (this.game.showToast) this.game.showToast('🔥 在篝火旁休息，生命恢复中...')
+      }
+    } else {
+      this._inSafeZone = false
+    }
   }
   
   init() {
@@ -783,6 +967,17 @@ baseRadius: 50 * this.dpr,    // 底座半径（缩小）
   
   update(dt) {
     this.time += dt
+
+    // ★ 副本叙事对话推进（自动播放，不阻塞移动/战斗）
+    if (this.storyDialogue) this._updateStoryDialogue(dt)
+    // ★ 掉落飘字上浮动画
+    this._updateDropFloaters(dt)
+
+    // ★ 副本：安全区回血 + Boss 接近登场对话
+    if (this.areaInfo && this.areaInfo.isDungeon) {
+      this._updateSafeZoneHeal(dt)
+      this._checkBossApproach()
+    }
 
     // 更新怪物移动
     this._updateMonsters(dt)
@@ -3108,16 +3303,53 @@ baseRadius: 50 * this.dpr,    // 底座半径（缩小）
         const amt = entry.min + Math.floor(Math.random() * (entry.max - entry.min + 1))
         this._addGold(amt)
         parts.push(`💰+${amt}`)
+        this._pushDropFloater(monster.x, monster.y, `💰+${amt}`, '#ffd84d')
       } else if (entry.type === 'material') {
         const c = entry.count || 1
         this._addMaterial(entry.id, c)
         parts.push(`🧪${entry.id}×${c}`)
+        this._pushDropFloater(monster.x, monster.y - 16 * this.dpr, `🧪${entry.id}`, '#7fe3ff')
       }
     }
     if (parts.length && this.game.showToast) {
       this.game.showToast(`击败 ${monster.name}：${parts.join('  ')}`)
     }
     console.log(`[Field] ${monster.name}(${monster.enemyId}) 掉落: ${parts.join('  ') || '无'}`)
+  }
+
+  /** 在怪物死亡位置（世界坐标）生成一条上浮的掉落飘字（金币/素材正反馈） */
+  _pushDropFloater(x, y, text, color) {
+    if (this._dropFloaters == null) this._dropFloaters = []
+    this._dropFloaters.push({ x, y, text, color: color || '#fff', life: 1.1, maxLife: 1.1, vy: 36 })
+  }
+
+  _updateDropFloaters(dt) {
+    if (!this._dropFloaters || !this._dropFloaters.length) return
+    for (let i = this._dropFloaters.length - 1; i >= 0; i--) {
+      const f = this._dropFloaters[i]
+      f.life -= dt
+      f.y -= f.vy * dt
+      if (f.life <= 0) this._dropFloaters.splice(i, 1)
+    }
+  }
+
+  _renderDropFloaters(ctx) {
+    if (!this._dropFloaters || !this._dropFloaters.length) return
+    const dpr = this.dpr
+    ctx.save()
+    ctx.textAlign = 'center'
+    ctx.textBaseline = 'middle'
+    ctx.font = `bold ${14 * dpr}px sans-serif`
+    for (const f of this._dropFloaters) {
+      const sx = f.x - this.cameraX
+      const sy = f.y - this.cameraY
+      if (sx < -60 || sy < -60 || sx > this.width + 60 || sy > this.height + 60) continue
+      ctx.globalAlpha = Math.max(0, Math.min(1, f.life / f.maxLife))
+      ctx.fillStyle = f.color
+      ctx.fillText(f.text, sx, sy)
+    }
+    ctx.globalAlpha = 1
+    ctx.restore()
   }
 
   /**
@@ -3954,6 +4186,10 @@ baseRadius: 50 * this.dpr,    // 底座半径（缩小）
     this._renderTopUI(ctx)
     // ★ 副本目标 HUD（阳光草原）
     this._renderDungeonHUD(ctx)
+    // ★ 副本：篝火安全区图标 + 叙事对话气泡
+    if (this.areaInfo && this.areaInfo.isDungeon) this._renderSafeZones(ctx)
+    if (this._dropFloaters && this._dropFloaters.length) this._renderDropFloaters(ctx)
+    if (this.storyDialogue) this._renderStoryDialogue(ctx)
     
     // 摇杆
     this._renderJoystick(ctx)
@@ -4273,11 +4509,27 @@ baseRadius: 50 * this.dpr,    // 底座半径（缩小）
     ctx.fillStyle = '#4caf50'
     this._roundRect(ctx, barX, barY, Math.max(barH, barW * ratio), barH, 3 * dpr)
     ctx.fill()
-    // 首领状态行
+    // 首领状态行 + 专属血条
     if (bossTotal > 0) {
+      const boss = this.mapMonsters.find(m => m.isBoss)
+      const bossAlive = boss && boss.alive
       ctx.font = `bold ${13 * dpr}px sans-serif`
       ctx.fillStyle = bossDefeated ? '#7cff7c' : '#ff8a8a'
-      ctx.fillText(bossDefeated ? `👑 首领已击败` : `👑 击败 ${this.bossDisplayName || '首领'}`, x + w / 2, y + 26 * dpr)
+      ctx.fillText(bossDefeated ? `👑 首领已击败` : `👑 ${this.bossDisplayName || '首领'}`, x + w / 2, y + 26 * dpr)
+      // 首领血条（存活时，恒显于 HUD 下方，便于掌握 Boss 战进度）
+      if (bossAlive && boss.maxHp) {
+        const bw = w - 28 * dpr
+        const bx = x + 14 * dpr
+        const by = y + h + 6 * dpr
+        const bh = 7 * dpr
+        const ratio = Math.max(0, Math.min(1, boss.hp / boss.maxHp))
+        ctx.fillStyle = 'rgba(255,255,255,0.18)'
+        this._roundRect(ctx, bx, by, bw, bh, 3 * dpr)
+        ctx.fill()
+        ctx.fillStyle = ratio > 0.3 ? '#ff5b5b' : '#ff2d2d'
+        this._roundRect(ctx, bx, by, Math.max(bh, bw * ratio), bh, 3 * dpr)
+        ctx.fill()
+      }
     }
     ctx.restore()
 
@@ -4298,6 +4550,71 @@ baseRadius: 50 * this.dpr,    // 底座半径（缩小）
         }
       }
     }
+  }
+
+  /** 篝火安全区图标（世界坐标，转屏幕后绘制光圈 + 🔥 + 名称） */
+  _renderSafeZones(ctx) {
+    if (!this.safeZones || !this.safeZones.length) return
+    const dpr = this.dpr
+    for (const z of this.safeZones) {
+      const sx = z.x - this.cameraX
+      const sy = z.y - this.cameraY
+      if (sx < -220 || sy < -220 || sx > this.width + 220 || sy > this.height + 220) continue
+      // 暖色光圈
+      ctx.save()
+      ctx.globalAlpha = 0.22
+      ctx.fillStyle = '#ff8c42'
+      ctx.beginPath()
+      ctx.arc(sx, sy, z.radius, 0, Math.PI * 2)
+      ctx.fill()
+      ctx.restore()
+      // 篝火图标
+      ctx.font = `${40 * dpr}px sans-serif`
+      ctx.textAlign = 'center'
+      ctx.textBaseline = 'middle'
+      ctx.fillText('🔥', sx, sy)
+      // 名称
+      ctx.font = `${13 * dpr}px sans-serif`
+      ctx.fillStyle = '#fff'
+      ctx.fillText(z.name, sx, sy + 40 * dpr)
+    }
+  }
+
+  /** 顶部叙事对话气泡（自动播放，不阻塞操作） */
+  _renderStoryDialogue(ctx) {
+    const d = this.storyDialogue
+    if (!d) return
+    const dpr = this.dpr
+    const line = d.lines[d.index] || ''
+    const boxW = Math.min(580 * dpr, this.width * 0.92)
+    const boxH = 92 * dpr
+    const x = (this.width - boxW) / 2
+    const y = 64 * dpr
+    ctx.save()
+    ctx.fillStyle = 'rgba(0,0,0,0.62)'
+    this._roundRect(ctx, x, y, boxW, boxH, 12 * dpr)
+    ctx.fill()
+    ctx.strokeStyle = 'rgba(255,233,168,0.85)'
+    ctx.lineWidth = 2 * dpr
+    this._roundRect(ctx, x, y, boxW, boxH, 12 * dpr)
+    ctx.stroke()
+    // 说话者
+    ctx.textAlign = 'left'
+    ctx.textBaseline = 'top'
+    ctx.font = `bold ${15 * dpr}px sans-serif`
+    ctx.fillStyle = '#ffe9a8'
+    ctx.fillText(`${d.name}：`, x + 18 * dpr, y + 14 * dpr)
+    // 内容（单行，过长截断）
+    ctx.font = `${15 * dpr}px sans-serif`
+    ctx.fillStyle = '#fff'
+    const text = line.length > 30 ? line.slice(0, 30) + '…' : line
+    ctx.fillText(text, x + 18 * dpr, y + 46 * dpr)
+    // 进度
+    ctx.textAlign = 'right'
+    ctx.fillStyle = 'rgba(255,255,255,0.6)'
+    ctx.font = `${12 * dpr}px sans-serif`
+    ctx.fillText(`${d.index + 1}/${d.lines.length}`, x + boxW - 14 * dpr, y + boxH - 22 * dpr)
+    ctx.restore()
   }
 
   /**
