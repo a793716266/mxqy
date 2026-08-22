@@ -290,43 +290,56 @@ export class Game {
 
   // 全局背包入口按钮区域（屏幕右侧中段偏下，按屏幕高度比例自适应；避开 field 顶部 70*dpr 黑栏与小地图 85~165*dpr 占位，也避开摇杆/召回按钮等左侧与底部 UI）
   _backpackBtnRect() {
+    const d = this.dpr
+    const w = 88 * d
+    const h = 38 * d
+    // 胶囊居中于原位置（屏幕右侧中段偏下）：中心约 (width-35*dpr, height*0.55)
     return {
-      x: this.width - 60 * this.dpr,
-      y: this.height * 0.55 - 25 * this.dpr,
-      w: 50 * this.dpr,
-      h: 50 * this.dpr
+      x: this.width - 35 * d - w / 2,
+      y: this.height * 0.55 - h / 2,
+      w,
+      h
     }
   }
 
-  // 渲染全局背包入口按钮（圆形皮质背包钮）
+  // 渲染全局背包入口按钮（胶囊：🎒 图标 + “背包”文字，皮革棕底）
   _renderBackpackButton(ctx) {
     const b = this._backpackBtnRect()
     const d = this.dpr
-    const cx = b.x + b.w / 2
     const cy = b.y + b.h / 2
-    const r = b.w / 2
+    const r = b.h / 2
 
     ctx.save()
-    // 按钮底（皮革棕渐变）
+    // 圆角矩形底（皮革棕渐变）
     const grad = ctx.createLinearGradient(b.x, b.y, b.x, b.y + b.h)
     grad.addColorStop(0, '#c98a4b')
     grad.addColorStop(1, '#8b5a2b')
-    ctx.fillStyle = grad
     ctx.beginPath()
-    ctx.arc(cx, cy, r, 0, Math.PI * 2)
+    ctx.moveTo(b.x + r, b.y)
+    ctx.arcTo(b.x + b.w, b.y, b.x + b.w, b.y + b.h, r)
+    ctx.arcTo(b.x + b.w, b.y + b.h, b.x, b.y + b.h, r)
+    ctx.arcTo(b.x, b.y + b.h, b.x, b.y, r)
+    ctx.arcTo(b.x, b.y, b.x + b.w, b.y, r)
+    ctx.closePath()
+    ctx.fillStyle = grad
     ctx.fill()
 
-    // 描边 + 阴影感
+    // 描边 + 高光感
     ctx.strokeStyle = 'rgba(255, 224, 178, 0.75)'
     ctx.lineWidth = 2 * d
-    ctx.beginPath()
-    ctx.arc(cx, cy, r, 0, Math.PI * 2)
     ctx.stroke()
 
-    ctx.font = `${22 * d}px sans-serif`
+    // 左：🎒 图标
+    ctx.font = `${20 * d}px sans-serif`
     ctx.textAlign = 'center'
     ctx.textBaseline = 'middle'
-    ctx.fillText('🎒', cx, cy + 1 * d)
+    ctx.fillText('🎒', b.x + 20 * d, cy + 1 * d)
+
+    // 右：“背包”文字（白字，便于辨识）
+    ctx.font = `bold ${16 * d}px sans-serif`
+    ctx.textAlign = 'left'
+    ctx.fillStyle = '#fff7ec'
+    ctx.fillText('背包', b.x + 36 * d, cy + 1 * d)
     ctx.restore()
   }
 
