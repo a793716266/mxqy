@@ -275,6 +275,9 @@ export class Game {
     // 设置面板打开时不响应入口按钮（按钮被设置面板遮罩盖住，不应穿透点击）
     if (this.settings.visible || !this.input.taps || this.input.taps.length === 0) return
 
+    // ★ 主菜单（开始界面）不显示背包按钮，避免与开始氛围不协调
+    if (this.sceneName === SCENE.MAIN_MENU) return
+
     const tap = this.input.taps[0]
     const b = this._backpackBtnRect()
     if (tap.x >= b.x && tap.x <= b.x + b.w &&
@@ -351,8 +354,8 @@ export class Game {
       ctx.fillRect(0, 0, this.width, this.height)
     }
 
-    // 渲染全局背包入口按钮（场景之上，设置/背包面板之下；面板打开或无场景时隐藏）
-    if (!this.backpack.visible && !this.settings.visible && this.currentScene) {
+    // 渲染全局背包入口按钮（场景之上，设置/背包面板之下；面板打开/无场景/主菜单时隐藏）
+    if (!this.backpack.visible && !this.settings.visible && this.currentScene && this.sceneName !== SCENE.MAIN_MENU) {
       this._renderBackpackButton(ctx)
     }
 

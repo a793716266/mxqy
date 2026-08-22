@@ -207,6 +207,8 @@ assert(gameSrc.includes('_renderBackpackButton'), '全局入口按钮渲染')
 // 入口按钮位置：屏幕右侧中段偏下，按屏幕高度比例自适应
 assert(gameSrc.includes('this.width - 60 * this.dpr'), '入口按钮位于屏幕右侧')
 assert(gameSrc.includes('this.height * 0.55'), '入口按钮 y 在屏幕 55% 中段偏下（自适应不同分辨率）')
+assert(gameSrc.includes('SCENE.MAIN_MENU'), '主菜单（开始界面）排除背包按钮渲染与输入')
+assert(gameSrc.includes("this.sceneName !== SCENE.MAIN_MENU"), '渲染入口按钮时排除主菜单场景')
 
 console.log(`\n=== 结果: ${passed} 通过, ${failed} 失败 ===`)
 process.exit(failed === 0 ? 0 : 1)
