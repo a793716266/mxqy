@@ -204,7 +204,8 @@ assert(gameSrc.includes('!this.backpack.visible'), '背包打开期间暂停场�
 assert(gameSrc.includes('this.backpack.render(ctx)'), '背包面板最顶层渲染')
 assert(gameSrc.includes('_renderBackpackButton'), '全局入口按钮渲染')
 // 入口按钮位置：不与主菜单设置按钮(width-70~width-20)重叠
-assert(gameSrc.includes('this.width - 130 * this.dpr'), '入口按钮位于右上角设置按钮左侧')
+assert(gameSrc.includes('this.width - 95 * this.dpr'), '入口按钮位于 field 小地图正下方左沿')
+assert(gameSrc.includes('175 * this.dpr'), '入口按钮 y 在 field 顶部黑栏(70)与小地图(85)之下')
 
 console.log(`\n=== 结果: ${passed} 通过, ${failed} 失败 ===`)
 process.exit(failed === 0 ? 0 : 1)
