@@ -90,18 +90,26 @@ export class BackpackPanel {
   handleTap(x, y) {
     if (!this.visible) return false
 
-    // ── 1. 详情弹窗打开时：优先处理（点 ✕ 或弹窗外关闭）──
+    // ── 1. 详情弹窗打开时：先处理卡内操作（选角色/穿戴/卸下/使用），再判定关闭 ──
     if (this.selectedItem) {
       const d = this._detailRect()
       const cx = d.x + d.w - 22 * this.dpr
       const cy = d.y + 22 * this.dpr
       const r = 16 * this.dpr
-      const onClose = Math.hypot(x - cx, y - cy) <= r
-      const inCard = isInRect(x, y, d.x, d.y, d.w, d.h)
-      if (onClose || !inCard) {
+      // ✕ 关闭
+      if (Math.hypot(x - cx, y - cy) <= r) {
         this.selectedItem = null
         this._playSFX('ui_cancel')
+        return true
       }
+      const inCard = isInRect(x, y, d.x, d.y, d.w, d.h)
+      if (inCard) {
+        this._handleDetailTap(x, y)
+        return true
+      }
+      // 点卡外关闭
+      this.selectedItem = null
+      this._playSFX('ui_cancel')
       return true
     }
 
@@ -590,18 +598,59 @@ export class BackpackPanel {
       yy += 18 * d
     }
 
-    // 售价（装备）
-    if (equip) {
-      yy = dr.y + dr.h - 52 * d
-      ctx.font = `bold ${14 * d}px sans-serif`
-      ctx.fillStyle = '#ffd84d'
-      ctx.fillText(`💰 售出可得 ${equip.sellPrice != null ? equip.sellPrice : '—'} 金币`, cx, yy)
+    // ── 操作区：装备（穿戴/卸下）、消耗品（使用）──
+    if (this._detailHasAction(sel)) {
+      const ar = this._detailActionRects(sel, dr)
+      const needHero = (sel.kind === 'equip' && !sel.wearer) ||
+                       (sel.kind === 'material' && sel.data.def && sel.data.def.effect)
+      if (needHero && ar.heroBtns.length) {
+        ctx.font = `${12 * d}px sans-serif`
+        ctx.fillStyle = '#a8b2cc'
+        ctx.textAlign = 'center'
+        ctx.fillText(sel.kind === 'material' ? '使用对象：' : '选择角色：', cx, ar.heroBtns[0].y - 10 * d)
+        for (const hb of ar.heroBtns) {
+          const seld = sel.heroId === hb.id
+          ctx.fillStyle = seld ? '#ff9f43' : '#16213e'
+          roundRect(ctx, hb.x, hb.y, hb.w, hb.h, 8 * d)
+          ctx.fill()
+          ctx.strokeStyle = seld ? darkenColor('#ff9f43', -40) : '#2f3b5c'
+          ctx.lineWidth = seld ? 2 * d : 1.5 * d
+          roundRect(ctx, hb.x, hb.y, hb.w, hb.h, 8 * d)
+          ctx.stroke()
+          ctx.fillStyle = seld ? '#ffffff' : '#8892b0'
+          ctx.font = `bold ${12 * d}px sans-serif`
+          ctx.fillText(this._trunc(hb.name, 3), hb.x + hb.w / 2, hb.y + hb.h / 2 + 1 * d)
+        }
+      }
+      // 操作按钮
+      const ab = ar.actionBtn
+      const grad = ctx.createLinearGradient(ab.x, ab.y, ab.x, ab.y + ab.h)
+      grad.addColorStop(0, '#2ecc71')
+      grad.addColorStop(1, '#27ae60')
+      ctx.fillStyle = grad
+      roundRect(ctx, ab.x, ab.y, ab.w, ab.h, 10 * d)
+      ctx.fill()
+      ctx.fillStyle = '#ffffff'
+      ctx.font = `bold ${16 * d}px sans-serif`
+      ctx.fillText(this._detailActionLabel(sel), ab.x + ab.w / 2, ab.y + ab.h / 2 + 1 * d)
+    } else {
+      // 售价（装备，无穿戴/使用操作时显示）
+      if (equip) {
+        ctx.font = `bold ${14 * d}px sans-serif`
+        ctx.fillStyle = '#ffd84d'
+        ctx.fillText(`💰 售出可得 ${equip.sellPrice != null ? equip.sellPrice : '—'} 金币`, cx, dr.y + dr.h - 52 * d)
+      }
+      // 不可直接使用的素材提示
+      if (sel.kind === 'material' && !(sel.data.def && sel.data.def.effect)) {
+        ctx.font = `${12 * d}px sans-serif`
+        ctx.fillStyle = '#5c6784'
+        ctx.fillText('该素材暂不可直接使用', cx, dr.y + dr.h - 40 * d)
+      }
+      // 底部提示
+      ctx.font = `${11 * d}px sans-serif`
+      ctx.fillStyle = '#5c6784'
+      ctx.fillText('点击空白处关闭', cx, dr.y + dr.h - 24 * d)
     }
-
-    // 底部提示
-    ctx.font = `${11 * d}px sans-serif`
-    ctx.fillStyle = '#5c6784'
-    ctx.fillText('点击空白处关闭', cx, dr.y + dr.h - 24 * d)
 
     // ✕
     this._renderCloseIcon(ctx, dr.x + dr.w - 22 * d, dr.y + 22 * d, 14 * d)
@@ -651,21 +700,22 @@ export class BackpackPanel {
     }
   }
 
-  /** 详情弹窗矩形（高度按内容动态计算，clamp） */
+  /** 详情弹窗矩形（高度按内容动态计算；有穿戴/卸下/使用操作时额外预留操作区） */
   _detailRect() {
     const d = this.dpr
     const sel = this.selectedItem
-    let h = 220
+    let h = 150
     if (sel) {
       if (sel.kind === 'equip') {
-        h = 150 + Object.keys(sel.data.stats || {}).length * 20
+        h = 120 + Object.keys(sel.data.stats || {}).length * 20
       } else {
-        h = 170
+        h = 120
       }
       const desc = sel.kind === 'equip' ? (sel.data.desc || '') : (sel.data.def.desc || '')
       h += this._wrapText(this.ctx, desc, (280 - 44) * d, 13 * d).length * 18
+      if (this._detailHasAction(sel)) h += 130
     }
-    h = Math.min(h, 420)
+    h = Math.min(h, 480)
     const w = 280 * d
     return {
       x: (this.width - w) / 2,
@@ -737,7 +787,7 @@ export class BackpackPanel {
       if (isInRect(x, y, sx, sy, slotW * d, 100 * d)) {
         const equip = hero.equipment ? hero.equipment[slot] : null
         if (equip) {
-          this.selectedItem = { kind: 'equip', data: equip, wearer: hero.name }
+          this.selectedItem = { kind: 'equip', data: equip, wearer: hero.name, heroId: hero.id, slot }
           this._playSFX('ui_click')
         }
         return
@@ -752,6 +802,128 @@ export class BackpackPanel {
 
   _getHeroes() {
     try { return charStateManager.getAllCharacters() || [] } catch (e) { return [] }
+  }
+
+  // ================================================================
+  //  内部：详情操作（选角色 / 穿戴 / 卸下 / 使用）
+  // ================================================================
+
+  /** 详情卡内点击：选角色 / 穿戴 / 卸下 / 使用 */
+  _handleDetailTap(x, y) {
+    const sel = this.selectedItem
+    if (!sel) return
+    const d = this.dpr
+    const dr = this._detailRect()
+
+    // 卸下（来自队伍装备页：已佩戴装备）
+    if (sel.kind === 'equip' && sel.wearer) {
+      const ar = this._detailActionRects(sel, dr)
+      if (isInRect(x, y, ar.actionBtn.x, ar.actionBtn.y, ar.actionBtn.w, ar.actionBtn.h)) {
+        const hero = charStateManager.getCharacter(sel.heroId)
+        if (hero) {
+          equipmentManager.unequip(hero, sel.slot)
+          this._persist()
+          this._playSFX('ui_unequip')
+        }
+        this.selectedItem = null
+      }
+      return
+    }
+
+    // 穿戴（背包内装备 → 选角色）
+    if (sel.kind === 'equip' && !sel.wearer) {
+      const ar = this._detailActionRects(sel, dr)
+      for (const hb of ar.heroBtns) {
+        if (isInRect(x, y, hb.x, hb.y, hb.w, hb.h)) {
+          sel.heroId = hb.id
+          this._playSFX('ui_click')
+          return
+        }
+      }
+      if (sel.heroId && isInRect(x, y, ar.actionBtn.x, ar.actionBtn.y, ar.actionBtn.w, ar.actionBtn.h)) {
+        const hero = charStateManager.getCharacter(sel.heroId)
+        if (hero) {
+          equipmentManager.equip(hero, sel.data)   // 旧装备自动回背包（manager 内部处理）
+          this._persist()
+          this._playSFX('ui_equip')
+        }
+        this.selectedItem = null
+      }
+      return
+    }
+
+    // 使用（背包内消耗品 → 选角色）
+    if (sel.kind === 'material' && sel.data.def && sel.data.def.effect) {
+      const ar = this._detailActionRects(sel, dr)
+      for (const hb of ar.heroBtns) {
+        if (isInRect(x, y, hb.x, hb.y, hb.w, hb.h)) {
+          sel.heroId = hb.id
+          this._playSFX('ui_click')
+          return
+        }
+      }
+      if (sel.heroId && isInRect(x, y, ar.actionBtn.x, ar.actionBtn.y, ar.actionBtn.w, ar.actionBtn.h)) {
+        const hero = charStateManager.getCharacter(sel.heroId)
+        if (hero) {
+          const eff = sel.data.def.effect
+          if (eff.hp) hero.hp = Math.min(hero.maxHp || 0, (hero.hp || 0) + eff.hp)
+          let mats = {}
+          try { mats = this.game.data.get('materials') || {} } catch (e) {}
+          if (mats[sel.data.id] > 0) {
+            mats[sel.data.id] -= 1
+            this.game.data.set('materials', mats)
+          }
+          this._persist()
+          this._playSFX('ui_use')
+        }
+        this.selectedItem = null
+      }
+      return
+    }
+  }
+
+  /** 持久化：角色状态 + 装备背包 */
+  _persist() {
+    try {
+      this.game.data.set('characterStates', charStateManager.serialize())
+      this.game.data.set('equipmentData', equipmentManager.serialize())
+    } catch (e) { /* ignore */ }
+  }
+
+  /** 详情是否含操作区（穿戴/卸下/使用） */
+  _detailHasAction(sel) {
+    if (!sel) return false
+    if (sel.kind === 'equip') return true
+    if (sel.kind === 'material') return !!(sel.data.def && sel.data.def.effect)
+    return false
+  }
+
+  /** 操作按钮文案 */
+  _detailActionLabel(sel) {
+    if (sel.kind === 'equip') return sel.wearer ? '卸下' : '穿戴'
+    if (sel.kind === 'material') return '使用'
+    return ''
+  }
+
+  /** 操作区布局：角色选择行 + 操作按钮 */
+  _detailActionRects(sel, dr) {
+    const d = this.dpr
+    const heroes = this._getHeroes()
+    const btnS = 40
+    const gap = 6
+    const totalW = heroes.length * btnS + (heroes.length - 1) * gap
+    const startX = dr.x + dr.w / 2 - (totalW * d) / 2
+    const heroY = dr.y + dr.h - 100 * d
+    const btnW = 120 * d
+    const btnH = 40 * d
+    const btnX = dr.x + dr.w / 2 - btnW / 2
+    const btnY = dr.y + dr.h - 48 * d
+    const heroBtns = heroes.map((h, i) => ({
+      id: h.id, name: h.name,
+      x: startX + i * (btnS + gap) * d,
+      y: heroY, w: btnS * d, h: btnS * d
+    }))
+    return { heroBtns, actionBtn: { x: btnX, y: btnY, w: btnW, h: btnH } }
   }
 
   /** 队伍装备页：确保选中一个有效角色（无效/未选时选第一个） */

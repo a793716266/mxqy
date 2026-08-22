@@ -3174,7 +3174,20 @@ baseRadius: 50 * this.dpr,    // 底座半径（缩小）
         this.charInfoPanel.hide()
         return
       }
-      
+
+      // ★ 装备槽「卸下」按钮：点击卸下该装备（回归背包）
+      const slots = this.charDetailBounds.slots
+      if (Array.isArray(slots)) {
+        for (const s of slots) {
+          if (s && s.unequipBtn &&
+              tap.x >= s.unequipBtn.x && tap.x <= s.unequipBtn.x + s.unequipBtn.width &&
+              tap.y >= s.unequipBtn.y && tap.y <= s.unequipBtn.y + s.unequipBtn.height) {
+            this._unequipFromCharCard(s.slot)
+            return
+          }
+        }
+      }
+
       // 点击面板外部也关闭
       const panel = this.charDetailBounds
       if (tap.x < panel.x || tap.x > panel.x + panel.width ||
@@ -3182,7 +3195,7 @@ baseRadius: 50 * this.dpr,    // 底座半径（缩小）
         this.charInfoPanel.hide()
         return
       }
-      
+
       return // 面板打开时不响应其他点击
     }
     
@@ -3396,6 +3409,24 @@ baseRadius: 50 * this.dpr,    // 底座半径（缩小）
     target._getAtkWithBuff = function() { return self._getHeroAtk(hero) }
     target._getDefWithBuff = function() { return self._getHeroDef(hero) }
     this.charInfoPanel.setCharacter(target)
+  }
+
+  /** 角色卡详情面板「卸下」：卸下指定槽位装备，回归背包并持久化 */
+  _unequipFromCharCard(slot) {
+    const char = this.charInfoPanel && this.charInfoPanel.character
+    if (!char) return
+    const removed = equipmentManager.unequip(char, slot)
+    if (!removed) return
+    // 持久化（角色状态 + 装备背包）
+    try {
+      this.game.data.set('characterStates', charStateManager.serialize())
+      this.game.data.set('equipmentData', equipmentManager.serialize())
+    } catch (e) { /* ignore */ }
+    // 同步刷新角色卡（若卸下的是当前被控角色）
+    if (this.mainCharacter && char.id === this.mainCharacter.id) {
+      this._refreshCharCard(this.mainCharacter)
+    }
+    if (this.audio && this.audio.playSFX) this.audio.playSFX('ui_unequip')
   }
 
   _checkObstacleCollision() {

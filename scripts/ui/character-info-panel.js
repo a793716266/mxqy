@@ -3,6 +3,8 @@
  */
 
 import { roundRect } from './canvas-utils.js'
+import { equipmentManager } from '../managers/equipment-manager.js'
+import { EQUIP_TYPE_CONFIG, RARITY_CONFIG } from '../data/equipment.js'
 
 export class CharacterInfoPanel {
   constructor(game, character) {
@@ -176,7 +178,7 @@ export class CharacterInfoPanel {
     
     // 面板尺寸
     const panelWidth = 280 * this.dpr
-    const panelHeight = 440 * this.dpr   // 含 BUFF 状态列表
+    const panelHeight = 540 * this.dpr   // 含 BUFF 状态列表 + 装备槽
     const panelX = (screenWidth - panelWidth) / 2
     const panelY = (screenHeight - panelHeight) / 2
     
@@ -284,7 +286,64 @@ export class CharacterInfoPanel {
     }
     
     offsetY += 10 * this.dpr
-    
+
+    // ── 装备槽 + 卸下（点击角色卡查看装备，可卸下回归背包）──
+    const slotDefs = ['weapon', 'armor', 'accessory']
+    const eqGap = 10 * this.dpr
+    const eqSlotW = (panelWidth - 40 * this.dpr - eqGap * 2) / 3
+    const eqSlotH = 66 * this.dpr
+    const eqX0 = leftMargin
+    const eqY = offsetY
+    this.ctx.font = `bold ${16 * this.dpr}px sans-serif`
+    this.ctx.fillStyle = '#ffffff'
+    this.ctx.textAlign = 'left'
+    this.ctx.fillText('装备', leftMargin, eqY)
+    const slotBounds = []
+    for (let i = 0; i < slotDefs.length; i++) {
+      const slot = slotDefs[i]
+      const sx = eqX0 + i * (eqSlotW + eqGap)
+      const cfg = EQUIP_TYPE_CONFIG[slot] || {}
+      const eq = (char.equipment && char.equipment[slot]) || null
+      const rarity = eq ? (RARITY_CONFIG[eq.rarity] || RARITY_CONFIG.common) : null
+      // 槽底
+      this.ctx.fillStyle = '#16213e'
+      roundRect(this.ctx, sx, eqY + 14 * this.dpr, eqSlotW, eqSlotH, 8 * this.dpr)
+      this.ctx.fill()
+      this.ctx.strokeStyle = rarity ? rarity.color : '#2f3b5c'
+      this.ctx.lineWidth = rarity ? 2 * this.dpr : 1.5 * this.dpr
+      roundRect(this.ctx, sx, eqY + 14 * this.dpr, eqSlotW, eqSlotH, 8 * this.dpr)
+      this.ctx.stroke()
+      // 槽名
+      this.ctx.font = `${11 * this.dpr}px sans-serif`
+      this.ctx.fillStyle = '#8892b0'
+      this.ctx.textAlign = 'center'
+      this.ctx.fillText(cfg.name || slot, sx + eqSlotW / 2, eqY + 28 * this.dpr)
+      let unequipBtn = null
+      if (eq) {
+        this.ctx.font = `${22 * this.dpr}px sans-serif`
+        this.ctx.fillStyle = '#dde3f0'
+        this.ctx.fillText(cfg.icon || '❔', sx + eqSlotW / 2, eqY + 56 * this.dpr)
+        // 卸下按钮（仅装备存在时）
+        const ubW = eqSlotW - 8 * this.dpr
+        const ubH = 18 * this.dpr
+        const ubX = sx + 4 * this.dpr
+        const ubY = eqY + 14 * this.dpr + eqSlotH - ubH - 4 * this.dpr
+        this.ctx.fillStyle = '#e67e22'
+        roundRect(this.ctx, ubX, ubY, ubW, ubH, 5 * this.dpr)
+        this.ctx.fill()
+        this.ctx.fillStyle = '#ffffff'
+        this.ctx.font = `bold ${11 * this.dpr}px sans-serif`
+        this.ctx.fillText('卸下', ubX + ubW / 2, ubY + ubH / 2 + 1 * this.dpr)
+        unequipBtn = { x: ubX, y: ubY, width: ubW, height: ubH }
+      } else {
+        this.ctx.font = `${20 * this.dpr}px sans-serif`
+        this.ctx.fillStyle = '#3d4a6b'
+        this.ctx.fillText('空', sx + eqSlotW / 2, eqY + 56 * this.dpr)
+      }
+      slotBounds.push({ slot, x: sx, y: eqY + 14 * this.dpr, width: eqSlotW, height: eqSlotH, unequipBtn })
+    }
+    offsetY = eqY + 14 * this.dpr + eqSlotH + 16 * this.dpr
+
     // 分隔线
     this.ctx.strokeStyle = 'rgba(255, 255, 255, 0.2)'
     this.ctx.beginPath()
@@ -339,7 +398,8 @@ export class CharacterInfoPanel {
         y: panelY + 10 * this.dpr,
         width: 30 * this.dpr,
         height: 30 * this.dpr
-      }
+      },
+      slots: slotBounds
     }
   }
   

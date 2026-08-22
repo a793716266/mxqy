@@ -95,6 +95,11 @@ export class EquipmentManager {
     // 从背包移除
     this.removeItem(equipment.id)
 
+    // ★ 若槽内已有旧装备，换下后自动回归背包（避免换装丢装备）
+    if (currentEquip) {
+      this.unequippedItems.push(currentEquip)
+    }
+
     console.log(`[EquipmentManager] ${character.name} 穿戴了 ${equipment.name}`)
 
     return currentEquip

@@ -56,6 +56,7 @@ data.set('materials', { healing_herb: 3, slime_gel: 12, __unknown_mat: 1 })
 const fakeGame = {
   ctx: canvasCtx, width: 750 * 3, height: 1334 * 3, dpr: 3,
   data,
+  assets: { get: () => null },
   audio: { playSFX: () => {} },
 }
 const panel = new BackpackPanel(fakeGame)
@@ -193,6 +194,92 @@ const yc = p.y + 26 * dpr
 panel.handleTap(xc, yc)
 assert(panel.visible === false, '点击 ✕ 关闭')
 
+// ============ H. 背包内穿戴（选角色） + 换装旧装备回背包 ============
+console.log('\n=== H. 背包内穿戴 ===')
+equipmentManager.unequippedItems = []
+equipmentManager.addItem('rusty_sword')
+// 清空臻宝武器槽（来自 E 段佩戴的 sunlight_blade 会回到背包）
+const zh = charStateManager.getCharacter('zhenbao')
+equipmentManager.unequip(zh, 'weapon')
+panel.show(); panel.tab = 'equip'; panel.page = 0
+panel.handleTap(cell0.x, cell0.y)
+assert(panel.selectedItem && panel.selectedItem.kind === 'equip' && panel.selectedItem.data.id === 'rusty_sword', '打开 rusty_sword 详情')
+const arH = panel._detailActionRects(panel.selectedItem, panel._detailRect())
+assert(arH.heroBtns.length >= 2, `详情含角色选择行（${arH.heroBtns.length} 个）`)
+assert(panel._detailActionLabel(panel.selectedItem) === '穿戴', '操作按钮文案=穿戴')
+const hbH = arH.heroBtns[0]
+panel.handleTap(hbH.x + hbH.w / 2, hbH.y + hbH.h / 2)
+assert(panel.selectedItem.heroId === hbH.id, `选中角色（${panel.selectedItem.heroId}）`)
+const heroOf = charStateManager.getCharacter(hbH.id)
+const slotType = panel.selectedItem.data.type
+const packBeforeEquip = equipmentManager.getInventory().length
+panel.handleTap(arH.actionBtn.x + arH.actionBtn.w / 2, arH.actionBtn.y + arH.actionBtn.h / 2)
+assert(heroOf.equipment[slotType] && heroOf.equipment[slotType].id === 'rusty_sword', `rusty_sword 已穿戴到 ${heroOf.name} 的${slotType}槽`)
+assert(equipmentManager.getInventory().length === packBeforeEquip - 1, `背包减少 1 件（${packBeforeEquip}→${equipmentManager.getInventory().length}）`)
+assert(data.get('characterStates'), '穿戴后持久化 characterStates')
+// 换装：再装备 sunlight_blade（当前在背包）→ 旧的 rusty_sword 回背包
+panel.show(); panel.tab = 'equip'; panel.page = 0
+panel.handleTap(cell0.x, cell0.y)
+assert(panel.selectedItem.data.id === 'sunlight_blade', `换装前首格=背包内 sunlight_blade（${panel.selectedItem.data.id}）`)
+const arH2 = panel._detailActionRects(panel.selectedItem, panel._detailRect())
+const hbH2 = arH2.heroBtns[0]
+panel.handleTap(hbH2.x + hbH2.w / 2, hbH2.y + hbH2.h / 2)
+panel.handleTap(arH2.actionBtn.x + arH2.actionBtn.w / 2, arH2.actionBtn.y + arH2.actionBtn.h / 2)
+assert(heroOf.equipment.weapon.id === 'sunlight_blade', '换装后武器=阳光之刃')
+assert(equipmentManager.getInventory().some(it => it.id === 'rusty_sword'), '★ 换下的旧装备 rusty_sword 回归背包（修复丢装备 bug）')
+
+// ============ I. 队伍装备页卸下（回归背包） ============
+console.log('\n=== I. 队伍装备页卸下 ===')
+panel.show(); panel.tab = 'wear'; panel.wearHeroId = 'zhenbao'
+const iSlotX = p.x + 57 * dpr
+const iSlotY = p.y + (136 + 106 + 50) * dpr
+panel.handleTap(iSlotX, iSlotY)
+assert(panel.selectedItem && panel.selectedItem.data.id === 'sunlight_blade' && panel.selectedItem.wearer, '打开已佩戴装备详情（含 wearer）')
+assert(panel._detailActionLabel(panel.selectedItem) === '卸下', '操作按钮文案=卸下')
+const arI = panel._detailActionRects(panel.selectedItem, panel._detailRect())
+const packBeforeUn = equipmentManager.getInventory().length
+panel.handleTap(arI.actionBtn.x + arI.actionBtn.w / 2, arI.actionBtn.y + arI.actionBtn.h / 2)
+assert(zh.equipment.weapon === null, '卸下后武器槽为空')
+assert(equipmentManager.getInventory().some(it => it.id === 'sunlight_blade'), '卸下装备回归背包')
+assert(equipmentManager.getInventory().length === packBeforeUn + 1, `背包 +1（${packBeforeUn}→${equipmentManager.getInventory().length}）`)
+
+// ============ J. 消耗品使用（选角色回血 + 数量-1） ============
+console.log('\n=== J. 消耗品使用 ===')
+const lib = charStateManager.getCharacter('lixiaobao')
+lib.hp = 10
+const heroesAll = panel._getHeroes()
+const libIdx = heroesAll.findIndex(h => h.id === 'lixiaobao')
+panel.show(); panel.tab = 'item'; panel.page = 0
+panel.handleTap(matCell0.x, matCell0.y)
+assert(panel.selectedItem && panel.selectedItem.kind === 'material' && panel.selectedItem.data.id === 'healing_herb', '打开 healing_herb 详情')
+assert(panel.selectedItem.data.def.effect && panel.selectedItem.data.def.effect.hp === 80, '治愈草药含回血效果(80)')
+assert(panel._detailActionLabel(panel.selectedItem) === '使用', '操作按钮文案=使用')
+const arJ = panel._detailActionRects(panel.selectedItem, panel._detailRect())
+const hbJ = arJ.heroBtns[libIdx]
+panel.handleTap(hbJ.x + hbJ.w / 2, hbJ.y + hbJ.h / 2)
+assert(panel.selectedItem.heroId === 'lixiaobao', '选中使用对象=李小宝')
+const matsBefore = data.get('materials').healing_herb
+const hpBefore = lib.hp
+panel.handleTap(arJ.actionBtn.x + arJ.actionBtn.w / 2, arJ.actionBtn.y + arJ.actionBtn.h / 2)
+assert(lib.hp === Math.min(lib.maxHp, hpBefore + 80), `李小宝回血 +80（${hpBefore}→${lib.hp}）`)
+assert(data.get('materials').healing_herb === matsBefore - 1, `治愈草药 -1（${matsBefore}→${data.get('materials').healing_herb}）`)
+
+// ============ K. 角色卡详情面板：装备槽 + 卸下按钮区域 ============
+console.log('\n=== K. 角色卡详情装备槽 ===')
+const { CharacterInfoPanel } = await import('../scripts/ui/character-info-panel.js')
+const cip = new CharacterInfoPanel(fakeGame, zh)
+cip.show()
+const cipBounds = cip.renderDetailPanel()
+assert(cipBounds && Array.isArray(cipBounds.slots) && cipBounds.slots.length === 3, '详情返回 3 个装备槽')
+const wEmpty = cipBounds.slots.find(s => s.slot === 'weapon')
+assert(wEmpty && wEmpty.unequipBtn === null, '空武器槽无卸下按钮')
+// 给臻宝穿武器后刷新 → 卸下按钮出现
+equipmentManager.equip(zh, EQUIPMENT_CH1.sunlight_blade)
+cip.setCharacter(charStateManager.getCharacter('zhenbao'))
+const cipBounds2 = cip.renderDetailPanel()
+const wFilled = cipBounds2.slots.find(s => s.slot === 'weapon')
+assert(wFilled && wFilled.unequipBtn, '有装备的武器槽含卸下按钮')
+
 // ============ G. Game 接线（源码断言） ============
 console.log('\n=== G. Game 全场景接线 ===')
 const fs = nodeRequire('fs')
@@ -210,6 +297,14 @@ assert(gameSrc.includes("'背包'"), '入口按钮显示“背包”文字（不
 assert(gameSrc.includes("'🎒'"), '入口按钮保留 🎒 图标')
 assert(gameSrc.includes('SCENE.MAIN_MENU'), '主菜单（开始界面）排除背包按钮渲染与输入')
 assert(gameSrc.includes("this.sceneName !== SCENE.MAIN_MENU"), '渲染入口按钮时排除主菜单场景')
+
+// 角色卡详情面板 → 卸下装备回归背包（field-scene 接线）
+const fsSrc = fs.readFileSync(path.resolve(projectRoot, 'scripts', 'scenes', 'field-scene.js'), 'utf8')
+assert(fsSrc.includes('_unequipFromCharCard'), 'field-scene 提供角色卡卸下方法')
+assert(fsSrc.includes('s.unequipBtn'), 'field-scene 命中卸下按钮区域')
+const cipSrc = fs.readFileSync(path.resolve(projectRoot, 'scripts', 'ui', 'character-info-panel.js'), 'utf8')
+assert(cipSrc.includes('slotBounds'), '角色详情面板返回装备槽 bounds（供 field-scene 命中）')
+assert(cipSrc.includes('unequipBtn'), '装备槽含卸下按钮区域')
 
 console.log(`\n=== 结果: ${passed} 通过, ${failed} 失败 ===`)
 process.exit(failed === 0 ? 0 : 1)

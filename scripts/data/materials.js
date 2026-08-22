@@ -12,7 +12,8 @@ export const MATERIALS = {
     id: 'healing_herb',
     name: '治愈草药',
     icon: '🌿',
-    desc: '迷途的治愈猫珍藏的草药，散发着温暖的光泽，可以用来调配恢复药剂。'
+    desc: '迷途的治愈猫珍藏的草药，散发着温暖的光泽，可以用来调配恢复药剂。',
+    effect: { hp: 80 }   // 背包内可对指定角色使用：恢复 80 点生命
   },
   slime_gel: {
     id: 'slime_gel',
