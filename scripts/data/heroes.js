@@ -69,7 +69,7 @@ export const HEROES = [
         knock: {
           enabled: true,
           range: 60,                // 前方 X 轴生效范围（像素）
-          distance: 50,            // 击退距离（像素，X 轴）
+          distance: 150,            // 击退距离（像素，X 轴）
           stunChance: 0.30,         // 眩晕几率 30%
           stunDuration: 1.5,        // 眩晕持续 1 秒
         }
