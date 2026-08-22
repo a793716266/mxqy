@@ -211,6 +211,15 @@ export function installBattleAssets(BattleSceneClass) {
   }
 
   // ======== 角色精灵图片解析（渲染去重：animation.js + renderer.js 共用） ========
+  // ★ 特殊状态帧 key：艾米前缀为 AIMI，其余为 HERO_<ID大写>
+  //   （艾米资源注册为 AIMI_BUFF_xx / AIMI_SKILL_xx / AIMI_SUPPORT_xx，
+  //    与 BOSS 艾米 _getEnemyFrameKey 路径一致；臻宝为 HERO_ZHENBAO_BUFF_xx）
+  proto._heroSpecialFrameKey = function(heroId, action, frame) {
+    const prefix = (heroId === 'amy') ? 'AIMI' : `HERO_${String(heroId || '').toUpperCase()}`
+    const f = String(((frame || 0) % 8) + 1).padStart(2, '0')
+    return `${prefix}_${action}_${f}`
+  }
+
   proto._resolveHeroSpriteImage = function(hero, hAnimState) {
     if (!hero || !hero.id) return null
     const heroId = hero.id
@@ -221,11 +230,21 @@ export function installBattleAssets(BattleSceneClass) {
     }
 
     let imgKey = null
+    const st = hAnimState.state
 
-    if (hAnimState.state === 'attack') {
+    if (st === 'attack') {
       imgKey = this._getHeroSlashImageKey(heroId, hAnimState.frame || 0)
-    } else if (hAnimState.state === 'walk') {
+    } else if (st === 'walk') {
       imgKey = this._getHeroWalkImageKey(heroId, hAnimState.frame || 0)
+    } else if (st === 'buff') {
+      imgKey = this._heroSpecialFrameKey(heroId, 'BUFF', hAnimState.frame)
+    } else if (st === 'shield') {
+      imgKey = this._heroSpecialFrameKey(heroId, 'SHIELD', hAnimState.frame)
+    } else if (st === 'skill') {
+      imgKey = this._heroSpecialFrameKey(heroId, 'SKILL', hAnimState.frame)
+    } else if (st === 'support' || st === 'cast') {
+      // ★ 治愈之光等治疗施法：用 support 帧（艾米 AIMI_SUPPORT；李小宝 cast 由 renderer 精灵表处理，此处回退 idle）
+      imgKey = this._heroSpecialFrameKey(heroId, 'SUPPORT', hAnimState.frame)
     } else {
       imgKey = this._getHeroIdleImageKey(heroId, hAnimState.frame || 0)
     }

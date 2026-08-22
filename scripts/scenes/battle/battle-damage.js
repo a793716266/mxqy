@@ -239,7 +239,9 @@ export function installBattleDamage(BattleSceneClass) {
 
     if (skill.type === 'heal' || skill.type === 'heal_self') {
       const healTarget = skill.type === 'heal_self' ? hero : target
-      const healAmount = Math.floor(hero.magic * (skill.power || 1.0))
+      // ★ 修复：英雄只有 matk（无 magic 字段），旧代码读 hero.magic → NaN 污染 HP
+      const matk = hero.matk || hero.atk || 0
+      const healAmount = Math.floor((skill.power || 0) + matk * (skill.healMatk != null ? skill.healMatk : 1))
       healTarget.hp = Math.min(healTarget.maxHp, healTarget.hp + healAmount)
       const pos = this._getEntityPosition(healTarget)
       this.damageTexts.push({

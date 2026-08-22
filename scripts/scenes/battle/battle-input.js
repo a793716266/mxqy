@@ -352,8 +352,12 @@ export function installBattleInput(BattleSceneClass) {
 
     if (skill.type === 'heal' || skill.type === 'heal_self') {
       const healTarget = skill.type === 'heal_self' ? hero : (target || hero)
-      const healAmount = Math.floor(hero.magic * (skill.power || 1.0))
+      // ★ 修复：英雄只有 matk（无 magic 字段），旧代码读 hero.magic → NaN 污染 HP
+      const matk = hero.matk || hero.atk || 0
+      const healAmount = Math.floor((skill.power || 0) + matk * (skill.healMatk != null ? skill.healMatk : 1))
       healTarget.hp = Math.min(healTarget.maxHp, healTarget.hp + healAmount)
+      const hAnimState = this.heroAnimStates && this.heroAnimStates[hero.id]
+      if (hAnimState) { hAnimState.state = 'support'; hAnimState.frame = 0; hAnimState.frameTimer = 0 }
       this._addLog(`${hero.name} 使用「${skill.name}」，恢复了 ${healAmount} 点生命！`)
     } else if (skill.target === 'all' || skill.target === 'all_enemies') {
       this.enemies.forEach(enemy => {

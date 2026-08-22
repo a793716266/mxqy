@@ -623,8 +623,8 @@ export function installBattleRenderer(BattleSceneClass) {
     const drawX = bx
     const drawY = by
 
-    // 获取角色图片（cast/shield/buff 优先，普通状态走 shared 解析）
-    const isSpecialAnim = hAnimState && (hAnimState._isCastingSkill || hAnimState.state === 'cast' || hAnimState.state === 'shield' || hAnimState.state === 'buff')
+    // 获取角色图片（cast/shield/buff/support 优先，普通状态走 shared 解析）
+    const isSpecialAnim = hAnimState && (hAnimState._isCastingSkill || hAnimState.state === 'cast' || hAnimState.state === 'shield' || hAnimState.state === 'buff' || hAnimState.state === 'support')
     let heroImg = null
     if (isSpecialAnim) {
       // ★★★ 李小宝 cast：精灵表模式（绘制时9参数裁切，不用离屏canvas）★★★
@@ -648,10 +648,10 @@ export function installBattleRenderer(BattleSceneClass) {
         }
       }
 
-      // ★ shield / buff 动画：直接用帧号拼 key
-      if (!heroImg && (hAnimState.state === 'shield' || hAnimState.state === 'buff')) {
-        const action = hAnimState.state.toUpperCase()
-        const frameKey = `HERO_${hero.id.toUpperCase()}_${action}_${String((hAnimState.frame || 0) + 1).padStart(2, '0')}`
+      // ★ shield / buff / support 动画：用统一前缀拼 key（艾米→AIMI，其余→HERO_<ID>）
+      if (!heroImg && (hAnimState.state === 'shield' || hAnimState.state === 'buff' || hAnimState.state === 'support')) {
+        const action = hAnimState.state === 'support' ? 'SUPPORT' : hAnimState.state.toUpperCase()
+        const frameKey = this._heroSpecialFrameKey(hero.id, action, hAnimState.frame)
         heroImg = this.game.assets.get(frameKey)
         if (!heroImg) heroImg = this.game.assets.get(this._getHeroImageKey(hero.id))
       }

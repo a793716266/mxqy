@@ -1061,10 +1061,11 @@ export function installBattleCombat(BattleSceneClass) {
     const dpr = this.dpr
     const hAnimState = this.heroAnimStates[hero.id]
 
-    // ★ 选择动画：shield → 盾击动画, buff → 战吼动画, 其他 → cast
+    // ★ 选择动画：shield → 盾击动画, buff → 战吼动画, heal → support(治愈)动画, 其他 → cast
     let animType = 'cast'
     if (skill.effect === 'stun') animType = 'shield'   // 盾击
     else if (skill.type === 'buff') animType = 'buff'    // 战吼/狂暴
+    else if (skill.type === 'heal' || skill.type === 'heal_self') animType = 'support'  // 治愈之光等→support动画(AIMI_SUPPORT)
 
     if (hAnimState) {
       hAnimState.state = animType
@@ -1138,9 +1139,17 @@ export function installBattleCombat(BattleSceneClass) {
       }
       // ===== 治疗 =====
       else if (skill.type === 'heal' || skill.type === 'heal_self') {
-        const healTarget = skill.type === 'heal_self' ? hero : (target || hero)
-        const healAmount = Math.floor((hero.magic || hero.atk) * (skill.power || 1.0))
-        healTarget.hp = Math.min(healTarget.maxHp, healTarget.hp + healAmount)
+        // ★ 修复：英雄只有 matk（无 magic 字段），旧代码读 hero.magic → NaN/用错属性。
+        //   统一用 matk（退化为 atk），并按数据公式 base + matk*系数 计算（与野外战斗一致）。
+        const matk = hero.matk || hero.atk || 0
+        const healAmount = Math.floor((skill.power || 0) + matk * (skill.healMatk != null ? skill.healMatk : 1))
+        const targets = (skill.type === 'heal_self')
+          ? [hero]
+          : (skill.target === 'all_ally' ? this.party.filter(h => h && h.hp > 0) : [target || hero])
+        targets.forEach(t => {
+          if (!t || t.hp <= 0) return
+          t.hp = Math.min(t.maxHp, t.hp + healAmount)
+        })
         this._addLog(`${hero.name} 使用「${skill.name}」，恢复了 ${healAmount} 点生命！`)
       }
       // ===== AOE =====
@@ -1190,7 +1199,9 @@ export function installBattleCombat(BattleSceneClass) {
     const dpr = this.dpr
     const hAnimState = this.heroAnimStates[hero.id]
     if (hAnimState) {
-      hAnimState.state = 'attack'
+      // ★ attack_heal（治愈冲击/光明冲锋：伤害+回血技能）用 skill 动画（AIMI_SKILL），
+      //   其余物理技能用 attack（AIMI_ATTACK）。动画表现与伤害/突进/回血结算解耦，仅改表现不影响逻辑。
+      hAnimState.state = (skill.type === 'attack_heal') ? 'skill' : 'attack'
       hAnimState.frame = 0
       hAnimState.frameTimer = 0
     }
@@ -1784,7 +1795,11 @@ export function installBattleCombat(BattleSceneClass) {
 
     // 结算伤害（物理攻击路径）
     if (skill.type === 'heal' || skill.type === 'heal_self') {
-      const healAmount = Math.floor(hero.magic * (skill.power || 1.0))
+      // ★ 修复：英雄只有 matk（无 magic 字段），旧代码读 hero.magic → NaN 污染 HP
+      const matk = hero.matk || hero.atk || 0
+      const healAmount = Math.floor((skill.power || 0) + matk * (skill.healMatk != null ? skill.healMatk : 1))
+      const hAnimState = this.heroAnimStates && this.heroAnimStates[hero.id]
+      if (hAnimState) { hAnimState.state = 'support'; hAnimState.frame = 0; hAnimState.frameTimer = 0 }
       target.hp = Math.min(target.maxHp, target.hp + healAmount)
       const targetPos = this.enemyPositions[this.enemies.indexOf(target)] ||
                          this.heroBasePositions[this.party.indexOf(target)]

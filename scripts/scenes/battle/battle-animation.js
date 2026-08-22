@@ -428,7 +428,7 @@ export function installBattleAnimation(BattleSceneClass) {
       const actualIsMoving = hAnimState._effectiveMoving
 
       // 状态切换
-      const specialStates = new Set(['attack', 'shield', 'buff', 'cast'])
+      const specialStates = new Set(['attack', 'shield', 'buff', 'cast', 'support', 'skill'])
       let desiredState = hAnimState.state
       if (this.activeAttackers.has(hero.id) && !specialStates.has(hAnimState.state)) {
         // 主动出击 → attack
@@ -485,7 +485,7 @@ export function installBattleAnimation(BattleSceneClass) {
           }
         } else if (hAnimState.state === 'cast') {
           if (hAnimState.frame >= 8) hAnimState.frame = 0
-        } else if (hAnimState.state === 'shield' || hAnimState.state === 'buff') {
+        } else if (hAnimState.state === 'shield' || hAnimState.state === 'buff' || hAnimState.state === 'support' || hAnimState.state === 'skill') {
           if (hAnimState.frame >= 8) hAnimState.frame = 0
         }
       }

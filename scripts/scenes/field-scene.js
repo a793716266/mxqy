@@ -4708,13 +4708,16 @@ baseRadius: 50 * this.dpr,    // 底座半径（缩小）
       // ★ 通关解锁角色（GDD：第一章通关解锁艾米）。仅阳光草原触发本配置的解锁。
       if (this.areaId === 'grassland' && GRASSLAND_DUNGEON.clearReward && GRASSLAND_DUNGEON.clearReward.unlocks) {
         for (const hid of GRASSLAND_DUNGEON.clearReward.unlocks) {
-          const ok = charStateManager.unlockCharacter(hid)  // 首次解锁返回 true
+          const ok = charStateManager.unlockCharacter(hid)  // 解锁角色（已存在则返回 false）
           const hdef = HEROES.find(h => h.id === hid)
           const hname = (hdef && hdef.name) || hid
           if (ok && this.game.showToast) this.game.showToast(`✨ ${hname} 加入队伍！`)
-          console.log(`[Field] 副本通关解锁角色: ${hid} (${ok ? '成功' : '已存在'})`)
-          // ★ 首次招募艾米 → 播放感化独白（purifyDialogue），独白结束后再弹通关遮罩
-          if (ok && hid === 'amy' && this.bossPurifyDialogue) {
+          console.log(`[Field] 副本通关解锁角色: ${hid} (${ok ? '成功' : '已招募'})`)
+          // ★ 首次击败草原 BOSS → 播放艾米感化独白（purifyDialogue），独白结束后再弹通关遮罩。
+          //   用独立持久标记 amyMonologueSeen 判断，不再依赖 unlockCharacter 返回值：
+          //   名册状态不稳定（艾米已加入/点过测试解锁后 ok=false）会导致重复通关不播、玩家反馈"无剧情引导"。
+          if (hid === 'amy' && this.bossPurifyDialogue && !this.game.data.get('amyMonologueSeen')) {
+            this.game.data.set('amyMonologueSeen', true)
             this._showStoryDialogue('艾米', this.bossPurifyDialogue)
             this._bossMonologueActive = true
             this.showDungeonClear = false
