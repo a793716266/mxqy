@@ -222,6 +222,8 @@ export class FieldScene extends SceneBase {
       this.dungeonReward = 80
       this._dropFloaters = []
       this.bossDialogueShown = false
+      this.bossPurifyDialogue = null      // ★ BOSS 感化独白（purifyDialogue），击败后播放
+      this._bossMonologueActive = false    // ★ 独白播放中（期间不弹通关遮罩）
       this.storyDialogue = null
       // ★ 开场引导对话（首次进入触发，持久化防重复）——自动播放不阻塞操作
       if (!this.game.data.hasFlag('introShown_grassland')) {
@@ -506,6 +508,8 @@ export class FieldScene extends SceneBase {
         // ★ 记录 Boss 登场台词（玩家首次接近时触发一次），复用实体 dialogue 字段前两句
         this.bossDialogue = (bossData && Array.isArray(bossData.dialogue)) ? bossData.dialogue.slice(0, 2) : null
         this.bossDialogueName = bossData ? bossData.name : '迷途的治愈猫'
+        // ★ 记录 Boss 感化独白（purifyDialogue），击败后作为「加入队伍」叙事播放
+        this.bossPurifyDialogue = (bossData && Array.isArray(bossData.purifyDialogue)) ? bossData.purifyDialogue : null
         this.bossDialogueShown = false
         console.log(`[Field] 生成Boss: ${bossData.name} 在位置 (${bossX}, ${bossY})`)
       }
@@ -4669,7 +4673,19 @@ baseRadius: 50 * this.dpr,    // 底座半径（缩小）
    */
   _checkDungeonClear(dt) {
     if (!this.areaInfo || !this.areaInfo.isDungeon) return
+
+    // ★ 已通关：进入「独白 → 通关遮罩 → 倒计时回城」收尾流程
     if (this.dungeonCleared) {
+      // ① 独白阶段：等艾米感化独白（purifyDialogue）播完，再弹出通关遮罩
+      if (this._bossMonologueActive) {
+        if (!this.storyDialogue) {
+          this._bossMonologueActive = false
+          this.showDungeonClear = true
+          this.dungeonClearTimer = 3.5
+        }
+        return
+      }
+      // ② 通关遮罩 + 倒计时回城（点击任意处 / 计时结束）
       this.dungeonClearTimer -= dt
       if (this.dungeonClearTimer <= 0 && !this._returningToTown) {
         this._returningToTown = true
@@ -4677,23 +4693,32 @@ baseRadius: 50 * this.dpr,    // 底座半径（缩小）
       }
       return
     }
+
     if (!this.mapMonsters || this.mapMonsters.length === 0) return
     const alive = this.mapMonsters.filter(m => m.alive).length
     if (alive === 0) {
       this.dungeonCleared = true
-      this.showDungeonClear = true
-      this.dungeonClearTimer = 3.5
       // 奖励：金币（统一走 'gold' 字段，HUD / 击杀 / 战斗奖励均读取它；
       // 原 'coins' 字段为孤儿，无人读取，会导致通关奖励丢失）
       const reward = (GRASSLAND_DUNGEON.clearReward && GRASSLAND_DUNGEON.clearReward.coins) ?? (this.dungeonReward || 80)
       this._addGold(reward)
       this.game.data.set(`dungeon_cleared_${this.areaId}`, true)
+      // ★ 标记艾米已被击败（town 探索菜单据此显示「已击败艾米 / 已解锁」；此前仅在测试按钮里写过）
+      if (this.areaId === 'grassland') this.game.data.set('amyDefeated', true)
       // ★ 通关解锁角色（GDD：第一章通关解锁艾米）。仅阳光草原触发本配置的解锁。
       if (this.areaId === 'grassland' && GRASSLAND_DUNGEON.clearReward && GRASSLAND_DUNGEON.clearReward.unlocks) {
         for (const hid of GRASSLAND_DUNGEON.clearReward.unlocks) {
-          const ok = charStateManager.unlockCharacter(hid)
-          if (ok && this.game.showToast) this.game.showToast(`✨ ${hid} 加入队伍！`)
+          const ok = charStateManager.unlockCharacter(hid)  // 首次解锁返回 true
+          const hdef = HEROES.find(h => h.id === hid)
+          const hname = (hdef && hdef.name) || hid
+          if (ok && this.game.showToast) this.game.showToast(`✨ ${hname} 加入队伍！`)
           console.log(`[Field] 副本通关解锁角色: ${hid} (${ok ? '成功' : '已存在'})`)
+          // ★ 首次招募艾米 → 播放感化独白（purifyDialogue），独白结束后再弹通关遮罩
+          if (ok && hid === 'amy' && this.bossPurifyDialogue) {
+            this._showStoryDialogue('艾米', this.bossPurifyDialogue)
+            this._bossMonologueActive = true
+            this.showDungeonClear = false
+          }
         }
       }
       // ★ 章节进度推进：通关后把进度推进到「已通关章节」(max(当前, 本章))，而非下一章。
@@ -4720,6 +4745,11 @@ baseRadius: 50 * this.dpr,    // 底座半径（缩小）
         if (typeof a.stopBGM === 'function') a.stopBGM()
         if (typeof a.playBGM === 'function') a.playBGM('bgm_victory')
         if (typeof a.playSFX === 'function') a.playSFX('reward_coin')
+      }
+      // ★ 无独白（非草原 / 无 purifyDialogue / 艾米已招募过）→ 直接弹通关遮罩
+      if (!this._bossMonologueActive && !this.showDungeonClear) {
+        this.showDungeonClear = true
+        this.dungeonClearTimer = 3.5
       }
     }
   }
