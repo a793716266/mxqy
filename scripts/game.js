@@ -285,11 +285,11 @@ export class Game {
     }
   }
 
-  // 全局背包入口按钮区域（field 小地图正下方：避开顶部 70*dpr 黑栏与小地图 85~165*dpr 占位）
+  // 全局背包入口按钮区域（屏幕右侧中段偏下，按屏幕高度比例自适应；避开 field 顶部 70*dpr 黑栏与小地图 85~165*dpr 占位，也避开摇杆/召回按钮等左侧与底部 UI）
   _backpackBtnRect() {
     return {
-      x: this.width - 95 * this.dpr,
-      y: 175 * this.dpr,
+      x: this.width - 60 * this.dpr,
+      y: this.height * 0.55 - 25 * this.dpr,
       w: 50 * this.dpr,
       h: 50 * this.dpr
     }
