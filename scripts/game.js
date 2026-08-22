@@ -14,6 +14,7 @@ import { AudioManager } from './core/audio-manager.js'
 import { AssetManager, ASSETS } from './core/asset-manager.js'
 import { SkillEffectManager } from './core/skill-effect-manager.js'
 import { SettingsPanel } from './ui/settings-panel.js'
+import { BackpackPanel } from './ui/backpack-panel.js'
 import { computeDeltaTime } from './utils/time.js'
 
 // 场景类型
@@ -55,6 +56,7 @@ export class Game {
     this.assets = new AssetManager()
     this.effects = new SkillEffectManager(this)
     this.settings = new SettingsPanel(this)  // 设置面板
+    this.backpack = new BackpackPanel(this)  // 背包面板（全场景通用：装备/消耗品/金币）
 
     // 场景切换动画
     this._fadeAlpha = 0
@@ -220,7 +222,12 @@ export class Game {
     this._handleSettingsInput()
     this.settings.update(this.deltaTime)
 
-    if (this.currentScene) {
+    // ★ 处理背包（全局面板）：入口按钮 + 面板输入
+    this._handleBackpackInput()
+    this.backpack.update(this.deltaTime)
+
+    // ★ 背包打开期间暂停场景 update（野外战斗中查看背包不会被怪物偷袭），渲染照常
+    if (this.currentScene && !this.backpack.visible) {
       this.currentScene.update(this.deltaTime)
     }
 
@@ -255,6 +262,71 @@ export class Game {
     }
   }
 
+  // ★ 处理背包输入：面板打开时消费全部点击；未打开时检测全局入口按钮（只消费命中按钮的那一次点击）
+  _handleBackpackInput() {
+    if (this.backpack.visible) {
+      const tap = this.input.consumeTap()
+      if (tap) {
+        this.backpack.handleTap(tap.x, tap.y)
+      }
+      return
+    }
+
+    // 设置面板打开时不响应入口按钮（按钮被设置面板遮罩盖住，不应穿透点击）
+    if (this.settings.visible || !this.input.taps || this.input.taps.length === 0) return
+
+    const tap = this.input.taps[0]
+    const b = this._backpackBtnRect()
+    if (tap.x >= b.x && tap.x <= b.x + b.w &&
+        tap.y >= b.y && tap.y <= b.y + b.h) {
+      this.input.taps.shift()   // 命中才消费，未命中留给场景处理
+      if (this.audio && this.audio.playSFX) this.audio.playSFX('ui_popup')
+      this.backpack.show()
+    }
+  }
+
+  // 全局背包入口按钮区域（右上角，紧邻主菜单设置按钮左侧）
+  _backpackBtnRect() {
+    return {
+      x: this.width - 130 * this.dpr,
+      y: 20 * this.dpr,
+      w: 50 * this.dpr,
+      h: 50 * this.dpr
+    }
+  }
+
+  // 渲染全局背包入口按钮（圆形皮质背包钮）
+  _renderBackpackButton(ctx) {
+    const b = this._backpackBtnRect()
+    const d = this.dpr
+    const cx = b.x + b.w / 2
+    const cy = b.y + b.h / 2
+    const r = b.w / 2
+
+    ctx.save()
+    // 按钮底（皮革棕渐变）
+    const grad = ctx.createLinearGradient(b.x, b.y, b.x, b.y + b.h)
+    grad.addColorStop(0, '#c98a4b')
+    grad.addColorStop(1, '#8b5a2b')
+    ctx.fillStyle = grad
+    ctx.beginPath()
+    ctx.arc(cx, cy, r, 0, Math.PI * 2)
+    ctx.fill()
+
+    // 描边 + 阴影感
+    ctx.strokeStyle = 'rgba(255, 224, 178, 0.75)'
+    ctx.lineWidth = 2 * d
+    ctx.beginPath()
+    ctx.arc(cx, cy, r, 0, Math.PI * 2)
+    ctx.stroke()
+
+    ctx.font = `${22 * d}px sans-serif`
+    ctx.textAlign = 'center'
+    ctx.textBaseline = 'middle'
+    ctx.fillText('🎒', cx, cy + 1 * d)
+    ctx.restore()
+  }
+
   _render() {
     const ctx = this.ctx
     ctx.clearRect(0, 0, this.width, this.height)
@@ -279,8 +351,16 @@ export class Game {
       ctx.fillRect(0, 0, this.width, this.height)
     }
 
+    // 渲染全局背包入口按钮（场景之上，设置/背包面板之下；面板打开或无场景时隐藏）
+    if (!this.backpack.visible && !this.settings.visible && this.currentScene) {
+      this._renderBackpackButton(ctx)
+    }
+
     // 渲染设置面板（在最上层）
     this.settings.render(ctx)
+
+    // 渲染背包面板（最顶层）
+    this.backpack.render(ctx)
 
     ctx.restore()
   }
