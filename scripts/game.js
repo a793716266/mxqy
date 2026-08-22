@@ -293,9 +293,9 @@ export class Game {
     const d = this.dpr
     const w = 88 * d
     const h = 38 * d
-    // 胶囊居中于原位置（屏幕右侧中段偏下）：中心约 (width-35*dpr, height*0.55)
+    // 胶囊：屏幕右侧中段偏下；右边距 20*d（避开设备圆角/刘海安全区）
     return {
-      x: this.width - 35 * d - w / 2,
+      x: this.width - 20 * d - w,
       y: this.height * 0.55 - h / 2,
       w,
       h
