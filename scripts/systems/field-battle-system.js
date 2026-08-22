@@ -113,31 +113,20 @@ export function installFieldBattleSystem(FieldSceneClass) {
     const list = sys.battleHeroes
     if (!list || list.length < 2 || !this._heroWorldPos) return
     const cur = list[0]
-    const nxt = list[1]
-    // 将原被控者坐标同步回其世界坐标
+    // 将原被控者坐标同步回其世界坐标（按 partyIndex 定位，与 _buildBattleHeroes 一致）
     this._heroWorldPos[cur.partyIndex] = { x: this.playerX, y: this.playerY }
+    // ★ 改为「轮转全部参战英雄」而非只交换前两位：
+    //   把当前被控者移到队尾、其余前移，原 list[1] 来到 index0。
+    //   这样 3+ 名英雄（艾米/安妮/钱多多/小贝…）都能通过反复点击依次切换到。
+    //   注意：this.followers 保持「非臻宝成员」的稳定列表即可——
+    //   跟随系统用 battleHeroes[0].followerRef 引用相等 + partyIndex 索引 _heroWorldPos 判定被控者，
+    //   不依赖数组顺序，故无需重排 followers（原两位交换的 followers 重排实为死代码）。
+    list.push(list.shift())
+    const nxt = list[0]
     // 将新被控者世界坐标载入 playerX/playerY（被控者即镜头中心）
     const np = this._heroWorldPos[nxt.partyIndex]
-    this.playerX = np.x
-    this.playerY = np.y
-    // 重排：新被控者置于 index0
-    list[0] = nxt
-    list[1] = cur
+    if (np) { this.playerX = np.x; this.playerY = np.y }
     sys.currentControlIndex = 0
-
-    // ★★★ 关键修复：同步重排 this.followers，使 AI 跟随/召回逻辑与 battleHeroes 保持一致
-    //   原逻辑只重排 battleHeroes，导致切换后 followers 顺序与 battleHeroes 错位：
-    //   被控角色(原 followers[1]) 仍被 AI 跟随循环当成 followers[0] 队友去指挥，
-    //   新被控角色被两套逻辑抢控，表现为"切换后召回/解散失效、队友乱跑"。
-    if (this.followers && this.followers.length >= 2) {
-      const fi0 = this.followers.indexOf(cur.followerRef)
-      const fi1 = this.followers.indexOf(nxt.followerRef)
-      if (fi0 !== -1 && fi1 !== -1) {
-        const tmp = this.followers[fi0]
-        this.followers[fi0] = this.followers[fi1]
-        this.followers[fi1] = tmp
-      }
-    }
 
     // ★★ 关键：重置双方的 AI 攻击/动画状态
     //   原被控者（cur）将转为 AI 角色：清掉残留的普攻 CD，让 AI 立即可攻击；
@@ -612,15 +601,17 @@ export function installFieldBattleSystem(FieldSceneClass) {
       return
     }
 
-    // 4.01 ★ 当前被控英雄阵亡时，自动切换到下一个存活英雄
+    // 4.01 ★ 当前被控英雄阵亡时，自动轮换到下一个存活英雄
+    //   _switchControl 现已改为「整体轮转」，故反复调用直到队首为存活英雄即可
+    //   （兼容 3+ 英雄：被控者阵亡后依次轮转，直到落到某位存活队友）。
     const ctrlHero0 = battleHeroes[0]
     if (ctrlHero0 && (!ctrlHero0.hero || ctrlHero0.hero.hp <= 0)) {
-      for (let bi = 1; bi < battleHeroes.length; bi++) {
-        if (battleHeroes[bi].hero && battleHeroes[bi].hero.hp > 0) {
-          console.log(`[FieldBattle] 被控英雄阵亡，自动切换到 ${battleHeroes[bi].hero.name}`)
-          this._switchControl()
-          break
-        }
+      let _guard = 0
+      while (battleHeroes[0].hero && battleHeroes[0].hero.hp <= 0 && _guard < battleHeroes.length) {
+        const aliveName = battleHeroes.find(bh => bh.hero && bh.hero.hp > 0)
+        console.log(`[FieldBattle] 被控英雄阵亡，自动切换${aliveName ? '到 ' + aliveName.hero.name : ''}`)
+        this._switchControl()
+        _guard++
       }
     }
 
