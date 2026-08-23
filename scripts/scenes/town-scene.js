@@ -93,7 +93,8 @@ export class TownScene {
     // 测试日志
     this.testLogs = []
 
-    // 调试坐标显示（用于调整资源位置）
+    // 调试坐标显示（用于调整资源位置）。默认关闭：生产包不再渲染该浮层。
+    this._debugCoordsEnabled = false
     this._debugCoords = { x: 0, y: 0, show: false, tapWorldX: 0, tapWorldY: 0 }
     
     // NPC列表（使用新位置）
@@ -575,8 +576,8 @@ export class TownScene {
     // ★ 角色详情面板（带遮罩，最上层；点击成员后可见）
     this._charInfoBounds = this.charInfoPanel.renderDetailPanel()
 
-    // 调试坐标显示（用于调整资源位置）
-    this._renderDebugCoords(ctx)
+    // 调试坐标显示（默认关闭，仅内部调试时置 _debugCoordsEnabled=true）
+    if (this._debugCoordsEnabled) this._renderDebugCoords(ctx)
   }
 
   /**
@@ -1012,23 +1013,57 @@ export class TownScene {
    * 渲染调试坐标信息（用于调整资源位置）
    * 显示玩家当前世界坐标和触摸位置的世界坐标
    */
+  /**
+   * 安全区顶部内边距（dpr 已乘）。优先取微信胶囊顶部，否则按屏高兜底。
+   * 这样 HUD 不会被 iOS 状态栏 / 刘海吃掉。
+   */
+  _getSafeTop() {
+    const dpr = this.dpr
+    try {
+      if (typeof wx !== 'undefined' && wx.getMenuButtonBoundingClientRect) {
+        const r = wx.getMenuButtonBoundingClientRect()
+        if (r && r.top) return r.top * dpr
+      }
+    } catch (e) {}
+    return Math.max(this.height * 0.06, 44) * dpr
+  }
+
   _renderTopBar(ctx) {
     const dpr = this.dpr
     ctx.save()
-    // 半透明背景条（右上角）
-    ctx.fillStyle = 'rgba(0,0,0,0.5)'
-    const bw = 150 * dpr
-    const bh = 40 * dpr
-    const bx = this.width - bw - 12 * dpr
-    const by = 12 * dpr
-    ctx.fillRect(bx, by, bw, bh)
-    // 金币（读取 data 的 'gold' 字段）
     const gold = (this.game.data.get && this.game.data.get('gold')) || 0
-    ctx.textAlign = 'center'
+    // 右上金币 pill：玻璃圆角，避开微信胶囊（右侧 12dpr 内边距）
+    const bh = 36 * dpr
+    const padX = 14 * dpr
+    const gap = 6 * dpr
+    const coinR = 9 * dpr
+    const numW = (String(gold).length * 12 + 6) * dpr
+    const bx = this.width - (12 * dpr + padX * 2 + coinR * 2 + gap + numW)
+    const by = this._getSafeTop() + 8 * dpr
+    const bw = padX * 2 + coinR * 2 + gap + numW
+
+    ctx.fillStyle = 'rgba(26,26,46,0.62)'
+    this._roundRect(ctx, bx, by, bw, bh, 18 * dpr)
+    ctx.fill()
+    ctx.strokeStyle = 'rgba(255,255,255,0.18)'
+    ctx.lineWidth = 1 * dpr
+    this._roundRect(ctx, bx, by, bw, bh, 18 * dpr)
+    ctx.stroke()
+
+    // 金币图标（圆形）
+    const cx = bx + padX + coinR
+    const cy = by + bh / 2
+    ctx.fillStyle = '#ffd86b'
+    ctx.beginPath()
+    ctx.arc(cx, cy, coinR, 0, Math.PI * 2)
+    ctx.fill()
+
+    // 金币数字
+    ctx.textAlign = 'left'
     ctx.textBaseline = 'middle'
     ctx.fillStyle = '#ffd86b'
-    ctx.font = `bold ${20 * dpr}px sans-serif`
-    ctx.fillText(`💰 ${gold}`, bx + bw / 2, by + bh / 2)
+    ctx.font = `bold ${16 * dpr}px sans-serif`
+    ctx.fillText(`${gold}`, cx + coinR + gap, cy + 1 * dpr)
     ctx.restore()
   }
 
@@ -1041,37 +1076,39 @@ export class TownScene {
     const members = (this.party && this.party.length) ? this.party : []
     if (!members.length) return
 
-    const cardW = 72 * dpr
-    const cardH = 66 * dpr
-    const gap = 6 * dpr
-    const totalW = members.length * cardW + (members.length - 1) * gap
-    const goldBarReserved = 150 * dpr + 24 * dpr // 右上金币条占位，避免重叠
-    let startX = (this.width - totalW) / 2
-    const maxRight = this.width - goldBarReserved
-    if (startX + totalW > maxRight) startX = 12 * dpr
-    if (startX < 8 * dpr) startX = 8 * dpr
-    const y = 10 * dpr
+    const n = members.length
+    const leftInset = 8 * dpr
+    const rightInset = 8 * dpr
+    const gap = 5 * dpr
+    const availW = this.width - leftInset - rightInset
+    // 自适应卡宽：全员一排，宽屏不浪费、窄屏不溢出
+    const cardW = Math.min(64 * dpr, (availW - (n - 1) * gap) / n)
+    const cardH = 52 * dpr
+    const startX = leftInset
+    const y = this._getSafeTop() + 52 * dpr // 第二行，避开第一行的金币 pill
 
     this._partyBarBounds = []
     ctx.save()
-    for (let i = 0; i < members.length; i++) {
+    for (let i = 0; i < n; i++) {
       const c = members[i]
       const x = startX + i * (cardW + gap)
       this._partyBarBounds.push({ x, y, width: cardW, height: cardH, index: i, char: c })
 
-      // 卡片背景（与金币条/探索菜单风格一致）
-      ctx.fillStyle = 'rgba(0,0,0,0.5)'
-      this._roundRect(ctx, x, y, cardW, cardH, 8 * dpr)
+      const isControlled = (i === 0) // 被控者（队伍首位）高亮
+
+      // 卡片背景（玻璃面板，与金币 pill 风格一致）
+      ctx.fillStyle = isControlled ? 'rgba(255,210,74,0.15)' : 'rgba(26,26,46,0.62)'
+      this._roundRect(ctx, x, y, cardW, cardH, 10 * dpr)
       ctx.fill()
-      ctx.strokeStyle = 'rgba(255,255,255,0.35)'
-      ctx.lineWidth = 1.5 * dpr
-      this._roundRect(ctx, x, y, cardW, cardH, 8 * dpr)
+      ctx.strokeStyle = isControlled ? '#ffd24a' : 'rgba(255,255,255,0.18)'
+      ctx.lineWidth = isControlled ? 1.5 * dpr : 1 * dpr
+      this._roundRect(ctx, x, y, cardW, cardH, 10 * dpr)
       ctx.stroke()
 
       // 头像（圆形裁剪）
-      const avatarR = 16 * dpr
+      const avatarR = 13 * dpr
       const avatarCx = x + cardW / 2
-      const avatarCy = y + 18 * dpr
+      const avatarCy = y + 15 * dpr
       ctx.save()
       ctx.beginPath()
       ctx.arc(avatarCx, avatarCy, avatarR, 0, Math.PI * 2)
@@ -1082,7 +1119,7 @@ export class TownScene {
       } else {
         ctx.fillStyle = 'rgba(255,255,255,0.2)'
         ctx.fillRect(avatarCx - avatarR, avatarCy - avatarR, avatarR * 2, avatarR * 2)
-        ctx.font = `${18 * dpr}px sans-serif`
+        ctx.font = `${16 * dpr}px sans-serif`
         ctx.textAlign = 'center'
         ctx.textBaseline = 'middle'
         ctx.fillText('🐱', avatarCx, avatarCy)
@@ -1090,30 +1127,22 @@ export class TownScene {
       ctx.restore()
 
       // 等级
-      ctx.font = `bold ${11 * dpr}px sans-serif`
-      ctx.fillStyle = '#ffd700'
+      ctx.font = `bold ${10 * dpr}px sans-serif`
+      ctx.fillStyle = isControlled ? '#ffd24a' : '#ffd700'
       ctx.textAlign = 'center'
       ctx.textBaseline = 'middle'
-      ctx.fillText(`Lv.${c.level || 1}`, avatarCx, y + 40 * dpr)
+      ctx.fillText(`Lv.${c.level || 1}`, avatarCx, y + 32 * dpr)
 
       // HP 条
-      const barW = cardW - 14 * dpr
-      const barH = 4 * dpr
-      const barX = x + 7 * dpr
-      const hpY = y + 50 * dpr
+      const barW = cardW - 12 * dpr
+      const barH = 3.5 * dpr
+      const barX = x + 6 * dpr
+      const hpY = y + 41 * dpr
       const hpP = Math.max(0, Math.min(1, (c.hp || 0) / (c.maxHp || 1)))
       ctx.fillStyle = 'rgba(0,0,0,0.5)'
       ctx.fillRect(barX, hpY, barW, barH)
-      ctx.fillStyle = hpP > 0.6 ? '#4caf50' : hpP > 0.3 ? '#ff9800' : '#f44336'
+      ctx.fillStyle = hpP > 0.6 ? '#4ade80' : hpP > 0.3 ? '#ff9800' : '#f44336'
       ctx.fillRect(barX, hpY, barW * hpP, barH)
-
-      // MP 条
-      const mpY = hpY + barH + 2 * dpr
-      const mpP = Math.max(0, Math.min(1, (c.mp || 0) / (c.maxMp || 1)))
-      ctx.fillStyle = 'rgba(0,0,0,0.5)'
-      ctx.fillRect(barX, mpY, barW, barH)
-      ctx.fillStyle = '#4a90e2'
-      ctx.fillRect(barX, mpY, barW * mpP, barH)
     }
     ctx.restore()
   }

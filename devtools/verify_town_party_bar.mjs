@@ -75,8 +75,15 @@ for (let i = 1; i < scene._partyBarBounds.length; i++) {
   if (b.x < a.x + a.width) monotonic = false
 }
 ok('热区横向递增且不重叠', monotonic)
-ok('热区位于顶部 (y≈20)', scene._partyBarBounds.every(c => Math.abs(c.y - 20) < 1))
-ok('卡片尺寸合理 (72x66 dpr)', scene._partyBarBounds.every(c => c.width === 144 && c.height === 132))
+// 新设计：队伍条位于安全区下方第二行（避开 iOS 状态栏 / 刘海）
+const safeTop = scene._getSafeTop()
+ok('热区位在安全区下方（非贴顶）', scene._partyBarBounds.every(c => c.y >= safeTop + 40 * scene.dpr))
+// 自适应卡宽：全员一排、宽屏不浪费、窄屏不溢出
+ok('卡片高度统一 (52 dpr)', scene._partyBarBounds.every(c => c.height === 52 * scene.dpr))
+ok('卡片宽度自适应合理 (30~64 dpr)', scene._partyBarBounds.every(c => c.width >= 30 * scene.dpr && c.width <= 64 * scene.dpr))
+// 整体不溢出屏幕右侧
+const last = scene._partyBarBounds[scene._partyBarBounds.length - 1]
+ok('队伍条整体不溢出屏幕', last.x + last.width <= scene.width - 8 * scene.dpr)
 
 console.log('B. 点击成员打开详情')
 const m2 = scene._partyBarBounds[1]
