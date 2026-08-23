@@ -6506,10 +6506,34 @@ baseRadius: 50 * this.dpr,    // 底座半径（缩小）
     const px = mapX + (this.playerX / this.mapWidth) * mapSize
     const py = mapY + (this.playerY / this.mapHeight) * mapSize
 
+    ctx.fillStyle = '#ff9f43'
     ctx.beginPath()
     ctx.arc(px, py, 3 * this.dpr, 0, Math.PI * 2)
-    ctx.fillStyle = '#ff9f43'
     ctx.fill()
+
+    // 绘制队友位置（所有参战英雄，除被控者 battleHeroes[0] 外）
+    // —— _heroWorldPos 按 partyIndex 索引，每帧已同步全部英雄世界坐标
+    //    （含切换被控后沦为「独立AI单位」的原主角，故不会漏画）。
+    if (this.battleSystem && this.battleSystem.battleHeroes && this._heroWorldPos) {
+      const heroes = this.battleSystem.battleHeroes
+      for (let k = 0; k < heroes.length; k++) {
+        if (k === 0) continue // 被控角色已用橙色玩家点表示
+        const hero = heroes[k]
+        const pos = this._heroWorldPos[hero.partyIndex]
+        if (!pos) continue
+        const tx = mapX + (pos.x / this.mapWidth) * mapSize
+        const ty = mapY + (pos.y / this.mapHeight) * mapSize
+
+        ctx.fillStyle = '#2ed573' // 队友绿点
+        ctx.beginPath()
+        ctx.arc(tx, ty, 2.5 * this.dpr, 0, Math.PI * 2)
+        ctx.fill()
+        // 白色描边增强对比，避免与红色怪物点混淆
+        ctx.lineWidth = 1
+        ctx.strokeStyle = 'rgba(255,255,255,0.85)'
+        ctx.stroke()
+      }
+    }
   }
   
   /** @deprecated 使用 canvas-utils.roundRect() */
