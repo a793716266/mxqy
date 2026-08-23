@@ -46,7 +46,8 @@ function makeSys() {
   return sys
 }
 
-const healStrikeSkill = { id: 'heal_strike', type: 'attack_heal', power: 1.2, healPercent: 0.3, dashDistance: 300, mpCost: 12, lungeDist: 300 }
+const healStrikeSkill = { id: 'heal_strike', type: 'attack_heal', power: 1.2, healPercent: 0.3, dashDistance: 300, mpCost: 12, lungeDist: 300,
+  knock: { enabled: true, distance: 120, stunChance: 1.0, stunDuration: 1.2 } }
 
 console.log('=== A. 真实调用 _doHealStrikeImpact（必定暴击伤害 + 自疗）===')
 {
@@ -191,5 +192,32 @@ console.log('\n=== F. 源码断言：AI 远程判定与玩家对齐 + 预判奶�
   ok(!/lowestRatio < 0\.72/.test(fbs), '旧 72% 阈值已移除')
 }
 
+console.log('\n=== G. 治愈冲击：突进撞击把怪物击飞 + 必中眩晕（数据驱动 skill.knock）===')
+{
+  const sys = makeSys()
+  const hero = { name: '艾米', maxHp: 1000, hp: 500, matk: 200, def: 10, _buffs: [] }
+  const m = { name: '前方怪', x: 100, y: 0, def: 20, hp: 1000, maxHp: 1000, alive: true, _stunned: 0 }
+  sys.mapMonsters = [m]
+  // ★ 真实调用起手撞击（dir=1 向右）：前方敌人应被击飞（x 增大）且被眩晕（_stunned>0）
+  sys._doHealStrikeImpact(hero, healStrikeSkill, m, 0, 0, 1)
+  ok(m.x === 100 + 120, '前方敌人被击飞（x 由 100 推到 220，distance=120）', m.x)
+  ok(m._stunned > 0, '前方敌人被眩晕（_stunned>0，默认必中）', m._stunned)
+  ok(Math.abs(m._stunned - 1.2) < 1e-6, '眩晕时长 = stunDuration=1.2s', m._stunned)
+}
+
+console.log('\n=== H. 源码断言：治愈冲击 _doHealStrikeImpact 已施加击飞+眩晕（不再"不眩晕"）===')
+{
+  const fbs = readFileSync(new URL('../scripts/systems/field-battle-system.js', import.meta.url), 'utf8')
+  ok(/m\._stunned = Math\.max\(m\._stunned \|\| 0, STUN_DUR\)/.test(fbs),
+    '_doHealStrikeImpact 内对前方敌人施加眩晕(_stunned = STUN_DUR)')
+  ok(/const STUN_CHANCE = \(kcfg\.stunChance != null\)/.test(fbs),
+    '眩晕几率取自 skill.knock.stunChance（数据驱动，与盾击一致）')
+  ok(/skill\.knock \|\| \{\}/.test(fbs), '_doHealStrikeImpact 读取 skill.knock 配置')
+  const hs = readFileSync(new URL('../scripts/data/heroes.js', import.meta.url), 'utf8')
+  ok(/heal_strike[\s\S]*?knock: \{ enabled: true, distance: 120, stunChance: 1\.0, stunDuration: 1\.2 \}/.test(hs),
+    'heroes.js heal_strike 配置了 knock(击飞120+必中眩晕1.2s)')
+}
+
 console.log(`\n结果: ${passed} 通过, ${failed} 失败`)
+process.exit(failed > 0 ? 1 : 0)
 process.exit(failed > 0 ? 1 : 0)

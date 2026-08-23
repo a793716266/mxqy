@@ -253,7 +253,9 @@ export const HEROES = [
       { id: 'heal_strike', name: '治愈冲击', type: 'attack_heal', power: 1.2, mpCost: 12, cooldown: 10,
         superArmor: true,       // ★ 霸体：释放期间（含突进）不被打断
         lungeDist: 300,         // ★ 突进距离（逻辑像素，与盾击一致朝面向方向位移；受障碍/边界钳制）
-        desc: '举盾向前突进，对沿途敌人必定暴击，并回复造成伤害30%的生命值（霸体、不可打断）', crit: true, healPercent: 0.3, dashDistance: 300 },
+        // ★ 击飞 + 必中眩晕（与盾击 knock 机制一致）：突进撞击把前方敌人击飞并定身
+        knock: { enabled: true, distance: 120, stunChance: 1.0, stunDuration: 1.2 },
+        desc: '举盾向前突进，对沿途敌人必定暴击、击飞并眩晕，回复造成伤害30%的生命值（霸体、不可打断）', crit: true, healPercent: 0.3, dashDistance: 300 },
       { id: 'heal_light', name: '治愈之光', type: 'heal', power: 30, mpCost: 10, desc: '回复全队生命值', target: 'all_ally', formula: 'base + matk * 1.0' }
     ]
   },

@@ -4197,6 +4197,12 @@ baseRadius: 50 * this.dpr,    // 底座半径（缩小）
           ctx.fill()
           ctx.restore()
         }
+        // ★ 眩晕指示（被治愈冲击/盾击击飞眩晕）：头顶旋转星星 + 轻微暗化
+        if (monster._stunned && monster._stunned > 0) {
+          const cfg = self._getMonsterConfig(monster.enemyId)
+          const th = ((cfg && cfg.renderConfig && cfg.renderConfig.targetHeight) || 80)
+          self._renderMonsterStun(ctx, sx, jumpY, th)
+        }
         // ★ 怪物头顶血条已移除（用户要求）：怪物血条统一在左下目标面板
         //   （召回/解散按钮下方，_renderTargetPanel）显示，含扣血追赶效果
       },
@@ -6030,6 +6036,31 @@ baseRadius: 50 * this.dpr,    // 底座半径（缩小）
       const sx = screenX + Math.cos(ang) * orbitR
       const sy = screenY - 80 * this.dpr + Math.sin(ang) * orbitR * 0.5
       this._drawStar(ctx, sx, sy, 5 * this.dpr, '#FFE66D')
+    }
+    ctx.restore()
+  }
+
+  // ★ 怪物眩晕指示：头顶旋转星星 + 轻微暗化（与英雄 _renderHeroStun 一致），让"被击飞眩晕"可见
+  //   (screenX, screenY) 为该怪物精灵的渲染锚点（脚下中心）；th 为怪物身高（逻辑像素）
+  _renderMonsterStun(ctx, screenX, screenY, th) {
+    if (!ctx) return
+    const dpr = this.dpr || 1
+    const t = this.time || 0
+    const headY = screenY - (th || 80) * dpr * 0.9
+    ctx.save()
+    // 头顶微弱暗化光环
+    ctx.beginPath()
+    ctx.arc(screenX, headY, 22 * dpr, 0, Math.PI * 2)
+    ctx.fillStyle = 'rgba(120, 120, 160, 0.18)'
+    ctx.fill()
+    // 3 颗旋转星星
+    const starCount = 3
+    for (let i = 0; i < starCount; i++) {
+      const ang = t * 3 + (i * Math.PI * 2 / starCount)
+      const orbitR = 14 * dpr
+      const sx = screenX + Math.cos(ang) * orbitR
+      const sy = headY + Math.sin(ang) * orbitR * 0.5
+      this._drawStar(ctx, sx, sy, 4.5 * dpr, '#FFE66D')
     }
     ctx.restore()
   }

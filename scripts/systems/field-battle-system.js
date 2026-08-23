@@ -2692,7 +2692,7 @@ export function installFieldBattleSystem(FieldSceneClass) {
 
   /**
    * ★ 治愈冲击（heal_strike / attack_heal）起手撞击：与盾击机制一致（突进第一帧一次性结算），
-   *   但定位为「突进 + 必定暴击伤害 + 自疗」，不生成护盾 / 不眩晕 / 不提升防御。
+   *   定位为「突进 + 必定暴击伤害 + 击飞 + 必中眩晕 + 自疗」（击飞/眩晕数据取自 skill.knock，与盾击一致）。
    *   —— 满足"向前突进，对沿途敌人必定暴击，并回复造成伤害30%的生命值"。
    *   originX/originY 为施法起手位置（突进前），dir 为施法朝向(±1)，作为范围基准
    *   （与盾击一致，避免突进越过怪物后基准反转导致范围判定失效）。
@@ -2710,9 +2710,12 @@ export function installFieldBattleSystem(FieldSceneClass) {
     const ox = (originX != null) ? originX : (hero.x != null ? hero.x : 0)
     const oy = (originY != null) ? originY : (hero.y != null ? hero.y : 0)
 
-    // ★ 前方敌人集合（突进沿途）：基准=起手位置，X 轴前方 = dashDistance 范围内、Y 轴贴近
+    // ★ 击飞 + 眩晕配置（与盾击 knock 一致，数据驱动）
+    const kcfg = skill.knock || {}
     const RANGE = ((skill.dashDistance || skill.lungeDist || 120)) * dpr   // 前方生效范围（=突进距离）
-    const KNOCK = ((skill.knockDistance != null) ? skill.knockDistance : 55) * dpr  // 温和击退（增强突进手感、辅助自保）
+    const KNOCK = ((kcfg.distance != null) ? kcfg.distance : (skill.knockDistance != null ? skill.knockDistance : 90)) * dpr  // 击飞距离（向前推飞）
+    const STUN_CHANCE = (kcfg.stunChance != null) ? kcfg.stunChance : 1.0   // 眩晕几率（默认必中）
+    const STUN_DUR = (kcfg.stunDuration != null) ? kcfg.stunDuration : 1.2  // 眩晕时长（秒）
 
     const targets = []
     const consider = (m) => {
@@ -2727,6 +2730,8 @@ export function installFieldBattleSystem(FieldSceneClass) {
 
     let totalDamage = 0
     for (const m of targets) {
+      // ★ 眩晕：STUN_CHANCE 几率（默认 1.0 必中），持续 STUN_DUR（怪物侧由 field-battle _updateMonsters 冻结 + 星星视觉）
+      if (Math.random() < STUN_CHANCE) m._stunned = Math.max(m._stunned || 0, STUN_DUR)
       // ★ 必定暴击（治愈冲击特性）：atk*power - def*0.5，强制 ×1.5
       const base = Math.max(1, Math.floor(this._getHeroAtk(hero) * (skill.power || 1) - Math.floor((m.def || 0) * 0.5)))
       const dmg = Math.floor(base * 1.5)
