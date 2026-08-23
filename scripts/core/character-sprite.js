@@ -314,6 +314,15 @@ export class CharacterSprite {
         if (action) return `${prefix}_${action}_${frameStr}`
       }
 
+      // ★ 艾米（spriteType 'aimi'）：每个技能态映射到专属帧集，避免全部回退成 ATTACK。
+      //   增益(buff)→AIMI_BUFF / 团队回血(heal→support)→AIMI_SUPPORT / 治愈冲击(attack_heal→skill)→AIMI_SKILL。
+      //   艾米无 shield 技能，shield 态兜底到 ATTACK（不出现 SHIELD 资源缺失）。
+      if (this.spriteType === 'aimi') {
+        const actionMap = { attack: 'ATTACK', shield: 'ATTACK', skill: 'SKILL', buff: 'BUFF', support: 'SUPPORT' }
+        const action = actionMap[this.state]
+        if (action) return `${prefix}_${action}_${frameStr}`
+      }
+
       // 其他角色：统一用 ATTACK 帧（无资源时 getCurrentFrameImage 会 fallback 到 idle）
       return `${prefix}_ATTACK_${frameStr}`
     }

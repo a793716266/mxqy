@@ -1441,6 +1441,12 @@ baseRadius: 50 * this.dpr,    // 底座半径（缩小）
           monster._looted = true
           this._rollMonsterDrop(monster)
         }
+        // ★ 击败 BOSS 即触发副本收尾（艾米加入 + 独白 + 回城），不必等清光所有小怪。
+        //   与「全清」(_checkDungeonClear 的 alive===0 分支)共用 _finalizeDungeonClear，
+        //   内部 dungeonCleared 守卫避免重复触发。
+        if (monster.isBoss && !this.dungeonCleared) {
+          this._finalizeDungeonClear()
+        }
         continue
       }
 
@@ -4697,63 +4703,74 @@ baseRadius: 50 * this.dpr,    // 底座半径（缩小）
     if (!this.mapMonsters || this.mapMonsters.length === 0) return
     const alive = this.mapMonsters.filter(m => m.alive).length
     if (alive === 0) {
-      this.dungeonCleared = true
-      // 奖励：金币（统一走 'gold' 字段，HUD / 击杀 / 战斗奖励均读取它；
-      // 原 'coins' 字段为孤儿，无人读取，会导致通关奖励丢失）
-      const reward = (GRASSLAND_DUNGEON.clearReward && GRASSLAND_DUNGEON.clearReward.coins) ?? (this.dungeonReward || 80)
-      this._addGold(reward)
-      this.game.data.set(`dungeon_cleared_${this.areaId}`, true)
-      // ★ 标记艾米已被击败（town 探索菜单据此显示「已击败艾米 / 已解锁」；此前仅在测试按钮里写过）
-      if (this.areaId === 'grassland') this.game.data.set('amyDefeated', true)
-      // ★ 通关解锁角色（GDD：第一章通关解锁艾米）。仅阳光草原触发本配置的解锁。
-      if (this.areaId === 'grassland' && GRASSLAND_DUNGEON.clearReward && GRASSLAND_DUNGEON.clearReward.unlocks) {
-        for (const hid of GRASSLAND_DUNGEON.clearReward.unlocks) {
-          const ok = charStateManager.unlockCharacter(hid)  // 解锁角色（已存在则返回 false）
-          const hdef = HEROES.find(h => h.id === hid)
-          const hname = (hdef && hdef.name) || hid
-          if (ok && this.game.showToast) this.game.showToast(`✨ ${hname} 加入队伍！`)
-          console.log(`[Field] 副本通关解锁角色: ${hid} (${ok ? '成功' : '已招募'})`)
-          // ★ 首次击败草原 BOSS → 播放艾米感化独白（purifyDialogue），独白结束后再弹通关遮罩。
-          //   用独立持久标记 amyMonologueSeen 判断，不再依赖 unlockCharacter 返回值：
-          //   名册状态不稳定（艾米已加入/点过测试解锁后 ok=false）会导致重复通关不播、玩家反馈"无剧情引导"。
-          if (hid === 'amy' && this.bossPurifyDialogue && !this.game.data.get('amyMonologueSeen')) {
-            this.game.data.set('amyMonologueSeen', true)
-            this._showStoryDialogue('艾米', this.bossPurifyDialogue)
-            this._bossMonologueActive = true
-            this.showDungeonClear = false
-          }
+      this._finalizeDungeonClear()
+    }
+  }
+
+  /**
+   * ★ 副本通关收尾（统一入口）
+   * - 击败 BOSS（实时战斗怪物「刚死亡」检测）或 全清（alive===0）都走这里，
+   *   保证「击败 BOSS 艾米即加入队伍 + 独白 + 回城」，不再要求先清掉所有小怪。
+   * - 奖励金币 / 标记 amyDefeated / 解锁角色 / 播感化独白 / 推进章节 / 回城。
+   */
+  _finalizeDungeonClear() {
+    if (this.dungeonCleared) return
+    this.dungeonCleared = true
+    // 奖励：金币（统一走 'gold' 字段，HUD / 击杀 / 战斗奖励均读取它；
+    // 原 'coins' 字段为孤儿，无人读取，会导致通关奖励丢失）
+    const reward = (GRASSLAND_DUNGEON.clearReward && GRASSLAND_DUNGEON.clearReward.coins) ?? (this.dungeonReward || 80)
+    this._addGold(reward)
+    this.game.data.set(`dungeon_cleared_${this.areaId}`, true)
+    // ★ 标记艾米已被击败（town 探索菜单据此显示「已击败艾米 / 已解锁」；此前仅在测试按钮里写过）
+    if (this.areaId === 'grassland') this.game.data.set('amyDefeated', true)
+    // ★ 通关解锁角色（GDD：第一章通关解锁艾米）。仅阳光草原触发本配置的解锁。
+    if (this.areaId === 'grassland' && GRASSLAND_DUNGEON.clearReward && GRASSLAND_DUNGEON.clearReward.unlocks) {
+      for (const hid of GRASSLAND_DUNGEON.clearReward.unlocks) {
+        const ok = charStateManager.unlockCharacter(hid)  // 解锁角色（已存在则返回 false）
+        const hdef = HEROES.find(h => h.id === hid)
+        const hname = (hdef && hdef.name) || hid
+        if (ok && this.game.showToast) this.game.showToast(`✨ ${hname} 加入队伍！`)
+        console.log(`[Field] 副本通关解锁角色: ${hid} (${ok ? '成功' : '已招募'})`)
+        // ★ 首次击败草原 BOSS → 播放艾米感化独白（purifyDialogue），独白结束后再弹通关遮罩。
+        //   用独立持久标记 amyMonologueSeen 判断，不再依赖 unlockCharacter 返回值：
+        //   名册状态不稳定（艾米已加入/点过测试解锁后 ok=false）会导致重复通关不播、玩家反馈"无剧情引导"。
+        if (hid === 'amy' && this.bossPurifyDialogue && !this.game.data.get('amyMonologueSeen')) {
+          this.game.data.set('amyMonologueSeen', true)
+          this._showStoryDialogue('艾米', this.bossPurifyDialogue)
+          this._bossMonologueActive = true
+          this.showDungeonClear = false
         }
       }
-      // ★ 章节进度推进：通关后把进度推进到「已通关章节」(max(当前, 本章))，而非下一章。
-      //   语义：currentChapter = 已通关的最高章节。这样草原(ch1)通关后 currentChapter 仍为 1，
-      //   仅解锁该章 Boss 对应的艾米(走 Boss 击败路径)，安妮(unlockChapter:2) 需待第2章区域
-      //   通关(→currentChapter 2)才解锁，避免"击败草原BOSS顺带放出安妮"。
-      //   currentChapter 经 data-manager 映射读写（progression.currentChapter 单点真相源）
-      const curCh = (this.game.data && typeof this.game.data.get === 'function')
-        ? (this.game.data.get('currentChapter') || 1) : 1
-      const areaCh = (this.areaInfo && this.areaInfo.chapter) || 1
-      if (areaCh >= curCh) {
-        const nextCh = Math.max(curCh, areaCh)
-        this.game.data.set('currentChapter', nextCh)
-        console.log(`[Field] 章节进度推进: ${curCh} -> ${nextCh}`)
-      }
-      // 章节门控解锁（unlockChapter<=currentChapter 且尚未解锁的角色）+ 完成实际加入
-      this._checkChapterUnlocks()
-      this._checkNewFollowers()
-      // 清掉怪物存档，下次进入重新生成（可重复挑战）
-      this.game.data.set(`fieldMonsters_${this.areaId}`, null)
-      // 切换胜利 BGM + 金币音效（兼容测试 mock：方法可能不存在）
-      const a = this.game.audio
-      if (a) {
-        if (typeof a.stopBGM === 'function') a.stopBGM()
-        if (typeof a.playBGM === 'function') a.playBGM('bgm_victory')
-        if (typeof a.playSFX === 'function') a.playSFX('reward_coin')
-      }
-      // ★ 无独白（非草原 / 无 purifyDialogue / 艾米已招募过）→ 直接弹通关遮罩
-      if (!this._bossMonologueActive && !this.showDungeonClear) {
-        this.showDungeonClear = true
-        this.dungeonClearTimer = 3.5
-      }
+    }
+    // ★ 章节进度推进：通关后把进度推进到「已通关章节」(max(当前, 本章))，而非下一章。
+    //   语义：currentChapter = 已通关的最高章节。这样草原(ch1)通关后 currentChapter 仍为 1，
+    //   仅解锁该章 Boss 对应的艾米(走 Boss 击败路径)，安妮(unlockChapter:2) 需待第2章区域
+    //   通关(→currentChapter 2)才解锁，避免"击败草原BOSS顺带放出安妮"。
+    //   currentChapter 经 data-manager 映射读写（progression.currentChapter 单点真相源）
+    const curCh = (this.game.data && typeof this.game.data.get === 'function')
+      ? (this.game.data.get('currentChapter') || 1) : 1
+    const areaCh = (this.areaInfo && this.areaInfo.chapter) || 1
+    if (areaCh >= curCh) {
+      const nextCh = Math.max(curCh, areaCh)
+      this.game.data.set('currentChapter', nextCh)
+      console.log(`[Field] 章节进度推进: ${curCh} -> ${nextCh}`)
+    }
+    // 章节门控解锁（unlockChapter<=currentChapter 且尚未解锁的角色）+ 完成实际加入
+    this._checkChapterUnlocks()
+    this._checkNewFollowers()
+    // 清掉怪物存档，下次进入重新生成（可重复挑战）
+    this.game.data.set(`fieldMonsters_${this.areaId}`, null)
+    // 切换胜利 BGM + 金币音效（兼容测试 mock：方法可能不存在）
+    const a = this.game.audio
+    if (a) {
+      if (typeof a.stopBGM === 'function') a.stopBGM()
+      if (typeof a.playBGM === 'function') a.playBGM('bgm_victory')
+      if (typeof a.playSFX === 'function') a.playSFX('reward_coin')
+    }
+    // ★ 无独白（非草原 / 无 purifyDialogue / 艾米已招募过）→ 直接弹通关遮罩
+    if (!this._bossMonologueActive && !this.showDungeonClear) {
+      this.showDungeonClear = true
+      this.dungeonClearTimer = 3.5
     }
   }
 

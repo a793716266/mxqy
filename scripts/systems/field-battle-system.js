@@ -752,8 +752,11 @@ export function installFieldBattleSystem(FieldSceneClass) {
     if (skill) {
       if (skill.id === 'shield_bash') {
         animState = 'shield'
-      } else if (skill.type === 'buff' || skill.type === 'heal') {
+      } else if (skill.type === 'buff') {
         animState = 'buff'
+      } else if (skill.type === 'heal') {
+        // ★ 团队回血（艾米 heal_light 等）→ support 态（AIMI_SUPPORT 帧），不要误用 buff
+        animState = 'support'
       } else {
         animState = 'skill'
       }
@@ -2177,7 +2180,9 @@ export function installFieldBattleSystem(FieldSceneClass) {
     if (sprite) {
       let animState = 'attack'
       if (skill.effect === 'stun' || skill.type === 'attack') animState = 'shield'
-      else if (skill.type === 'buff' || skill.type === 'heal') animState = 'buff'
+      else if (skill.type === 'buff') animState = 'buff'
+      else if (skill.type === 'heal') animState = 'support'   // ★ 团队回血 → AIMI_SUPPORT
+      else if (skill.type === 'attack_heal') animState = 'skill'  // ★ 治愈冲击 → AIMI_SKILL
       else if (skill.type === 'magic' || skill.type === 'blade_storm' || skill.aoe) animState = 'skill'
       sprite.state = animState
       sprite.animFrame = 0
