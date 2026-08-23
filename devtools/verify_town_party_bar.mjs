@@ -60,6 +60,9 @@ scene.party = charStateManager.getAllCharacters()
 scene.charInfoPanel = new CharacterInfoPanel(mockGame, charStateManager.getCharacter('zhenbao'))
 scene._partyBarBounds = []
 scene._charInfoBounds = null
+scene._partyExpandBounds = null
+scene._expandedHeroId = null
+scene.controlledHeroId = (scene.party[0] && scene.party[0].id) || 'zhenbao'
 scene._debugCoords = { x: 0, y: 0, show: false, tapWorldX: 0, tapWorldY: 0 }
 scene.testLogs = []
 scene.isDev = false
@@ -83,18 +86,19 @@ ok('热区横向递增且不重叠', monotonic)
 const safeTop = scene._getSafeTop()
 ok('热区位在安全区下方（非贴顶）', scene._partyBarBounds.every(c => c.y >= safeTop + 40 * scene.dpr))
 // 自适应卡宽：全员一排、宽屏不浪费、窄屏不溢出
-ok('卡片高度统一 (52 dpr)', scene._partyBarBounds.every(c => c.height === 52 * scene.dpr))
-ok('卡片宽度自适应合理 (30~64 dpr)', scene._partyBarBounds.every(c => c.width >= 30 * scene.dpr && c.width <= 64 * scene.dpr))
+ok('卡片高度统一 (46 dpr)', scene._partyBarBounds.every(c => c.height === 46 * scene.dpr))
+ok('卡片宽度自适应合理 (30~80 dpr)', scene._partyBarBounds.every(c => c.width >= 30 * scene.dpr && c.width <= 80 * scene.dpr))
 // 整体不溢出屏幕右侧
 const last = scene._partyBarBounds[scene._partyBarBounds.length - 1]
 ok('队伍条整体不溢出屏幕', last.x + last.width <= scene.width - 8 * scene.dpr)
 
-console.log('B. 点击已解锁成员打开详情')
+console.log('B. 点击已解锁成员 → 切换控制者并展开迷你卡（不直接开完整面板）')
 const mHero = scene._partyBarBounds.find(b => b.char.id === 'amy')
 const opened = scene._handlePartyBarTap({ x: mHero.x + mHero.width / 2, y: mHero.y + mHero.height / 2 })
 ok('_handlePartyBarTap 命中返回 true', opened === true)
-ok('详情面板可见', scene.charInfoPanel.visible === true)
-ok('详情角色切换到被点成员', scene.charInfoPanel.character && scene.charInfoPanel.character.id === 'amy')
+ok('点击后展开 amy 迷你卡', scene._expandedHeroId === 'amy')
+ok('点击后 amy 成为控制者', scene.controlledHeroId === 'amy')
+ok('详情面板仍隐藏（需点「查看详情」按钮才开）', scene.charInfoPanel.visible === false)
 
 console.log('B2. 点击未解锁占位 → 提示不打开')
 scene.charInfoPanel.hide()
@@ -214,6 +218,61 @@ ok('dungeonIntroDialogue 存在 → 压住背包', hasModal({ dungeonIntroDialog
 ok('dungeonClearedDialogue 存在 → 压住背包', hasModal({ dungeonClearedDialogue: { name: '艾米' }, charInfoPanel: { visible: false }, equipmentPanel: { active: false } }) === true)
 // 仅战斗进行中（战斗不是模态）→ 背包仍可显
 ok('仅 battleSystem.active（战斗非模态） → 背包仍可显', hasModal({ battleSystem: { active: true }, charInfoPanel: { visible: false }, equipmentPanel: { active: false } }) === false)
+
+console.log('J. 紧凑队伍卡：全员 6 槽 + 高度收敛 + 含 HP/MP/经验状态')
+// 渲染前需复位展开态，避免影响
+scene._expandedHeroId = null
+const ctxJ = makeCtx()
+scene._renderPartyBar(ctxJ)
+ok('队伍卡渲染出 6 个热区(全量 HEROES)', scene._partyBarBounds.length === 6)
+const cardH = scene._partyBarBounds[0].height / scene.dpr
+ok('单卡高度收敛 ≤50dpr（旧为 52，现 46）', cardH <= 50)
+ok('构造时默认控制者已设置', !!scene.controlledHeroId)
+ok('控制者挂到 game 供副本复用', mockGame.controlledHeroId === scene.controlledHeroId)
+// 已解锁卡数量应与已解锁英雄一致（测试已解锁 zhenbao/lixiaobao/amy/annie = 4）
+const unlockedCount = scene._partyBarBounds.filter(b => b.char && !b.char._locked).length
+ok('已解锁卡 = 4（其余 2 为 ? 占位）', unlockedCount === 4)
+
+console.log('K. 点击已解锁卡 → 切换控制者并展开；再点同卡收起')
+const amyCard = scene._partyBarBounds.find(b => b.char && b.char.id === 'amy')
+ok('存在 amy 卡', !!amyCard)
+const tapAmy = { x: amyCard.x + amyCard.width / 2, y: amyCard.y + amyCard.height / 2 }
+const hit1 = scene._handlePartyBarTap(tapAmy)
+ok('点击 amy 卡命中返回 true', hit1 === true)
+ok('点击后展开 amy 迷你卡', scene._expandedHeroId === 'amy')
+ok('点击后 amy 成为控制者', scene.controlledHeroId === 'amy')
+ok('控制者同步到 game', mockGame.controlledHeroId === 'amy')
+const hitSame = scene._handlePartyBarTap(tapAmy)
+ok('再点同卡命中返回 true', hitSame === true)
+ok('再点同卡收起迷你卡', scene._expandedHeroId === null)
+ok('收起后控制者保持为 amy', scene.controlledHeroId === 'amy')
+// 点未解锁卡 → 不展开，仅提示
+const lockedCard = scene._partyBarBounds.find(b => b.char && b.char._locked)
+const hitLocked = scene._handlePartyBarTap({ x: lockedCard.x + lockedCard.width / 2, y: lockedCard.y + lockedCard.height / 2 })
+ok('点未解锁卡命中返回 true（提示）', hitLocked === true)
+ok('点未解锁卡不展开迷你卡', scene._expandedHeroId === null)
+
+console.log('L. 迷你详情卡：详情按钮开完整面板 / 点卡片外收起')
+scene._expandedHeroId = 'amy'
+const ctxL = makeCtx()
+scene._renderPartyExpandCard(ctxL)
+ok('展开卡渲染出 bounds', !!scene._partyExpandBounds)
+ok('bounds 含 detailBtn', !!(scene._partyExpandBounds && scene._partyExpandBounds.detailBtn))
+const db = scene._partyExpandBounds.detailBtn
+scene.charInfoPanel.hide()
+const hitDetail = scene._handlePartyExpandTap({ x: db.x + db.width / 2, y: db.y + db.height / 2 })
+ok('点详情按钮命中返回 true', hitDetail === true)
+ok('点详情按钮打开完整角色面板', scene.charInfoPanel.visible === true)
+ok('面板的角色为 amy', scene.charInfoPanel.character && scene.charInfoPanel.character.id === 'amy')
+// 复位后：点卡片外 → 收起
+scene.charInfoPanel.hide()
+scene._expandedHeroId = 'amy'
+scene._renderPartyExpandCard(makeCtx())
+const bL = scene._partyExpandBounds
+const hitOutside = scene._handlePartyExpandTap({ x: 5, y: 5 })
+ok('点卡片外命中返回 true（收起）', hitOutside === true)
+ok('点卡片外后收起迷你卡', scene._expandedHeroId === null)
+ok('bounds 内点击不收起（返回 false）', scene._handlePartyExpandTap({ x: bL.x + bL.width / 2, y: bL.y + bL.height / 2 }) === false)
 
 console.log(`\n结果: ${pass} 通过, ${fail} 失败`)
 process.exit(fail === 0 ? 0 : 1)

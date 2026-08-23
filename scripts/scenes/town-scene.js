@@ -87,6 +87,12 @@ export class TownScene {
     this._partyBarBounds = []
     // 角色详情面板 bounds（renderDetailPanel 返回，关闭/卸下点击用）
     this._charInfoBounds = null
+    // ★ 展开迷你卡热区（点击队伍卡后滑出，点击空白/再点同卡收起）
+    this._partyExpandBounds = null
+    this._expandedHeroId = null
+    // ★ 控制者（被金边高亮 / 经验展示对象）：默认取首个已解锁角色，并挂到 game 供进入副本复用
+    this.controlledHeroId = (this.party[0] && this.party[0].id) || 'zhenbao'
+    if (this.game) this.game.controlledHeroId = this.controlledHeroId
     
     // 探索菜单
     this.exploreMenu = null
@@ -308,7 +314,10 @@ export class TownScene {
           return
         }
 
-        // ★ 队伍状态条成员点击 → 打开角色详情
+        // ★ 迷你详情卡展开时，先处理其内点击（详情按钮/点外收起）
+        if (this._expandedHeroId && this._handlePartyExpandTap(tap)) return
+
+        // ★ 队伍状态条成员点击 → 切换控制者并展开迷你卡
         if (this._handlePartyBarTap(tap)) return
 
         // 尝试激活摇杆
@@ -573,8 +582,11 @@ export class TownScene {
     // ★ 金币顶栏（常驻显示玩家金币）
     this._renderTopBar(ctx)
 
-    // ★ 队伍状态条（常驻显示全员头像/等级/HP/MP，点击打开角色详情）
+    // ★ 队伍状态条（常驻显示全员头像/等级/HP/MP/经验，点击切换控制者并展开迷你卡）
     this._renderPartyBar(ctx)
+
+    // ★ 迷你详情卡（点击队伍卡后滑出，角色详情面板之下）
+    this._renderPartyExpandCard(ctx)
 
     // ★ 角色详情面板（带遮罩，最上层；点击成员后可见）
     this._charInfoBounds = this.charInfoPanel.renderDetailPanel()
@@ -1072,8 +1084,8 @@ export class TownScene {
   }
 
   /**
-   * ★ 顶部队伍状态条：常驻显示全员头像 / 等级 / HP / MP，
-   * 点击任意成员打开 CharacterInfoPanel 角色详情（含属性/装备/Buff）。
+   * ★ 顶部紧凑队伍状态条：常驻显示全员头像 / 等级 / HP / MP / 经验，
+   * 点击任意已解锁成员 → 切换为控制者并滑出迷你详情卡（再点同卡收起）。
    */
   _renderPartyBar(ctx) {
     const dpr = this.dpr
@@ -1092,11 +1104,12 @@ export class TownScene {
     const rightInset = 8 * dpr
     const gap = 5 * dpr
     const availW = this.width - leftInset - rightInset
-    // 自适应卡宽：全员一排，宽屏不浪费、窄屏不溢出
-    const cardW = Math.min(64 * dpr, (availW - (n - 1) * gap) / n)
-    const cardH = 52 * dpr
-    const startX = leftInset
-    const y = this._getSafeTop() + 52 * dpr // 第二行，避开第一行的金币 pill
+    // 紧凑卡宽：全员一排不溢出（上限 72，窄屏自适应）
+    const cardW = Math.min(72 * dpr, (availW - (n - 1) * gap) / n)
+    const cardH = 46 * dpr
+    const totalW = n * cardW + (n - 1) * gap
+    const startX = Math.max(leftInset, (this.width - totalW) / 2)
+    const y = this._getSafeTop() + 44 * dpr // 第二行，金币 pill 下方
 
     this._partyBarBounds = []
     ctx.save()
@@ -1105,14 +1118,14 @@ export class TownScene {
       const x = startX + i * (cardW + gap)
       this._partyBarBounds.push({ x, y, width: cardW, height: cardH, index: i, char: c })
 
-      const isControlled = (i === 0) // 被控者（队伍首位/臻宝）高亮
       const locked = !!c._locked
+      const isControlled = !locked && c.id === this.controlledHeroId
 
       // 卡片背景（玻璃面板，与金币 pill 风格一致）
       if (locked) {
         ctx.fillStyle = 'rgba(26,26,46,0.40)'
       } else {
-        ctx.fillStyle = isControlled ? 'rgba(255,210,74,0.15)' : 'rgba(26,26,46,0.62)'
+        ctx.fillStyle = isControlled ? 'rgba(255,210,74,0.16)' : 'rgba(26,26,46,0.62)'
       }
       this._roundRect(ctx, x, y, cardW, cardH, 10 * dpr)
       ctx.fill()
@@ -1121,79 +1134,235 @@ export class TownScene {
       this._roundRect(ctx, x, y, cardW, cardH, 10 * dpr)
       ctx.stroke()
 
+      if (locked) {
+        // 未解锁：? 占位 + 锁图标
+        const cx = x + cardW / 2
+        ctx.font = `${18 * dpr}px sans-serif`
+        ctx.textAlign = 'center'
+        ctx.textBaseline = 'middle'
+        ctx.fillStyle = 'rgba(255,255,255,0.4)'
+        ctx.fillText('?', cx, y + cardH / 2 - 5 * dpr)
+        ctx.font = `${10 * dpr}px sans-serif`
+        ctx.fillText('🔒', cx, y + cardH - 10 * dpr)
+        continue
+      }
+
       // 头像（圆形裁剪）
-      const avatarR = 13 * dpr
-      const avatarCx = x + cardW / 2
-      const avatarCy = y + 15 * dpr
+      const avatarR = 14 * dpr
+      const avatarCx = x + 16 * dpr
+      const avatarCy = y + cardH / 2
       ctx.save()
       ctx.beginPath()
       ctx.arc(avatarCx, avatarCy, avatarR, 0, Math.PI * 2)
       ctx.clip()
       const avatarImg = this.game.assets.get(`HERO_${c.id.toUpperCase()}`)
-      if (locked || !avatarImg) {
-        // 未解锁：暗色底 + 「?」占位
-        ctx.fillStyle = 'rgba(255,255,255,0.10)'
-        ctx.fillRect(avatarCx - avatarR, avatarCy - avatarR, avatarR * 2, avatarR * 2)
-        ctx.font = `${16 * dpr}px sans-serif`
-        ctx.textAlign = 'center'
-        ctx.textBaseline = 'middle'
-        ctx.fillStyle = 'rgba(255,255,255,0.45)'
-        ctx.fillText('?', avatarCx, avatarCy)
-      } else {
+      if (avatarImg) {
         ctx.drawImage(avatarImg, avatarCx - avatarR, avatarCy - avatarR, avatarR * 2, avatarR * 2)
+      } else {
+        ctx.fillStyle = 'rgba(255,255,255,0.2)'
+        ctx.fillRect(avatarCx - avatarR, avatarCy - avatarR, avatarR * 2, avatarR * 2)
       }
       ctx.restore()
 
-      if (locked) {
-        // 未解锁：锁图标 + 省略号等级位
-        ctx.font = `${12 * dpr}px sans-serif`
-        ctx.textAlign = 'center'
-        ctx.textBaseline = 'middle'
-        ctx.fillStyle = 'rgba(255,255,255,0.5)'
-        ctx.fillText('🔒', avatarCx, y + 32 * dpr)
-        continue
-      }
-
-      // 等级
+      // 右侧信息列：等级 + HP/MP/经验 三条迷你条
+      const ix = x + 34 * dpr
+      const iw = cardW - 38 * dpr
+      ctx.textAlign = 'left'
+      ctx.textBaseline = 'middle'
       ctx.font = `bold ${10 * dpr}px sans-serif`
       ctx.fillStyle = isControlled ? '#ffd24a' : '#ffd700'
-      ctx.textAlign = 'center'
-      ctx.textBaseline = 'middle'
-      ctx.fillText(`Lv.${c.level || 1}`, avatarCx, y + 32 * dpr)
+      ctx.fillText(`Lv.${c.level || 1}`, ix, y + 9 * dpr)
 
-      // HP 条
-      const barW = cardW - 12 * dpr
-      const barH = 3.5 * dpr
-      const barX = x + 6 * dpr
-      const hpY = y + 41 * dpr
+      const barH = 4 * dpr
+      // HP
+      const hpY = y + 18 * dpr
       const hpP = Math.max(0, Math.min(1, (c.hp || 0) / (c.maxHp || 1)))
       ctx.fillStyle = 'rgba(0,0,0,0.5)'
-      ctx.fillRect(barX, hpY, barW, barH)
+      ctx.fillRect(ix, hpY, iw, barH)
       ctx.fillStyle = hpP > 0.6 ? '#4ade80' : hpP > 0.3 ? '#ff9800' : '#f44336'
-      ctx.fillRect(barX, hpY, barW * hpP, barH)
+      ctx.fillRect(ix, hpY, iw * hpP, barH)
+      // MP
+      const mpY = y + 25 * dpr
+      const mpP = Math.max(0, Math.min(1, (c.mp || 0) / (c.maxMp || 1)))
+      ctx.fillStyle = 'rgba(0,0,0,0.5)'
+      ctx.fillRect(ix, mpY, iw, barH)
+      ctx.fillStyle = '#4fc3f7'
+      ctx.fillRect(ix, mpY, iw * mpP, barH)
+      // 经验（带百分比文字）
+      const expY = y + 32 * dpr
+      const expP = Math.max(0, Math.min(1, (typeof c.getExpProgress === 'function') ? c.getExpProgress() : 0))
+      ctx.fillStyle = 'rgba(0,0,0,0.5)'
+      ctx.fillRect(ix, expY, iw, barH)
+      ctx.fillStyle = '#a78bfa'
+      ctx.fillRect(ix, expY, iw * expP, barH)
+      ctx.font = `${7 * dpr}px sans-serif`
+      ctx.fillStyle = '#fff'
+      ctx.textAlign = 'center'
+      ctx.textBaseline = 'middle'
+      ctx.fillText(`${Math.floor(expP * 100)}%`, ix + iw / 2, expY + barH / 2)
     }
     ctx.restore()
   }
 
   /**
-   * 检测点击是否落在队伍状态条某成员热区，是则打开该成员详情。
-   * @returns {boolean} 命中并打开返回 true（调用方应 return 不再处理移动）
+   * ★ 点击已解锁队伍卡后滑出的迷你详情卡（头像/名/Lv/HP/MP/EXP + 查看详情按钮）。
+   * 返回 bounds（含 detailBtn）供点击命中；无展开时返回 null。
+   */
+  _renderPartyExpandCard(ctx) {
+    this._partyExpandBounds = null
+    if (!this._expandedHeroId) return null
+    const cs = charStateManager.getCharacter(this._expandedHeroId)
+    if (!cs) { this._expandedHeroId = null; return null }
+    const dpr = this.dpr
+    const w = 230 * dpr
+    const h = 132 * dpr
+    // 锚定在被展开卡下方，避免溢出右边界
+    const barCard = this._partyBarBounds.find(b => b.char && b.char.id === this._expandedHeroId)
+    let x = barCard ? barCard.x : 8 * dpr
+    if (x + w > this.width - 8 * dpr) x = this.width - 8 * dpr - w
+    if (x < 8 * dpr) x = 8 * dpr
+    const y = this._getSafeTop() + 44 * dpr + 52 * dpr // 队伍条下方
+
+    ctx.save()
+    ctx.fillStyle = 'rgba(20,20,38,0.92)'
+    this._roundRect(ctx, x, y, w, h, 12 * dpr)
+    ctx.fill()
+    ctx.strokeStyle = '#ffd24a'
+    ctx.lineWidth = 1.5 * dpr
+    this._roundRect(ctx, x, y, w, h, 12 * dpr)
+    ctx.stroke()
+
+    // 头像
+    const av = 36 * dpr
+    const avx = x + 12 * dpr, avy = y + 12 * dpr
+    ctx.save()
+    ctx.beginPath()
+    ctx.arc(avx + av / 2, avy + av / 2, av / 2, 0, Math.PI * 2)
+    ctx.clip()
+    const img = this.game.assets.get(`HERO_${cs.id.toUpperCase()}`)
+    if (img) ctx.drawImage(img, avx, avy, av, av)
+    else { ctx.fillStyle = 'rgba(255,255,255,0.2)'; ctx.fillRect(avx, avy, av, av) }
+    ctx.restore()
+
+    // 名称 + 等级
+    ctx.textAlign = 'left'; ctx.textBaseline = 'top'
+    ctx.font = `bold ${15 * dpr}px sans-serif`
+    ctx.fillStyle = '#fff'
+    ctx.fillText(cs.name || this._expandedHeroId, avx + av + 10 * dpr, avy)
+    ctx.font = `${12 * dpr}px sans-serif`
+    ctx.fillStyle = '#ffd700'
+    ctx.fillText(`Lv.${cs.level || 1}`, avx + av + 10 * dpr, avy + 20 * dpr)
+
+    // 三条状态条（含数值）
+    const sx = x + 12 * dpr
+    const sw = w - 24 * dpr
+    let sy = y + 58 * dpr
+    const drawBar = (label, cur, max, color) => {
+      ctx.textAlign = 'left'; ctx.textBaseline = 'middle'
+      ctx.font = `${9 * dpr}px sans-serif`
+      ctx.fillStyle = 'rgba(255,255,255,0.8)'
+      ctx.fillText(label, sx, sy + 4 * dpr)
+      const barX = sx + 34 * dpr
+      const barW = sw - 34 * dpr - 46 * dpr
+      ctx.fillStyle = 'rgba(0,0,0,0.5)'
+      ctx.fillRect(barX, sy, barW, 8 * dpr)
+      const p = Math.max(0, Math.min(1, cur / (max || 1)))
+      ctx.fillStyle = color
+      ctx.fillRect(barX, sy, barW * p, 8 * dpr)
+      ctx.textAlign = 'right'
+      ctx.fillStyle = '#fff'
+      ctx.fillText(`${Math.floor(cur)}/${Math.floor(max)}`, sx + sw, sy + 4 * dpr)
+      sy += 16 * dpr
+    }
+    drawBar('HP', cs.hp || 0, cs.maxHp || 1, '#4ade80')
+    drawBar('MP', cs.mp || 0, cs.maxMp || 1, '#4fc3f7')
+    drawBar('EXP', cs.exp || 0, cs.maxExp || 1, '#a78bfa')
+
+    // 查看详情按钮
+    const btnW = w - 24 * dpr
+    const btnH = 26 * dpr
+    const btnX = x + 12 * dpr
+    const btnY = y + h - btnH - 10 * dpr
+    ctx.fillStyle = 'rgba(255,210,74,0.22)'
+    this._roundRect(ctx, btnX, btnY, btnW, btnH, 8 * dpr)
+    ctx.fill()
+    ctx.strokeStyle = '#ffd24a'
+    ctx.lineWidth = 1 * dpr
+    this._roundRect(ctx, btnX, btnY, btnW, btnH, 8 * dpr)
+    ctx.stroke()
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle'
+    ctx.font = `bold ${12 * dpr}px sans-serif`
+    ctx.fillStyle = '#ffd24a'
+    ctx.fillText('查看详情 →', btnX + btnW / 2, btnY + btnH / 2)
+    ctx.restore()
+
+    this._partyExpandBounds = {
+      x, y, width: w, height: h,
+      detailBtn: { x: btnX, y: btnY, width: btnW, height: btnH },
+      charId: this._expandedHeroId
+    }
+    return this._partyExpandBounds
+  }
+
+  /**
+   * 检测点击是否落在队伍状态条某成员热区。
+   * 已解锁：点击切换为控制者并滑出迷你详情卡；再点同卡收起。
+   * 未解锁：提示未解锁。
+   * @returns {boolean} 命中返回 true（调用方应 return 不再处理移动）
    */
   _handlePartyBarTap(tap) {
     for (const card of this._partyBarBounds) {
       if (tap.x >= card.x && tap.x <= card.x + card.width &&
           tap.y >= card.y && tap.y <= card.y + card.height) {
-        // 未解锁角色：不打开详情，仅给提示音
+        // 未解锁角色：不打开，仅给提示音
         if (card.char && card.char._locked) {
           if (this.game.showToast) this.game.showToast(`${card.char.name} 尚未解锁`)
           this.game.audio.playSFX('ui_cancel')
           return true
         }
-        this.charInfoPanel.setCharacter(card.char)
-        this.charInfoPanel.show()
+        const id = card.char.id
+        // 点击已展开的英雄 → 收起；否则切换为控制者并展开
+        if (this._expandedHeroId === id) {
+          this._expandedHeroId = null
+        } else {
+          this._setControlled(id)
+          this._expandedHeroId = id
+        }
         this.game.audio.playSFX('ui_confirm')
         return true
       }
+    }
+    return false
+  }
+
+  /**
+   * 设置当前控制者（金边高亮 + 挂到 game 供进入副本复用）
+   */
+  _setControlled(id) {
+    this.controlledHeroId = id
+    if (this.game) this.game.controlledHeroId = id
+  }
+
+  /**
+   * 迷你详情卡内点击：详情按钮 → 打开完整角色面板；点击卡片外 → 收起。
+   * @returns {boolean} 命中返回 true
+   */
+  _handlePartyExpandTap(tap) {
+    const b = this._partyExpandBounds
+    if (!b) return false
+    // 详情按钮
+    const db = b.detailBtn
+    if (tap.x >= db.x && tap.x <= db.x + db.width &&
+        tap.y >= db.y && tap.y <= db.y + db.height) {
+      const cs = charStateManager.getCharacter(b.charId)
+      if (cs) { this.charInfoPanel.setCharacter(cs); this.charInfoPanel.show() }
+      this.game.audio.playSFX('ui_confirm')
+      return true
+    }
+    // 卡片主体之外（遮罩）→ 收起
+    if (!(tap.x >= b.x && tap.x <= b.x + b.width && tap.y >= b.y && tap.y <= b.y + b.height)) {
+      this._expandedHeroId = null
+      return true
     }
     return false
   }
