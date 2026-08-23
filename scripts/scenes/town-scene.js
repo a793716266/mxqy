@@ -1211,7 +1211,7 @@ export class TownScene {
   _renderPartyExpandCard(ctx) {
     this._partyExpandBounds = null
     if (!this._expandedHeroId) return null
-    // ★ 详情面板打开时自动收起迷你卡 — 避免叠层（z-order 上迷你卡位于详情面板之上，会盖住「属性」标题）
+    // ★ 详情面板打开时自动收起迷你卡 — 避免叠层穿透（z-order 上迷你卡位于详情面板之上，会盖住「属性」标题）
     if (this.charInfoPanel && this.charInfoPanel.visible) {
       this._expandedHeroId = null
       return null
