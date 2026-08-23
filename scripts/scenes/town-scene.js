@@ -13,6 +13,7 @@ import { charStateManager } from '../data/character-state.js'
 import { FieldMovement } from '../utils/field-movement.js'
 import { equipmentManager } from '../managers/equipment-manager.js'
 import { EquipmentPanel } from '../ui/equipment-panel.js'
+import { CharacterInfoPanel } from '../ui/character-info-panel.js'
 import { Renderer2D5 } from '../engine/renderer-2.5d.js'
 import {
   TOWN_MAP_CONFIG,
@@ -78,6 +79,13 @@ export class TownScene {
     
     // 装备面板
     this.equipmentPanel = new EquipmentPanel(game, this.party[0])
+
+    // 角色信息面板（队伍状态条点击成员 → 打开详情）
+    this.charInfoPanel = new CharacterInfoPanel(game, this.party[0])
+    // 队伍状态条成员热区（render 时填充，update 点击检测用）
+    this._partyBarBounds = []
+    // 角色详情面板 bounds（renderDetailPanel 返回，关闭/卸下点击用）
+    this._charInfoBounds = null
     
     // 探索菜单
     this.exploreMenu = null
@@ -276,6 +284,13 @@ export class TownScene {
         this._debugCoords.show = true
         this._debugCoords.showTime = 3.0 // 显示3秒
 
+        // ★ 角色详情面板打开时，优先处理面板内点击（关闭✕ / 卸下）
+        if (this.charInfoPanel.visible) {
+          this.game.audio.playSFX('ui_click')
+          this._handleCharInfoTap(tap)
+          return
+        }
+
         // 对话框点击
         if (this.dialogue) {
           this.game.audio.playSFX('ui_click')
@@ -290,6 +305,9 @@ export class TownScene {
           this._interactWithNPC(clickedNPC)
           return
         }
+
+        // ★ 队伍状态条成员点击 → 打开角色详情
+        if (this._handlePartyBarTap(tap)) return
 
         // 尝试激活摇杆
         this.movement.handleTap(tap)
@@ -550,6 +568,12 @@ export class TownScene {
 
     // ★ 金币顶栏（常驻显示玩家金币）
     this._renderTopBar(ctx)
+
+    // ★ 队伍状态条（常驻显示全员头像/等级/HP/MP，点击打开角色详情）
+    this._renderPartyBar(ctx)
+
+    // ★ 角色详情面板（带遮罩，最上层；点击成员后可见）
+    this._charInfoBounds = this.charInfoPanel.renderDetailPanel()
 
     // 调试坐标显示（用于调整资源位置）
     this._renderDebugCoords(ctx)
@@ -1006,6 +1030,143 @@ export class TownScene {
     ctx.font = `bold ${20 * dpr}px sans-serif`
     ctx.fillText(`💰 ${gold}`, bx + bw / 2, by + bh / 2)
     ctx.restore()
+  }
+
+  /**
+   * ★ 顶部队伍状态条：常驻显示全员头像 / 等级 / HP / MP，
+   * 点击任意成员打开 CharacterInfoPanel 角色详情（含属性/装备/Buff）。
+   */
+  _renderPartyBar(ctx) {
+    const dpr = this.dpr
+    const members = (this.party && this.party.length) ? this.party : []
+    if (!members.length) return
+
+    const cardW = 72 * dpr
+    const cardH = 66 * dpr
+    const gap = 6 * dpr
+    const totalW = members.length * cardW + (members.length - 1) * gap
+    const goldBarReserved = 150 * dpr + 24 * dpr // 右上金币条占位，避免重叠
+    let startX = (this.width - totalW) / 2
+    const maxRight = this.width - goldBarReserved
+    if (startX + totalW > maxRight) startX = 12 * dpr
+    if (startX < 8 * dpr) startX = 8 * dpr
+    const y = 10 * dpr
+
+    this._partyBarBounds = []
+    ctx.save()
+    for (let i = 0; i < members.length; i++) {
+      const c = members[i]
+      const x = startX + i * (cardW + gap)
+      this._partyBarBounds.push({ x, y, width: cardW, height: cardH, index: i, char: c })
+
+      // 卡片背景（与金币条/探索菜单风格一致）
+      ctx.fillStyle = 'rgba(0,0,0,0.5)'
+      this._roundRect(ctx, x, y, cardW, cardH, 8 * dpr)
+      ctx.fill()
+      ctx.strokeStyle = 'rgba(255,255,255,0.35)'
+      ctx.lineWidth = 1.5 * dpr
+      this._roundRect(ctx, x, y, cardW, cardH, 8 * dpr)
+      ctx.stroke()
+
+      // 头像（圆形裁剪）
+      const avatarR = 16 * dpr
+      const avatarCx = x + cardW / 2
+      const avatarCy = y + 18 * dpr
+      ctx.save()
+      ctx.beginPath()
+      ctx.arc(avatarCx, avatarCy, avatarR, 0, Math.PI * 2)
+      ctx.clip()
+      const avatarImg = this.game.assets.get(`HERO_${c.id.toUpperCase()}`)
+      if (avatarImg) {
+        ctx.drawImage(avatarImg, avatarCx - avatarR, avatarCy - avatarR, avatarR * 2, avatarR * 2)
+      } else {
+        ctx.fillStyle = 'rgba(255,255,255,0.2)'
+        ctx.fillRect(avatarCx - avatarR, avatarCy - avatarR, avatarR * 2, avatarR * 2)
+        ctx.font = `${18 * dpr}px sans-serif`
+        ctx.textAlign = 'center'
+        ctx.textBaseline = 'middle'
+        ctx.fillText('🐱', avatarCx, avatarCy)
+      }
+      ctx.restore()
+
+      // 等级
+      ctx.font = `bold ${11 * dpr}px sans-serif`
+      ctx.fillStyle = '#ffd700'
+      ctx.textAlign = 'center'
+      ctx.textBaseline = 'middle'
+      ctx.fillText(`Lv.${c.level || 1}`, avatarCx, y + 40 * dpr)
+
+      // HP 条
+      const barW = cardW - 14 * dpr
+      const barH = 4 * dpr
+      const barX = x + 7 * dpr
+      const hpY = y + 50 * dpr
+      const hpP = Math.max(0, Math.min(1, (c.hp || 0) / (c.maxHp || 1)))
+      ctx.fillStyle = 'rgba(0,0,0,0.5)'
+      ctx.fillRect(barX, hpY, barW, barH)
+      ctx.fillStyle = hpP > 0.6 ? '#4caf50' : hpP > 0.3 ? '#ff9800' : '#f44336'
+      ctx.fillRect(barX, hpY, barW * hpP, barH)
+
+      // MP 条
+      const mpY = hpY + barH + 2 * dpr
+      const mpP = Math.max(0, Math.min(1, (c.mp || 0) / (c.maxMp || 1)))
+      ctx.fillStyle = 'rgba(0,0,0,0.5)'
+      ctx.fillRect(barX, mpY, barW, barH)
+      ctx.fillStyle = '#4a90e2'
+      ctx.fillRect(barX, mpY, barW * mpP, barH)
+    }
+    ctx.restore()
+  }
+
+  /**
+   * 检测点击是否落在队伍状态条某成员热区，是则打开该成员详情。
+   * @returns {boolean} 命中并打开返回 true（调用方应 return 不再处理移动）
+   */
+  _handlePartyBarTap(tap) {
+    for (const card of this._partyBarBounds) {
+      if (tap.x >= card.x && tap.x <= card.x + card.width &&
+          tap.y >= card.y && tap.y <= card.y + card.height) {
+        this.charInfoPanel.setCharacter(card.char)
+        this.charInfoPanel.show()
+        this.game.audio.playSFX('ui_confirm')
+        return true
+      }
+    }
+    return false
+  }
+
+  /**
+   * 角色详情面板内点击处理：关闭✕ / 卸下装备 / 点击面板外遮罩关闭。
+   */
+  _handleCharInfoTap(tap) {
+    const b = this._charInfoBounds
+    if (!b) { this.charInfoPanel.hide(); return }
+
+    // 关闭按钮（右上✕）
+    if (b.closeBtn && tap.x >= b.closeBtn.x && tap.x <= b.closeBtn.x + b.closeBtn.width &&
+        tap.y >= b.closeBtn.y && tap.y <= b.closeBtn.y + b.closeBtn.height) {
+      this.charInfoPanel.hide()
+      return
+    }
+
+    // 卸下装备按钮
+    if (b.slots && b.slots.length) {
+      for (const s of b.slots) {
+        const ub = s.unequipBtn
+        if (ub && tap.x >= ub.x && tap.x <= ub.x + ub.width &&
+            tap.y >= ub.y && tap.y <= ub.y + ub.height) {
+          equipmentManager.unequip(this.charInfoPanel.character, s.slot)
+          this.game.data.set('equipmentData', equipmentManager.serialize())
+          if (this.game.showToast) this.game.showToast('已卸下装备')
+          return
+        }
+      }
+    }
+
+    // 点击面板主体之外（遮罩区域）→ 关闭
+    if (!(tap.x >= b.x && tap.x <= b.x + b.width && tap.y >= b.y && tap.y <= b.y + b.height)) {
+      this.charInfoPanel.hide()
+    }
   }
 
   _renderDebugCoords(ctx) {
