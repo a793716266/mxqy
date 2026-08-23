@@ -165,20 +165,56 @@ export class CharacterInfoPanel {
   }
   
   /**
+   * ★ 估算面板内容垂直总占用（含所有节 + BUFF，留底部安全空白）
+   * 渲染前先调用以决定 panelHeight，让「状态 / HP / MP / BUFF」必落在面板内不溢出
+   */
+  _calcDetailPanelContentHeight(char, buffsCount) {
+    const dpr = this.dpr
+    const lineH = 35 * dpr
+    const sep = 15 * dpr
+    const slotH = 66 * dpr
+    const safePad = 24 * dpr
+    let h = 0
+    h += 70 * dpr                 // 顶部 title bar
+    h += lineH                    // Lv.${char.level} ${char.title}
+    h += lineH * 0.8              // 经验: ${...} / ${...}  文字
+    h += lineH                    // 经验条 + 百分比 (lineHeight 内含 12 进度条)
+    h += sep                      // 分隔线
+    h += lineH                    // 「属性」标题
+    h += lineH * 0.9 * 5          // 5 项属性（生命/魔法/攻击/防御/速度）
+    h += 10 * dpr                 // 间隔
+    h += lineH                    // 「装备」标题与第一槽间已有 14 dpr gap 但与 35 title 行高同段共存
+    h += slotH                    // 装备槽本身
+    h += 16 * dpr                 // 装备槽底到下行分隔线
+    h += sep                      // 分隔线
+    h += lineH                    // 「状态」标题
+    h += lineH * 0.9              // HP: ... / ...
+    h += lineH * 0.9              // MP: ... / ...
+    if (buffsCount > 0) h += lineH * 0.9 * buffsCount   // BUFF 列表
+    h += safePad                  // 底部安全留白
+    return Math.max(540 * dpr, h)  // 永不低于原 540 dpr
+  }
+
+  /**
    * 渲染详细面板
    */
   renderDetailPanel() {
     if (!this.visible) return null
-    
+
     const char = this.character
     if (!char) return null
-    
+
     const screenWidth = this.game.width
     const screenHeight = this.game.height
-    
-    // 面板尺寸
+
+    // 面板尺寸 — ★ panelHeight 自适应（5 节 + BUFF 计算预估），避免「状态」节溢出
     const panelWidth = 280 * this.dpr
-    const panelHeight = 540 * this.dpr   // 含 BUFF 状态列表 + 装备槽
+    // 先扫一遍拿到活跃 BUFF 数量（用于后续决定面板高度与 BUFF 列表绘制）
+    const buffs = (char._buffs || []).filter(b => b._active && b._remaining > 0)
+    const panelHeight = Math.min(
+      screenHeight - 120 * this.dpr,
+      this._calcDetailPanelContentHeight(char, buffs.length)
+    )
     const panelX = (screenWidth - panelWidth) / 2
     const panelY = (screenHeight - panelHeight) / 2
     
@@ -268,7 +304,7 @@ export class CharacterInfoPanel {
     this.ctx.fillText('属性', leftMargin, offsetY)
     offsetY += lineHeight
 
-    const buffs = (char._buffs || []).filter(b => b._active && b._remaining > 0)
+    // buffs 已在外层决策 panelHeight 时算过，复用
     const hasAtkBuff = buffs.some(b => b.type === 'atk_up' || b.type === 'atk_up_self')
     const hasDefBuff = buffs.some(b => b.type === 'def_up' || b.type === 'def_up_self')
     let atkVal = char.atk || 0

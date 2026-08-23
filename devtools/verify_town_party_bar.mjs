@@ -274,5 +274,49 @@ ok('点卡片外命中返回 true（收起）', hitOutside === true)
 ok('点卡片外后收起迷你卡', scene._expandedHeroId === null)
 ok('bounds 内点击不收起（返回 false）', scene._handlePartyExpandTap({ x: bL.x + bL.width / 2, y: bL.y + bL.height / 2 }) === false)
 
+console.log('M. 详情面板高度自适应：状态/HP/MP/BUFF 必须落在面板内，不再溢出')
+{
+  const p = new CharacterInfoPanel(mockGame, charStateManager.getCharacter('zhenbao'))
+  p.show()
+  const ctxM = makeCtx()
+  p.ctx = ctxM  // 替换为记录型 ctx 看绘制坐标
+  const beforeB = p.renderDetailPanel()
+  // 无 BUFF 时状态 + HP + MP 三行文字必然绘制
+  const statusText = ctxM.ops.texts.find(o => o.t === '状态')
+  const hpText = ctxM.ops.texts.find(o => o.t && o.t.startsWith('❤️ HP:'))
+  const mpText = ctxM.ops.texts.find(o => o.t && o.t.startsWith('💙 MP:'))
+  ok('详情面板有"状态"标题绘制', !!statusText)
+  ok('详情面板有 HP 文字绘制', !!hpText)
+  ok('详情面板有 MP 文字绘制', !!mpText)
+  if (statusText && hpText && mpText && beforeB) {
+    const bottom = Math.max(statusText.y, hpText.y, mpText.y) + 30 * p.dpr   // 含文字底部与下方行间距
+    const panelBottom = beforeB.y + beforeB.height
+    ok('状态/HP/MP 节完整落在面板内 (bottom≤面板底)',
+       bottom <= panelBottom + 0.01)
+    ok('面板高度已撑开 (>540 dpr 旧固定值)', beforeB.height > 540 * p.dpr)
+  }
+  // 加 BUFF 再渲染：高度应进一步扩展，BUFF 文字也必须落在面板内
+  const charBuf = charStateManager.getCharacter('zhenbao')
+  charBuf._buffs = [
+    { _active: true, _remaining: 5, _color: 'rgba(255,215,0,0.9)', type: 'atk_up_self' },
+    { _active: true, _remaining: 5, _color: 'rgba(80,200,255,0.9)', type: 'def_up_self' },
+  ]
+  const ctxM2 = makeCtx()
+  p.ctx = ctxM2
+  const beforeB2 = p.renderDetailPanel()
+  const buffText = ctxM2.ops.texts.find(o => o.t && o.t.includes('狂暴攻击'))
+  ok('BUFF 激活时绘制「狂暴攻击」条目', !!buffText)
+  if (buffText && beforeB2) {
+    ok('BUFF 节落在加 BUFF 后的面板内', buffText.y + 30 * p.dpr <= beforeB2.y + beforeB2.height + 0.01)
+    ok('加 BUFF 后面板高度 ≥ 无 BUFF 时', beforeB2.height >= beforeB.height)
+  } else {
+    ok('BUFF 节落在加 BUFF 后的面板内', false)
+    ok('加 BUFF 后面板高度 ≥ 无 BUFF 时', false)
+  }
+  // 清理
+  charBuf._buffs = []
+  p.ctx = mockCtx
+}
+
 console.log(`\n结果: ${pass} 通过, ${fail} 失败`)
 process.exit(fail === 0 ? 0 : 1)
