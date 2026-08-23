@@ -278,6 +278,10 @@ export class Game {
     // ★ 主菜单（开始界面）不显示背包按钮，避免与开始氛围不协调
     if (this.sceneName === SCENE.MAIN_MENU) return
 
+    // ★ 场景内全屏模态打开时，背包按钮已被隐藏（_render 中），此处的 tap 一并让出
+    //   否则被覆盖在模态下的点击会穿透到下方的浮按钮，意外唤起背包
+    if (this._sceneHasBlockingModal()) return
+
     const tap = this.input.taps[0]
     const b = this._backpackBtnRect()
     if (tap.x >= b.x && tap.x <= b.x + b.w &&
@@ -302,13 +306,12 @@ export class Game {
     }
   }
 
-  // 渲染全局背包入口按钮（胶囊：🎒 图标 + “背包”文字，皮革棕底）
+  // 渲染全局背包入口按钮（胶囊：🎒 图标 + "背包"文字，皮革棕底）
   _renderBackpackButton(ctx) {
     const b = this._backpackBtnRect()
     const d = this.dpr
     const cy = b.y + b.h / 2
     const r = b.h / 2
-
     ctx.save()
     // 圆角矩形底（皮革棕渐变）
     const grad = ctx.createLinearGradient(b.x, b.y, b.x, b.y + b.h)
@@ -343,6 +346,34 @@ export class Game {
     ctx.restore()
   }
 
+  // 当前场景是否处于「全屏模态」状态（即玩家正专注于某个面板/对话框，按钮不应再出现或响应）
+  // 注意：每加一种新的全屏模态，都必须在这里登记，否则会被全局背包按钮穿模盖住
+  _sceneHasBlockingModal() {
+    const s = this.currentScene
+    if (!s) return false
+    // 城镇：探索区域菜单、装备面板、角色详情面板、城镇对话模态
+    if (s.exploreMenu) return true
+    if (s.equipmentPanel && s.equipmentPanel.active) return true
+    if (s.charInfoPanel && s.charInfoPanel.visible) return true
+    // 战斗：角色详情面板（town/field 共用同一个组件）
+    // ★ dungeonIntroDialogue / clearedDialogue 由 field-scene 维护（Boss 战前后独白）
+    if (s.dungeonIntroDialogue) return true
+    if (s.clearedDialogue || s.dungeonClearedDialogue) return true
+    return false
+  }
+
+  // 是否处于开发模式（WeChat DevTools 编译预览时 platform === 'devtools'；真机生产永远为 false）
+  // 仅用于开关开发专用 UI（如探索区域内的"测试：解锁所有副本"按钮）
+  get isDev() {
+    try {
+      return (typeof wx !== 'undefined' &&
+              typeof wx.getSystemInfoSync === 'function' &&
+              wx.getSystemInfoSync().platform === 'devtools')
+    } catch (_) {
+      return false
+    }
+  }
+
   _render() {
     const ctx = this.ctx
     ctx.clearRect(0, 0, this.width, this.height)
@@ -367,14 +398,15 @@ export class Game {
       ctx.fillRect(0, 0, this.width, this.height)
     }
 
-    // 渲染全局背包入口按钮（场景之上，设置/背包面板之下；面板打开/无场景/主菜单时隐藏）
-    // ★ 场景内模态面板（角色详情 / 装备面板）打开时一并隐藏，避免盖住面板内容（如防御力数值行）
-    const sceneModalOpen = !!(
+    // 渲染全局背包入口按钮（场景之上，设置/背包面板之下；任何场景内全屏模态打开时一并隐藏）
+    // ⚠️ 这里的「场景内模态」必须比照所有会让玩家误操作背包按钮的全屏覆盖层；新增模态时请同步更新 _sceneHasBlockingModal
+    if (
+      !this.backpack.visible &&
+      !this.settings.visible &&
+      !this._sceneHasBlockingModal() &&
       this.currentScene &&
-      ((this.currentScene.charInfoPanel && this.currentScene.charInfoPanel.visible) ||
-       (this.currentScene.equipmentPanel && this.currentScene.equipmentPanel.visible))
-    )
-    if (!this.backpack.visible && !this.settings.visible && !sceneModalOpen && this.currentScene && this.sceneName !== SCENE.MAIN_MENU) {
+      this.sceneName !== SCENE.MAIN_MENU
+    ) {
       this._renderBackpackButton(ctx)
     }
 

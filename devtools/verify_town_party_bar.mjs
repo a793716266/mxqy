@@ -61,6 +61,8 @@ scene.charInfoPanel = new CharacterInfoPanel(mockGame, charStateManager.getChara
 scene._partyBarBounds = []
 scene._charInfoBounds = null
 scene._debugCoords = { x: 0, y: 0, show: false, tapWorldX: 0, tapWorldY: 0 }
+scene.testLogs = []
+scene.isDev = false
 
 console.log('A. 队伍状态条渲染（全员 6 槽）')
 const ctx = makeCtx()
@@ -146,6 +148,72 @@ scene.charInfoPanel.hide()
 const outside = scene._handlePartyBarTap({ x: 5, y: 5 })
 ok('点击队伍条外返回 false', outside === false)
 ok('面板仍隐藏', scene.charInfoPanel.visible === false)
+
+console.log('H. 探索区域菜单：开发测试按钮仅 dev 可见（生产包应隐藏）')
+// 生产模式（mockGame.isDev === false）：不画测试按钮
+mockGame.isDev = false
+scene.exploreMenu = {
+  width: 600, height: 700, dungeons: [
+    { id: 'grassland', name: '阳光草原', desc: 'cleared', unlocked: true, color: '#27ae60' },
+    { id: 'magic_tower', name: '魔法塔', desc: 'locked', unlocked: false, color: '#3498db' },
+  ],
+}
+const ctxProd = makeCtx()
+scene._renderExploreMenu(ctxProd)
+const hasDevBtnProd = ctxProd.ops.texts.some(o => o.t.includes('测试') && o.t.includes('解锁'))
+ok('生产模式不画"测试：解锁所有副本"按钮', hasDevBtnProd === false)
+// 生产模式点击区域不会触发测试逻辑（测试开关不可达 → "决战虚无之雾"卡片完全可点）
+const tapBottom = scene._handleExploreMenuTap(100, scene.height - 100)
+scene.exploreMenu = { width: 600, height: 700, dungeons: [
+    { id: 'grassland', name: '阳光草原', desc: 'cleared', unlocked: true, color: '#27ae60' },
+    { id: 'magic_tower', name: '魔法塔', desc: 'locked', unlocked: false, color: '#3498db' },
+] }
+scene._handleExploreMenuTap(100, scene.height - 100) // 不应触发任何 state 变化（testUnlockAll 不会写入）
+ok('生产模式点击底部不写入 testUnlockAll', !mockGame.data.get('testUnlockAll'))
+scene.exploreMenu = null
+// 开发模式（mockGame.isDev === true）：绘制测试按钮
+mockGame.isDev = true
+const ctxDev = makeCtx()
+scene.exploreMenu = { width: 600, height: 700, dungeons: [
+    { id: 'grassland', name: '阳光草原', desc: 'cleared', unlocked: true, color: '#27ae60' },
+    { id: 'magic_tower', name: '魔法塔', desc: 'locked', unlocked: false, color: '#3498db' },
+] }
+scene._renderExploreMenu(ctxDev)
+const hasDevBtnDev = ctxDev.ops.texts.some(o => o.t.includes('测试') && o.t.includes('解锁'))
+ok('开发模式画"测试：解锁所有副本"按钮', hasDevBtnDev === true)
+// 开发模式点击测试按钮区域：amyDefeated 被写入 + exploreMenu 重开
+const menuW = 600, menuH = 700
+const menuX = (scene.width - menuW) / 2
+const menuY = (scene.height - menuH) / 2
+const devX = menuX + 40 * scene.dpr // 按钮中心
+const devY = menuY + menuH - 50 * scene.dpr + 17 * scene.dpr
+scene._handleExploreMenuTap(devX, devY)
+ok('开发模式点测试按钮写入 amyDefeated', !!mockGame.data.get('amyDefeated'))
+ok('开发模式点测试按钮后 exploreMenu 重开', !!scene.exploreMenu)
+scene.exploreMenu = null
+mockGame.isDev = false
+
+console.log('I. game.js _sceneHasBlockingModal：任何全屏模态打开都让位背包按钮')
+// 直接复用 game.js 的 helper（无需构造 Game，只需 mock 一个 currentScene）
+const gameProto = (await import('../scripts/game.js')).Game.prototype
+function hasModal(sceneObj) {
+  // 反射调用 game 私有方法：在原型上调用并注入 currentScene
+  return gameProto._sceneHasBlockingModal.call({ currentScene: sceneObj })
+}
+// 全部关闭 → 让背包按钮可见
+ok('空场景 → 让位（背包可显）', hasModal({ charInfoPanel: { visible: false }, equipmentPanel: { active: false } }) === false)
+// 探索菜单打开 → 压住背包
+ok('exploreMenu 打开 → 压住背包', hasModal({ exploreMenu: { dungeons: [] }, charInfoPanel: { visible: false }, equipmentPanel: { active: false } }) === true)
+// 装备面板打开 → 压住背包
+ok('equipmentPanel.active=true → 压住背包', hasModal({ charInfoPanel: { visible: false }, equipmentPanel: { active: true } }) === true)
+// 角色详情面板打开 → 压住背包
+ok('charInfoPanel.visible=true → 压住背包', hasModal({ charInfoPanel: { visible: true }, equipmentPanel: { active: false } }) === true)
+// 副本开场独白 → 压住背包
+ok('dungeonIntroDialogue 存在 → 压住背包', hasModal({ dungeonIntroDialogue: { name: '艾米' }, charInfoPanel: { visible: false }, equipmentPanel: { active: false } }) === true)
+// 副本通关独白 → 压住背包
+ok('dungeonClearedDialogue 存在 → 压住背包', hasModal({ dungeonClearedDialogue: { name: '艾米' }, charInfoPanel: { visible: false }, equipmentPanel: { active: false } }) === true)
+// 仅战斗进行中（战斗不是模态）→ 背包仍可显
+ok('仅 battleSystem.active（战斗非模态） → 背包仍可显', hasModal({ battleSystem: { active: true }, charInfoPanel: { visible: false }, equipmentPanel: { active: false } }) === false)
 
 console.log(`\n结果: ${pass} 通过, ${fail} 失败`)
 process.exit(fail === 0 ? 0 : 1)

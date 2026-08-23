@@ -495,19 +495,21 @@ export class TownScene {
       return
     }
     
-    // 测试解锁按钮
-    const testBtnX = menuX + 20 * this.dpr
-    const testBtnY = menuY + menu.height - 50 * this.dpr
-    const testBtnW = menu.width - 40 * this.dpr
-    const testBtnH = 35 * this.dpr
-    if (this._isInRect(tx, ty, testBtnX, testBtnY, testBtnW, testBtnH)) {
-      this.game.data.set('amyDefeated', true)
-      this.game.data.set('testUnlockAll', true)
-      console.log('[Town] 测试模式：解锁所有副本')
-      this._addLog('[测试] 已解锁所有副本')
-      this.exploreMenu = null
-      this._openExploreMenu()
-      return
+    // 测试解锁按钮（仅开发模式生效，避免玩家误触或生产泄漏）
+    if (this.game.isDev) {
+      const testBtnX = menuX + 20 * this.dpr
+      const testBtnY = menuY + menu.height - 50 * this.dpr
+      const testBtnW = menu.width - 40 * this.dpr
+      const testBtnH = 35 * this.dpr
+      if (this._isInRect(tx, ty, testBtnX, testBtnY, testBtnW, testBtnH)) {
+        this.game.data.set('amyDefeated', true)
+        this.game.data.set('testUnlockAll', true)
+        console.log('[Town] 测试模式：解锁所有副本')
+        this._addLog('[测试] 已解锁所有副本')
+        this.exploreMenu = null
+        this._openExploreMenu()
+        return
+      }
     }
     
     // 副本按钮
@@ -955,7 +957,8 @@ export class TownScene {
       }
     }
     
-    // 测试按钮
+    // 测试按钮（仅 WeChat DevTools 编译模式下可见；生产环境整段跳过，避免开发按钮泄漏到线上）
+    if (!this.game.isDev) return
     const testBtnX = menuX + 20 * this.dpr
     const testBtnY = menuY + menu.height - 50 * this.dpr
     const testBtnW = menu.width - 40 * this.dpr
