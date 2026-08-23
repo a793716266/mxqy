@@ -10,6 +10,7 @@
  */
 
 import { charStateManager } from '../data/character-state.js'
+import { HEROES } from '../data/heroes.js'
 import { FieldMovement } from '../utils/field-movement.js'
 import { equipmentManager } from '../managers/equipment-manager.js'
 import { EquipmentPanel } from '../ui/equipment-panel.js'
@@ -1073,7 +1074,14 @@ export class TownScene {
    */
   _renderPartyBar(ctx) {
     const dpr = this.dpr
-    const members = (this.party && this.party.length) ? this.party : []
+    // ★ 全员 6 槽：遍历 HEROES 全量阵容，已解锁取角色状态、未解锁画「?」占位
+    const heroList = (typeof HEROES !== 'undefined' && HEROES) ? HEROES : []
+    const members = heroList.map(h => {
+      const cs = charStateManager.getCharacter(h.id)
+      return cs
+        ? Object.assign({}, cs, { _locked: false, _heroDef: h })
+        : { id: h.id, name: h.name, _locked: true, _heroDef: h }
+    })
     if (!members.length) return
 
     const n = members.length
@@ -1094,13 +1102,18 @@ export class TownScene {
       const x = startX + i * (cardW + gap)
       this._partyBarBounds.push({ x, y, width: cardW, height: cardH, index: i, char: c })
 
-      const isControlled = (i === 0) // 被控者（队伍首位）高亮
+      const isControlled = (i === 0) // 被控者（队伍首位/臻宝）高亮
+      const locked = !!c._locked
 
       // 卡片背景（玻璃面板，与金币 pill 风格一致）
-      ctx.fillStyle = isControlled ? 'rgba(255,210,74,0.15)' : 'rgba(26,26,46,0.62)'
+      if (locked) {
+        ctx.fillStyle = 'rgba(26,26,46,0.40)'
+      } else {
+        ctx.fillStyle = isControlled ? 'rgba(255,210,74,0.15)' : 'rgba(26,26,46,0.62)'
+      }
       this._roundRect(ctx, x, y, cardW, cardH, 10 * dpr)
       ctx.fill()
-      ctx.strokeStyle = isControlled ? '#ffd24a' : 'rgba(255,255,255,0.18)'
+      ctx.strokeStyle = locked ? 'rgba(255,255,255,0.12)' : (isControlled ? '#ffd24a' : 'rgba(255,255,255,0.18)')
       ctx.lineWidth = isControlled ? 1.5 * dpr : 1 * dpr
       this._roundRect(ctx, x, y, cardW, cardH, 10 * dpr)
       ctx.stroke()
@@ -1114,17 +1127,29 @@ export class TownScene {
       ctx.arc(avatarCx, avatarCy, avatarR, 0, Math.PI * 2)
       ctx.clip()
       const avatarImg = this.game.assets.get(`HERO_${c.id.toUpperCase()}`)
-      if (avatarImg) {
-        ctx.drawImage(avatarImg, avatarCx - avatarR, avatarCy - avatarR, avatarR * 2, avatarR * 2)
-      } else {
-        ctx.fillStyle = 'rgba(255,255,255,0.2)'
+      if (locked || !avatarImg) {
+        // 未解锁：暗色底 + 「?」占位
+        ctx.fillStyle = 'rgba(255,255,255,0.10)'
         ctx.fillRect(avatarCx - avatarR, avatarCy - avatarR, avatarR * 2, avatarR * 2)
         ctx.font = `${16 * dpr}px sans-serif`
         ctx.textAlign = 'center'
         ctx.textBaseline = 'middle'
-        ctx.fillText('🐱', avatarCx, avatarCy)
+        ctx.fillStyle = 'rgba(255,255,255,0.45)'
+        ctx.fillText('?', avatarCx, avatarCy)
+      } else {
+        ctx.drawImage(avatarImg, avatarCx - avatarR, avatarCy - avatarR, avatarR * 2, avatarR * 2)
       }
       ctx.restore()
+
+      if (locked) {
+        // 未解锁：锁图标 + 省略号等级位
+        ctx.font = `${12 * dpr}px sans-serif`
+        ctx.textAlign = 'center'
+        ctx.textBaseline = 'middle'
+        ctx.fillStyle = 'rgba(255,255,255,0.5)'
+        ctx.fillText('🔒', avatarCx, y + 32 * dpr)
+        continue
+      }
 
       // 等级
       ctx.font = `bold ${10 * dpr}px sans-serif`
@@ -1155,6 +1180,12 @@ export class TownScene {
     for (const card of this._partyBarBounds) {
       if (tap.x >= card.x && tap.x <= card.x + card.width &&
           tap.y >= card.y && tap.y <= card.y + card.height) {
+        // 未解锁角色：不打开详情，仅给提示音
+        if (card.char && card.char._locked) {
+          if (this.game.showToast) this.game.showToast(`${card.char.name} 尚未解锁`)
+          this.game.audio.playSFX('ui_cancel')
+          return true
+        }
         this.charInfoPanel.setCharacter(card.char)
         this.charInfoPanel.show()
         this.game.audio.playSFX('ui_confirm')

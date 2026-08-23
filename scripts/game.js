@@ -368,7 +368,13 @@ export class Game {
     }
 
     // 渲染全局背包入口按钮（场景之上，设置/背包面板之下；面板打开/无场景/主菜单时隐藏）
-    if (!this.backpack.visible && !this.settings.visible && this.currentScene && this.sceneName !== SCENE.MAIN_MENU) {
+    // ★ 场景内模态面板（角色详情 / 装备面板）打开时一并隐藏，避免盖住面板内容（如防御力数值行）
+    const sceneModalOpen = !!(
+      this.currentScene &&
+      ((this.currentScene.charInfoPanel && this.currentScene.charInfoPanel.visible) ||
+       (this.currentScene.equipmentPanel && this.currentScene.equipmentPanel.visible))
+    )
+    if (!this.backpack.visible && !this.settings.visible && !sceneModalOpen && this.currentScene && this.sceneName !== SCENE.MAIN_MENU) {
       this._renderBackpackButton(ctx)
     }
 

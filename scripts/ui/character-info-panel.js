@@ -236,11 +236,22 @@ export class CharacterInfoPanel {
     const expBarHeight = 12 * this.dpr
     this.ctx.fillStyle = 'rgba(0, 0, 0, 0.5)'
     this.ctx.fillRect(leftMargin, offsetY, expBarWidth, expBarHeight)
-    
+
     // ★ 防御：char 可能是 party 普通对象无 getExpProgress 方法
     const expProgress = (typeof char.getExpProgress === 'function') ? char.getExpProgress() : 0
     this.ctx.fillStyle = '#4caf50'
     this.ctx.fillRect(leftMargin, offsetY, expBarWidth * expProgress, expBarHeight)
+
+    // ★ 描边 + 百分比文字：经验为 0 时进度槽轮廓仍清晰可见，不显空白
+    this.ctx.strokeStyle = 'rgba(255, 255, 255, 0.28)'
+    this.ctx.lineWidth = 1 * this.dpr
+    this.ctx.strokeRect(leftMargin, offsetY, expBarWidth, expBarHeight)
+    this.ctx.font = `${10 * this.dpr}px sans-serif`
+    this.ctx.fillStyle = 'rgba(255, 255, 255, 0.85)'
+    this.ctx.textAlign = 'center'
+    this.ctx.textBaseline = 'middle'
+    this.ctx.fillText(`${Math.round(expProgress * 100)}%`, leftMargin + expBarWidth / 2, offsetY + expBarHeight / 2)
+    this.ctx.textAlign = 'left'
     offsetY += lineHeight
     
     // 分隔线
