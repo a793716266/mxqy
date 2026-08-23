@@ -356,5 +356,36 @@ console.log('M2. 状态区可视化：HP/MP 迷你条 + 数字右浮，告别「
   }
 }
 
+console.log('N. ★ z-order 叠层防护：详情面板打开时，展开迷你卡必须自动收起，避免盖住「属性」标题')
+{
+  // 场景 1：详情面板与迷你卡同时"持有"时，渲染端必须自动收起迷你卡
+  scene._expandedHeroId = 'amy'
+  scene.charInfoPanel.show()
+  scene.charInfoPanel.setCharacter(charStateManager.getCharacter('amy'))
+  const ctxN1 = makeCtx()
+  scene._renderPartyExpandCard(ctxN1)
+  ok('详情面板打开时迷你卡不渲染（自动收起）', scene._partyExpandBounds === null)
+  ok('详情面板打开时 _expandedHeroId 被清空', scene._expandedHeroId === null)
+
+  // 场景 2：模拟用户点击迷你卡「查看详情」按钮 → 打开详情面板，_expandedHeroId 必须随之清空
+  scene.charInfoPanel.hide()
+  scene._expandedHeroId = 'amy'
+  scene._renderPartyExpandCard(makeCtx())
+  const bN2 = scene._partyExpandBounds
+  ok('点击查看详情前 bounds 已就绪', !!bN2 && !!bN2.detailBtn)
+  const dbN2 = bN2.detailBtn
+  const hitN2 = scene._handlePartyExpandTap({ x: dbN2.x + dbN2.width / 2, y: dbN2.y + dbN2.height / 2 })
+  ok('点击查看详情按钮命中', hitN2 === true)
+  ok('点击查看详情后详情面板打开', scene.charInfoPanel.visible === true)
+  ok('点击查看详情后迷你卡同步收起（避免叠层）', scene._expandedHeroId === null)
+
+  // 场景 3：关闭详情面板后，迷你卡渲染应恢复
+  scene.charInfoPanel.hide()
+  scene._expandedHeroId = 'amy'
+  const ctxN3 = makeCtx()
+  scene._renderPartyExpandCard(ctxN3)
+  ok('详情面板关闭后迷你卡恢复渲染', scene._partyExpandBounds !== null)
+}
+
 console.log(`\n结果: ${pass} 通过, ${fail} 失败`)
 process.exit(fail === 0 ? 0 : 1)

@@ -1211,6 +1211,11 @@ export class TownScene {
   _renderPartyExpandCard(ctx) {
     this._partyExpandBounds = null
     if (!this._expandedHeroId) return null
+    // ★ 详情面板打开时自动收起迷你卡 — 避免叠层（z-order 上迷你卡位于详情面板之上，会盖住「属性」标题）
+    if (this.charInfoPanel && this.charInfoPanel.visible) {
+      this._expandedHeroId = null
+      return null
+    }
     const cs = charStateManager.getCharacter(this._expandedHeroId)
     if (!cs) { this._expandedHeroId = null; return null }
     const dpr = this.dpr
@@ -1356,6 +1361,8 @@ export class TownScene {
         tap.y >= db.y && tap.y <= db.y + db.height) {
       const cs = charStateManager.getCharacter(b.charId)
       if (cs) { this.charInfoPanel.setCharacter(cs); this.charInfoPanel.show() }
+      // ★ 打开详情面板后立即收起迷你卡，避免 z-order 叠层盖住「属性」标题
+      this._expandedHeroId = null
       this.game.audio.playSFX('ui_confirm')
       return true
     }
