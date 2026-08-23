@@ -250,7 +250,10 @@ export const HEROES = [
     skills: [
       { id: 'cat_paw', name: '猫爪击', type: 'attack', power: 1.0, mpCost: 0, desc: '用猫爪挠敌人' },
       { id: 'holy_shield', name: '圣盾之光', type: 'buff', mpCost: 10, cooldown: 15, desc: '提升全体30%防御力，持续3秒', effect: 'def_up', value: 0.3, duration: 3 },
-      { id: 'heal_strike', name: '治愈冲击', type: 'attack_heal', power: 1.2, mpCost: 12, cooldown: 10, desc: '向前突进300距离，对沿途敌人必定暴击，并回复30%伤害的生命值', crit: true, healPercent: 0.3, dashDistance: 300 },
+      { id: 'heal_strike', name: '治愈冲击', type: 'attack_heal', power: 1.2, mpCost: 12, cooldown: 10,
+        superArmor: true,       // ★ 霸体：释放期间（含突进）不被打断
+        lungeDist: 300,         // ★ 突进距离（逻辑像素，与盾击一致朝面向方向位移；受障碍/边界钳制）
+        desc: '举盾向前突进，对沿途敌人必定暴击，并回复造成伤害30%的生命值（霸体、不可打断）', crit: true, healPercent: 0.3, dashDistance: 300 },
       { id: 'heal_light', name: '治愈之光', type: 'heal', power: 30, mpCost: 10, desc: '回复全队生命值', target: 'all_ally', formula: 'base + matk * 1.0' }
     ]
   },

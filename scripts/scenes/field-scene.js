@@ -5099,9 +5099,14 @@ baseRadius: 50 * this.dpr,    // 底座半径（缩小）
             const shY = barY - barHeight - 3 * this.dpr
             ctx.fillStyle = 'rgba(0,0,0,0.6)'
             ctx.fillRect(barX, shY, barWidth, barHeight)
-            ctx.fillStyle = '#ffffff'
+            // ★ 护盾条：柔和青蓝渐变（替代刺眼纯白）+ 发光描边
+            const shGrad = ctx.createLinearGradient(barX, shY, barX, shY + barHeight)
+            shGrad.addColorStop(0, '#e3f5ff')
+            shGrad.addColorStop(0.5, '#9ed8ff')
+            shGrad.addColorStop(1, '#6fc2ff')
+            ctx.fillStyle = shGrad
             ctx.fillRect(barX, shY, barWidth * shRatio, barHeight)
-            ctx.strokeStyle = '#8ec5ff'
+            ctx.strokeStyle = 'rgba(150,215,255,0.95)'
             ctx.lineWidth = 2
             ctx.strokeRect(barX + 0.5, shY + 0.5, barWidth - 1, barHeight - 1)
           }
@@ -6071,26 +6076,29 @@ baseRadius: 50 * this.dpr,    // 底座半径（缩小）
     const rx = bodyW * 0.64 * pulse
     const ry = bodyH * 0.54 * pulse
     ctx.save()
-    // ★ 护盾填充（径向渐变，中心透、边缘亮）
-    ctx.globalAlpha = 0.30 * lifeK
-    const grad = ctx.createRadialGradient(cx, cy, ry * 0.2, cx, cy, ry * 1.06)
-    grad.addColorStop(0, 'rgba(150,220,255,0.08)')
-    grad.addColorStop(0.65, 'rgba(120,200,255,0.22)')
-    grad.addColorStop(1, 'rgba(185,235,255,0.40)')
+    // ★ 护盾填充（径向渐变，中心透、边缘亮，柔和青蓝能量泡）
+    ctx.globalAlpha = 0.26 * lifeK
+    const grad = ctx.createRadialGradient(cx, cy, ry * 0.2, cx, cy, ry * 1.08)
+    grad.addColorStop(0, 'rgba(120,210,255,0.05)')
+    grad.addColorStop(0.6, 'rgba(95,195,255,0.20)')
+    grad.addColorStop(1, 'rgba(150,225,255,0.45)')
     ctx.fillStyle = grad
     ctx.beginPath()
     ctx.ellipse(cx, cy, rx, ry, 0, 0, Math.PI * 2)
     ctx.fill()
-    // ★ 护盾外缘高光（越满越亮）
-    ctx.globalAlpha = 0.9 * lifeK
+    // ★ 护盾外缘发光（shadowBlur 柔化硬边，替代刺眼实线描边）
+    ctx.globalAlpha = 0.95 * lifeK
+    ctx.shadowColor = 'rgba(130,215,255,0.9)'
+    ctx.shadowBlur = 8 * dpr
     ctx.lineWidth = 2 * dpr
-    ctx.strokeStyle = 'rgba(205,240,255,0.85)'
+    ctx.strokeStyle = 'rgba(170,230,255,0.9)'
     ctx.beginPath()
     ctx.ellipse(cx, cy, rx, ry, 0, 0, Math.PI * 2)
     ctx.stroke()
-    // ★ 顶端盾尖微光
-    ctx.globalAlpha = 0.5 * lifeK
-    ctx.fillStyle = 'rgba(225,245,255,0.9)'
+    ctx.shadowBlur = 0
+    // ★ 顶端盾尖微光（柔和）
+    ctx.globalAlpha = 0.45 * lifeK
+    ctx.fillStyle = 'rgba(210,245,255,0.85)'
     ctx.beginPath()
     ctx.ellipse(cx, cy - ry, rx * 0.5, ry * 0.12, 0, 0, Math.PI * 2)
     ctx.fill()

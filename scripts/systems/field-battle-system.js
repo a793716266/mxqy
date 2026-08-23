@@ -839,8 +839,9 @@ export function installFieldBattleSystem(FieldSceneClass) {
       heroRef: ctrl   // ★ 记录施法英雄(含 .hero 的包装)，供动画结束时复位其 _castSuperArmor（避免永久霸体）
     }
 
-    // ★ 盾击突进（lunge）：释放瞬间朝面向方向位移一段（带霸体），受障碍/地图边界钳制
-    if (skill && skill.id === 'shield_bash' && skill.lungeDist) {
+    // ★ 突进（lunge）：释放瞬间朝面向方向位移一段（带霸体），受障碍/地图边界钳制。
+    //   盾击(shield_bash) 与 治愈冲击(attack_heal) 共用本机制（"和盾击一样的突进"）。
+    if (skill && skill.lungeDist && (skill.id === 'shield_bash' || skill.type === 'attack_heal')) {
       const ldir = monster ? ((monster.x >= pos0.x) ? 1 : -1) : (this.facingLeft ? -1 : 1)
       const pa2 = this.battleSystem.playerAnim
       pa2.lungeDist = skill.lungeDist * this.dpr   // 物理像素
@@ -855,6 +856,7 @@ export function installFieldBattleSystem(FieldSceneClass) {
       pa2.impactOriginY = pos0.y
       pa2.impactDir = ldir
       pa2._shieldImpactPending = true
+      pa2.healStrike = (skill.type === 'attack_heal')  // ★ 治愈冲击标记：起手撞击走 _doHealStrikeImpact（自疗+必定暴击），不生成护盾
       // ★ 突进期间完全锁摇杆（X+Y），避免与玩家输入抢位移；霸体保证不被打断
       this.battleSystem.castLockTimer = Math.max(this.battleSystem.castLockTimer || 0, pa2.lungeDuration)
     }
@@ -1059,9 +1061,9 @@ export function installFieldBattleSystem(FieldSceneClass) {
     const debuff = (skill && skill.type === 'debuff')
       ? { type: 'atk_down', value: (skill.value || 0.3), duration: (skill.turns || 3) }
       : null
-    // ★ 盾击：不在延迟队列结算——突进起手第一帧由 _doShieldBashImpact 一次性结算（击退+伤害同步），
-    //   彻底规避"突进越过怪物后基准反转→击退完全失效"的旧 bug，并满足"起手就把怪撞飞"手感。
-    if (skill && skill.id === 'shield_bash') {
+    // ★ 盾击/治愈冲击：都不在延迟队列结算——突进起手第一帧由对应 *_Impact 一次性结算（击退+伤害同步），
+    //   彻底规避"突进越过怪物后基准反转→击退/伤害失效"的旧 bug，并满足"起手就把怪撞飞"手感。
+    if (skill && (skill.id === 'shield_bash' || skill.type === 'attack_heal')) {
       if (this.battleSystem.skillButtons) {
         const sb = this.battleSystem.skillButtons.find(b => b.skill === skill)
         if (sb) { sb.cooldown = (skill.cooldown || 3) * 1000; sb.cooldownMax = sb.cooldownMax || sb.cooldown }
@@ -1321,7 +1323,12 @@ export function installFieldBattleSystem(FieldSceneClass) {
       pa._shieldImpactPending = false
       const impHero = pa.heroRef && pa.heroRef.hero
       if (impHero && pa.skill) {
-        this._doShieldBashImpact(impHero, pa.skill, pa.monster, pa.impactOriginX, pa.impactOriginY, pa.impactDir)
+        // ★ 治愈冲击走专属撞击（必定暴击+自疗），其余（盾击）走 _doShieldBashImpact
+        if (pa.healStrike) {
+          this._doHealStrikeImpact(impHero, pa.skill, pa.monster, pa.impactOriginX, pa.impactOriginY, pa.impactDir)
+        } else {
+          this._doShieldBashImpact(impHero, pa.skill, pa.monster, pa.impactOriginX, pa.impactOriginY, pa.impactDir)
+        }
       }
     }
     pa.lungeElapsed = (pa.lungeElapsed || 0) + dt
@@ -2257,6 +2264,9 @@ export function installFieldBattleSystem(FieldSceneClass) {
     } else if (skill && skill.id === 'shield_bash') {
       // ★ AI 盾击：施法起手瞬间撞击（击退+伤害同步），不进延迟队列（与被控角色一致）
       this._doShieldBashImpact(hero, skill, monster, cpos.x, cpos.y, castDir)
+    } else if (skill && skill.type === 'attack_heal') {
+      // ★ AI 治愈冲击：起手瞬间对前方敌人必定暴击 + 自疗，不进延迟队列（与被控角色一致）
+      this._doHealStrikeImpact(hero, skill, monster, cpos.x, cpos.y, castDir)
     } else {
       const damage = Math.max(1, Math.floor(this._getHeroAtk(hero) * (skill.power || 1) - Math.floor(monster.def * 0.5)))
       const isCrit = Math.random() < (hero.crit || 0.05)
@@ -2596,6 +2606,102 @@ export function installFieldBattleSystem(FieldSceneClass) {
           this.battleSystem.battleTarget = null
         }
       }
+    }
+  }
+
+  /**
+   * ★ 治愈冲击（heal_strike / attack_heal）起手撞击：与盾击机制一致（突进第一帧一次性结算），
+   *   但定位为「突进 + 必定暴击伤害 + 自疗」，不生成护盾 / 不眩晕 / 不提升防御。
+   *   —— 满足"向前突进，对沿途敌人必定暴击，并回复造成伤害30%的生命值"。
+   *   originX/originY 为施法起手位置（突进前），dir 为施法朝向(±1)，作为范围基准
+   *   （与盾击一致，避免突进越过怪物后基准反转导致范围判定失效）。
+   * @param {Object} hero 释放者（艾米）
+   * @param {Object} skill 治愈冲击技能配置
+   * @param {Object} primaryTarget 锁定主目标（可空）
+   * @param {number} originX 起手位置世界X
+   * @param {number} originY 起手位置世界Y
+   * @param {number} dir 朝向（1=右，-1=左）
+   */
+  proto._doHealStrikeImpact = function(hero, skill, primaryTarget, originX, originY, dir) {
+    if (!hero || !skill) return
+    const dpr = this.dpr || 1
+    const d = (dir != null) ? dir : 1
+    const ox = (originX != null) ? originX : (hero.x != null ? hero.x : 0)
+    const oy = (originY != null) ? originY : (hero.y != null ? hero.y : 0)
+
+    // ★ 前方敌人集合（突进沿途）：基准=起手位置，X 轴前方 = dashDistance 范围内、Y 轴贴近
+    const RANGE = ((skill.dashDistance || skill.lungeDist || 120)) * dpr   // 前方生效范围（=突进距离）
+    const KNOCK = ((skill.knockDistance != null) ? skill.knockDistance : 55) * dpr  // 温和击退（增强突进手感、辅助自保）
+
+    const targets = []
+    const consider = (m) => {
+      if (!m || !m.alive || targets.includes(m)) return
+      if (m === primaryTarget) { targets.push(m); return }
+      const dx = (m.x - ox) * d
+      const dy = Math.abs(m.y - oy)
+      if (dx >= 0 && dx <= RANGE && dy <= 70 * dpr) targets.push(m)
+    }
+    if (primaryTarget) consider(primaryTarget)
+    for (const m of this.mapMonsters || []) consider(m)
+
+    let totalDamage = 0
+    for (const m of targets) {
+      // ★ 必定暴击（治愈冲击特性）：atk*power - def*0.5，强制 ×1.5
+      const base = Math.max(1, Math.floor(this._getHeroAtk(hero) * (skill.power || 1) - Math.floor((m.def || 0) * 0.5)))
+      const dmg = Math.floor(base * 1.5)
+      // ★ 温和击退（落点钳制障碍/边界）
+      m.x += d * KNOCK
+      if (this._collisionEngine && typeof this._collisionEngine.checkStaticCollision === 'function'
+          && this._collisionEngine.checkStaticCollision(m.x, m.y, { radius: 18 * dpr, footOffsetY: 36 * dpr })) {
+        m.x -= d * KNOCK
+      } else {
+        const mw = this.mapWidth || 6000 * dpr
+        const mh = this.mapHeight || 4000 * dpr
+        const margin = 30 * dpr
+        m.x = Math.max(margin, Math.min(mw - margin, m.x))
+      }
+      const dealt = this._damageMonster(m, dmg, { knockback: false, fromX: ox, fromY: oy })
+      if (dealt > 0) {
+        totalDamage += dealt
+        if (typeof this._onHitFeedback === 'function') this._onHitFeedback(m, true, 'slash')
+        if (!this.battleSystem.damageTexts) this.battleSystem.damageTexts = []
+        this.battleSystem.damageTexts.push({
+          text: `-${dmg}!`,
+          x: m.x - this.cameraX,
+          y: m.y - this.cameraY - 40 * dpr,
+          color: '#FFD700',
+          life: 1.0, maxLife: 1.0,
+          _startY: m.y - this.cameraY - 40 * dpr,
+          isCrit: true
+        })
+        // ★ 死亡判定：_damageMonster 只减 hp 不置 alive，调用方负责（与盾击一致）
+        if (m.hp <= 0) {
+          m.alive = false
+          console.log(`[FieldBattle] ${m.name} 被治愈冲击击败！`)
+          this.battleSystem.battleTarget = null
+        }
+      }
+    }
+
+    // ★ 自疗：回复造成伤害的 healPercent（默认 30%）生命值
+    const healPct = (skill.healPercent != null) ? skill.healPercent : 0.3
+    const healAmt = Math.floor(totalDamage * healPct)
+    if (healAmt > 0 && hero.maxHp) {
+      const before = hero.hp || 0
+      hero.hp = Math.min(hero.maxHp, before + healAmt)
+      const realHeal = hero.hp - before
+      if (realHeal > 0 && typeof this._refreshCharCard === 'function') this._refreshCharCard(hero)
+      if (!this.battleSystem.damageTexts) this.battleSystem.damageTexts = []
+      this.battleSystem.damageTexts.push({
+        text: `+${realHeal}`,
+        x: (hero.x != null ? hero.x : ox) - this.cameraX,
+        y: (hero.y != null ? hero.y : oy) - this.cameraY - 70 * dpr,
+        color: '#5cff7a',
+        life: 1.0, maxLife: 1.0,
+        _startY: (hero.y != null ? hero.y : oy) - this.cameraY - 70 * dpr,
+        isHeal: true
+      })
+      console.log(`[FieldBattle] ${hero.name} 治愈冲击自疗 +${realHeal}（伤害 ${totalDamage} × ${healPct}）`)
     }
   }
 
