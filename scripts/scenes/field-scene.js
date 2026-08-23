@@ -4925,6 +4925,9 @@ baseRadius: 50 * this.dpr,    // 底座半径（缩小）
   _renderTargetPanel(ctx) {
     const bs = this.battleSystem
     if (!bs) return
+    // ★ z-order 修复：角色详情面板打开时隐藏目标怪物面板，避免 DNF 怪物卡（z-order 后画）
+    //   覆盖详情面板中部「属性」区域（panelY+150~300 区间与目标面板 panelY 高度重叠）
+    if (this.charInfoPanel && this.charInfoPanel.visible) return
     // ★ 面板目标必须从"当前区域的活怪列表(mapMonsters)"里取，杜绝游离引用
     //   （_lastDamagedMonster / battleTarget 可能残留上一场战斗已销毁的旧怪物对象，
     //    其 hp 字段可能已被清理 → 导致 curHp.toFixed 崩溃）
