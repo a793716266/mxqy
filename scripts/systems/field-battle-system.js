@@ -465,7 +465,7 @@ export function installFieldBattleSystem(FieldSceneClass) {
         }
       } else {
         pa.timer -= dt
-        // ★ 治愈冲击：延迟到第07帧才突进（见 _maybeStartHealStrikeDash）
+        // ★ 治愈冲击：延迟到第05帧才突进（见 _maybeStartHealStrikeDash）
         this._maybeStartHealStrikeDash(pa, dt)
         // ★ 盾击突进：在技能前段（lungeDuration 内）沿面向方向位移玩家，受障碍/边界钳制
         if (pa.lungeDist && !pa._lungeDone) this._applyShieldBashLunge(pa, dt)
@@ -863,7 +863,7 @@ export function installFieldBattleSystem(FieldSceneClass) {
       // ★ 突进期间完全锁摇杆（X+Y），避免与玩家输入抢位移；霸体保证不被打断
       this.battleSystem.castLockTimer = Math.max(this.battleSystem.castLockTimer || 0, pa2.lungeDuration)
     } else if (skill && skill.lungeDist && skill.type === 'attack_heal') {
-      // ★ 治愈冲击：延迟突进——先记录参数，等到技能动画第07帧（_maybeStartHealStrikeDash）
+      // ★ 治愈冲击：延迟突进——先记录参数，等到技能动画第05帧（_maybeStartHealStrikeDash）
       //   才真正突进 + 撞击。突进期间（含起手等待）锁摇杆，保证霸体期间不被玩家输入打断位移。
       const ldir = monster ? ((monster.x >= pos0.x) ? 1 : -1) : (this.facingLeft ? -1 : 1)
       const pa2 = this.battleSystem.playerAnim
@@ -877,8 +877,8 @@ export function installFieldBattleSystem(FieldSceneClass) {
         impactDir: ldir
       }
       pa2._healStrikeStarted = false
-      // ★ 锁摇杆覆盖「起手等待(6帧) + 突进(0.18s) + 余量」
-      this.battleSystem.castLockTimer = Math.max(this.battleSystem.castLockTimer || 0, 6 * (this.frameDuration || 0.15) + 0.18 + 0.1)
+      // ★ 锁摇杆覆盖「起手等待(4帧) + 突进(0.18s) + 余量」
+      this.battleSystem.castLockTimer = Math.max(this.battleSystem.castLockTimer || 0, 4 * (this.frameDuration || 0.15) + 0.18 + 0.1)
     }
 
     // buff类技能（无目标）：只扣 MP + 播放动画，不造成伤害
@@ -1387,7 +1387,7 @@ export function installFieldBattleSystem(FieldSceneClass) {
     if (!pa || !pa._healStrikeDeferred || pa._healStrikeStarted) return
     const fd = this.frameDuration || 0.15
     const elapsed = (pa.maxTimer || 0) - (pa.timer || 0)
-    if (elapsed < 6 * fd) return   // 未到第07帧（前6帧为起手）
+    if (elapsed < 4 * fd) return   // 未到第05帧（前4帧为起手蓄力）
     const d = pa._healStrikeDeferred
     pa.lungeDist = d.lungeDist
     pa.dir = d.dir
@@ -1415,7 +1415,7 @@ export function installFieldBattleSystem(FieldSceneClass) {
     if (!hero || !hero._hsDeferred || hero._hsStarted) return
     const fd = this.frameDuration || 0.15
     hero._hsElapsed = (hero._hsElapsed || 0) + dt
-    if (hero._hsElapsed < 6 * fd) return   // 未到第07帧（前6帧为起手）
+    if (hero._hsElapsed < 4 * fd) return   // 未到第05帧（前4帧为起手蓄力）
     const d = hero._hsDeferred
     const lungeDist = (d.skill.lungeDist || 120) * this.dpr
     const np = this._heroWorldPos && this._heroWorldPos[bh.partyIndex]
@@ -1720,7 +1720,7 @@ export function installFieldBattleSystem(FieldSceneClass) {
       // ★ 队友搜索范围：近战用真实短手（attackRange*1.05），远程用放大搜索半径（*1.8）
       //   修复：原逻辑只用 X 轴距离 + 220*dpr 的 Y 容差，导致"不同 X 轴隔空就能打到怪物"。
       const baseRange = (this.battleSystem.attackRange || 100) * this.dpr
-      const isRangedRole = (bh.hero.role === 'mage' || bh.hero.role === 'healer')
+      const isRangedRole = (bh.hero.role === 'mage' || bh.hero.role === 'archer' || bh.hero.role === 'assassin')
       // ★ 近战：真实欧氏距离短手，避免隔轴打怪；远程：允许更大搜索半径锁定远处怪
       const range = isRangedRole ? (baseRange * 1.8) : (baseRange * 1.05)
       // ★ Y 轴容差收紧到角色身高量级（约 60*dpr），杜绝上下错位太远还能攻击
@@ -1781,8 +1781,9 @@ export function installFieldBattleSystem(FieldSceneClass) {
       const isCrit = Math.random() < (hero.crit || 0.05)
       const finalDmg = isCrit ? Math.floor(damage * 1.5) : damage
 
-      // ★ 远程角色（mage/healer）普攻发射投射物，与玩家手动操作一致；近战走延迟伤害
-      const isRanged = (hero.role === 'mage' || hero.role === 'healer')
+      // ★ 远程角色（mage/archer/assassin）普攻发射投射物；其余（含 healer 战斗治疗）走近战，
+      //   与玩家手动操控路径（role==='healer' 视为近战）对齐，消除「玩家控艾米=近战 / AI 控艾米=远程」不一致
+      const isRanged = (hero.role === 'mage' || hero.role === 'archer' || hero.role === 'assassin')
       if (isRanged) {
         if (!this.battleSystem.projectiles) this.battleSystem.projectiles = []
         const projSpeed = 320 * this.dpr
@@ -1843,7 +1844,7 @@ export function installFieldBattleSystem(FieldSceneClass) {
   proto._computeAllyAvoidance = function(selfX, selfY, selfHero, battleSystem, alliesPos, dpr) {
     let ex = 0, ey = 0, mx = 0, my = 0
     const selfRatio = (selfHero && selfHero.maxHp) ? (selfHero.hp / selfHero.maxHp) : 1
-    const isRanged = !!(selfHero && (selfHero.role === 'mage' || selfHero.role === 'healer'))
+    const isRanged = !!(selfHero && (selfHero.role === 'mage' || selfHero.role === 'archer' || selfHero.role === 'assassin'))
 
     // ① 怪物预警区（跳跃攻击 / 光明冲锋）强避让：圈内越靠近中心推得越狠
     const zones = battleSystem.warningZones
@@ -2181,8 +2182,8 @@ export function installFieldBattleSystem(FieldSceneClass) {
     if (!skill && (selfUnderAttack || ctrlUnderAttack)) {
       skill = pickDef()
     }
-    // ③ 治疗职业主动预判奶：全队最低 < 72% 就奶（不等地狱模式才救）
-    if (!skill && healSkills.length && lowestRatio < 0.72) {
+    // ③ 治疗职业主动预判奶：全队最低 < 55% 才奶（不再 72% 就奶——否则攻辅型角色全程只刷治疗、从不放输出/增益技）
+    if (!skill && healSkills.length && lowestRatio < 0.55) {
       skill = healSkills[0]
     }
     // ④ 防御buff：接敌即主动开（脆皮法师/治疗，或全队已有人受伤），不再等挨打
@@ -2346,7 +2347,7 @@ export function installFieldBattleSystem(FieldSceneClass) {
       hero._hsElapsed = 0
       hero._hsStarted = false
       // ★ 延长施法计时，保证第07帧前 sprite 仍停留在 skill 态（不被 _aiAttackTimer 提前复位）
-      hero._aiAttackTimer = Math.max(hero._aiAttackTimer || 0, 6 * (this.frameDuration || 0.15) + 0.18 + 0.1)
+      hero._aiAttackTimer = Math.max(hero._aiAttackTimer || 0, 4 * (this.frameDuration || 0.15) + 0.18 + 0.1)
     } else {
       const damage = Math.max(1, Math.floor(this._getHeroAtk(hero) * (skill.power || 1) - Math.floor(monster.def * 0.5)))
       const isCrit = Math.random() < (hero.crit || 0.05)
