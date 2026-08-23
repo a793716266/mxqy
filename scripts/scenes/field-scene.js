@@ -3352,6 +3352,50 @@ baseRadius: 50 * this.dpr,    // 底座半径（缩小）
       this.game.showToast(`击败 ${monster.name}：${parts.join('  ')}`)
     }
     console.log(`[Field] ${monster.name}(${monster.enemyId}) 掉落: ${parts.join('  ') || '无'}`)
+    // ★ 经验奖励：此前副本击杀只发金币/素材，从不调用角色状态经验系统 → 刷副本不涨经验。
+    //   这里补上：给全体已解锁角色发放经验并触发升级反馈（经验表见 GRASSLAND_DUNGEON.expTable）。
+    this._awardKillExp(monster)
+  }
+
+  /**
+   * ★ 击杀经验奖励：给全体已解锁角色发放经验，并触发升级反馈。
+   * 此前副本击杀只发金币/素材，从不调用角色状态经验系统，导致「刷副本不涨经验/无法升级」。
+   * 经验来源：优先查 GRASSLAND_DUNGEON.expTable[enemyId]，否则由 _getMonsterExp 按类型兜底。
+   */
+  _awardKillExp(monster) {
+    if (!monster) return
+    const exp = this._getMonsterExp(monster)
+    if (!exp) return
+    const chars = charStateManager.getAllCharacters()
+    if (!chars || !chars.length) return
+    let leveledUp = false
+    for (const c of chars) {
+      if (c && typeof c.gainExp === 'function') {
+        const n = c.gainExp(exp)
+        if (n > 0) leveledUp = true
+      }
+    }
+    // 经验飘字（怪物死亡位置上方的青蓝色 ✨）
+    this._pushDropFloater(monster.x, monster.y - 34 * this.dpr, `✨+${exp}`, '#9be7ff')
+    // 升级反馈：绿字飘字 + 升级音效 + 即时持久化（兜底，避免依赖场景 destroy 时机才落盘）
+    if (leveledUp) {
+      this._pushDropFloater(this.playerX, this.playerY - 70 * this.dpr, '升级!', '#2ed573')
+      const a = this.audio || (this.game && this.game.audio)
+      if (a && typeof a.playSFX === 'function') a.playSFX('reward_levelup')
+      if (this.game && this.game.data && typeof this.game.data.set === 'function') {
+        this.game.data.set('characterStates', charStateManager.serialize())
+      }
+    }
+  }
+
+  /** 取得怪物击杀经验值：优先查 expTable，否则按怪物类型兜底（boss 200 / elite 40 / normal 10） */
+  _getMonsterExp(monster) {
+    if (GRASSLAND_DUNGEON.expTable && GRASSLAND_DUNGEON.expTable[monster.enemyId] != null) {
+      return GRASSLAND_DUNGEON.expTable[monster.enemyId]
+    }
+    if (monster.isBoss) return 200
+    if (monster.isElite) return 40
+    return 10
   }
 
   /** 在怪物死亡位置（世界坐标）生成一条上浮的掉落飘字（金币/素材正反馈） */

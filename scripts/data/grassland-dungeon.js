@@ -70,6 +70,24 @@ export const GRASSLAND_DUNGEON = {
   },
 
   /**
+   * ★ 击杀经验表：key = 怪物 enemyId，value = 击杀获得的经验值。
+   * 与 lootTable 同风格数据驱动；未列出的怪物由 field-scene._getMonsterExp 按类型兜底
+   * （boss 200 / elite 40 / normal 10）。参考 EXP_TABLE（1级→2级需100，约10只小怪升1级）。
+   */
+  expTable: {
+    wild_cat: 10,
+    slime_cat: 10,
+    shadow_mouse: 12,
+    shadow_mouse_smooth: 12,
+    flame_slime: 14,
+    aqua_slime: 14,
+    violet_slime: 14,
+    stray_leader: 60,            // 森林 Boss（草原池复用其掉落配置）
+    dark_cat_king: 200,          // 暗影猫王（洞穴 Boss）
+    lost_healer_cat: 200,        // 草原 Boss（艾米 / 迷途的治愈猫）
+  },
+
+  /**
    * 通关奖励（全灭所有怪物触发一次）。
    * coins  : 金币（写入 'gold' 字段）
    * unlocks: 通关时需解锁的角色 id 列表（GDD：第一章解锁艾米）
