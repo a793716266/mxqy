@@ -188,8 +188,10 @@ export class CharacterInfoPanel {
     h += 16 * dpr                 // 装备槽底到下行分隔线
     h += sep                      // 分隔线
     h += lineH                    // 「状态」标题
-    h += lineH * 0.9              // HP: ... / ...
-    h += lineH * 0.9              // MP: ... / ...
+    // HP/MP 行：图标+条+数字，每行 18 icon + 8 gap = 26 dpr
+    const stateRowH = 26 * dpr
+    h += stateRowH                // HP 行（带迷你血条）
+    h += stateRowH                // MP 行（带迷你蓝条）
     if (buffsCount > 0) h += lineH * 0.9 * buffsCount   // BUFF 列表
     h += safePad                  // 底部安全留白
     return Math.max(540 * dpr, h)  // 永不低于原 540 dpr
@@ -399,20 +401,98 @@ export class CharacterInfoPanel {
     this.ctx.stroke()
     offsetY += 15 * this.dpr
     
-    // 当前状态
+    // 当前状态（★ 重设计：可视化 HP / MP 迷你条 + 数值右浮，告别「贴底拥挤的纯文字三行」）
     this.ctx.font = `bold ${16 * this.dpr}px sans-serif`
     this.ctx.fillStyle = '#ffffff'
     this.ctx.fillText('状态', leftMargin, offsetY)
     offsetY += lineHeight
-    
-    this.ctx.font = `${14 * this.dpr}px sans-serif`
-    this.ctx.fillStyle = '#ff5555'
-    this.ctx.fillText(`❤️ HP: ${char.hp} / ${char.maxHp}`, leftMargin, offsetY)
-    offsetY += lineHeight * 0.9
-    
-    this.ctx.fillStyle = '#5555ff'
-    this.ctx.fillText(`💙 MP: ${char.mp} / ${char.maxMp}`, leftMargin, offsetY)
-    offsetY += lineHeight * 0.9
+
+    // HP 行：❤️ + 文字 + 迷你血条 + 数值右浮
+    {
+      const rowY = offsetY
+      const iconSize = 18 * this.dpr
+      const label = '❤️ HP'
+      const labelX = leftMargin
+      // 标签
+      this.ctx.font = `bold ${14 * this.dpr}px sans-serif`
+      this.ctx.fillStyle = '#ffb3b3'
+      this.ctx.textAlign = 'left'
+      this.ctx.textBaseline = 'middle'
+      this.ctx.fillText(label, labelX, rowY + iconSize / 2)
+      // 数字（右下绝对位置，与文字基线齐）
+      const valueText = `${char.hp} / ${char.maxHp}`
+      this.ctx.font = `bold ${13 * this.dpr}px sans-serif`
+      this.ctx.fillStyle = '#ff8080'
+      this.ctx.textAlign = 'right'
+      this.ctx.fillText(valueText, panelX + panelWidth - 20 * this.dpr, rowY + iconSize / 2)
+      // 迷你血条：占据中间区
+      const barX = labelX + 64 * this.dpr
+      const barY = rowY + 2 * this.dpr
+      const barW = (panelX + panelWidth - 20 * this.dpr) - barX - 78 * this.dpr
+      const barH = 14 * this.dpr
+      const hpProgress = Math.max(0, Math.min(1, char.hp / (char.maxHp || 1)))
+      // 底（半透黑+圆角）
+      this.ctx.fillStyle = 'rgba(0, 0, 0, 0.55)'
+      roundRect(this.ctx, barX, barY, barW, barH, 6 * this.dpr)
+      this.ctx.fill()
+      // ★ 扣血残影层（先画，受击旧值）
+      const lagProgress = this._updateHpLag(char, hpProgress)
+      if (lagProgress > hpProgress) {
+        this.ctx.fillStyle = 'rgba(255, 255, 255, 0.85)'
+        roundRect(this.ctx, barX, barY, barW * lagProgress, barH, 6 * this.dpr)
+        this.ctx.fill()
+      }
+      // 实际 HP（后画，颜色随血量绿→橙→红）
+      this.ctx.fillStyle = this._getHpColor(hpProgress)
+      roundRect(this.ctx, barX, barY, barW * hpProgress, barH, 6 * this.dpr)
+      this.ctx.fill()
+      // 描边
+      this.ctx.strokeStyle = 'rgba(255, 255, 255, 0.25)'
+      this.ctx.lineWidth = 1
+      roundRect(this.ctx, barX, barY, barW, barH, 6 * this.dpr)
+      this.ctx.stroke()
+      offsetY += iconSize + 8 * this.dpr
+    }
+
+    // MP 行：💙 + 文字 + 迷你蓝条 + 数值右浮
+    {
+      const rowY = offsetY
+      const iconSize = 18 * this.dpr
+      const label = '💙 MP'
+      const labelX = leftMargin
+      this.ctx.font = `bold ${14 * this.dpr}px sans-serif`
+      this.ctx.fillStyle = '#b3c8ff'
+      this.ctx.textAlign = 'left'
+      this.ctx.textBaseline = 'middle'
+      this.ctx.fillText(label, labelX, rowY + iconSize / 2)
+      const valueText = `${char.mp} / ${char.maxMp}`
+      this.ctx.font = `bold ${13 * this.dpr}px sans-serif`
+      this.ctx.fillStyle = '#80a8ff'
+      this.ctx.textAlign = 'right'
+      this.ctx.fillText(valueText, panelX + panelWidth - 20 * this.dpr, rowY + iconSize / 2)
+      const barX = labelX + 64 * this.dpr
+      const barY = rowY + 2 * this.dpr
+      const barW = (panelX + panelWidth - 20 * this.dpr) - barX - 78 * this.dpr
+      const barH = 14 * this.dpr
+      const mpProgress = Math.max(0, Math.min(1, char.mp / (char.maxMp || 1)))
+      // 底
+      this.ctx.fillStyle = 'rgba(0, 0, 0, 0.55)'
+      roundRect(this.ctx, barX, barY, barW, barH, 6 * this.dpr)
+      this.ctx.fill()
+      // 实际 MP（蓝紫色渐变，简化为蓝紫）
+      const mpColor = mpProgress > 0.5 ? '#6c8eff' : mpProgress > 0.2 ? '#9b7bff' : '#ff77aa'
+      this.ctx.fillStyle = mpColor
+      roundRect(this.ctx, barX, barY, barW * mpProgress, barH, 6 * this.dpr)
+      this.ctx.fill()
+      // 描边
+      this.ctx.strokeStyle = 'rgba(255, 255, 255, 0.25)'
+      this.ctx.lineWidth = 1
+      roundRect(this.ctx, barX, barY, barW, barH, 6 * this.dpr)
+      this.ctx.stroke()
+      offsetY += iconSize + 8 * this.dpr
+    }
+    // 复位基线（之后 BUFF 列表绘制用）
+    this.ctx.textBaseline = 'top'
 
     // ★ BUFF 状态列表（开 BUFF 后显示：名称 + 效果 + 剩余秒数）
     if (buffs.length > 0) {

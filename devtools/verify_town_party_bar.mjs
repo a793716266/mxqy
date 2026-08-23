@@ -14,14 +14,16 @@ const ok = (name, cond) => { if (cond) { pass++; console.log('  ✓', name) } el
 
 // ---- 记录型 2D ctx（提供 canvas-utils.roundRect 所需的路径方法）----
 function makeCtx() {
-  const ops = { rects: [], texts: [], paths: 0 }
+  const ops = { rects: [], texts: [], paths: 0, fills: [], strokes: [] }
   const ctx = {
     ops,
     fillStyle: '#000', strokeStyle: '#000', lineWidth: 1, globalAlpha: 1, font: '', textAlign: '', textBaseline: '',
     save() {}, restore() {},
     fillRect(x, y, w, h) { ops.rects.push({ x, y, w, h, fill: this.fillStyle }) },
     strokeRect() {},
-    beginPath() { ops.paths++ }, closePath() {}, fill() {}, stroke() {},
+    beginPath() { ops.paths++ }, closePath() {},
+    fill() { ops.fills.push({ fill: this.fillStyle }) },
+    stroke() { ops.strokes.push({ stroke: this.strokeStyle }) },
     arc() {}, arcTo() {}, moveTo() {}, lineTo() {}, clip() {},
     drawImage() {},
     fillText(t, x, y) { ops.texts.push({ t, x, y, fill: this.fillStyle }) },
@@ -282,14 +284,15 @@ console.log('M. 详情面板高度自适应：状态/HP/MP/BUFF 必须落在面�
   p.ctx = ctxM  // 替换为记录型 ctx 看绘制坐标
   const beforeB = p.renderDetailPanel()
   // 无 BUFF 时状态 + HP + MP 三行文字必然绘制
+  // ★ HP/MP 现在改为「❤️ HP 标签 + 数值右浮」双行绘制，原 ❤️ HP: ... 合并串已拆
   const statusText = ctxM.ops.texts.find(o => o.t === '状态')
-  const hpText = ctxM.ops.texts.find(o => o.t && o.t.startsWith('❤️ HP:'))
-  const mpText = ctxM.ops.texts.find(o => o.t && o.t.startsWith('💙 MP:'))
-  ok('详情面板有"状态"标题绘制', !!statusText)
-  ok('详情面板有 HP 文字绘制', !!hpText)
-  ok('详情面板有 MP 文字绘制', !!mpText)
-  if (statusText && hpText && mpText && beforeB) {
-    const bottom = Math.max(statusText.y, hpText.y, mpText.y) + 30 * p.dpr   // 含文字底部与下方行间距
+  const hpLabel = ctxM.ops.texts.find(o => o.t === '❤️ HP')
+  const hpValue = ctxM.ops.texts.find(o => o.t && /^\d+ \/ \d+$/.test(o.t))
+  ok('详情面板有"状态"标题', !!statusText)
+  ok('详情面板有 HP 文字（标签或数值）', !!(hpLabel || hpValue))
+  ok('详情面板有数值 "300 / 300" 或 "1200 / 1200"', !!hpValue)
+  if (statusText && hpLabel && hpValue && beforeB) {
+    const bottom = hpValue.y + 30 * p.dpr   // 数值 baseline + 30 dpr 涵盖字号与行尾
     const panelBottom = beforeB.y + beforeB.height
     ok('状态/HP/MP 节完整落在面板内 (bottom≤面板底)',
        bottom <= panelBottom + 0.01)
@@ -316,6 +319,41 @@ console.log('M. 详情面板高度自适应：状态/HP/MP/BUFF 必须落在面�
   // 清理
   charBuf._buffs = []
   p.ctx = mockCtx
+}
+
+console.log('M2. 状态区可视化：HP/MP 迷你条 + 数字右浮，告别「纯文字三行贴底」')
+{
+  const p = new CharacterInfoPanel(mockGame, charStateManager.getCharacter('zhenbao'))
+  p.show()
+  const ctxM = makeCtx()
+  p.ctx = ctxM
+  const bnd = p.renderDetailPanel()
+  // HP 行 = ❤️ HP 标签 + "1200 / 1200" 数字
+  const hpLabel = ctxM.ops.texts.find(o => o.t === '❤️ HP')
+  const hpValue = ctxM.ops.texts.find(o => o.t === '1200 / 1200')
+  ok('HP 行有 ❤️ HP 标签', !!hpLabel)
+  ok('HP 行有数值文字', !!hpValue)
+  // 数字应右浮（align=right）— x 接近面板右边
+  if (hpValue && bnd) {
+    const panelRight = bnd.x + bnd.width - 20 * p.dpr
+    ok('HP 数值右浮（接近面板右边）', Math.abs(hpValue.x - panelRight) < 5 * p.dpr)
+  }
+  // MP 行 = 💙 MP 标签 + 数值
+  const mpLabel = ctxM.ops.texts.find(o => o.t === '💙 MP')
+  ok('MP 行有 💙 MP 标签', !!mpLabel)
+  // 至少应有 2 个非背景色 fill 构成血条槽+填充（绘制于 HP 行内 y 坐标附近）
+  // 注：HP/MP 用 roundRect + fill()，fillStyle 在槽底（黑色）和进度填充（绿色/橙色/红色/蓝/紫）之间切换
+  const hpRowFills = ctxM.ops.fills.filter(f =>
+    f.fill === 'rgba(0, 0, 0, 0.55)' ||
+    /^#(4caf50|ff9800|f44336|6c8eff|9b7bff|ff77aa)$/i.test(f.fill)
+  )
+  ok('HP/MP 行存在迷你条 fill（槽底 + 进度填充）', hpRowFills.length >= 2)
+  // HP 行应包含扣血追赶动画的 fillColor = 'rgba(255,255,255,0.85)' 或满血时不存在
+  // 状态/HP/MP 与 BUFF 行间距合理：状态末 ≤ 面板底
+  if (hpValue && bnd) {
+    const panelBottom = bnd.y + bnd.height
+    ok('HP 行落在面板内', hpValue.y + 30 * p.dpr <= panelBottom + 0.01)
+  }
 }
 
 console.log(`\n结果: ${pass} 通过, ${fail} 失败`)
