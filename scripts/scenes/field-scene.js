@@ -2,7 +2,7 @@
  * field-scene.js - 野外探索场景（可移动大地图）
  */
 
-import { ENEMIES_CH1, ENEMIES_CH2, getEnemyByLevel } from '../data/enemies.js'
+import { ENEMIES_CH1, ENEMIES_CH2, ENEMIES_CH3, ENEMIES_CH4, getEnemyByLevel } from '../data/enemies.js'
 import { installFieldBattleSystem } from '../systems/field-battle-system.js'
 import { getHeroMoveLock, isHeroSuperArmor } from '../systems/combat-state.js'
 import { HEROES } from '../data/heroes.js'
@@ -10,6 +10,9 @@ import { getMapCollisionsSync } from '../data/map_collisions.js'
 import { isPointInObstacle as _isPointInGrasslandObstacle, generateGrasslandCollisions as _genGrassCollisions, GRASSLAND_MAP_CONFIG, GRASSLAND_MAP_OBJECTS, GLAND_OBJ_TYPE } from '../data/grassland-map-data.js'
 import { RENDER_LAYER, getRenderLayer, isSortableLayer } from '../data/render-layer-config.js'
 import { GRASSLAND_DUNGEON } from '../data/grassland-dungeon.js'
+import { MAGIC_TOWER_DUNGEON } from '../data/magic-tower-dungeon.js'
+import { MERCHANT_TOWN_DUNGEON } from '../data/merchant-town-dungeon.js'
+import { ANCIENT_RUINS_DUNGEON } from '../data/ancient-ruins-dungeon.js'
 import { charStateManager } from '../data/character-state.js'
 import { CharacterState } from '../data/character-state.js'
 import { CharacterInfoPanel } from '../ui/character-info-panel.js'
@@ -29,6 +32,9 @@ export class FieldScene extends SceneBase {
     this.areaId = data?.area || data?.nodeId || 'grassland'
     console.log(`[Field] 区域ID: ${this.areaId} (来源: ${data?.area ? 'area' : data?.nodeId ? 'nodeId' : '默认'})`)
     this.areaInfo = this._getAreaInfo()
+    // ★ 副本数据配置：按区域选择（默认 grassland），所有 GRASSLAND_DUNGEON 引用统一收敛到 this._dungeonCfg，
+    //   使 grassland 行为零变化，新区域（魔法塔/集市小镇/古城遗迹）经同一管线加载。
+    this._dungeonCfg = this.areaInfo.dungeonCfg || GRASSLAND_DUNGEON
     
     // 地图尺寸（大地图 - 扩大一倍）
     this.mapWidth = 4000 * this.dpr // 地图宽度
@@ -226,12 +232,13 @@ export class FieldScene extends SceneBase {
       this._bossMonologueActive = false    // ★ 独白播放中（期间不弹通关遮罩）
       this.storyDialogue = null
       // ★ 开场引导对话（首次进入触发，持久化防重复）——自动播放不阻塞操作
-      if (!this.game.data.hasFlag('introShown_grassland')) {
-        this._showStoryDialogue(GRASSLAND_DUNGEON.introDialogue.name, GRASSLAND_DUNGEON.introDialogue.lines)
-        this.game.data.setFlag('introShown_grassland')
+      const _introFlag = `introShown_${this.areaId}`
+      if (this._dungeonCfg && this._dungeonCfg.introDialogue && !this.game.data.hasFlag(_introFlag)) {
+        this._showStoryDialogue(this._dungeonCfg.introDialogue.name, this._dungeonCfg.introDialogue.lines)
+        this.game.data.setFlag(_introFlag)
       }
       const _a = this.game.audio
-      if (_a && typeof _a.playBGM === 'function') _a.playBGM('bgm_grassland')
+      if (_a && typeof _a.playBGM === 'function') _a.playBGM((this._dungeonCfg && this._dungeonCfg.bgm) || 'bgm_grassland')
     } else {
       const _a = this.game.audio
       if (_a && typeof _a.playBGM === 'function') _a.playBGM('bgm_explore')
@@ -273,6 +280,7 @@ export class FieldScene extends SceneBase {
         // ★ 第一章 Boss 属性覆盖（maxHp/atk/def/spd）已数据驱动地配置在
         //   scripts/data/grassland-dungeon.js 的 bossStatsOverride，由 _generateMonsters 读取应用。
         enemyData: ENEMIES_CH1,  // 敌人数据源
+        dungeonCfg: GRASSLAND_DUNGEON, // ★ 副本数据（掉落/经验/通关/分层刷新/Boss锚点）
         color: '#5daE4a',
         minEnemies: 1,  // 最少敌人数量
         maxEnemies: 2,  // 最多敌人数量
@@ -283,13 +291,45 @@ export class FieldScene extends SceneBase {
         chapter: 2,                 // ★ 第二章区域
         fieldBg: null, // 程序化渲染
         battleBg: 'BG_GRASSLAND',
-        enemies: ['magic_sprite', 'stone_golem', 'ghost_cat'],
+        enemies: ['magic_sprite', 'stone_golem', 'ghost_cat', 'tower_guardian'],
         bossEnemy: 'crystal_mage',
         eliteEnemy: 'tower_guardian',
         enemyData: ENEMIES_CH2,  // 第二章敌人数据
+        dungeonCfg: MAGIC_TOWER_DUNGEON, // ★ 第二章副本数据
         color: '#9b59b6',
         minEnemies: 1,
-        maxEnemies: 3  // 魔法塔敌人数量更多
+        maxEnemies: 3,  // 魔法塔敌人数量更多
+        isDungeon: true // ★ 魔法塔即副本：分层刷新 + 可通关 + 解锁安妮
+      },
+      merchant_town: {
+        name: '集市小镇',
+        chapter: 3,                 // ★ 第三章区域
+        fieldBg: null, // 程序化渲染（暂无专属美术，沿用通用背景）
+        battleBg: 'BG_GRASSLAND',
+        enemies: ['market_rat', 'pickpocket_cat', 'rag_doll', 'coin_golem', 'thug_leader'],
+        bossEnemy: 'corrupt_merchant',
+        eliteEnemy: 'thug_leader',
+        enemyData: ENEMIES_CH3,  // 第三章敌人数据
+        dungeonCfg: MERCHANT_TOWN_DUNGEON, // ★ 第三章副本数据
+        color: '#e67e22',
+        minEnemies: 1,
+        maxEnemies: 3,
+        isDungeon: true // ★ 集市小镇即副本：分层刷新 + 可通关 + 解锁钱多多
+      },
+      ancient_ruins: {
+        name: '古城遗迹',
+        chapter: 4,                 // ★ 第四章区域
+        fieldBg: null, // 程序化渲染（暂无专属美术，沿用通用背景）
+        battleBg: 'BG_GRASSLAND',
+        enemies: ['ruin_sentry', 'bone_cat', 'cursed_idol', 'dust_wraith', 'ruin_colossus'],
+        bossEnemy: 'ancient_warden',
+        eliteEnemy: 'ruin_colossus',
+        enemyData: ENEMIES_CH4,  // 第四章敌人数据
+        dungeonCfg: ANCIENT_RUINS_DUNGEON, // ★ 第四章副本数据
+        color: '#8e6e53',
+        minEnemies: 1,
+        maxEnemies: 3,
+        isDungeon: true // ★ 古城遗迹即副本：分层刷新 + 可通关 + 解锁小贝
       },
       forest: {
         name: '迷雾森林',
@@ -443,10 +483,10 @@ export class FieldScene extends SceneBase {
         // ★ 使用 getEnemyByLevel 计算最终属性（bossLevel 显式覆盖自带 level，避免缩放膨胀）
         const finalBossData = getEnemyByLevel(bossData, this.areaInfo.bossLevel || bossData.level || 5)
 
-        // ★ 草原 Boss 属性覆盖：boss 为 lost_healer_cat（艾米/迷途的治愈猫），其原生属性已为第一章设计，
-        //   GRASSLAND_DUNGEON.bossStatsOverride 显式锚定其原生值（350/22/16/11），避免 getEnemyByLevel 按 level 缩放膨胀。
-        if (GRASSLAND_DUNGEON.bossStatsOverride) {
-          const _o = GRASSLAND_DUNGEON.bossStatsOverride
+        // ★ Boss 属性覆盖：各章 Boss 原生属性已由对应 dungeon 的 bossStatsOverride 锚定（如草原 350/22/16/11、
+        //   魔法塔 400/35/18/14、集市小镇 700/45/22/13、古城 1100/52/30/12），避免 getEnemyByLevel 按 level 缩放膨胀。
+        if (this._dungeonCfg && this._dungeonCfg.bossStatsOverride) {
+          const _o = this._dungeonCfg.bossStatsOverride
           if (_o.maxHp != null) { finalBossData.maxHp = _o.maxHp; finalBossData.hp = _o.maxHp }
           if (_o.atk != null) finalBossData.atk = _o.atk
           if (_o.def != null) finalBossData.def = _o.def
@@ -515,10 +555,10 @@ export class FieldScene extends SceneBase {
       }
     }
 
-    // ★ 区域分层刷新（grassland 读 GRASSLAND_DUNGEON.spawnZones，难度递进；其它区域保留原随机）
-    if (this.areaId === 'grassland' && GRASSLAND_DUNGEON.spawnZones) {
+    // ★ 区域分层刷新（有 spawnZones 的副本走数据驱动分层，难度递进；无则保留原随机）
+    if (this._dungeonCfg && this._dungeonCfg.spawnZones) {
       let _idx = 0
-      for (const _zone of GRASSLAND_DUNGEON.spawnZones) {
+      for (const _zone of this._dungeonCfg.spawnZones) {
         const _zx = _zone.x * this.dpr, _zy = _zone.y * this.dpr
         const _zw = _zone.w * this.dpr, _zh = _zone.h * this.dpr
         for (let _i = 0; _i < _zone.count; _i++) {
@@ -757,12 +797,12 @@ export class FieldScene extends SceneBase {
     // 初始化战斗系统（为阳光草原副本模式准备）
     this._initFieldBattleSystem()
 
-    // ★ 阳光草原副本模式：进入地图就激活战斗模式
-    if (this.areaId === 'grassland') {
-      console.log('[Field] 阳光草原副本模式：进入战斗状态')
+    // ★ 副本模式：进入地图就激活战斗模式（阳光草原/魔法塔/集市小镇/古城遗迹均为副本）
+    if (this.areaInfo.isDungeon) {
+      console.log(`[Field] ${this.areaInfo.name}副本模式：进入战斗状态`)
       this.battleSystem.active = true
       this.battleSystem.showBattleUI = true
-      // ★ 必须构建参战英雄列表（主角+跟随队友李小宝），否则 _updateAllyAI 遍历空数组，队友不会被AI接管
+      // ★ 必须构建参战英雄列表（主角+跟随队友），否则 _updateAllyAI 遍历空数组，队友不会被AI接管
       this._buildBattleHeroes()
       this._initBattleUI()
     }
@@ -3287,7 +3327,7 @@ baseRadius: 50 * this.dpr,    // 底座半径（缩小）
     // ★ 宝箱奖励读配置（chestReward.entries），按 type 结算：
     //   gold     → _addGold（写入 'gold' 字段）
     //   material → _addMaterial（写入 data.materials 库存）
-    const entries = (GRASSLAND_DUNGEON.chestReward && GRASSLAND_DUNGEON.chestReward.entries) || []
+    const entries = (this._dungeonCfg && this._dungeonCfg.chestReward && this._dungeonCfg.chestReward.entries) || []
     const msgs = []
     for (const entry of entries) {
       const rate = entry.rate != null ? entry.rate : 1
@@ -3326,12 +3366,12 @@ baseRadius: 50 * this.dpr,    // 底座半径（缩小）
   }
 
   /**
-   * ★ 击杀掉落：按怪物 enemyId 查 GRASSLAND_DUNGEON.lootTable 掷骰。
+   * ★ 击杀掉落：按怪物 enemyId 查 this._dungeonCfg.lootTable 掷骰。
    * 由 _updateMonsters 在怪物「刚死亡」时调用一次（monster._looted 守卫）。
    */
   _rollMonsterDrop(monster) {
-    if (!monster || !GRASSLAND_DUNGEON.lootTable) return
-    const table = GRASSLAND_DUNGEON.lootTable[monster.enemyId]
+    if (!monster || !this._dungeonCfg || !this._dungeonCfg.lootTable) return
+    const table = this._dungeonCfg.lootTable[monster.enemyId]
     if (!table || !table.length) return
     const parts = []
     for (const entry of table) {
@@ -3390,8 +3430,8 @@ baseRadius: 50 * this.dpr,    // 底座半径（缩小）
 
   /** 取得怪物击杀经验值：优先查 expTable，否则按怪物类型兜底（boss 200 / elite 40 / normal 10） */
   _getMonsterExp(monster) {
-    if (GRASSLAND_DUNGEON.expTable && GRASSLAND_DUNGEON.expTable[monster.enemyId] != null) {
-      return GRASSLAND_DUNGEON.expTable[monster.enemyId]
+    if (this._dungeonCfg && this._dungeonCfg.expTable && this._dungeonCfg.expTable[monster.enemyId] != null) {
+      return this._dungeonCfg.expTable[monster.enemyId]
     }
     if (monster.isBoss) return 200
     if (monster.isElite) return 40
@@ -4768,25 +4808,28 @@ baseRadius: 50 * this.dpr,    // 底座半径（缩小）
     this.dungeonCleared = true
     // 奖励：金币（统一走 'gold' 字段，HUD / 击杀 / 战斗奖励均读取它；
     // 原 'coins' 字段为孤儿，无人读取，会导致通关奖励丢失）
-    const reward = (GRASSLAND_DUNGEON.clearReward && GRASSLAND_DUNGEON.clearReward.coins) ?? (this.dungeonReward || 80)
+    const reward = (this._dungeonCfg && this._dungeonCfg.clearReward && this._dungeonCfg.clearReward.coins) ?? (this.dungeonReward || 80)
     this._addGold(reward)
     this.game.data.set(`dungeon_cleared_${this.areaId}`, true)
-    // ★ 标记艾米已被击败（town 探索菜单据此显示「已击败艾米 / 已解锁」；此前仅在测试按钮里写过）
+    // ★ 标记本区域 Boss 已被击败（town 探索菜单据此显示「已击败 / 已解锁」）。
+    //   草原沿用历史键 amyDefeated；其它区域用通用键 `${areaId}Defeated`，避免污染既有草原逻辑。
     if (this.areaId === 'grassland') this.game.data.set('amyDefeated', true)
-    // ★ 通关解锁角色（GDD：第一章通关解锁艾米）。仅阳光草原触发本配置的解锁。
-    if (this.areaId === 'grassland' && GRASSLAND_DUNGEON.clearReward && GRASSLAND_DUNGEON.clearReward.unlocks) {
-      for (const hid of GRASSLAND_DUNGEON.clearReward.unlocks) {
+    else this.game.data.set(`${this.areaId}Defeated`, true)
+    // ★ 通关解锁角色（GDD：各章通关解锁对应角色）。任意副本触发本配置的解锁。
+    if (this._dungeonCfg && this._dungeonCfg.clearReward && this._dungeonCfg.clearReward.unlocks) {
+      for (const hid of this._dungeonCfg.clearReward.unlocks) {
         const ok = charStateManager.unlockCharacter(hid)  // 解锁角色（已存在则返回 false）
         const hdef = HEROES.find(h => h.id === hid)
         const hname = (hdef && hdef.name) || hid
         if (ok && this.game.showToast) this.game.showToast(`✨ ${hname} 加入队伍！`)
         console.log(`[Field] 副本通关解锁角色: ${hid} (${ok ? '成功' : '已招募'})`)
-        // ★ 首次击败草原 BOSS → 播放艾米感化独白（purifyDialogue），独白结束后再弹通关遮罩。
-        //   用独立持久标记 amyMonologueSeen 判断，不再依赖 unlockCharacter 返回值：
-        //   名册状态不稳定（艾米已加入/点过测试解锁后 ok=false）会导致重复通关不播、玩家反馈"无剧情引导"。
-        if (hid === 'amy' && this.bossPurifyDialogue && !this.game.data.get('amyMonologueSeen')) {
-          this.game.data.set('amyMonologueSeen', true)
-          this._showStoryDialogue('艾米', this.bossPurifyDialogue)
+        // ★ 首次击败本区域 BOSS → 播放感化独白（purifyDialogue），独白结束后再弹通关遮罩。
+        //   用独立持久标记 `${areaId}MonologueSeen` 判断，不再依赖 unlockCharacter 返回值：
+        //   名册状态不稳定（已加入/点过测试解锁后 ok=false）会导致重复通关不播、玩家反馈"无剧情引导"。
+        const monologueSeenKey = `${this.areaId}MonologueSeen`
+        if (this.bossPurifyDialogue && !this.game.data.get(monologueSeenKey)) {
+          this.game.data.set(monologueSeenKey, true)
+          this._showStoryDialogue(this.bossDialogueName || this.bossDisplayName || hname, this.bossPurifyDialogue)
           this._bossMonologueActive = true
           this.showDungeonClear = false
         }

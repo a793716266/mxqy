@@ -30,6 +30,22 @@ const ghostCat = require('../entities/monsters/ghost-cat.js')
 const towerGuardian = require('../entities/monsters/tower-guardian.js')
 const crystalMage = require('../entities/monsters/crystal-mage.js')
 
+// === 第三章怪物配置（集市小镇）===
+const marketRat = require('../entities/monsters/market-rat.js')
+const pickpocketCat = require('../entities/monsters/pickpocket-cat.js')
+const ragDoll = require('../entities/monsters/rag-doll.js')
+const coinGolem = require('../entities/monsters/coin-golem.js')
+const thugLeader = require('../entities/monsters/thug-leader.js')
+const corruptMerchant = require('../entities/monsters/corrupt-merchant.js')
+
+// === 第四章怪物配置（古城遗迹）===
+const ruinSentry = require('../entities/monsters/ruin-sentry.js')
+const boneCat = require('../entities/monsters/bone-cat.js')
+const cursedIdol = require('../entities/monsters/cursed-idol.js')
+const dustWraith = require('../entities/monsters/dust-wraith.js')
+const ruinColossus = require('../entities/monsters/ruin-colossus.js')
+const ancientWarden = require('../entities/monsters/ancient-warden.js')
+
 // === 换肤 / 补帧派生变体（复用基础怪配置 + 替换资源路径）===
 const slimeCatSkins = require('../entities/monsters/slime_cat_skins.js')       // { flame_slime, aqua_slime, violet_slime }
 const shadowMouseSmooth = require('../entities/monsters/shadow-mouse-tween.js') // 暗影鼠·顺滑
@@ -53,6 +69,24 @@ const ENEMIES_CH2 = {
   ghost_cat: ghostCat,
   tower_guardian: towerGuardian,
   crystal_mage: crystalMage
+}
+
+const ENEMIES_CH3 = {
+  market_rat: marketRat,
+  pickpocket_cat: pickpocketCat,
+  rag_doll: ragDoll,
+  coin_golem: coinGolem,
+  thug_leader: thugLeader,
+  corrupt_merchant: corruptMerchant
+}
+
+const ENEMIES_CH4 = {
+  ruin_sentry: ruinSentry,
+  bone_cat: boneCat,
+  cursed_idol: cursedIdol,
+  dust_wraith: dustWraith,
+  ruin_colossus: ruinColossus,
+  ancient_warden: ancientWarden
 }
 
 /**
@@ -109,10 +143,10 @@ function getEnemyByLevel(enemyData, level = 1) {
   return finalEnemy
 }
 
-export { ENEMIES_CH1, ENEMIES_CH2, getEnemyByLevel }
+export { ENEMIES_CH1, ENEMIES_CH2, ENEMIES_CH3, ENEMIES_CH4, getEnemyByLevel }
 
 // CommonJS 兼容导出：field-scene.js 通过 require() 动态加载怪物配置，
 // 而怪物文件再 require 本模块。为兼容 require 与 import 双模式，此处补充 CJS 导出。
 if (typeof module !== 'undefined' && module.exports) {
-  module.exports = { ENEMIES_CH1, ENEMIES_CH2, getEnemyByLevel }
+  module.exports = { ENEMIES_CH1, ENEMIES_CH2, ENEMIES_CH3, ENEMIES_CH4, getEnemyByLevel }
 }
