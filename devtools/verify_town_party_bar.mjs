@@ -387,5 +387,21 @@ console.log('N. ★ z-order 叠层防护：详情面板打开时，展开迷你�
   ok('详情面板关闭后迷你卡恢复渲染', scene._partyExpandBounds !== null)
 }
 
+console.log('N2. ★ 详情面板主背景必须完全不透明（1.0），避免下方迷你卡半透穿透')
+{
+  const p = new CharacterInfoPanel(mockGame, charStateManager.getCharacter('zhenbao'))
+  p.show()
+  const ctxN2 = makeCtx()
+  p.ctx = ctxN2
+  p.renderDetailPanel()
+  // 主面板背景 fill：fillStyle === 'rgba(20, 30, 50, 1.0)'（实心深色 1.0 不透明）
+  const mainBg = ctxN2.ops.fills.find(f => /^rgba\(20,\s*30,\s*50,\s*1(?:\.0+)?\)$/.test(f.fill))
+  ok('主面板背景 fillStyle = rgba(20,30,50,1.0) 完全不透明', !!mainBg)
+  // 兜底：再确认不存在 0.95 半透明的 fill（半透会让下方迷你卡穿透显示）
+  const halfOpacity = ctxN2.ops.fills.find(f => /^rgba\(20,\s*30,\s*50,\s*0\.95\)$/.test(f.fill))
+  ok('主面板背景不再使用 0.95 半透明（旧值会透出迷你卡）', !halfOpacity)
+  p.ctx = mockCtx
+}
+
 console.log(`\n结果: ${pass} 通过, ${fail} 失败`)
 process.exit(fail === 0 ? 0 : 1)

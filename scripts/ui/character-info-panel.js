@@ -224,8 +224,8 @@ export class CharacterInfoPanel {
     this.ctx.fillStyle = 'rgba(0, 0, 0, 0.7)'
     this.ctx.fillRect(0, 0, screenWidth, screenHeight)
     
-    // 主面板背景
-    this.ctx.fillStyle = 'rgba(20, 30, 50, 0.95)'
+    // 主面板背景（★ 不透明 1.0：详情面板必须实心绘制，避免下方队伍迷你卡/地图残留穿透显示）
+    this.ctx.fillStyle = 'rgba(20, 30, 50, 1.0)'
     this._roundRect(panelX, panelY, panelWidth, panelHeight, 15 * this.dpr)
     this.ctx.fill()
     
