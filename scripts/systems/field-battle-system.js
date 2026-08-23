@@ -465,6 +465,8 @@ export function installFieldBattleSystem(FieldSceneClass) {
         }
       } else {
         pa.timer -= dt
+        // ★ 治愈冲击：延迟到第07帧才突进（见 _maybeStartHealStrikeDash）
+        this._maybeStartHealStrikeDash(pa, dt)
         // ★ 盾击突进：在技能前段（lungeDuration 内）沿面向方向位移玩家，受障碍/边界钳制
         if (pa.lungeDist && !pa._lungeDone) this._applyShieldBashLunge(pa, dt)
       if (pa.timer <= 0) {
@@ -840,8 +842,9 @@ export function installFieldBattleSystem(FieldSceneClass) {
     }
 
     // ★ 突进（lunge）：释放瞬间朝面向方向位移一段（带霸体），受障碍/地图边界钳制。
-    //   盾击(shield_bash) 与 治愈冲击(attack_heal) 共用本机制（"和盾击一样的突进"）。
-    if (skill && skill.lungeDist && (skill.id === 'shield_bash' || skill.type === 'attack_heal')) {
+    //   盾击(shield_bash) 仍【起手即突进】；治愈冲击(attack_heal) 改为【延迟到第07帧才突进】
+    //   （"整体效果协调"：先起手蓄力 6 帧，第07帧再向前突进并结算沿途敌人，而非一放技能就窜出去）。
+    if (skill && skill.lungeDist && skill.id === 'shield_bash') {
       const ldir = monster ? ((monster.x >= pos0.x) ? 1 : -1) : (this.facingLeft ? -1 : 1)
       const pa2 = this.battleSystem.playerAnim
       pa2.lungeDist = skill.lungeDist * this.dpr   // 物理像素
@@ -856,9 +859,26 @@ export function installFieldBattleSystem(FieldSceneClass) {
       pa2.impactOriginY = pos0.y
       pa2.impactDir = ldir
       pa2._shieldImpactPending = true
-      pa2.healStrike = (skill.type === 'attack_heal')  // ★ 治愈冲击标记：起手撞击走 _doHealStrikeImpact（自疗+必定暴击），不生成护盾
+      pa2.healStrike = false
       // ★ 突进期间完全锁摇杆（X+Y），避免与玩家输入抢位移；霸体保证不被打断
       this.battleSystem.castLockTimer = Math.max(this.battleSystem.castLockTimer || 0, pa2.lungeDuration)
+    } else if (skill && skill.lungeDist && skill.type === 'attack_heal') {
+      // ★ 治愈冲击：延迟突进——先记录参数，等到技能动画第07帧（_maybeStartHealStrikeDash）
+      //   才真正突进 + 撞击。突进期间（含起手等待）锁摇杆，保证霸体期间不被玩家输入打断位移。
+      const ldir = monster ? ((monster.x >= pos0.x) ? 1 : -1) : (this.facingLeft ? -1 : 1)
+      const pa2 = this.battleSystem.playerAnim
+      pa2._healStrikeDeferred = {
+        lungeDist: skill.lungeDist * this.dpr,
+        dir: ldir,
+        skill,
+        monster,
+        impactOriginX: pos0.x,
+        impactOriginY: pos0.y,
+        impactDir: ldir
+      }
+      pa2._healStrikeStarted = false
+      // ★ 锁摇杆覆盖「起手等待(6帧) + 突进(0.18s) + 余量」
+      this.battleSystem.castLockTimer = Math.max(this.battleSystem.castLockTimer || 0, 6 * (this.frameDuration || 0.15) + 0.18 + 0.1)
     }
 
     // buff类技能（无目标）：只扣 MP + 播放动画，不造成伤害
@@ -1358,6 +1378,53 @@ export function installFieldBattleSystem(FieldSceneClass) {
     if (pa.lungeElapsed >= dur) pa._lungeDone = true
   }
 
+  /**
+   * ★ 治愈冲击延迟突进触发：技能动画播到第07帧（1-based）时才真正突进 + 撞击。
+   *   前6帧为起手蓄力（原地），第07帧突进并结算前方沿途敌人；与 _applyShieldBashLunge
+   *   共用撞击逻辑（_doHealStrikeImpact）。解决"一放技能就突进、与动画脱节"的不协调感。
+   */
+  proto._maybeStartHealStrikeDash = function(pa, dt) {
+    if (!pa || !pa._healStrikeDeferred || pa._healStrikeStarted) return
+    const fd = this.frameDuration || 0.15
+    const elapsed = (pa.maxTimer || 0) - (pa.timer || 0)
+    if (elapsed < 6 * fd) return   // 未到第07帧（前6帧为起手）
+    const d = pa._healStrikeDeferred
+    pa.lungeDist = d.lungeDist
+    pa.dir = d.dir
+    pa.lungeDuration = 0.18
+    pa.lungeElapsed = 0
+    pa._lungeDone = false
+    pa.skill = d.skill
+    pa.monster = d.monster
+    pa.impactOriginX = d.impactOriginX
+    pa.impactOriginY = d.impactOriginY
+    pa.impactDir = d.impactDir
+    pa._shieldImpactPending = true
+    pa.healStrike = true
+    pa._healStrikeStarted = true
+  }
+
+  /**
+   * ★ AI 治愈冲击延迟突进触发：与被控角色 _maybeStartHealStrikeDash 对齐——
+   *   队友(艾米)施法动画到第07帧才真正突进 + 撞击（移动队友世界坐标 + 结算沿途敌人）。
+   *   AI 施法期间(_aiAttacking)不触发新攻击、也不移动（_updateAllyAI 在 _aiAttacking 分支 continue），
+   *   故起手等待期间队友原地蓄力、第07帧才突进，与被控角色视觉一致。
+   */
+  proto._maybeStartAllyHealStrikeDash = function(bh, dt) {
+    const hero = bh && bh.hero
+    if (!hero || !hero._hsDeferred || hero._hsStarted) return
+    const fd = this.frameDuration || 0.15
+    hero._hsElapsed = (hero._hsElapsed || 0) + dt
+    if (hero._hsElapsed < 6 * fd) return   // 未到第07帧（前6帧为起手）
+    const d = hero._hsDeferred
+    const lungeDist = (d.skill.lungeDist || 120) * this.dpr
+    const np = this._heroWorldPos && this._heroWorldPos[bh.partyIndex]
+    if (np) { np.x = d.startX + d.dir * lungeDist; np.y = d.startY }  // ★ 突进到位（起手位置 → 前方 lungeDist）
+    this._doHealStrikeImpact(bh.hero, d.skill, d.monster, d.startX, d.startY, d.dir)
+    hero._hsStarted = true
+    hero._hsDeferred = null
+  }
+
   // ★ 统一对怪物造成伤害：所有怪物扣血必须走此方法，并在此处聚焦目标面板
   //   （确保玩家手动攻击 / AI 队友攻击 / 技能 / 持续伤害 都让面板跟随当前交战的怪，
   //    解决"面板只随玩家手动锁定才更新、AI 输出时血条跳变无扣血效果"的问题）
@@ -1602,6 +1669,8 @@ export function installFieldBattleSystem(FieldSceneClass) {
           continue
         }
         bh.hero._aiAttackTimer -= dt
+        // ★ 治愈冲击延迟突进：动画到第07帧才真正突进 + 撞击（与被控角色一致）
+        if (bh.hero._hsDeferred) this._maybeStartAllyHealStrikeDash(bh, dt)
         if (bh.hero._aiAttackTimer <= 0) {
           bh.hero._aiAttacking = false
           bh.hero._castSuperArmor = false  // ★ 施法霸体随施法结束解除（剑气风暴等）
@@ -2265,8 +2334,19 @@ export function installFieldBattleSystem(FieldSceneClass) {
       // ★ AI 盾击：施法起手瞬间撞击（击退+伤害同步），不进延迟队列（与被控角色一致）
       this._doShieldBashImpact(hero, skill, monster, cpos.x, cpos.y, castDir)
     } else if (skill && skill.type === 'attack_heal') {
-      // ★ AI 治愈冲击：起手瞬间对前方敌人必定暴击 + 自疗，不进延迟队列（与被控角色一致）
-      this._doHealStrikeImpact(hero, skill, monster, cpos.x, cpos.y, castDir)
+      // ★ AI 治愈冲击：延迟到第07帧才突进 + 撞击（与被控角色一致，避免"一放就突进"脱节）。
+      //   参数记录在 hero._hsDeferred，由 _updateAllyAI 每帧检测动画进度触发（_maybeStartAllyHealStrikeDash）。
+      hero._hsDeferred = {
+        skill,
+        monster,
+        dir: castDir,
+        startX: cpos.x,
+        startY: cpos.y
+      }
+      hero._hsElapsed = 0
+      hero._hsStarted = false
+      // ★ 延长施法计时，保证第07帧前 sprite 仍停留在 skill 态（不被 _aiAttackTimer 提前复位）
+      hero._aiAttackTimer = Math.max(hero._aiAttackTimer || 0, 6 * (this.frameDuration || 0.15) + 0.18 + 0.1)
     } else {
       const damage = Math.max(1, Math.floor(this._getHeroAtk(hero) * (skill.power || 1) - Math.floor(monster.def * 0.5)))
       const isCrit = Math.random() < (hero.crit || 0.05)
@@ -3387,6 +3467,7 @@ export function installFieldBattleSystem(FieldSceneClass) {
       m._rooted = false
       for (let i = m.statusEffects.length - 1; i >= 0; i--) {
         const e = m.statusEffects[i]
+        if (!e) continue   // ★ 防御：上一轮燃烧致死已清空数组，避免访问 undefined._remaining 抛错
         e._remaining -= dt
         if (e._remaining <= 0) {
           if (e.type === 'atk_down') m._atkMul = 1
@@ -3401,7 +3482,12 @@ export function installFieldBattleSystem(FieldSceneClass) {
             this._damageMonster(m, e.tickDamage)
             this._pushDamageText(m, e.tickDamage, false, '#ff6600')
             console.log(`[FieldBattle] ${m.name} 灼烧-${e.tickDamage}`)
-            if (m.hp <= 0) { m.alive = false; m.statusEffects = []; this.battleSystem.battleTarget = null }
+            if (m.hp <= 0) {
+              m.alive = false
+              m.statusEffects = []
+              this.battleSystem.battleTarget = null
+              break   // ★ 怪物已死：停止处理其余状态，避免下方 e._remaining 访问已清空数组导致崩溃卡死
+            }
           }
         }
         // 冰冻：怪物无法行动（由 _updateMonsters 读取 m._frozen 跳过移动/攻击）
