@@ -280,6 +280,9 @@ scene.mapMonsters[2].x = cpos.x + 250 * scene.dpr
 scene.mapMonsters[2].y = cpos.y + 20 * scene.dpr
 sys.skillProcesses = []
 game.effects.effects = []
+// ★ 补 MP：雷击 mpCost 较高（heroes.js 平衡后 50），前序火球/冰刃测试已耗尽 100 MP，
+//   不补充会因 MP 不足被 _playerAttackMonster 拦截 → 不注册区域过程（与数值解耦）
+sys.battleHeroes.forEach(bh => { bh.hero.mp = 100 })
 scene._playerAttackMonster(null, thunder)
 const tp = sys.skillProcesses[0]
 assert(tp && tp.type === 'thunder', '雷击注册区域过程')
@@ -311,8 +314,8 @@ if (elecM) {
 console.log('\n=== 测试4: 魔力护盾（全体队友防御+30%） ===')
 resetBattleState()
 const manaShield = lixiaobaoCfg.skills.find(s => s.id === 'mana_shield')
-assert(manaShield && manaShield.effect === 'def_up' && manaShield.value === 0.3,
-  '魔力护盾配置: def_up 全体防御+30%')
+assert(manaShield && manaShield.effect === 'def_up' && manaShield.value > 0,
+  `魔力护盾配置: def_up 全体防御+${Math.round(manaShield.value * 100)}%`, `value=${manaShield && manaShield.value}`)
 // 重置所有英雄 buff，记录原始防御
 sys.battleHeroes.forEach(bh => { bh.hero._buffs = []; bh.hero.def = 10 })
 const heroNames = sys.battleHeroes.map(bh => bh.hero.name).join(',')
@@ -320,17 +323,18 @@ console.log(`  参战英雄: ${heroNames}`)
 // 释放魔力护盾（buff 技能，无目标）
 scene._playerAttackMonster(null, manaShield)
 // 断言：所有存活参战英雄都有 def_up buff
+const defUpValue = manaShield.value
 const allBuff = sys.battleHeroes.every(bh => {
   const b = (bh.hero._buffs || []).find(x => x.type === 'def_up')
-  return b && b._active && Math.abs(b.value - 0.3) < 0.001
+  return b && b._active && Math.abs(b.value - defUpValue) < 0.001
 })
-assert(allBuff, '全体参战英雄获得 def_up+30% buff')
-// 断言：_getHeroDef 返回防御提升后数值（10 * 1.3 = 13）
+assert(allBuff, `全体参战英雄获得 def_up+${Math.round(defUpValue * 100)}% buff`)
+// 断言：_getHeroDef 返回防御提升后数值（10 * (1+value)）
 const bh0 = sys.battleHeroes[0]
 const defWithBuff = scene._getHeroDef(bh0.hero)
-assert(defWithBuff === Math.floor(10 * 1.3), '防御实际提升30%（10→13）', `实际: ${defWithBuff}`)
-// 断言：buff 有时长，到期后消失
-for (let f = 0; f < 400; f++) scene.update(1/60)   // 6.67s（buff时长= turns3*2=6s）
+assert(defWithBuff === Math.floor(10 * (1 + defUpValue)), `防御实际提升${Math.round(defUpValue * 100)}%（10→${Math.floor(10 * (1 + defUpValue))}）`, `实际: ${defWithBuff}`)
+// 断言：buff 有时长，到期后消失（驱动 8s 覆盖 duration=5s 及余量）
+for (let f = 0; f < 480; f++) scene.update(1/60)   // 8s（buff时长 = duration 秒）
 const buffRemain = sys.battleHeroes.some(bh => (bh.hero._buffs || []).some(b => b.type === 'def_up' && b._active))
 assert(!buffRemain, 'buff 到期后消失')
 assert(scene._getHeroDef(bh0.hero) === 10, 'buff 消失后防御恢复', `实际: ${scene._getHeroDef(bh0.hero)}`)
@@ -552,11 +556,11 @@ bhHero0.mp = 100   // 确保第二次施法不被 MP 拦截
 scene._refreshCharCard(bhHero0)
 const defBefore = scene.charInfoPanel.character._getDefWithBuff()
 assert(defBefore === 10, '前置: 无BUFF时防御10', `实际: ${defBefore}`)
-// 释放魔力护盾（全体防御+30%）
+// 释放魔力护盾（全体防御+value%）
 scene._playerAttackMonster(null, manaShield)
 const defAfter = scene.charInfoPanel.character._getDefWithBuff()
-assert(defAfter === 13, '魔力护盾后角色卡防御提升 10→13', `实际: ${defAfter}`)
-// 战吼（攻击+30%）
+assert(defAfter === Math.floor(10 * (1 + defUpValue)), `魔力护盾后角色卡防御提升 10→${Math.floor(10 * (1 + defUpValue))}`, `实际: ${defAfter}`)
+// 战吼（攻击+value%，动态）
 const warCrySkill = lixiaobaoCfg.skills.find(s => s.id === 'war_cry')
 if (warCrySkill) {
   sys.battleHeroes.forEach(bh => { bh.hero._buffs = []; bh.hero.def = 10 })
@@ -566,7 +570,7 @@ if (warCrySkill) {
   const atkBefore = scene.charInfoPanel.character._getAtkWithBuff()
   scene._playerAttackMonster(null, warCrySkill)
   const atkAfter = scene.charInfoPanel.character._getAtkWithBuff()
-  assert(atkBefore === 20 && atkAfter === 26, '战吼后角色卡攻击提升 20→26', `实际: ${atkBefore}→${atkAfter}`)
+  assert(atkBefore === 20 && atkAfter === Math.floor(20 * (1 + (warCrySkill.value || 0.3))), `战吼后角色卡攻击提升 20→${Math.floor(20 * (1 + (warCrySkill.value || 0.3)))}`, `实际: ${atkBefore}→${atkAfter}`)
 }
 
 // ==================== 测试10：施法移动限制 ====================

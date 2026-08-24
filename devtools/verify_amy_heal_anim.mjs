@@ -12,7 +12,7 @@ const ok = (c, m, extra = '') => { if (c) { passed++; console.log('  ✓ ' + m) 
 console.log('=== A. 艾米数据 & 加血公式 ===')
 const amy = HEROES.find(h => h.id === 'amy')
 ok(!!amy, '找到艾米角色数据')
-ok(amy && amy.matk === 18, '艾米 matk=18', amy && `实际=${amy.matk}`)
+ok(amy && amy.matk > 0 && Number.isFinite(amy.matk), '艾米 matk 为有限正数（数值随 heroes.js 平衡数据走）', amy && `matk=${amy.matk}`)
 ok(amy && amy.magic === undefined, '艾米无 magic 字段（旧加血代码读 hero.magic → undefined→NaN 的根因）', amy && `magic=${amy.magic}`)
 
 // 旧公式（错误，真实旧代码为裸 hero.magic，无回退）：hero.magic * power → NaN
@@ -29,7 +29,8 @@ ok(!!healLight && healLight.type === 'heal' && healLight.power === 30, '治愈�
 const oldVal = oldHeal(amy, healLight)
 const newVal = newHeal(amy, healLight)
 ok(Number.isNaN(oldVal), '旧公式 → NaN（确证 bug：hp = min(maxHp, hp+NaN)=NaN 污染 HP）', `old=${oldVal}`)
-ok(Number.isFinite(newVal) && newVal === 48, '新公式 → 48（30 + 18*1，与数据公式 base+matk*1.0 一致，非 NaN）', `new=${newVal}`)
+const expectedHeal = Math.floor((healLight.power || 0) + amy.matk * (healLight.healMatk != null ? healLight.healMatk : 1))
+ok(Number.isFinite(newVal) && newVal === expectedHeal, `新公式 → ${expectedHeal}（${healLight.power} + ${amy.matk}*1，与数据公式 base+matk*1.0 一致，非 NaN）`, `new=${newVal}`)
 
 // attack_heal（治愈冲击）也走 matk，不应 NaN
 const healStrike = amy.skills.find(s => s.id === 'heal_strike')

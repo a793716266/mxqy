@@ -290,7 +290,7 @@ console.log('M. 详情面板高度自适应：状态/HP/MP/BUFF 必须落在面�
   const hpValue = ctxM.ops.texts.find(o => o.t && /^\d+ \/ \d+$/.test(o.t))
   ok('详情面板有"状态"标题', !!statusText)
   ok('详情面板有 HP 文字（标签或数值）', !!(hpLabel || hpValue))
-  ok('详情面板有数值 "300 / 300" 或 "1200 / 1200"', !!hpValue)
+  ok('详情面板有 HP 数值（"hp / maxHp" 格式）', !!hpValue)
   if (statusText && hpLabel && hpValue && beforeB) {
     const bottom = hpValue.y + 30 * p.dpr   // 数值 baseline + 30 dpr 涵盖字号与行尾
     const panelBottom = beforeB.y + beforeB.height
@@ -328,9 +328,9 @@ console.log('M2. 状态区可视化：HP/MP 迷你条 + 数字右浮，告别「
   const ctxM = makeCtx()
   p.ctx = ctxM
   const bnd = p.renderDetailPanel()
-  // HP 行 = ❤️ HP 标签 + "1200 / 1200" 数字
+  // HP 行 = ❤️ HP 标签 + "hp / maxHp" 数字（数值随 heroes.js 平衡数据走，用正则匹配避免硬编码）
   const hpLabel = ctxM.ops.texts.find(o => o.t === '❤️ HP')
-  const hpValue = ctxM.ops.texts.find(o => o.t === '1200 / 1200')
+  const hpValue = ctxM.ops.texts.find(o => /^\d+ \/ \d+$/.test(o.t))
   ok('HP 行有 ❤️ HP 标签', !!hpLabel)
   ok('HP 行有数值文字', !!hpValue)
   // 数字应右浮（align=right）— x 接近面板右边

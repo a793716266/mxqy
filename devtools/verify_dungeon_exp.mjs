@@ -21,6 +21,7 @@ function ok(name, cond, extra = '') {
 // ---- 加载真实实现 ----
 import { FieldScene } from '../scripts/scenes/field-scene.js'
 import { charStateManager } from '../scripts/data/character-state.js'
+import { GRASSLAND_DUNGEON } from '../scripts/data/grassland-dungeon.js'
 
 // ---- 重置 charStateManager 单例（隔离测试）----
 charStateManager._initialized = false
@@ -41,6 +42,8 @@ scene.playerY = 1000
 scene.audio = audioMock
 scene.game = { data: dataMock, audio: audioMock }
 scene._dropFloaters = []
+// ★ 挂真实副本配置：_getMonsterExp 的 expTable 分支依赖 this._dungeonCfg（此前缺失 → D3 expTable 命中断言失败）
+scene._dungeonCfg = GRASSLAND_DUNGEON
 
 // ============ A. 击杀小怪 → 全员经验增长 ============
 const expBefore = { z: zhenbao.exp, l: lixiaobao.exp }

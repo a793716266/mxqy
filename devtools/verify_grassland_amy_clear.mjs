@@ -91,8 +91,9 @@ console.log('\n=== E. 源码接线（field-scene _checkDungeonClear）===')
 const src = fs.readFileSync(path.resolve(scriptsDir, 'scenes/field-scene.js'), 'utf8')
 ok(src.includes("this.bossPurifyDialogue = (bossData && Array.isArray(bossData.purifyDialogue))"),
   'BOSS 初始化捕获 bossPurifyDialogue')
-ok(src.includes("this._bossMonologueActive = true") && src.includes("this._showStoryDialogue('艾米', this.bossPurifyDialogue)"),
-  '_checkDungeonClear 首次招募艾米 → 播独白并置 _bossMonologueActive')
+ok(src.includes("this._bossMonologueActive = true") &&
+   src.includes("this._showStoryDialogue(this.bossDialogueName || this.bossDisplayName || hname, this.bossPurifyDialogue)"),
+  '_checkDungeonClear 首次招募艾米 → 播独白并置 _bossMonologueActive（name 走 bossDialogueName||bossDisplayName||hname 通用化）')
 ok(src.includes("if (this._bossMonologueActive) {") && src.includes('!this.storyDialogue'),
   '通关收尾：独白播完(storyDialogue 置空)才弹通关遮罩')
 ok(src.includes("this.game.data.set('amyDefeated', true)"),
