@@ -90,9 +90,14 @@ export class TownScene {
     // ★ 展开迷你卡热区（点击队伍卡后滑出，点击空白/再点同卡收起）
     this._partyExpandBounds = null
     this._expandedHeroId = null
-    // ★ 控制者（被金边高亮 / 经验展示对象）：默认取首个已解锁角色，并挂到 game 供进入副本复用
-    this.controlledHeroId = (this.party[0] && this.party[0].id) || 'zhenbao'
-    if (this.game) this.game.controlledHeroId = this.controlledHeroId
+    // ★ 控制者（被金边高亮 / 经验展示对象 / 进副本主操控角色）：
+    //   优先读持久化值（跨场景/重进 town 记忆），兜底取首个已解锁角色；并挂到 game 供进入副本复用
+    this.controlledHeroId = (this.game && this.game.data && this.game.data.get('controlledHeroId'))
+      || (this.party[0] && this.party[0].id) || 'zhenbao'
+    if (this.game) {
+      this.game.controlledHeroId = this.controlledHeroId
+      if (this.game.data) this.game.data.set('controlledHeroId', this.controlledHeroId)
+    }
     
     // 探索菜单
     this.exploreMenu = null
@@ -491,7 +496,7 @@ export class TownScene {
     const menuY = (this.height - menu.height) / 2
     const btnW = menu.width - 40 * this.dpr
     const btnH = 60 * this.dpr
-    const startY = menuY + 60 * this.dpr
+    const startY = menuY + 76 * this.dpr
     
     // 关闭按钮
     const closeBtnX = menuX + menu.width - 50 * this.dpr
@@ -536,7 +541,7 @@ export class TownScene {
           if (dungeon.area === 'tower') {
             this.game.changeScene('tower')
           } else {
-            this.game.changeScene('field', { area: dungeon.area })
+            this.game.changeScene('field', { area: dungeon.area, controlledHeroId: this.controlledHeroId })
           }
         } else {
           if (dungeon.requirement) {
@@ -907,7 +912,16 @@ export class TownScene {
     ctx.font = `bold ${24 * this.dpr}px sans-serif`
     ctx.fillStyle = '#ffffff'
     ctx.textAlign = 'center'
-    ctx.fillText('选择探索区域', menuX + menu.width / 2, menuY + 40 * this.dpr)
+    ctx.fillText('选择探索区域', menuX + menu.width / 2, menuY + 38 * this.dpr)
+
+    // ★ 当前出战主角提示（与城镇队伍条金边主控保持一致）
+    const ctrlCs = this.party && this.party.find(c => c.id === this.controlledHeroId)
+    const ctrlName = (ctrlCs && ctrlCs.name) || this.controlledHeroId || '未知'
+    ctx.font = `bold ${14 * this.dpr}px sans-serif`
+    ctx.fillStyle = '#ffd24a'
+    ctx.textAlign = 'center'
+    ctx.textBaseline = 'middle'
+    ctx.fillText(`👑 出战主角：${ctrlName}`, menuX + menu.width / 2, menuY + 58 * this.dpr)
     
     // 关闭按钮
     const closeBtnX = menuX + menu.width - 50 * this.dpr
@@ -923,7 +937,7 @@ export class TownScene {
     
     const btnW = menu.width - 40 * this.dpr
     const btnH = 60 * this.dpr
-    const startY = menuY + 60 * this.dpr
+    const startY = menuY + 76 * this.dpr
     
     for (let i = 0; i < menu.dungeons.length; i++) {
       const dungeon = menu.dungeons[i]
@@ -1200,6 +1214,22 @@ export class TownScene {
       ctx.textAlign = 'center'
       ctx.textBaseline = 'middle'
       ctx.fillText(`${Math.floor(expP * 100)}%`, ix + iw / 2, expY + barH / 2)
+
+      // ★ 主控角标（金边卡右上角，明确标识「进副本主操控角色」）
+      if (isControlled) {
+        const tagW = 26 * dpr
+        const tagH = 12 * dpr
+        const tagX = x + cardW - tagW - 2 * dpr
+        const tagY = y + 2 * dpr
+        ctx.fillStyle = '#ffd24a'
+        this._roundRect(ctx, tagX, tagY, tagW, tagH, 4 * dpr)
+        ctx.fill()
+        ctx.fillStyle = '#3a2a00'
+        ctx.font = `bold ${8 * dpr}px sans-serif`
+        ctx.textAlign = 'center'
+        ctx.textBaseline = 'middle'
+        ctx.fillText('主控', tagX + tagW / 2, tagY + tagH / 2 + 0.5 * dpr)
+      }
     }
     ctx.restore()
   }
@@ -1345,7 +1375,11 @@ export class TownScene {
    */
   _setControlled(id) {
     this.controlledHeroId = id
-    if (this.game) this.game.controlledHeroId = id
+    if (this.game) {
+      this.game.controlledHeroId = id
+      // ★ 持久化，使选择跨场景/重进城镇后仍生效
+      if (this.game.data) this.game.data.set('controlledHeroId', id)
+    }
   }
 
   /**

@@ -32,6 +32,8 @@ export class FieldScene extends SceneBase {
     this.areaId = data?.area || data?.nodeId || 'grassland'
     console.log(`[Field] 区域ID: ${this.areaId} (来源: ${data?.area ? 'area' : data?.nodeId ? 'nodeId' : '默认'})`)
     this.areaInfo = this._getAreaInfo()
+    // ★ 进副本主操控角色（城镇预设，由 town 通过 changeScene data 或 game.controlledHeroId 传入）
+    this._ctrlHeroId = (data && data.controlledHeroId) || (this.game && this.game.controlledHeroId) || null
     // ★ 副本数据配置：按区域选择（默认 grassland），所有 GRASSLAND_DUNGEON 引用统一收敛到 this._dungeonCfg，
     //   使 grassland 行为零变化，新区域（魔法塔/集市小镇/古城遗迹）经同一管线加载。
     this._dungeonCfg = this.areaInfo.dungeonCfg || GRASSLAND_DUNGEON
@@ -97,7 +99,7 @@ export class FieldScene extends SceneBase {
     this.party = this._initParty()
     
     // 获取第一个角色（主角）
-    this.mainCharacter = charStateManager.getAllCharacters()[0]
+    this.mainCharacter = this.party[0]
 
     // 为主要角色创建 CharacterSprite（包含渲染逻辑和阴影）
     this.mainCharacterSprite = null
@@ -397,6 +399,15 @@ export class FieldScene extends SceneBase {
       }
     })
     
+    // ★ 城镇预设主操控角色排到 [0]（被控者 = party[0] = battleHeroes[0]）
+    const ctrlId = (this.game && this.game.controlledHeroId) || this._ctrlHeroId
+    if (ctrlId) {
+      const idx = party.findIndex(p => p.id === ctrlId)
+      if (idx > 0) {
+        const hero = party.splice(idx, 1)[0]
+        party.unshift(hero)
+      }
+    }
     return party
   }
 
@@ -405,10 +416,12 @@ export class FieldScene extends SceneBase {
    */
   _initFollowers() {
     const allChars = charStateManager.getAllCharacters()
-    
-    // 从第二个角色开始，都是跟随队友
-    for (let i = 1; i < allChars.length; i++) {
+    const ctrlId = (this.party && this.party[0] && this.party[0].id) || null
+    // 除被控者（party[0]）外的角色都是跟随队友
+    let order = 1
+    for (let i = 0; i < allChars.length; i++) {
       const charData = allChars[i]
+      if (charData.id === ctrlId) continue
       
       // 从 HEROES 中找到对应的角色数据（包含 renderConfig）
       const heroData = HEROES.find(h => h.id === charData.id)
@@ -425,7 +438,7 @@ export class FieldScene extends SceneBase {
         sprite: followerSprite, // 存储 CharacterSprite 实例
         // ★ 缓存翻转规则（与角色 renderConfig.flipRule 一致），供 _renderFollower 统一判定
         flipRule: (heroData && heroData.renderConfig && heroData.renderConfig.flipRule) || 'opposite',
-        x: this.playerX - i * this.followerDistance, // 初始位置在主角后面
+        x: this.playerX - order * this.followerDistance, // 初始位置在主角后面
         y: this.playerY,
         animFrame: 0,
         animTimer: 0,
@@ -434,6 +447,7 @@ export class FieldScene extends SceneBase {
         _movingHoldFrames: 0,
         facingLeft: this.facingLeft
       })
+      order++
     }
     
     console.log(`[Field] 初始化了 ${this.followers.length} 个跟随队友`)
