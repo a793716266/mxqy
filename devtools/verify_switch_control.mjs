@@ -126,16 +126,17 @@ scene.mapMonsters.push({
 sys.pendingDamages = []
 sys.playerAnim = null
 
-// 1) buff 技能（无需目标）应正常播放动画 + 扣 MP
+// 1) 治愈技能（无需目标）应正常播放动画 + 扣 MP
+// ★ 动画路由：type='heal' → support 态（AIMI_SUPPORT 治愈帧，与艾米 heal_light 一致），不是 buff
 const healBtn = sys.skillButtons.find(b => b.text === '回春')
 if (healBtn) {
   scene._playerAttackMonster(null, healBtn.skill)
-  assert(sys.playerAnim !== null && sys.playerAnim.type === 'buff', 'buff 技能播放动画(playerAnim 被设置)')
-  assert(newCtrl.sprite.state === 'buff', '李小宝 sprite 进入 buff 动画', `实际: ${newCtrl.sprite.state}`)
-  assert(newCtrl.hero.mp === 40 - 8, 'buff 技能扣除 MP', `实际: ${newCtrl.hero.mp}`)
+  assert(sys.playerAnim !== null && sys.playerAnim.type === 'support', '治愈技能播放动画(playerAnim 被设置)', `实际: ${sys.playerAnim && sys.playerAnim.type}`)
+  assert(newCtrl.sprite.state === 'support', '李小宝 sprite 进入 support 动画', `实际: ${newCtrl.sprite.state}`)
+  assert(newCtrl.hero.mp === 40 - 8, '治愈技能扣除 MP', `实际: ${newCtrl.hero.mp}`)
   // 动画结束后复位逻辑：走 onAnimationComplete
   if (newCtrl.sprite.onAnimationComplete) {
-    newCtrl.sprite.onAnimationComplete('buff')
+    newCtrl.sprite.onAnimationComplete('support')
     assert(newCtrl.sprite.state === 'idle', '动画完成后复位 idle', `实际: ${newCtrl.sprite.state}`)
   }
 } else {

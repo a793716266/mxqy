@@ -950,10 +950,14 @@ baseRadius: 50 * this.dpr,    // 底座半径（缩小）
   _checkNewFollowers() {
     const allChars = charStateManager.getAllCharacters()
     const currentFollowerIds = this.followers.map(f => f.character.id)
+    // ★ 被控者 = party[0]（城镇预设主操控角色），绝不可当作「新角色」重复加入 followers
+    //   （旧实现 for (let i=1;...) 硬编码跳过 allChars[0]=臻宝，非臻宝被控时会复制一个）
+    const ctrlId = (this.party && this.party[0] && this.party[0].id) || null
 
     // 找出新加入的角色
-    for (let i = 1; i < allChars.length; i++) {
+    for (let i = 0; i < allChars.length; i++) {
       const char = allChars[i]
+      if (char.id === ctrlId) continue           // 跳过被控者（本身是主角，不进跟随列表）
       if (currentFollowerIds.includes(char.id)) continue
       // 新角色加入：缓存翻转规则 + 创建 CharacterSprite（与 _initFollowers 同款）
       const newHeroData = HEROES.find(h => h.id === char.id)
@@ -983,10 +987,10 @@ baseRadius: 50 * this.dpr,    // 底座半径（缩小）
     this.party = this._initParty()
     if (this.battleSystem) this._buildBattleHeroes()
 
-    // 更新主角色（第一个角色）
-    if (allChars.length > 0 && this.mainCharacter?.id !== allChars[0].id) {
-      this.mainCharacter = allChars[0]
-      console.log(`[Field] 主角切换为: ${this.mainCharacter.name}`)
+    // ★ 主角 = party[0]（_initParty 已把城镇预设被控者排到首位），
+    //   切勿切回 allChars[0]（臻宝）——否则预设主操控角色进副本后被强制改回臻宝
+    if (this.party && this.party[0]) {
+      this.mainCharacter = this.party[0]
     }
   }
 
