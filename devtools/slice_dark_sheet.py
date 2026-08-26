@@ -38,10 +38,17 @@ T = 28  # 洪水填充阈值：color-distance 之和 <= T 视为"可连通背景
 
 
 def bg_of(a):
+    """整表级背景色：取外边框一圈像素的众数(robust 到单角被特效污染)。"""
     h, w = a.shape[:2]
-    cs = [tuple(a[2, 2, :3]), tuple(a[h // 2, 2, :3]),
-          tuple(a[2, w // 2, :3]), tuple(a[h - 3, w - 3, :3])]
-    return np.array(Counter(cs).most_common(1)[0][0], dtype=int)
+    m = 3
+    ring = np.concatenate([
+        a[:m, :, :3].reshape(-1, 3),
+        a[h - m:, :, :3].reshape(-1, 3),
+        a[:, :m, :3].reshape(-1, 3),
+        a[:, w - m:, :3].reshape(-1, 3),
+    ], axis=0).astype(int)
+    cols = [tuple(c) for c in ring]
+    return np.array(Counter(cols).most_common(1)[0][0], dtype=int)
 
 
 def gap_segments(proj, x0, x1, thr):
@@ -242,8 +249,14 @@ def fill_holes(opaque):
     return out
 
 
-def keep_main_components(opaque, min_ratio=0.2):
-    """保留所有面积 >= 最大块 min_ratio 倍的连通块（删标签碎块，但头+身体若断开都留）。"""
+def keep_main_components(opaque, min_ratio=0.02, abs_min=500):
+    """保留「最大块」外加所有面积 >= max(min_ratio*最大块, abs_min) 的连通块。
+
+    阈值设计的依据(v5 实测，石像守卫 4 动作 32 帧)：真实肢体/武器块最小约 919px，
+    而抠图噪声块最大约 205px。故用绝对地板 abs_min=500 即可把噪声全删、真实肢体全留，
+    同时 min_ratio 自适应大图。原先 min_ratio=0.2 会把 1000~4500px 的腿/臂当碎块删掉
+    (导致 walk 缺腿、idle/attack 缺臂)，现已修正。
+    """
     H, W = opaque.shape
     lab = np.zeros((H, W), dtype=np.int32)
     parent = [0]
@@ -285,7 +298,8 @@ def keep_main_components(opaque, min_ratio=0.2):
     if not sizes:
         return opaque
     mx = max(sizes.values())
-    keep = {rv for rv, sz in sizes.items() if sz >= min_ratio * mx}
+    floor = max(min_ratio * mx, abs_min)
+    keep = {rv for rv, sz in sizes.items() if sz >= floor}
     out = np.zeros((H, W), bool)
     for y, x in zip(ys, xs):
         if find(lab[y, x]) in keep:
@@ -301,13 +315,17 @@ def slice_sheet(src_path, target):
     PAD = 40  # 给单元格垫一圈背景边距，使石像永不直接贴边（避免暗身体被当背景删、只剩头）
     for (y0, y1, x0, x1) in cells:
         crop = a[y0:y1 + 1, x0:x1 + 1].copy()
-        cbg = bg_of(crop)
+        # 关键修复(v5)：必须使用「整表级」背景 bg，不能用裁剪格四角的 bg_of(crop)。
+        # 某些动作(如 skill 的岩石/光效)会伸进单元格四角，导致 bg_of(crop) 采到
+        # 明亮的特效色 → 把真正的深色背景误判为身体(保留不透明=黑底)，
+        # 同时把明亮特效当背景删掉(反向抠图)。整表背景 bg=[16,21,25] 恒定，
+        # 用它做填充边距与洪水基准才正确。
         Hc, Wc = crop.shape[:2]
         padded = np.zeros((Hc + 2 * PAD, Wc + 2 * PAD, 4), dtype=np.uint8)
-        padded[:, :, :3] = cbg
+        padded[:, :, :3] = bg
         padded[:, :, 3] = 255
         padded[PAD:PAD + Hc, PAD:PAD + Wc] = crop
-        opaque = key_opaque(padded, cbg)
+        opaque = key_opaque(padded, bg)
         opaque = keep_main_components(opaque)  # 头+身体若断开都留，只删标签碎块
         opaque = fill_holes(opaque)
         if opaque.sum() < 800:
@@ -364,6 +382,11 @@ def main():
         if not res:
             continue
         od = os.path.join(out, act)
+        # 先清空旧帧，避免上一轮多切出的残帧(如 skill_09)污染动画
+        if os.path.isdir(od):
+            for fn in os.listdir(od):
+                if fn.endswith('.png'):
+                    os.remove(os.path.join(od, fn))
         os.makedirs(od, exist_ok=True)
         written = []
         out_idx = 0
