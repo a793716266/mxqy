@@ -628,6 +628,8 @@ export function installFieldBattleSystem(FieldSceneClass) {
 
     // 4.21a ★ 全员 MP 回复（被控英雄与 AI 队友统一，修复控制切换导致的回蓝不一致）
     this._regenAllHeroMp(dt)
+    // 4.21b ★ 全员 HP 回复（仅装备 hpRegen 生效；副本内同样仅装备生效，无被动回血基线）
+    this._regenAllHeroHp(dt)
 
     // 4.212 ★ MP 不足抖动提示更新
     this._updateMpShake(dt)
@@ -1642,15 +1644,35 @@ export function installFieldBattleSystem(FieldSceneClass) {
   // ★ 全员 MP 回复：被控英雄 + AI 队友统一回收，每帧只跑一次。
   //   修复「玩家操纵的英雄不回蓝、切到 AI 操纵才回蓝」的不一致——
   //   被控英雄 MP 只减不增会导致玩家技能很快哑火（李小宝等法师尤其明显）。
+  //   ★ 副本(areaInfo.isDungeon)内关闭被动回蓝基线：仅装备提供的 mpRegen 生效，
+  //     满足"副本不自动回蓝，除非装备有回蓝属性"；非副本保留 5/s 基线（设计默认）。
   proto._regenAllHeroMp = function(dt) {
     const heroes = this.battleSystem.battleHeroes
     if (!heroes || !heroes.length) return
+    const isDungeon = !!(this.areaInfo && this.areaInfo.isDungeon)
     for (const bh of heroes) {
       if (!bh.hero || bh.hero.alive === false || bh.hero.hp <= 0) continue
       if ((bh.hero.maxMp || 0) <= 0) continue
       if ((bh.hero.mp || 0) >= bh.hero.maxMp) continue
-      const regenRate = bh.hero.mpRegen || 5
+      const regenRate = bh.hero.mpRegen || (isDungeon ? 0 : 5)
+      if (regenRate <= 0) continue
       bh.hero.mp = Math.min(bh.hero.maxMp, (bh.hero.mp || 0) + regenRate * dt * 0.5)
+    }
+  }
+
+  // ★ 全员 HP 回复：仅装备提供的 hpRegen 生效（设计上无被动回血基线）。
+  //   副本内外一致——"副本不自动回血，除非装备有回血属性"自然满足（无装备则 hpRegen=0→不回）。
+  //   被控英雄与 AI 队友统一处理（玩家/AI 都不享受无来源自动回血）。
+  proto._regenAllHeroHp = function(dt) {
+    const heroes = this.battleSystem.battleHeroes
+    if (!heroes || !heroes.length) return
+    for (const bh of heroes) {
+      if (!bh.hero || bh.hero.alive === false || bh.hero.hp <= 0) continue
+      if ((bh.hero.maxHp || 0) <= 0) continue
+      if ((bh.hero.hp || 0) >= bh.hero.maxHp) continue
+      const regenRate = bh.hero.hpRegen || 0
+      if (regenRate <= 0) continue
+      bh.hero.hp = Math.min(bh.hero.maxHp, (bh.hero.hp || 0) + regenRate * dt * 0.5)
     }
   }
 

@@ -154,6 +154,11 @@ export class EquipmentManager {
     }
     if (stats.spd) character.spd += stats.spd
     if (stats.crit) character.crit = (character.crit || 0) + stats.crit
+    // ★ 装备回血/回蓝属性：累加到英雄实例（hero.hpRegen/mpRegen），供战斗系统被动回复读取。
+    //   ★ 无基线：英雄本身不带 mpRegen/hpRegen 默认值（character-state 不初始化），
+    //   因此"未装备回血/回蓝装备 → 这两个值=0 → 副本内不自动回血回蓝"。
+    if (stats.mpRegen) character.mpRegen = (character.mpRegen || 0) + stats.mpRegen
+    if (stats.hpRegen) character.hpRegen = (character.hpRegen || 0) + stats.hpRegen
   }
 
   /**
@@ -175,6 +180,8 @@ export class EquipmentManager {
     }
     if (stats.spd) character.spd -= stats.spd
     if (stats.crit) character.crit = Math.max(0, (character.crit || 0) - stats.crit)
+    if (stats.mpRegen) character.mpRegen = Math.max(0, (character.mpRegen || 0) - stats.mpRegen)
+    if (stats.hpRegen) character.hpRegen = Math.max(0, (character.hpRegen || 0) - stats.hpRegen)
   }
 
   /**
@@ -211,7 +218,9 @@ export class EquipmentManager {
       maxHp: 0,
       maxMp: 0,
       spd: 0,
-      crit: 0
+      crit: 0,
+      mpRegen: 0,
+      hpRegen: 0
     }
 
     if (!character.equipment) return total
