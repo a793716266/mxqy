@@ -240,26 +240,87 @@ def fill_holes(opaque):
     return out
 
 
+def keep_main_components(opaque, min_ratio=0.2):
+    """保留所有面积 >= 最大块 min_ratio 倍的连通块（删标签碎块，但头+身体若断开都留）。"""
+    H, W = opaque.shape
+    lab = np.zeros((H, W), dtype=np.int32)
+    parent = [0]
+    ys, xs = np.where(opaque)
+    if len(ys) == 0:
+        return opaque
+
+    def find(x):
+        while parent[x] != x:
+            parent[x] = parent[parent[x]]
+            x = parent[x]
+        return x
+
+    def union(a, b):
+        ra, rb = find(a), find(b)
+        if ra != rb:
+            parent[ra] = rb
+
+    nxt = 1
+    for y, x in zip(ys, xs):
+        nb = []
+        if x > 0 and opaque[y, x - 1]:
+            nb.append(lab[y, x - 1])
+        if y > 0 and opaque[y - 1, x]:
+            nb.append(lab[y - 1, x])
+        if not nb:
+            lab[y, x] = nxt
+            parent.append(nxt)
+            nxt += 1
+        else:
+            r = min(nb)
+            lab[y, x] = r
+            for v in nb:
+                union(r, v)
+    sizes = {}
+    for y, x in zip(ys, xs):
+        rv = find(lab[y, x])
+        sizes[rv] = sizes.get(rv, 0) + 1
+    if not sizes:
+        return opaque
+    mx = max(sizes.values())
+    keep = {rv for rv, sz in sizes.items() if sz >= min_ratio * mx}
+    out = np.zeros((H, W), bool)
+    for y, x in zip(ys, xs):
+        if find(lab[y, x]) in keep:
+            out[y, x] = True
+    return out
+
+
 def slice_sheet(src_path, target):
     a = np.array(Image.open(src_path).convert('RGBA'))
     bg = bg_of(a)
     cells = segment_cells(a, bg)
     results = []
+    PAD = 40  # 给单元格垫一圈背景边距，使石像永不直接贴边（避免暗身体被当背景删、只剩头）
     for (y0, y1, x0, x1) in cells:
         crop = a[y0:y1 + 1, x0:x1 + 1].copy()
         cbg = bg_of(crop)
-        opaque = key_opaque(crop, cbg)
-        opaque = largest_component(opaque)
-        opaque = fill_holes(opaque)  # 连通性抠图后再补一次内部洞（双保险）
+        Hc, Wc = crop.shape[:2]
+        padded = np.zeros((Hc + 2 * PAD, Wc + 2 * PAD, 4), dtype=np.uint8)
+        padded[:, :, :3] = cbg
+        padded[:, :, 3] = 255
+        padded[PAD:PAD + Hc, PAD:PAD + Wc] = crop
+        opaque = key_opaque(padded, cbg)
+        opaque = keep_main_components(opaque)  # 头+身体若断开都留，只删标签碎块
+        opaque = fill_holes(opaque)
         if opaque.sum() < 800:
             continue
         ys, xs = np.where(opaque)
-        bx0, bx1, by0, by1 = xs.min(), xs.max(), ys.min(), ys.max()
+        # bbox 在 padded 坐标 -> 映射回 crop 坐标
+        bx0, bx1 = xs.min() - PAD, xs.max() - PAD
+        by0, by1 = ys.min() - PAD, ys.max() - PAD
+        bx0, bx1 = max(0, bx0), min(Wc - 1, bx1)
+        by0, by1 = max(0, by0), min(Hc - 1, by1)
         bw, bh = bx1 - bx0 + 1, by1 - by0 + 1
         if bw < 50 or bh < 90:  # 剔除标签条/地面线/竖线碎片
             continue
         sub = crop[by0:by1 + 1, bx0:bx1 + 1].copy()
-        sm = opaque[by0:by1 + 1, bx0:bx1 + 1]
+        sm = opaque[by0 + PAD:by1 + PAD + 1, bx0 + PAD:bx1 + PAD + 1]
         sub[~sm, 3] = 0
         results.append((sub, bw, bh))
     return results
