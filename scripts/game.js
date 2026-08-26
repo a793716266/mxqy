@@ -16,6 +16,10 @@ import { SkillEffectManager } from './core/skill-effect-manager.js'
 import { SettingsPanel } from './ui/settings-panel.js'
 import { BackpackPanel } from './ui/backpack-panel.js'
 import { computeDeltaTime } from './utils/time.js'
+// ★ 集中式持久化：把运行时角色/装备状态在存档前快照回 this.data
+//   （避免 town/field 各自散点回写导致进度丢失）
+import { charStateManager } from './data/character-state.js'
+import { equipmentManager } from './managers/equipment-manager.js'
 
 // 场景类型
 export const SCENE = {
@@ -65,6 +69,39 @@ export class Game {
 
     // 监听窗口大小变化
     wx.onWindowResize(() => this._resize())
+
+    // ★ 切后台/关闭小程序时兜底存档：把运行时角色/装备状态快照后落盘，
+    //   避免玩家直接关掉小程序（不经场景切换）导致进度丢失。
+    wx.onHide(() => this._autoSave())
+    if (typeof wx.onUnload === 'function') {
+      wx.onUnload(() => this._autoSave())
+    }
+  }
+
+  /**
+   * 把运行时角色/装备状态快照回 this.data（集中式持久化的核心）
+   * 必须在 data.save() 之前调用，保证任何场景（town/field）的进度都进存档。
+   * 用 _initialized 守卫，避免管理器尚未初始化时把空状态覆盖掉存档。
+   */
+  _syncRuntimeState() {
+    try {
+      if (charStateManager && charStateManager._initialized) {
+        this.data.set('characterStates', charStateManager.serialize())
+      }
+      if (equipmentManager && equipmentManager._initialized) {
+        this.data.set('equipmentData', equipmentManager.serialize())
+      }
+    } catch (e) {
+      console.error('[存档] 同步运行时状态失败:', e)
+    }
+  }
+
+  /**
+   * 兜底存档（切后台/关闭时调用）：先快照运行时状态再落盘
+   */
+  _autoSave() {
+    this._syncRuntimeState()
+    this.data.save()
   }
 
   _resize() {
@@ -143,7 +180,55 @@ export class Game {
       if (this.currentScene) {
         this.currentScene.init()
       }
+
+      // ★ 自动存档：每次切换场景后，记录当前位置并落盘
+      //   这样重载游戏后能精确恢复到上次所在场景与位置
+      this._recordLocation(sceneName, data)
+      // ★ 集中式快照：把运行时角色/装备状态同步回 this.data，再落盘
+      //   （解决 town 场景从不回写、进度丢失的问题）
+      this._syncRuntimeState()
+      this.data.save()
     })
+  }
+
+  /**
+   * 把"当前所在位置"写入存档，供「继续游戏」精确恢复
+   * sceneName: 'town' | 'field' | 'map' | 'battle' | 'collection' | 'tower'
+   * data: changeScene 传入的附加参数（含 nodeId / area / controlledHeroId 等）
+   */
+  _recordLocation(sceneName, data) {
+    // ★ 关键：主菜单是场景中转站，不是游戏内位置。
+    //   如果在这里记录 currentLocation，会导致"继续游戏"读到的 scene=main-menu
+    //   → 又跳回主菜单 → 死循环（表现为"继续游戏点了没用"）。
+    //   所以进主菜单时【保留】上次真实位置，不覆盖。
+    if (sceneName === 'main-menu') {
+      const existing = this.data.get('progression.currentLocation')
+      if (existing && existing.scene && existing.scene !== 'main-menu') {
+        return  // 保留现有真实位置，不写盘
+      }
+      // 极端情况：存档里本就是 main-menu（从未进过游戏内场景），则什么都不记
+      return
+    }
+
+    const loc = { scene: sceneName, nodeId: null, area: null, controlledHeroId: null }
+    if (data && typeof data === 'object') {
+      if (data.nodeId !== undefined) loc.nodeId = data.nodeId
+      if (data.area !== undefined) loc.area = data.area
+      if (data.controlledHeroId !== undefined) loc.controlledHeroId = data.controlledHeroId
+    }
+    // battle/field 是从 map 进入的，继续游戏时不应卡在战斗/野外中间态，
+    // 而是恢复到其来源（map 的 nodeId 或 town）。这里做归一化：
+    if (sceneName === 'battle') {
+      // 战斗来源通常是 map 的 nodeId（通过 battle-input 传入 nodeId）
+      loc.scene = 'map'
+      // nodeId 已在上面从 data.nodeId 取
+    } else if (sceneName === 'field') {
+      // field 来自 town 的副本入口，继续游戏恢复时回到 town 更安全
+      loc.scene = 'town'
+      loc.area = null
+      loc.nodeId = null
+    }
+    this.data.set('progression.currentLocation', loc)
   }
 
   /**

@@ -17,8 +17,10 @@
 DataManager.data（内存对象）
 ```
 
-- **save()** 每次触发：关卡切换（field → battle → town）、购买装备、引导结束、获得战利品等
-- **load()** 游戏启动时执行一次（game.js init）
+- **save()** 每次触发：场景切换（game.changeScene 末尾统一调用，**自动存档**）、购买装备、引导结束、获得战利品、NPC 手动存档按钮等
+- **load()** 游戏启动时执行一次（game.js start），以及「继续游戏」按钮入口
+- **自动存档**：`game._recordLocation(sceneName, data)` 在每次 `changeScene` 后写入 `progression.currentLocation` 并 `save()`，玩家无需手动存档，重载永不丢进度
+- **位置归一化**：`battle` → 归一为 `map`（保留 nodeId，不卡战斗中间态）；`field` → 归一为 `town`（回到城镇安全点，副本进度由 flags 记录不丢）
 - 不存在"实时存档"：战斗中状态存在内存，不落盘
 
 ---
@@ -46,6 +48,12 @@ DataManager.data（内存对象）
     flags: {          // 剧情/事件标记（true/false）
       // amyDefeated: true,   ← 通过 addFlag('amyDefeated') 设置
       // annieDefeated: false
+    },
+    currentLocation: { // ★ 继续游戏恢复点（自动存档写入）
+      scene: 'town',   // 'town'|'field'|'map'|'battle'|'collection'|'tower'
+      nodeId: null,    // 地图节点 id（map 场景）
+      area: null,      // 野外区域 id（field 场景）
+      controlledHeroId: null  // 预设主操控角色
     }
   },
 
@@ -260,3 +268,5 @@ console.log('[存档]', JSON.stringify(this.game.data.data, null, 2))
 | 日期 | 版本 | 变更 |
 |---|---|---|
 | 2026-04-13 | v1 | 首次重构：平铺结构 → 嵌套结构，加 version 字段和自动迁移 |
+| 2026-08-24 | v1.1 | 自动存档：changeScene 统一 save + currentLocation 记录；继续游戏按钮按 currentLocation 精确恢复；无存档时灰显禁用 |
+| 2026-08-25 | v1.2 | **修复"进度全丢"根因**：① `charStateManager.serialize()` 改为返回数组（旧版 `{characters:[...]}` 导致 `this.data.characters` 双层嵌套、`_validate` 的 `Array.isArray` 校验失败→读档被重置为默认）；② `equipment` 默认值/校验改为对象形态 `{unequippedItems:[...]}`（与 `equipmentManager.serialize()` 一致）；③ `load()` 加 `_normalize()` 容错旧档嵌套/数组形态；④ 集中式持久化 `game._syncRuntimeState()` 在每次 `save()` 前把 `charStateManager`/`equipmentManager` 运行时状态快照回 `this.data`（解决 town 场景从不回写、进度丢失）；⑤ `wx.onHide`/`onUnload` 兜底存档（切后台/关闭即存）。验证：`devtools/verify_save_runtime_state.mjs` 14/0 + `verify_save_continue.mjs` 16/0 |

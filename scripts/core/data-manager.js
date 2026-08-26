@@ -48,14 +48,25 @@ export class DataManager {
         currentChapter: 1,
         currentNode: 'town_start',
         party: [0],         // 出战阵容索引
-        flags: {}           // 剧情标记（amyDefeated / annieDefeated 等）
+        flags: {},          // 剧情标记（amyDefeated / annieDefeated 等）
+        // ★ 当前所在位置（自动存档用）：继续游戏时恢复到这里
+        // scene: 'town' | 'field' | 'map' | 'battle' | 'collection' | 'tower'
+        // nodeId: 地图节点 id（map 场景）
+        // area: 野外区域 id（field 场景）
+        // controlledHeroId: 预设主操控角色（进副本/野外生效）
+        currentLocation: {
+          scene: 'town',
+          nodeId: null,
+          area: null,
+          controlledHeroId: null
+        }
       },
 
       // 角色状态（HP/属性，独立于配置数据）
       characters: [],
 
-      // 装备数据
-      equipment: [],
+      // 装备数据（对象形态：{ unequippedItems: [id...] }，与 equipmentManager.serialize() 一致）
+      equipment: { unequippedItems: [] },
 
       // 道具背包
       inventory: [],
@@ -268,6 +279,7 @@ export class DataManager {
       if (raw) {
         const parsed = JSON.parse(raw)
         this.data = this._migrate(parsed)
+        this.data = this._normalize(this.data)
         if (!this._validate()) {
           console.warn('[存档] 校验失败，数据被重置')
           this.data = this._defaultData()
@@ -404,6 +416,36 @@ export class DataManager {
   }
 
   /**
+   * ★ 存档形态容错归一化（解决"进度全丢"的历史 bug）
+   * 旧版写入的 this.data.characters 是 {characters:[...]}（双层嵌套）、
+   * this.data.equipment 是数组 —— 都会让 _validate 失败导致读档被重置。
+   * 这里在读档后统一修正为规范形态：
+   *   - characters: 数组（兼容旧版 {characters:[...]}）
+   *   - equipment:  { unequippedItems: [id...] }（兼容旧版数组）
+   */
+  _normalize(data) {
+    if (!data || typeof data !== 'object') return data
+
+    // characters：旧版 {characters:[...]} → 扁平数组
+    if (data.characters && !Array.isArray(data.characters) && Array.isArray(data.characters.characters)) {
+      data.characters = data.characters.characters
+    }
+    if (!Array.isArray(data.characters)) {
+      data.characters = []
+    }
+
+    // equipment：旧版数组 → {unequippedItems:[...]}
+    if (Array.isArray(data.equipment)) {
+      data.equipment = { unequippedItems: data.equipment }
+    }
+    if (!data.equipment || typeof data.equipment !== 'object' || !Array.isArray(data.equipment.unequippedItems)) {
+      data.equipment = { unequippedItems: (data.equipment && Array.isArray(data.equipment)) ? data.equipment : [] }
+    }
+
+    return data
+  }
+
+  /**
    * ★ 存档数据校验
    * 返回 false = 数据损坏，直接回退到默认值
    * 核心类型错误都兜住，防止 NaN / 崩溃
@@ -438,8 +480,8 @@ export class DataManager {
         console.warn('[存档校验] characters 不是数组')
         return false
       }
-      if (!Array.isArray(d.equipment)) {
-        console.warn('[存档校验] equipment 不是数组')
+      if (d.equipment === null || typeof d.equipment !== 'object') {
+        console.warn('[存档校验] equipment 不是对象')
         return false
       }
       if (!Array.isArray(d.inventory)) {

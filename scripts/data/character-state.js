@@ -182,6 +182,10 @@ export class CharacterState {
   
   /**
    * 序列化（保存用）
+   * ★ 返回「数组」而非 {characters:[...]}：data-manager 的 legacyMap 把
+   *   characterStates → this.data.characters，若这里返回嵌套对象会导致
+   *   this.data.characters = {characters:[...]}（双层嵌套），_validate 的
+   *   Array.isArray 校验失败 → 每次读档被重置为默认（进度全丢）。
    */
   serialize() {
     return {
@@ -296,8 +300,15 @@ export class CharacterStateManager {
     // ============================================================
 
     // 加载存档（覆盖已存在角色的属性/装备）
-    if (savedData && savedData.characters) {
-      for (const charData of savedData.characters) {
+    // ★ 兼容两种形态：数组（新存档 data.characters=[...]）或 {characters:[...]}（旧存档）
+    let charArr = null
+    if (Array.isArray(savedData)) {
+      charArr = savedData
+    } else if (savedData && Array.isArray(savedData.characters)) {
+      charArr = savedData.characters
+    }
+    if (charArr) {
+      for (const charData of charArr) {
         const heroData = HEROES.find(h => h.id === charData.id)
         if (heroData && this.characters.has(charData.id)) {
           const state = CharacterState.deserialize(charData, heroData)
@@ -353,13 +364,17 @@ export class CharacterStateManager {
   
   /**
    * 序列化所有角色状态
+   * ★ 直接返回「数组」：[ {...}, {...} ]
+   *   这样 data.set('characterStates', 本返回值) 经 legacyMap 写入 this.data.characters
+   *   时得到的是数组（与 _defaultData / _validate 的 Array.isArray 一致）。
+   *   旧版返回 {characters:[...]} 会导致 this.data.characters 双层嵌套、校验失败、读档被重置。
    */
   serialize() {
     const characters = []
     for (const state of this.characters.values()) {
       characters.push(state.serialize())
     }
-    return { characters }
+    return characters
   }
 }
 

@@ -42,15 +42,32 @@ export class MainMenuScene {
     const btnW = 240 * this.dpr
     const btnH = 60 * this.dpr
 
+    // 缓存是否有存档（控制「继续游戏」按钮可用状态）
+    this._hasSaveCache = this.game.data.hasSave()
+
+    // ★ 诊断日志：方便真机排查「继续游戏」是否读到了正确位置
+    //   （重新载入小程序后，currentLocation.scene 应为 town/field 等真实位置，不能是 main-menu）
+    const _loc = this.game.data.get('progression.currentLocation')
+    console.log('[MainMenu] 启动诊断 → hasSave:', this._hasSaveCache,
+      '| currentLocation:', JSON.stringify(_loc),
+      '| gold:', this.game.data.get('player.gold'))
+    if (this._hasSaveCache && _loc && _loc.scene === 'main-menu') {
+      console.warn('[MainMenu] ⚠️ currentLocation 仍是 main-menu，继续游戏会死循环，已兜底 town')
+    }
+
     this.buttons = [
       {
-        text: '🎮 开始冒险',
+        text: this._hasSaveCache ? '🎮 开始新游戏' : '🎮 开始冒险',
         x: cx - btnW / 2,
         y: cy + 40 * this.dpr,
         w: btnW,
         h: btnH,
         color: '#ff9f43',
         action: () => {
+          // 已有存档时「开始新游戏」先清档，避免进度叠加
+          if (this._hasSaveCache) {
+            this.game.data.clear()
+          }
           this.game.data.set('currentChapter', 1)
           this.game.changeScene('town')
         }
@@ -62,13 +79,24 @@ export class MainMenuScene {
         w: btnW,
         h: btnH,
         color: '#54a0ff',
+        // ★ 无存档时灰显禁用（hasSave 在 init 时确定）
+        disabled: !this._hasSaveCache,
         action: () => {
-          if (this.game.data.hasSave()) {
-            const saveData = this.game.data.load()
-            this.game.changeScene('map', saveData)
-          } else {
-            console.log('[MainMenu] 没有存档')
+          if (!this.game.data.hasSave()) {
+            console.log('[MainMenu] 没有存档，继续游戏不可用')
+            return
           }
+          // 读档拿到精确位置
+          this.game.data.load()
+          const loc = this.game.data.get('progression.currentLocation') || { scene: 'town' }
+          const payload = {}
+          if (loc.nodeId) payload.nodeId = loc.nodeId
+          if (loc.area) payload.area = loc.area
+          if (loc.controlledHeroId) payload.controlledHeroId = loc.controlledHeroId
+          console.log('[MainMenu] 继续游戏 → 恢复位置:', loc.scene, payload)
+          // 兜底：极端情况下 loc.scene 仍是 main-menu（旧档/异常），避免死循环回主菜单
+          const targetScene = (loc.scene && loc.scene !== 'main-menu') ? loc.scene : 'town'
+          this.game.changeScene(targetScene, payload)
         }
       },
       {
@@ -240,6 +268,7 @@ export class MainMenuScene {
   _drawButton(ctx, btn) {
     const { x, y, w, h, text, color } = btn
     const r = 12 * this.dpr
+    const disabled = !!btn.disabled
 
     // 按钮背景
     ctx.beginPath()
@@ -253,6 +282,21 @@ export class MainMenuScene {
     ctx.lineTo(x, y + r)
     ctx.arcTo(x, y, x + r, y, r)
     ctx.closePath()
+
+    if (disabled) {
+      // 灰显禁用态
+      ctx.fillStyle = 'rgba(120,120,130,0.5)'
+      ctx.fill()
+      ctx.strokeStyle = 'rgba(255,255,255,0.15)'
+      ctx.lineWidth = 2
+      ctx.stroke()
+      ctx.font = `bold ${24 * this.dpr}px sans-serif`
+      ctx.fillStyle = 'rgba(255,255,255,0.45)'
+      ctx.textAlign = 'center'
+      ctx.textBaseline = 'middle'
+      ctx.fillText(text, x + w / 2, y + h / 2)
+      return
+    }
 
     // 渐变填充
     const grad = ctx.createLinearGradient(x, y, x, y + h)
