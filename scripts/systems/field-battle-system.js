@@ -1140,6 +1140,11 @@ export function installFieldBattleSystem(FieldSceneClass) {
     if ((skill.mpCost || 0) > 0) {
       mainHero.mp = Math.max(0, mainHero.mp - (skill.mpCost || 0))
     }
+    // ★ 霸体标志：剑气风暴配置 superArmor:true，必须落到英雄实例上。
+    //   否则 isHeroSuperArmor() 为 false → 受击不走霸体豁免，_interruptCastingForHero /
+    //   _triggerHeroHurt 会误把主控英雄(臻宝)的剑气风暴动画打断（与 _castSkill /
+    //   _allyTryCastSkill 的霸体落标保持一致）。
+    mainHero._castSuperArmor = !!(skill && skill.superArmor)
     // ★ 设置技能按钮冷却（蓝量扣了，冷却也要算）
     if (this.battleSystem.skillButtons) {
       const sb = this.battleSystem.skillButtons.find(b => b.skill === skill)
@@ -1534,7 +1539,13 @@ export function installFieldBattleSystem(FieldSceneClass) {
     // ★ 标记本次施法被打断：所有挂在该 token 上的待结算效果（延迟伤害 / 延迟弹道 / 技能过程 / BUFF）一律作废
     hero._castInterrupted = true
     // ★ 清施法 / 普攻状态：动画中止、立即停止施法流程（受击硬直本身由 _hurtLock 统一处理）
-    if (this.battleSystem.playerAnim) this.battleSystem.playerAnim.timer = 0
+    //   ★ 守卫：全局 playerAnim 只代表【主控英雄】的施法动画单例。仅当被击英雄正是该
+    //   施法主控英雄时才清空其动画；队友(非主控)被击不能误杀主控英雄(如臻宝)的霸体
+    //   施法动画——否则会出现"李小宝被攻击→臻宝剑气风暴被中断"的串扰 bug。
+    const _paCtrl = this._getCurrentControlHero && this._getCurrentControlHero()
+    if (this.battleSystem.playerAnim && _paCtrl && _paCtrl.hero === hero) {
+      this.battleSystem.playerAnim.timer = 0
+    }
     hero._aiAttacking = false
     hero._aiAttackTimer = 0
     hero._aiCastingSkill = null
