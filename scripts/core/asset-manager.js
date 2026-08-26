@@ -445,4 +445,12 @@ export const ASSETS = {
     { action: 'skill',   frames: 8 },
     { action: 'support', frames: 8 },
   ]),
+
+  // --- 石像守卫动画（AoE3 风格 8 帧透明 PNG，4×2 网格切片自 _source_backup/石像守卫）---
+  ...buildFrames('STONE_GOLEM', 'images/characters_anim/transparent/stone_golem', [
+    { action: 'idle',   frames: 8 },
+    { action: 'walk',   frames: 8 },
+    { action: 'attack', frames: 8 },
+    { action: 'skill',  frames: 8 },
+  ]),
 }
