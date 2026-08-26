@@ -32,7 +32,9 @@ import numpy as np
 from PIL import Image
 from collections import Counter, deque
 
-T = 70  # 洪水填充阈值：color-distance 之和 <= T 视为"可连通背景"
+T = 28  # 洪水填充阈值：color-distance 之和 <= T 视为"可连通背景"。
+        # 源图表色间隙在 cd=20(背景)与 cd=30(石像最暗腿/阴影)之间，取 28 紧贴背景，
+        # 只删纯背景、保留石像全部部位(含暗腿)；不再误删贴边暗身体。
 
 
 def bg_of(a):
