@@ -1509,7 +1509,7 @@ baseRadius: 50 * this.dpr,    // 底座半径（缩小）
       }
 
       // ★ 支持序列帧动画的怪物列表（使用 _renderCatMonster 渲染）
-      const useCatAnim = ['slime_cat', 'shadow_mouse', 'wild_cat', 'lost_healer_cat', 'flame_slime', 'aqua_slime', 'violet_slime', 'shadow_mouse_smooth', 'stone_golem'].includes(monster.enemyId)
+      const useCatAnim = ['slime_cat', 'shadow_mouse', 'wild_cat', 'lost_healer_cat', 'flame_slime', 'aqua_slime', 'violet_slime', 'shadow_mouse_smooth', 'stone_golem', 'thug_leader'].includes(monster.enemyId)
       if (useCatAnim && monster.animTimer === undefined) {
         monster.animTimer = 0
         monster.animFrame = 0
@@ -4278,7 +4278,7 @@ baseRadius: 50 * this.dpr,    // 底座半径（缩小）
     engine.render(ctx, {
       renderMonster: (ctx, monster, sx, sy) => {
         // ★ 修复：所有有动画资源的怪物都使用猫咪动画
-        const useCatAnim = ['slime_cat', 'shadow_mouse', 'wild_cat', 'lost_healer_cat', 'flame_slime', 'aqua_slime', 'violet_slime', 'shadow_mouse_smooth', 'stone_golem'].includes(monster.enemyId)
+        const useCatAnim = ['slime_cat', 'shadow_mouse', 'wild_cat', 'lost_healer_cat', 'flame_slime', 'aqua_slime', 'violet_slime', 'shadow_mouse_smooth', 'stone_golem', 'thug_leader'].includes(monster.enemyId)
         // ★ 跳跃攻击动画：按抛物线高度上移渲染（跳跃期间怪物在空中）
         const jumpY = sy + (monster._jumpOffsetY || 0)
         if (useCatAnim) {
@@ -5036,7 +5036,8 @@ baseRadius: 50 * this.dpr,    // 底座半径（缩小）
       slime_cat: 'SLIME_CAT', shadow_mouse: 'SHADOW_MOUSE', wild_cat: 'SLIME_CAT',
       lost_healer_cat: 'LOST_HEALER_CAT', flame_slime: 'FLAME_SLIME',
       aqua_slime: 'AQUA_SLIME', violet_slime: 'VIOLET_SLIME',
-      shadow_mouse_smooth: 'SHADOW_MOUSE'
+      shadow_mouse_smooth: 'SHADOW_MOUSE',
+      thug_leader: 'THUG_LEADER'
     }
     const assetPrefix = prefixMap[target.enemyId] || null
     const iconKey = assetPrefix ? (assetPrefix + '_WALK_01') : null
@@ -5700,7 +5701,7 @@ baseRadius: 50 * this.dpr,    // 底座半径（缩小）
 
       // 所有普通怪物使用坏猫动画，Boss/精英使用emoji
       // ★ 修复：所有有动画资源的怪物都使用猫咪动画
-      const useCatAnim = ['slime_cat', 'shadow_mouse', 'wild_cat', 'lost_healer_cat', 'flame_slime', 'aqua_slime', 'violet_slime', 'shadow_mouse_smooth', 'stone_golem'].includes(monster.enemyId)
+      const useCatAnim = ['slime_cat', 'shadow_mouse', 'wild_cat', 'lost_healer_cat', 'flame_slime', 'aqua_slime', 'violet_slime', 'shadow_mouse_smooth', 'stone_golem', 'thug_leader'].includes(monster.enemyId)
 
       if (useCatAnim) {
         // 使用猫咪动画渲染
@@ -5933,7 +5934,8 @@ baseRadius: 50 * this.dpr,    // 底座半径（缩小）
       'violet_slime': require('../entities/monsters/slime_cat_skins.js').violet_slime,
       // === 派生资源：暗影鼠补帧顺滑版 ===
       'shadow_mouse_smooth': require('../entities/monsters/shadow-mouse-tween.js'),
-      'stone_golem': require('../entities/monsters/stone-golem.js')
+      'stone_golem': require('../entities/monsters/stone-golem.js'),
+      'thug_leader': require('../entities/monsters/thug-leader.js')
     }
 
     try {
@@ -6017,7 +6019,8 @@ baseRadius: 50 * this.dpr,    // 底座半径（缩小）
       'violet_slime': 'VIOLET_SLIME',
       // === 派生资源：暗影鼠补帧顺滑版 ===
       'shadow_mouse_smooth': 'SHADOW_MOUSE_SMOOTH',
-      'stone_golem': 'STONE_GOLEM'
+      'stone_golem': 'STONE_GOLEM',
+      'thug_leader': 'THUG_LEADER'
     }
 
     const prefix = prefixMap[enemyId] || 'SLIME_CAT'

@@ -6,6 +6,7 @@
  */
 module.exports = {
   id: 'thug_leader',
+  type: 'thug_leader', // 与 enemyId 对齐，供 _renderCatMonster 识别
   name: '打手头目',
   level: 12,
   maxHp: 450,
@@ -26,6 +27,34 @@ module.exports = {
     shadow: true,
     targetHeight: 80,
     frameDuration: 0.15
+  },
+
+  // === 动画配置（4 套透明帧：idle/walk/attack/skill 各 8 帧）===
+  animationConfig: {
+    idle: {
+      start: 1, end: 8,
+      path: 'subpackages/battle/images/characters_anim/transparent/thug_leader/idle/',
+      framePad: 2,
+      frameDuration: 180 // 壮汉站立，呼吸稳
+    },
+    walk: {
+      start: 1, end: 8,
+      path: 'subpackages/battle/images/characters_anim/transparent/thug_leader/walk/',
+      framePad: 2,
+      frameDuration: 130 // 大步逼近
+    },
+    attack: {
+      start: 1, end: 8,
+      path: 'subpackages/battle/images/characters_anim/transparent/thug_leader/attack/',
+      framePad: 2,
+      frameDuration: 110 // 蛮力重拳，快
+    },
+    skill: {
+      start: 1, end: 8,
+      path: 'subpackages/battle/images/characters_anim/transparent/thug_leader/skill/',
+      framePad: 2,
+      frameDuration: 130 // 威吓怒吼/铁壁
+    }
   },
   exp: 110,
   gold: 80,

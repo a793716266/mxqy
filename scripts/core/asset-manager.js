@@ -453,4 +453,12 @@ export const ASSETS = {
     { action: 'attack', frames: 8 },
     { action: 'skill',  frames: 8 },
   ]),
+
+  // --- 打手头目动画（4×2 网格切片自 _source_backup/打手头目）---
+  ...buildFrames('THUG_LEADER', 'images/characters_anim/transparent/thug_leader', [
+    { action: 'idle',   frames: 8 },
+    { action: 'walk',   frames: 8 },
+    { action: 'attack', frames: 8 },
+    { action: 'skill',  frames: 8 },
+  ]),
 }
