@@ -249,13 +249,13 @@ def fill_holes(opaque):
     return out
 
 
-def keep_main_components(opaque, min_ratio=0.02, abs_min=500):
-    """保留「最大块」外加所有面积 >= max(min_ratio*最大块, abs_min) 的连通块。
+def keep_main_components(opaque, min_ratio=0.02, abs_min=500, min_side=4):
+    """保留「最大块」外加所有面积 >= max(min_ratio*最大块, abs_min) 的连通块；
+    并删除极细线状独立块(宽或高 <= min_side)，如源表帧间分隔竖线/横线残留。
 
-    阈值设计的依据(v5 实测，石像守卫 4 动作 32 帧)：真实肢体/武器块最小约 919px，
-    而抠图噪声块最大约 205px。故用绝对地板 abs_min=500 即可把噪声全删、真实肢体全留，
-    同时 min_ratio 自适应大图。原先 min_ratio=0.2 会把 1000~4500px 的腿/臂当碎块删掉
-    (导致 walk 缺腿、idle/attack 缺臂)，现已修正。
+    阈值依据(v5/v6 实测)：真实肢体/武器块最小约 919px，噪声块最大约 205px，
+    故 abs_min=500 删噪声留肢体；线状残留(如 3px 宽竖线，离身体 30+px 无法桥接)
+    用 min_side 删——它面积虽大(上千 px)但是线，不能当肢体留。
     """
     H, W = opaque.shape
     lab = np.zeros((H, W), dtype=np.int32)
@@ -291,19 +291,110 @@ def keep_main_components(opaque, min_ratio=0.02, abs_min=500):
             lab[y, x] = r
             for v in nb:
                 union(r, v)
+    # 标注完成后，单独扫一遍统计每根的(面积 + 包围盒)，避免合并时 bbox 更新错误
     sizes = {}
+    bb = {}
     for y, x in zip(ys, xs):
         rv = find(lab[y, x])
         sizes[rv] = sizes.get(rv, 0) + 1
+        if rv not in bb:
+            bb[rv] = [y, y, x, x]
+        else:
+            b = bb[rv]
+            if y < b[0]:
+                b[0] = y
+            if y > b[1]:
+                b[1] = y
+            if x < b[2]:
+                b[2] = x
+            if x > b[3]:
+                b[3] = x
     if not sizes:
         return opaque
     mx = max(sizes.values())
     floor = max(min_ratio * mx, abs_min)
-    keep = {rv for rv, sz in sizes.items() if sz >= floor}
+    keep_roots = set()
+    for rv, sz in sizes.items():
+        if sz < floor:
+            continue
+        b = bb[rv]
+        w = b[3] - b[2] + 1
+        h = b[1] - b[0] + 1
+        if min(w, h) <= min_side:  # 极细线状残留(帧间分隔线等)
+            continue
+        keep_roots.add(rv)
     out = np.zeros((H, W), bool)
     for y, x in zip(ys, xs):
-        if find(lab[y, x]) in keep:
+        if find(lab[y, x]) in keep_roots:
             out[y, x] = True
+    return out
+
+
+def drop_thin_lines(opaque, min_side=3):
+    """终检：删除最终遮罩里宽或高 <= min_side 的极细线状连通块。
+
+    用于清掉源表细线(帧间分隔线)以及缩放后从身体断裂的 1px 细丝残留。
+    只删独立细块，连接在身体上的细部位(属同一组件)不受影响。
+    """
+    H, W = opaque.shape
+    lab = np.zeros((H, W), dtype=np.int32)
+    parent = [0]
+    ys, xs = np.where(opaque)
+    if len(ys) == 0:
+        return opaque
+
+    def find(x):
+        while parent[x] != x:
+            parent[x] = parent[parent[x]]
+            x = parent[x]
+        return x
+
+    def union(a, b):
+        ra, rb = find(a), find(b)
+        if ra != rb:
+            parent[ra] = rb
+
+    nxt = 1
+    for y, x in zip(ys, xs):
+        nb = []
+        if x > 0 and opaque[y, x - 1]:
+            nb.append(lab[y, x - 1])
+        if y > 0 and opaque[y - 1, x]:
+            nb.append(lab[y - 1, x])
+        if not nb:
+            lab[y, x] = nxt
+            parent.append(nxt)
+            nxt += 1
+        else:
+            r = min(nb)
+            lab[y, x] = r
+            for v in nb:
+                union(r, v)
+    bb = {}
+    for y, x in zip(ys, xs):
+        rv = find(lab[y, x])
+        if rv not in bb:
+            bb[rv] = [y, y, x, x]
+        else:
+            b = bb[rv]
+            if y < b[0]:
+                b[0] = y
+            if y > b[1]:
+                b[1] = y
+            if x < b[2]:
+                b[2] = x
+            if x > b[3]:
+                b[3] = x
+    thin = set()
+    for rv, b in bb.items():
+        w = b[3] - b[2] + 1
+        h = b[1] - b[0] + 1
+        if min(w, h) <= min_side:
+            thin.add(rv)
+    out = opaque.copy()
+    for y, x in zip(ys, xs):
+        if find(lab[y, x]) in thin:
+            out[y, x] = False
     return out
 
 
@@ -366,21 +457,17 @@ def main():
             continue
         print(f'== {act} ==')
         per_action[act] = slice_sheet(src, target)
-    # 两遍：以"身体帧"(idle/walk/attack) 的内容高度分位数为统一基准，
-    # 所有帧共用 sH 脚底锚定 → 身体尺寸一致、消除逐帧胀缩；skill 的柱/臂
-    # 超出画布顶部则按宽 contain（与旧行为一致，不引入回归）。
-    body_acts = [a for a in ('idle', 'walk', 'attack') if a in per_action]
-    body_bhs = [bh for a in body_acts for (_, _, bh) in per_action[a]]
-    if body_bhs:
-        body_bhs.sort()
-        refH = body_bhs[min(len(body_bhs) - 1, int(0.85 * len(body_bhs)))]
-    else:
-        refH = max((bh for res in per_action.values() for (_, _, bh) in res), default=1)
-    sH = th / refH
+    # 各动作统一缩放到「共同目标站立高度」targetH：每动作取自身内容高中位数定比例，
+    # 该动作内所有帧共用同一比例(脚底锚定) → 同动作帧间尺寸一致；跨动作用共同 targetH
+    # 归一(补偿源表跨动作缩放差异) → 角色表观大小在各动画间一致。skill 特效超宽按宽 contain。
+    targetH = 110
     for act in actions:
         res = per_action.get(act)
         if not res:
             continue
+        bhs = [bh for (_, _, bh) in res]
+        med = sorted(bhs)[len(bhs) // 2]
+        s_act = targetH / med if med > 0 else 1
         od = os.path.join(out, act)
         # 先清空旧帧，避免上一轮多切出的残帧(如 skill_09)污染动画
         if os.path.isdir(od):
@@ -391,17 +478,21 @@ def main():
         written = []
         out_idx = 0
         for (sub, bw, bh) in res:
-            s = sH
+            s = s_act
             if bw * s > tw:
                 s = tw / bw
             nw, nh = max(1, int(round(bw * s))), max(1, int(round(bh * s)))
             sub_img = Image.fromarray(sub, 'RGBA').resize((nw, nh), Image.LANCZOS)
             canvas = Image.new('RGBA', target, (0, 0, 0, 0))
             canvas.paste(sub_img, ((tw - nw) // 2, th - nh))  # 脚底对齐底部 + 水平居中
+            # 终检：清掉最终画布里的极细线残留(源细线/缩放后断裂的 1px 细丝)
+            amask = np.array(canvas.split()[-1]) > 200
+            amask = drop_thin_lines(amask, min_side=3)
+            canvas.putalpha(Image.fromarray((amask.astype(np.uint8) * 255), 'L'))
             out_idx += 1
             canvas.save(os.path.join(od, f'{act}_{out_idx:02d}.png'))
             written.append((out_idx, bw, bh, nw, nh))
-        print(f'  {act}: {len(written)} frames (uniform scale sH={sH:.3f}, refH={refH})')
+        print(f'  {act}: {len(written)} frames (per-action scale s={s_act:.3f}, targetH={targetH})')
         for r in written:
             print(f'     frame {r[0]:02d}: src {r[1]}x{r[2]} -> {r[3]}x{r[4]}')
     print('SUMMARY:', {k: len(v) for k, v in per_action.items()})
