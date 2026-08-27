@@ -35,6 +35,8 @@ from collections import Counter, deque
 T = 28  # 洪水填充阈值：color-distance 之和 <= T 视为"可连通背景"。
         # 源图表色间隙在 cd=20(背景)与 cd=30(石像最暗腿/阴影)之间，取 28 紧贴背景，
         # 只删纯背景、保留石像全部部位(含暗腿)；不再误删贴边暗身体。
+        # 可用 --t 覆盖：打手头目西装褶皱接近背景色(sum-cd 20~28)，T=28 会从褶缝
+        # 穿透把身体抠出白缝(idle_07 右臂)，实测其背景 sum-cd<=12 → 用 T=20。
 
 
 def bg_of(a):
@@ -49,6 +51,82 @@ def bg_of(a):
     ], axis=0).astype(int)
     cols = [tuple(c) for c in ring]
     return np.array(Counter(cols).most_common(1)[0][0], dtype=int)
+
+
+def erase_grid_lines(a, bg):
+    """v7：整表预擦除「帧间分隔线」。AI 表常带 4px 亮灰([99,101,105])分隔网格，
+    亮灰 cd(max)≈66 远大于 T，连通性抠图删不掉 → 缩略后成漂浮细线残留。
+    检测：某列/行上「中性灰(cd_max 40~110, max-min<=8)」占比 > 0.5 → 是分隔线，
+    连带 ±4px 涂回背景色。身体像素要么彩色(不中性)要么黑色(cd<=40)，不会误伤。"""
+    rgb = a[:, :, :3].astype(int)
+    cdmax = np.abs(rgb - bg).max(2)
+    neutral = (rgb.max(2) - rgb.min(2)) <= 8
+    linemask = (cdmax > 40) & (cdmax < 110) & neutral
+    h, w = linemask.shape
+    out = a.copy()
+    erased = 0
+    for axis in (0, 1):  # 0=按列统计(竖线) 1=按行统计(横线)
+        frac = linemask.mean(axis=axis)
+        idx = np.where(frac > 0.5)[0]
+        groups = []
+        for i in idx:
+            if groups and i - groups[-1][-1] <= 2:
+                groups[-1].append(i)
+            else:
+                groups.append([i])
+        for g in groups:
+            c = (g[0] + g[-1]) // 2
+            if axis == 0:
+                lo, hi = max(0, c - 4), min(w - 1, c + 4)
+                out[:, lo:hi + 1, :3] = bg
+            else:
+                lo, hi = max(0, c - 4), min(h - 1, c + 4)
+                out[lo:hi + 1, :, :3] = bg
+            erased += 1
+    return out, erased
+
+
+def remove_ground_shadow(crop, bg):
+    """v7：删除脚底的椭圆「地面投影」。地影是暖中性暗灰([19,18,17], lum 17~22, R>=B-3)，
+    与背景(sum-cd≈54>T)分不开、与鞋直接相连(连通性删不掉)。但它与
+    西装/裤子(偏蓝紫 B>R+4~10)色相可分、与鞋底近纯黑(lum<10)亮度可分。
+    策略：以「每列最低的近纯黑像素」为鞋底线 sole[x]（只在内容底部 12% 区域内找，
+    缺列用最近邻插值），删除 sole[x]+2 以下所有暖中性暗色像素（那里只可能是地影）。
+    v7.1 收紧防咬裤：色相条件 R-B>=-1（裤褶 [27,24,29] R-B=-2 被排除）；
+    黑锚点只在底部 12% 找（避免高处黑色误当鞋底线）；删除区限底部 25%。
+    返回 (新crop, 删除像素数)。"""
+    rgb = crop[:, :, :3].astype(int)
+    H, W = rgb.shape[:2]
+    lum = rgb.mean(2)
+    cdmax = np.abs(rgb - bg).max(2)
+    fg_rows = np.where((cdmax > 12).any(1))[0]
+    if len(fg_rows) == 0:
+        return crop, 0
+    y_bottom = int(fg_rows.max())
+    y_top = int(fg_rows.min())
+    contentH = y_bottom - y_top + 1
+    anchor_top = y_bottom - int(0.12 * contentH)
+    del_top = y_bottom - int(0.25 * contentH)
+    black = lum < 10  # 鞋底近纯黑(实测 [0..9])；地影 lum 15+ 不会误当锚点
+    black[:anchor_top, :] = False
+    sole = np.full(W, -1.0)
+    for x in range(W):
+        ys = np.where(black[:, x])[0]
+        if len(ys):
+            sole[x] = ys.max()
+    xs_valid = np.where(sole >= 0)[0]
+    if len(xs_valid) == 0:
+        return crop, 0
+    for x in range(W):
+        if sole[x] < 0:
+            j = xs_valid[int(np.argmin(np.abs(xs_valid - x)))]
+            sole[x] = sole[j]
+    rule = (lum >= 13) & (lum <= 34) & ((rgb[:, :, 0] - rgb[:, :, 2]) >= -1)
+    yy = np.arange(H)[:, None]
+    del_mask = rule & (yy > (sole[None, :] + 2)) & (yy >= del_top)
+    out = crop.copy()
+    out[del_mask, :3] = bg
+    return out, int(del_mask.sum())
 
 
 def gap_segments(proj, x0, x1, thr):
@@ -92,27 +170,28 @@ def enforce_four(segs, proj):
     return sorted(segs)
 
 
-def key_opaque(crop, bg):
+def key_opaque(crop, bg, t=None):
     """返回布尔不透明遮罩：True=身体。从边界洪水，连到边界的暗像素=背景。"""
+    t = T if t is None else t
     cd = np.abs(crop[:, :, :3].astype(int) - bg).sum(2)
     H, W = cd.shape
     reachable = np.zeros((H, W), bool)
     dq = deque()
     for x in range(W):
         for y in (0, H - 1):
-            if cd[y, x] <= T and not reachable[y, x]:
+            if cd[y, x] <= t and not reachable[y, x]:
                 reachable[y, x] = True
                 dq.append((y, x))
     for y in range(H):
         for x in (0, W - 1):
-            if cd[y, x] <= T and not reachable[y, x]:
+            if cd[y, x] <= t and not reachable[y, x]:
                 reachable[y, x] = True
                 dq.append((y, x))
     while dq:
         y, x = dq.popleft()
         for dy, dx in ((1, 0), (-1, 0), (0, 1), (0, -1)):
             ny, nx = y + dy, x + dx
-            if 0 <= ny < H and 0 <= nx < W and not reachable[ny, nx] and cd[ny, nx] <= T:
+            if 0 <= ny < H and 0 <= nx < W and not reachable[ny, nx] and cd[ny, nx] <= t:
                 reachable[ny, nx] = True
                 dq.append((ny, nx))
     transparent = (cd <= T) & reachable
@@ -398,14 +477,21 @@ def drop_thin_lines(opaque, min_side=3):
     return out
 
 
-def slice_sheet(src_path, target):
+def slice_sheet(src_path, target, t=None, close_k=0):
     a = np.array(Image.open(src_path).convert('RGBA'))
     bg = bg_of(a)
+    a, nlines = erase_grid_lines(a, bg)  # v7: 先擦分隔线再切格
     cells = segment_cells(a, bg)
     results = []
     PAD = 40  # 给单元格垫一圈背景边距，使石像永不直接贴边（避免暗身体被当背景删、只剩头）
+    st = None
+    if close_k > 0:  # 形态学闭合的圆盘结构元
+        from scipy.ndimage import binary_closing  # 延迟导入
+        yy, xx = np.mgrid[-close_k:close_k + 1, -close_k:close_k + 1]
+        st = (yy * yy + xx * xx) <= close_k * close_k
     for (y0, y1, x0, x1) in cells:
         crop = a[y0:y1 + 1, x0:x1 + 1].copy()
+        crop, nshadow = remove_ground_shadow(crop, bg)  # v7: 删脚底椭圆地影
         # 关键修复(v5)：必须使用「整表级」背景 bg，不能用裁剪格四角的 bg_of(crop)。
         # 某些动作(如 skill 的岩石/光效)会伸进单元格四角，导致 bg_of(crop) 采到
         # 明亮的特效色 → 把真正的深色背景误判为身体(保留不透明=黑底)，
@@ -416,8 +502,13 @@ def slice_sheet(src_path, target):
         padded[:, :, :3] = bg
         padded[:, :, 3] = 255
         padded[PAD:PAD + Hc, PAD:PAD + Wc] = crop
-        opaque = key_opaque(padded, bg)
+        opaque = key_opaque(padded, bg, t)
         opaque = keep_main_components(opaque)  # 头+身体若断开都留，只删标签碎块
+        if st is not None:
+            # v7: 形态学闭合，桥接"袖口/衣褶渐变成背景色"被洪水抠出的窄缝
+            # (如打手头目 idle_07 右臂)。缝内像素与背景连续渐变，无阈值可分。
+            from scipy.ndimage import binary_closing
+            opaque = binary_closing(opaque, structure=st)
         opaque = fill_holes(opaque)
         if opaque.sum() < 800:
             continue
@@ -444,7 +535,12 @@ def main():
     p.add_argument('--out', help='输出根目录（默认 subpackages/battle/images/characters_anim/transparent/<name>）')
     p.add_argument('--actions', default='idle,walk,attack,skill', help='动作列表，逗号分隔')
     p.add_argument('--target', default='93x120', help='输出画布 WxH')
+    p.add_argument('--t', type=int, default=None, help='洪水阈值(默认28)。西装贴身深色的表用 20')
+    p.add_argument('--close', type=int, default=0, help='形态学闭合半径(格坐标像素)。桥接衣褶渐变窄缝，如打手头目用 7')
     args = p.parse_args()
+    global T
+    if args.t:
+        T = args.t
     out = args.out or f'subpackages/battle/images/characters_anim/transparent/{args.name}'
     tw, th = map(int, args.target.lower().split('x'))
     target = (tw, th)
@@ -456,7 +552,7 @@ def main():
             print(f'!! 跳过 {act}：{src} 不存在')
             continue
         print(f'== {act} ==')
-        per_action[act] = slice_sheet(src, target)
+        per_action[act] = slice_sheet(src, target, args.t, args.close)
     # 各动作统一缩放到「共同目标站立高度」targetH：每动作取自身内容高中位数定比例，
     # 该动作内所有帧共用同一比例(脚底锚定) → 同动作帧间尺寸一致；跨动作用共同 targetH
     # 归一(补偿源表跨动作缩放差异) → 角色表观大小在各动画间一致。skill 特效超宽按宽 contain。
