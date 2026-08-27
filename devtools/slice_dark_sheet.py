@@ -537,6 +537,7 @@ def main():
     p.add_argument('--target', default='93x120', help='输出画布 WxH')
     p.add_argument('--t', type=int, default=None, help='洪水阈值(默认28)。西装贴身深色的表用 20')
     p.add_argument('--close', type=int, default=0, help='形态学闭合半径(格坐标像素)。桥接衣褶渐变窄缝，如打手头目用 7')
+    p.add_argument('--flip-actions', default='', help='需水平镜像的动作列表(逗号分隔)，如 skill。源表各动作朝向不一致时用')
     args = p.parse_args()
     global T
     if args.t:
@@ -545,6 +546,7 @@ def main():
     tw, th = map(int, args.target.lower().split('x'))
     target = (tw, th)
     actions = [a.strip() for a in args.actions.split(',') if a.strip()]
+    flip_actions = {a.strip() for a in args.flip_actions.split(',') if a.strip()}
     per_action = {}
     for act in actions:
         src = os.path.join(args.src, f'{act}.png')
@@ -585,6 +587,8 @@ def main():
             amask = np.array(canvas.split()[-1]) > 200
             amask = drop_thin_lines(amask, min_side=3)
             canvas.putalpha(Image.fromarray((amask.astype(np.uint8) * 255), 'L'))
+            if act in flip_actions:  # 源表该动作朝向与其余动作相反 → 水平镜像对齐
+                canvas = canvas.transpose(Image.FLIP_LEFT_RIGHT)
             out_idx += 1
             canvas.save(os.path.join(od, f'{act}_{out_idx:02d}.png'))
             written.append((out_idx, bw, bh, nw, nh))
