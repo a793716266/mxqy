@@ -451,19 +451,19 @@ export class TownScene {
         color: '#9b59b6'
       },
       {
-        id: 'merchant_secret',
+        id: 'merchant_town',
         name: '探索商人的秘密',
         desc: '等级 7-9 | 未解锁',
-        area: 'merchant_secret',
+        area: 'merchant_town',
         unlocked: testMode,
         requirement: '需要：完成魔法塔危机',
         color: '#f39c12'
       },
       {
-        id: 'ancient_guardian',
+        id: 'ancient_ruins',
         name: '探索古城守护者',
         desc: '等级 10-12 | 未解锁',
-        area: 'ancient_guardian',
+        area: 'ancient_ruins',
         unlocked: testMode,
         requirement: '需要：完成商人的秘密',
         color: '#3498db'
