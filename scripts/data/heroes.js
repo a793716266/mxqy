@@ -21,7 +21,7 @@ export const HEROES = [
     name: '臻宝',
     title: '勇敢的战士',
     role: 'warrior',
-    maxHp: 220,
+    maxHp: 2200,
     maxMp: 120,
     atk: 18,
     def: 25,
