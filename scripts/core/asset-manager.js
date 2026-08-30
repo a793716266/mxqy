@@ -461,4 +461,12 @@ export const ASSETS = {
     { action: 'attack', frames: 8 },
     { action: 'skill',  frames: 8 },
   ]),
+
+  // --- 塔楼守护者动画（4×2 网格切片自 _source_backup/塔楼守护者，v7.3 含 removeBottomIsolated 删 AI 源图标签）---
+  ...buildFrames('TOWER_GUARDIAN', 'images/characters_anim/transparent/tower_guardian', [
+    { action: 'idle',   frames: 8 },
+    { action: 'walk',   frames: 8 },
+    { action: 'attack', frames: 8 },
+    { action: 'skill',  frames: 8 },
+  ]),
 }
