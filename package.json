@@ -1,7 +1,9 @@
 {
   "scripts": {
     "check": "node devtools/check_syntax.mjs",
-    "scan-assets": "node tools/map-editor/scan-assets.js"
+    "scan-assets": "node tools/map-editor/scan-assets.js",
+    "verify-maps": "node devtools/verify_field_map_themes.mjs",
+    "verify-field-scene": "node --no-warnings --loader ./devtools/_dungeon_enemies_loader.mjs devtools/verify_field_scene_themes.mjs"
   },
   "devDependencies": {
     "@babel/core": "^7.29.0",

@@ -218,6 +218,17 @@ export class Renderer2D5 {
       switch (e.type) {
         case 'decoration':
         case 'obstacle':
+          // ★ 脚底椭圆阴影（仅静态障碍物）：消除道具「贴图悬浮」观感。
+          //   装饰物（草/花/土斑）是贴地贴图不加；旋转路砖是平铺贴片也不加。
+          //   阴影画在本实体贴图之前、排序层内 → 仍被更近处的实体正确遮挡。
+          if (e.type === 'obstacle' && !e._rotation) {
+            const srx = e._w * 0.36
+            const sry = Math.max(3 * this.dpr, e._w * 0.10)
+            ctx.beginPath()
+            ctx.ellipse(e._sx + e._w / 2, e._sy + e._h - sry * 0.45, srx, sry, 0, 0, Math.PI * 2)
+            ctx.fillStyle = 'rgba(0,0,0,0.16)'
+            ctx.fill()
+          }
           if (e._rotation) {
             ctx.save()
             ctx.translate(e._sx + e._w / 2, e._sy + e._h / 2)

@@ -2,17 +2,18 @@
  * field-scene.js - 野外探索场景（可移动大地图）
  */
 
-import { ENEMIES_CH1, ENEMIES_CH2, ENEMIES_CH3, ENEMIES_CH4, getEnemyByLevel } from '../data/enemies.js'
+import { ENEMIES_CH1, ENEMIES_CH2, ENEMIES_CH3, ENEMIES_CH4, ENEMIES_CH5, getEnemyByLevel } from '../data/enemies.js'
 import { installFieldBattleSystem } from '../systems/field-battle-system.js'
 import { getHeroMoveLock, isHeroSuperArmor } from '../systems/combat-state.js'
 import { HEROES } from '../data/heroes.js'
-import { getMapCollisionsSync } from '../data/map_collisions.js'
-import { isPointInObstacle as _isPointInGrasslandObstacle, generateGrasslandCollisions as _genGrassCollisions, GRASSLAND_MAP_CONFIG, GRASSLAND_MAP_OBJECTS, GLAND_OBJ_TYPE } from '../data/grassland-map-data.js'
+import { getFieldMap, isPointInMapObstacle, pointOnPolyline } from '../data/field-map-themes.js'
+import { GLAND_OBJ_TYPE } from '../data/grassland-map-data.js'
 import { RENDER_LAYER, getRenderLayer, isSortableLayer } from '../data/render-layer-config.js'
 import { GRASSLAND_DUNGEON } from '../data/grassland-dungeon.js'
 import { MAGIC_TOWER_DUNGEON } from '../data/magic-tower-dungeon.js'
 import { MERCHANT_TOWN_DUNGEON } from '../data/merchant-town-dungeon.js'
 import { ANCIENT_RUINS_DUNGEON } from '../data/ancient-ruins-dungeon.js'
+import { VOID_MIST_DUNGEON } from '../data/void-mist-dungeon.js'
 import { charStateManager } from '../data/character-state.js'
 import { CharacterState } from '../data/character-state.js'
 import { CharacterInfoPanel } from '../ui/character-info-panel.js'
@@ -37,19 +38,25 @@ export class FieldScene extends SceneBase {
     // ★ 副本数据配置：按区域选择（默认 grassland），所有 GRASSLAND_DUNGEON 引用统一收敛到 this._dungeonCfg，
     //   使 grassland 行为零变化，新区域（魔法塔/集市小镇/古城遗迹）经同一管线加载。
     this._dungeonCfg = this.areaInfo.dungeonCfg || GRASSLAND_DUNGEON
-    
-    // 地图尺寸（大地图 - 扩大一倍）
-    this.mapWidth = 4000 * this.dpr // 地图宽度
-    this.mapHeight = 3000 * this.dpr // 地图高度
-    
+
+    // ★ 主题化地图：按 areaId 生成/取缓存（草原走 legacy 分支，复用原手工坐标表，行为零变化）
+    //   提供 width/height/spawn/boss/objects/collisions/bg/path，供尺寸、出生点、Boss 位、
+    //   渲染与避障统一读取，杜绝各区域共用草原地图的问题。
+    this._fieldMap = getFieldMap(this.areaId)
+    const _fm = this._fieldMap
+
+    // 地图尺寸（大地图 — 改由主题配置提供）
+    this.mapWidth = _fm.width * this.dpr // 地图宽度
+    this.mapHeight = _fm.height * this.dpr // 地图高度
+
     // 相机位置（相对于地图）
     this.cameraX = 0
     this.cameraY = 0
-    
+
     // 玩家位置（相对于地图）
-    // ★ 初始位置：阳光草原地图左下角（x=200, y=2900，逻辑像素，已避开障碍物）
-    this.playerX = 200 * this.dpr
-    this.playerY = 2900 * this.dpr
+    // ★ 初始位置：由主题配置的 spawn 提供（草原主题即 x=200,y=2900，与原硬编码一致）
+    this.playerX = _fm.spawn.x * this.dpr
+    this.playerY = _fm.spawn.y * this.dpr
     this.playerSpeed = 150 * this.dpr
     // ★ 主角实际移速倍率（含 slow 减速 debuff，正常=1）：用于同步走路动画播放速度
     this._playerMoveSpeedMult = 1
@@ -253,13 +260,13 @@ export class FieldScene extends SceneBase {
     // 地图元素（宝箱、资源点）
     this.mapObjects = this._generateMapObjects()
     
-    // 地图碰撞数据（grassland 直接同步生成，其他走 map_collisions）
-    if (this.areaId === 'grassland') {
-      this.obstacles = _genGrassCollisions()
-    } else {
-      this.obstacles = getMapCollisionsSync(this.areaId)
-    }
-    console.log(`[Field] 加载了 ${this.obstacles.length} 个障碍物`)
+    // 地图碰撞数据
+    // ★ 统一由主题地图提供：碰撞体与「实际渲染的地图对象」同源，杜绝
+    //   「渲染 A 区域的对象、却按 B 区域的碰撞数据判定」的错位。
+    //   草原 legacy 分支等价原 _genGrassCollisions()；其余区域原先走
+    //   getMapCollisionsSync()，而 MAP_COLLISIONS 并无这些 id → 恒返回 []（等于没有碰撞）。
+    this.obstacles = (this._fieldMap && this._fieldMap.collisions) || []
+    console.log(`[Field] 加载了 ${this.obstacles.length} 个障碍物（主题: ${this._fieldMap ? this._fieldMap.id : 'unknown'}）`)
 
     // ── 2.5D 引擎（所有地图场景共用）─
     this._renderer2d5 = new Renderer2D5({ dpr: this.dpr, width: this.width, height: this.height })
@@ -333,6 +340,21 @@ export class FieldScene extends SceneBase {
         maxEnemies: 3,
         isDungeon: true // ★ 古城遗迹即副本：分层刷新 + 可通关 + 解锁小贝
       },
+      void_mist: {
+        name: '虚无之境',
+        chapter: 5,                 // ★ 终章区域
+        fieldBg: null, // 程序化渲染（field-map-themes 的 void_mist 主题）
+        battleBg: 'BG_CAVE',
+        enemies: ['ruin_sentry', 'bone_cat', 'cursed_idol', 'dust_wraith', 'ruin_colossus'],
+        bossEnemy: 'void_mist_lord',
+        eliteEnemy: 'ruin_colossus',
+        enemyData: ENEMIES_CH5,  // 终章敌人数据（古城小怪 + 虚无之雾）
+        dungeonCfg: VOID_MIST_DUNGEON, // ★ 终章副本数据
+        color: '#4a3f7a',
+        minEnemies: 1,
+        maxEnemies: 3,
+        isDungeon: true // ★ 终章副本：分层刷新 + 可通关
+      },
       forest: {
         name: '迷雾森林',
         chapter: 2,                 // ★ 第二章区域
@@ -343,7 +365,8 @@ export class FieldScene extends SceneBase {
         enemyData: ENEMIES_CH1,
         color: '#2ed573',
         minEnemies: 1,
-        maxEnemies: 2
+        maxEnemies: 2,
+        isDungeon: false // 常规练级区：不设通关条件，怪物可刷新
       },
       cave: {
         name: '暗影洞穴',
@@ -355,7 +378,8 @@ export class FieldScene extends SceneBase {
         enemyData: ENEMIES_CH1,
         color: '#636e72',
         minEnemies: 1,
-        maxEnemies: 2
+        maxEnemies: 2,
+        isDungeon: false // 常规练级区：不设通关条件，怪物可刷新
       }
     }
     return areas[this.areaId] || areas.grassland
@@ -453,11 +477,38 @@ export class FieldScene extends SceneBase {
     console.log(`[Field] 初始化了 ${this.followers.length} 个跟随队友`)
   }
   
+  /**
+   * 生成宝箱。
+   *
+   * ★ 改为沿主题地图的通关路径（map.path）等距投放，而非全图随机撒点：
+   *   随机撒点会把宝箱丢进障碍/塔壁内部或地图死角，玩家永远够不到。
+   *   沿主路径投放可保证「顺路可拾取」，且路径本身已由 carveCorridor 挖通，
+   *   连通性由 devtools/verify_field_map_themes.mjs 的 BFS 校验覆盖。
+   *   无 path 的主题（不应出现）退化为原随机逻辑。
+   */
   _generateMapObjects() {
     const objects = []
-    // 随机生成宝箱和资源点（分布在整个地图上）
+    const map = this._fieldMap
+    const chestCount = (this._dungeonCfg && this._dungeonCfg.chestCount) || 5
+
+    if (map && Array.isArray(map.path) && map.path.length >= 2) {
+      for (let i = 0; i < chestCount; i++) {
+        // t 取 (i+1)/(n+1)，避开 t=0（出生点）与 t=1（Boss 点）
+        const t = (i + 1) / (chestCount + 1)
+        const p = pointOnPolyline(map.path, t)
+        objects.push({
+          type: 'chest',
+          x: p.x * this.dpr,
+          y: p.y * this.dpr,
+          collected: false
+        })
+      }
+      return objects
+    }
+
+    // 兜底：随机撒点（仅当主题缺失 path 时）
     const margin = 100 * this.dpr
-    for (let i = 0; i < 5; i++) {
+    for (let i = 0; i < chestCount; i++) {
       objects.push({
         type: 'chest',
         x: Math.random() * (this.mapWidth - margin * 2) + margin,
@@ -475,10 +526,8 @@ export class FieldScene extends SceneBase {
     const minDistance = 120 * this.dpr // 怪物之间的最小距离
     
     // 获取碰撞数据用于避障（逻辑像素坐标）
-    let collisions = null
-    if (this.areaId === 'grassland') {
-      collisions = _genGrassCollisions()
-    }
+    // ★ 统一走主题地图：各区域用自己的 collisions（草原 legacy 分支等价原 _genGrassCollisions）
+    const collisions = (this._fieldMap && this._fieldMap.collisions) || null
 
     // 先生成Boss（如果该区域有Boss且未被击败）
     if (this.areaInfo.bossEnemy) {
@@ -489,9 +538,10 @@ export class FieldScene extends SceneBase {
       // 检查Boss是否已被击败
       const bossFlag = `${this.areaId}_${bossId}_defeated`
       if (!this.game.data.hasFlag(bossFlag) && bossData) {
-        // Boss位置：地图右上角远处（85%, 8%）
-        const bossX = this.mapWidth * 0.85
-        const bossY = this.mapHeight * 0.08
+        // Boss位置：由主题地图的 boss 锚点提供（草原主题即 x=3400,y=240，与原 85%/8% 一致）
+        const _bossPt = (this._fieldMap && this._fieldMap.boss) || { x: this.mapWidth / this.dpr * 0.85, y: this.mapHeight / this.dpr * 0.08 }
+        const bossX = _bossPt.x * this.dpr
+        const bossY = _bossPt.y * this.dpr
         
         
         // ★ 使用 getEnemyByLevel 计算最终属性（bossLevel 显式覆盖自带 level，避免缩放膨胀）
@@ -585,7 +635,7 @@ export class FieldScene extends SceneBase {
               if (Math.sqrt((_x - m.x) ** 2 + (_y - m.y) ** 2) < minDistance) { _valid = false; break }
             }
             if (_valid && collisions && collisions.length > 0) {
-              if (_isPointInGrasslandObstacle(_x / this.dpr, _y / this.dpr, 60, collisions)) _valid = false
+              if (isPointInMapObstacle(_x / this.dpr, _y / this.dpr, 60, collisions)) _valid = false
             }
             _att++
           }
@@ -629,7 +679,7 @@ export class FieldScene extends SceneBase {
         if (validPosition && collisions && collisions.length > 0) {
           const lx = x / this.dpr
           const ly = y / this.dpr
-          if (_isPointInGrasslandObstacle(lx, ly, 60, collisions)) {
+          if (isPointInMapObstacle(lx, ly, 60, collisions)) {
             validPosition = false
           }
         }
@@ -1037,6 +1087,8 @@ baseRadius: 50 * this.dpr,    // 底座半径（缩小）
     if (this.storyDialogue) this._updateStoryDialogue(dt)
     // ★ 掉落飘字上浮动画
     this._updateDropFloaters(dt)
+    // ★ 宝箱金币迸出粒子
+    this._updateChestFx(dt)
 
     // ★ 副本：Boss 接近登场对话
     if (this.areaInfo && this.areaInfo.isDungeon) {
@@ -2135,11 +2187,8 @@ baseRadius: 50 * this.dpr,    // 底座半径（缩小）
     const margin = 150 * this.dpr
     const minDistance = 120 * this.dpr
     
-    // 获取碰撞数据
-    let collisions = null
-    if (this.areaId === 'grassland') {
-      collisions = _genGrassCollisions()
-    }
+    // 获取碰撞数据（统一走主题地图）
+    const collisions = (this._fieldMap && this._fieldMap.collisions) || null
 
     for (let i = 0; i < count; i++) {
       let attempts = 0
@@ -2174,7 +2223,7 @@ baseRadius: 50 * this.dpr,    // 底座半径（缩小）
         if (validPosition && collisions && collisions.length > 0) {
           const lx = x / this.dpr
           const ly = y / this.dpr
-          if (_isPointInGrasslandObstacle(lx, ly, 60, collisions)) {
+          if (isPointInMapObstacle(lx, ly, 60, collisions)) {
             validPosition = false
           }
         }
@@ -3342,25 +3391,155 @@ baseRadius: 50 * this.dpr,    // 底座半径（缩小）
   
   _collectObject(obj) {
     obj.collected = true
+    obj._collectedAt = this.time
     // ★ 宝箱奖励读配置（chestReward.entries），按 type 结算：
     //   gold     → _addGold（写入 'gold' 字段）
     //   material → _addMaterial（写入 data.materials 库存）
     const entries = (this._dungeonCfg && this._dungeonCfg.chestReward && this._dungeonCfg.chestReward.entries) || []
     const msgs = []
+    let goldTotal = 0
     for (const entry of entries) {
       const rate = entry.rate != null ? entry.rate : 1
       if (Math.random() > rate) continue
       if (entry.type === 'gold') {
         const g = (entry.min || 0) + Math.floor(Math.random() * ((entry.max || 0) - (entry.min || 0) + 1))
-        if (g > 0) { this._addGold(g); msgs.push(`💰 ${g} 金币`) }
+        if (g > 0) { this._addGold(g); goldTotal += g; msgs.push(`💰 ${g} 金币`) }
       } else if (entry.type === 'material') {
         const cnt = entry.count || 1
         this._addMaterial(entry.id, cnt)
         msgs.push(`🧪 ${entry.id} ×${cnt}`)
       }
     }
+    // ★ 开箱反馈：金币从箱口迸出（抛物线+翻转渐隐）+「+N 金币」飘字
+    this._spawnChestFx(obj, goldTotal)
     if (msgs.length && this.game.showToast) this.game.showToast(`宝箱获得：${msgs.join('，')}`)
     console.log(`[Field] 收集宝箱获得：${msgs.join('，')}`)
+  }
+
+  /**
+   * ★ 开箱特效：金币从宝箱位置抛物线迸出 + 落袋飘字。
+   *   粒子走世界坐标（_chestFx），渲染与更新见 _updateChestFx/_renderChestFx。
+   */
+  _spawnChestFx(obj, goldTotal) {
+    if (this._chestFx == null) this._chestFx = []
+    const dpr = this.dpr
+    const n = 8
+    for (let i = 0; i < n; i++) {
+      if (this._chestFx.length > 120) break
+      const ang = -Math.PI / 2 + (Math.random() - 0.5) * 1.7
+      const sp = (150 + Math.random() * 170) * dpr
+      this._chestFx.push({
+        x: obj.x,
+        y: obj.y - 8 * dpr,
+        vx: Math.cos(ang) * sp,
+        vy: Math.sin(ang) * sp,
+        g: 950 * dpr,
+        life: 0,
+        maxLife: 0.8 + Math.random() * 0.45,
+        r: (3.6 + Math.random() * 2.6) * dpr,
+        spin: 9 + Math.random() * 5
+      })
+    }
+    if (goldTotal > 0) {
+      this._pushDropFloater(obj.x, obj.y - 40 * dpr, `+${goldTotal} 金币`, '#FFD954')
+    }
+  }
+
+  _updateChestFx(dt) {
+    if (!this._chestFx || !this._chestFx.length) return
+    for (let i = this._chestFx.length - 1; i >= 0; i--) {
+      const c = this._chestFx[i]
+      c.life += dt
+      if (c.life >= c.maxLife) { this._chestFx.splice(i, 1); continue }
+      c.vy += c.g * dt
+      c.x += c.vx * dt
+      c.y += c.vy * dt
+    }
+  }
+
+  /** 金币迸出粒子：竖直方向压扁模拟 3D 翻转，渐隐收尾 */
+  _renderChestFx(ctx) {
+    if (!this._chestFx || !this._chestFx.length) return
+    const dpr = this.dpr
+    ctx.save()
+    for (const c of this._chestFx) {
+      const sx = c.x - this.cameraX
+      const sy = c.y - this.cameraY
+      if (sx < -40 || sy < -40 || sx > this.width + 40 || sy > this.height + 40) continue
+      const t = c.life / c.maxLife
+      const alpha = t < 0.7 ? 1 : 1 - (t - 0.7) / 0.3
+      // 翻转：水平半径按时间余弦压扁
+      const rx = Math.max(1, Math.abs(Math.cos(c.life * c.spin)) * c.r)
+      const ry = c.r
+      ctx.globalAlpha = alpha
+      ctx.beginPath()
+      ctx.ellipse(sx, sy, rx, ry, 0, 0, Math.PI * 2)
+      ctx.fillStyle = '#F5C542'
+      ctx.fill()
+      ctx.lineWidth = Math.max(1, c.r * 0.22)
+      ctx.strokeStyle = '#B8860B'
+      ctx.stroke()
+      // 高光点
+      ctx.beginPath()
+      ctx.ellipse(sx - rx * 0.3, sy - ry * 0.35, rx * 0.22, ry * 0.22, 0, 0, Math.PI * 2)
+      ctx.fillStyle = 'rgba(255,255,255,0.85)'
+      ctx.fill()
+    }
+    ctx.globalAlpha = 1
+    ctx.restore()
+  }
+
+  /**
+   * ★ 宝箱渲染（真实素材 TOWN_BUILDINGS_013_63X60）：
+   *   未收集：轻微浮动 + 呼吸金色提示圈；
+   *   已收集：0.35s 缩放弹跳渐隐后消失；素材缺失降级 📦 emoji（原行为）。
+   */
+  _renderChestSprite(ctx, obj, sx, sy) {
+    const dpr = this.dpr
+    const w = 63 * dpr
+    const h = 60 * dpr
+    let scale = 1
+    let alpha = 1
+    let bob = 0
+    if (obj.collected) {
+      const t = (this.time - (obj._collectedAt != null ? obj._collectedAt : this.time)) / 0.35
+      if (t >= 1) return
+      scale = 1 + 0.35 * Math.sin(Math.min(1, Math.max(0, t)) * Math.PI)
+      alpha = 1 - t
+    } else {
+      bob = Math.sin(this.time * 2.6 + obj.x * 0.01) * 2 * dpr
+      // 呼吸金色提示圈（提示可点击）
+      const pulse = 0.5 + 0.5 * Math.sin(this.time * 3 + obj.x * 0.01)
+      ctx.save()
+      ctx.globalAlpha = 0.22 + 0.2 * pulse
+      ctx.strokeStyle = '#FFD154'
+      ctx.lineWidth = 2 * dpr
+      ctx.beginPath()
+      ctx.ellipse(sx, sy + h * 0.42, w * 0.55 + 3 * dpr * pulse, w * 0.2, 0, 0, Math.PI * 2)
+      ctx.stroke()
+      ctx.restore()
+    }
+    // 脚底椭圆阴影
+    ctx.save()
+    ctx.globalAlpha = 0.2 * alpha
+    ctx.fillStyle = '#000000'
+    ctx.beginPath()
+    ctx.ellipse(sx, sy + h * 0.46, w * 0.4 * scale, w * 0.12, 0, 0, Math.PI * 2)
+    ctx.fill()
+    ctx.restore()
+    // 箱体
+    const img = this.game.assets && this.game.assets.get && this.game.assets.get('TOWN_BUILDINGS_013_63X60')
+    ctx.save()
+    ctx.globalAlpha = alpha
+    if (img && img.width) {
+      ctx.drawImage(img, sx - w * scale / 2, sy - h * scale / 2 - bob, w * scale, h * scale)
+    } else {
+      ctx.font = `${24 * dpr}px sans-serif`
+      ctx.textAlign = 'center'
+      ctx.textBaseline = 'middle'
+      ctx.fillText('📦', sx, sy - bob)
+    }
+    ctx.restore()
   }
 
   /**
@@ -3586,27 +3765,198 @@ baseRadius: 50 * this.dpr,    // 底座半径（缩小）
   _renderProgrammaticMap(ctx) {
     const camX = this.cameraX
     const camY = this.cameraY
-    const cfg = GRASSLAND_MAP_CONFIG
+    // ★ 地面配色改由主题地图提供（草原主题直接引用 GRASSLAND_MAP_CONFIG，调色零变化）
+    const map = this._fieldMap
+    const bg = (map && map.bg) || { fill: '#5daE4a', dark: '#4a8f3a', tile: 100, darkRatio: 0.4 }
 
-    // 1. 基础草地背景
-    ctx.fillStyle = cfg.bgColor
-    ctx.fillRect(0, 0, this.width, this.height)
-
-    // 2. 深色草地纹理块（伪随机分布）
-    ctx.fillStyle = cfg.bgDarkColor
-    const tileSize = 100 * this.dpr
-    for (let gx = Math.floor(camX / tileSize) * tileSize - tileSize;
-         gx < camX + this.width + tileSize * 2; gx += tileSize) {
-      for (let gy = Math.floor(camY / tileSize) * tileSize - tileSize;
-           gy < camY + this.height + tileSize * 2; gy += tileSize) {
-        const hash = Math.sin(gx * 127.1 + gy * 311.7) * 43758.5453
-        if ((hash - Math.floor(hash)) > 0.6) {
-          ctx.fillRect(gx - camX, gy - camY, tileSize * (0.7 + (hash - Math.floor(hash)) * 0.5), tileSize * 0.55)
+    // 1. 地面：优先用离屏烘焙的地面图案（柔和明暗斑 + 软边深斑 + 碎点质感，
+    //    一次烘焙缓存为 CanvasPattern，逐帧只做一次 pattern fillRect）。
+    //    烘焙环境不可用（如验证脚本 mock）时降级为旧的色块平铺。
+    const groundPattern = this._getGroundPattern(ctx, map, bg)
+    if (groundPattern) {
+      ctx.save()
+      ctx.translate(-camX, -camY)
+      ctx.fillStyle = groundPattern
+      ctx.fillRect(camX, camY, this.width, this.height)
+      ctx.restore()
+    } else {
+      // ── 降级路径：基础底色 + 深色纹理块（与旧版一致） ──
+      ctx.fillStyle = bg.fill
+      ctx.fillRect(0, 0, this.width, this.height)
+      ctx.fillStyle = bg.dark
+      const darkThreshold = 1 - (bg.darkRatio != null ? bg.darkRatio : 0.4)
+      const tileSize = (bg.tile || 100) * this.dpr
+      for (let gx = Math.floor(camX / tileSize) * tileSize - tileSize;
+           gx < camX + this.width + tileSize * 2; gx += tileSize) {
+        for (let gy = Math.floor(camY / tileSize) * tileSize - tileSize;
+             gy < camY + this.height + tileSize * 2; gy += tileSize) {
+          const hash = Math.sin(gx * 127.1 + gy * 311.7) * 43758.5453
+          if ((hash - Math.floor(hash)) > darkThreshold) {
+            ctx.fillRect(gx - camX, gy - camY, tileSize * (0.7 + (hash - Math.floor(hash)) * 0.5), tileSize * 0.55)
+          }
         }
       }
     }
 
+    // 2. ★ 通关路径带：沿主 path 画「踩出来的路」。双层描边——宽层打底 + 窄层
+    //    加深（alpha 提升），做出路面被踩实的层次感，取代路砖 sprite 硬铺。
+    if (map.pathStroke && Array.isArray(map.path) && map.path.length >= 2) {
+      const baseW = (map.pathStroke.width || 120) * this.dpr
+      ctx.save()
+      ctx.lineJoin = 'round'
+      ctx.lineCap = 'round'
+      const tracePath = () => {
+        ctx.beginPath()
+        ctx.moveTo(map.path[0][0] * this.dpr - camX, map.path[0][1] * this.dpr - camY)
+        for (let i = 1; i < map.path.length; i++) {
+          ctx.lineTo(map.path[i][0] * this.dpr - camX, map.path[i][1] * this.dpr - camY)
+        }
+      }
+      ctx.strokeStyle = map.pathStroke.color
+      ctx.lineWidth = baseW
+      tracePath()
+      ctx.stroke()
+      const coreColor = this._boostRgbaAlpha(map.pathStroke.color, 1.8)
+      if (coreColor !== map.pathStroke.color) {
+        ctx.strokeStyle = coreColor
+        ctx.lineWidth = baseW * 0.55
+        tracePath()
+        ctx.stroke()
+      }
+      ctx.restore()
+    }
+
     // 3. 地图对象不再在此绘制，统一由 _renderYSortedEntities 按 Y 轴排序渲染
+  }
+
+  /** rgba 颜色的 alpha 提升倍率（非 rgba 格式原样返回） */
+  _boostRgbaAlpha(color, mult) {
+    if (typeof color !== 'string') return color
+    const m = color.match(/^rgba\(\s*([^)]+),\s*([0-9.]+)\s*\)$/)
+    if (!m) return color
+    const a = Math.min(1, parseFloat(m[2]) * mult)
+    return 'rgba(' + m[1] + ', ' + a + ')'
+  }
+
+  /**
+   * 取（并缓存）当前主题的地面 CanvasPattern。
+   * 烘焙一次、逐帧零成本；任何一步不可用则返回 null（走降级路径）。
+   */
+  _getGroundPattern(ctx, map, bg) {
+    if (!map || !map.id) return null
+    if (!this._groundPatternCache) this._groundPatternCache = {}
+    if (this._groundPatternCache[map.id] !== undefined) return this._groundPatternCache[map.id]
+    let pattern = null
+    try {
+      const oc = this._createOffscreenCanvas()
+      if (oc && typeof ctx.createPattern === 'function') {
+        // 周期 460 逻辑像素（物理像素封顶 1024），烘焙内容全部收在周期内 → 无接缝
+        const P = Math.min(460 * this.dpr, 1024)
+        oc.width = P
+        oc.height = P
+        const octx = oc.getContext('2d')
+        if (octx) {
+          this._bakeGroundPattern(octx, P, bg)
+          pattern = ctx.createPattern(oc, 'repeat') || null
+        }
+      }
+    } catch (e) {
+      pattern = null
+    }
+    this._groundPatternCache[map.id] = pattern
+    return pattern
+  }
+
+  /** 离屏 canvas：微信小游戏 wx.createCanvas 优先，浏览器环境降级 createElement */
+  _createOffscreenCanvas() {
+    try {
+      if (typeof wx !== 'undefined' && wx.createCanvas) return wx.createCanvas()
+    } catch (e) { /* 降级 */ }
+    try {
+      if (typeof document !== 'undefined' && document.createElement) return document.createElement('canvas')
+    } catch (e) { /* 降级 */ }
+    return null
+  }
+
+  /** 地面 hash（与俯视预览脚本同一 sin-hash 公式，保证预览风格对齐） */
+  _groundHash(x, y, salt) {
+    const v = Math.sin(x * 127.1 + y * 311.7 + salt * 74.7) * 43758.5453
+    return v - Math.floor(v)
+  }
+
+  /**
+   * 烘焙地面图案到离屏 canvas（周期 P，物理像素）：
+   *   A. 大块柔色斑（半透明白/黑交替）——打破纯色平铺感
+   *   B. 软边深斑（bg.dark 半透明椭圆）——替代旧硬边矩形色块
+   *   C. 明暗碎点——砂石/草屑质感
+   * 全部收在 [0,P] 内（边缘 clamp），图案平铺无接缝。
+   */
+  _bakeGroundPattern(octx, P, bg) {
+    const dpr = this.dpr
+    const tile = (bg.tile || 100) * dpr
+    const darkRatio = bg.darkRatio != null ? bg.darkRatio : 0.4
+    const darkThreshold = 1 - darkRatio
+
+    octx.globalAlpha = 1
+    octx.fillStyle = bg.fill
+    octx.fillRect(0, 0, P, P)
+
+    // ── A. 柔色斑 ──
+    {
+      const step = 230 * dpr
+      for (let cx = step / 2; cx < P + step; cx += step) {
+        for (let cy = step / 2; cy < P + step; cy += step) {
+          const h1 = this._groundHash(cx / dpr, cy / dpr, 1)
+          if (h1 <= 0.45) continue
+          const jx = (this._groundHash(cx / dpr, cy / dpr, 2) - 0.5) * 110 * dpr
+          const jy = (this._groundHash(cx / dpr, cy / dpr, 3) - 0.5) * 110 * dpr
+          const r = (55 + h1 * 45) * dpr
+          const x = Math.min(Math.max(cx + jx, r), P - r)
+          const y = Math.min(Math.max(cy + jy, r), P - r)
+          octx.fillStyle = h1 > 0.72 ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.06)'
+          octx.beginPath()
+          octx.ellipse(x, y, r, r * 0.55, 0, 0, Math.PI * 2)
+          octx.fill()
+        }
+      }
+    }
+
+    // ── B. 软边深斑（保持 darkRatio 占比语义）──
+    octx.fillStyle = bg.dark
+    octx.globalAlpha = 0.55
+    for (let gx = tile / 2; gx < P + tile; gx += tile) {
+      for (let gy = tile / 2; gy < P + tile; gy += tile) {
+        const h1 = this._groundHash(gx / dpr, gy / dpr, 7)
+        if (h1 <= darkThreshold) continue
+        const jx = (this._groundHash(gx / dpr, gy / dpr, 8) - 0.5) * tile * 0.44
+        const jy = (this._groundHash(gx / dpr, gy / dpr, 9) - 0.5) * tile * 0.44
+        const rx = tile * (0.40 + h1 * 0.24)
+        const x = Math.min(Math.max(gx + jx, rx), P - rx)
+        const y = Math.min(Math.max(gy + jy, rx * 0.5), P - rx * 0.5)
+        octx.beginPath()
+        octx.ellipse(x, y, rx, rx * 0.5, 0, 0, Math.PI * 2)
+        octx.fill()
+      }
+    }
+    octx.globalAlpha = 1
+
+    // ── C. 明暗碎点 ──
+    {
+      const step = 26 * dpr
+      for (let sx = step / 2; sx < P + step; sx += step) {
+        for (let sy = step / 2; sy < P + step; sy += step) {
+          const h1 = this._groundHash(sx / dpr, sy / dpr, 13)
+          if (h1 <= 0.68) continue
+          const r = (0.9 + h1 * 1.4) * dpr
+          octx.fillStyle = h1 > 0.84 ? 'rgba(255,255,255,0.20)'
+                        : h1 > 0.76 ? 'rgba(0,0,0,0.16)'
+                                    : 'rgba(0,0,0,0.10)'
+          octx.beginPath()
+          octx.arc(sx, sy, r, 0, Math.PI * 2)
+          octx.fill()
+        }
+      }
+    }
   }
 
   /**
@@ -3621,24 +3971,36 @@ baseRadius: 50 * this.dpr,    // 底座半径（缩小）
     engine.setCamera(this.cameraX, this.cameraY)
     engine.clear()
 
+    // ★ 地图对象改由主题地图提供（草原 legacy 分支即原 GRASSLAND_MAP_OBJECTS，渲染零变化）
+    const _mapObjects = (this._fieldMap && this._fieldMap.objects) || []
+
     // ── layer=0：装饰物（草/花）─
-    for (const obj of GRASSLAND_MAP_OBJECTS) {
+    for (const obj of _mapObjects) {
       if (obj.type !== GLAND_OBJ_TYPE.DECORATION) continue
       engine.addDecoration(obj)
     }
 
     // ── layer=2：障碍物（树/石块/灌木）─
-    for (const obj of GRASSLAND_MAP_OBJECTS) {
+    for (const obj of _mapObjects) {
       if (obj.type === GLAND_OBJ_TYPE.DECORATION) continue
       engine.addObstacle(obj)
     }
 
-    // ── layer=2：宝箱等交互对象─
+    // ── layer=2：宝箱（真实素材渲染：待机浮动 + 金色提示圈 + 开箱弹跳消失）──
     if (this.mapObjects && Array.isArray(this.mapObjects)) {
       for (const obj of this.mapObjects) {
         const sx = obj.x - this.cameraX
         const sy = obj.y - this.cameraY
-        engine.addChest(obj, sx, sy)
+        const margin = 80 * this.dpr
+        if (sx < -margin || sx > this.width + margin || sy < -margin || sy > this.height + margin) continue
+        engine.addEntity({
+          layer: 2,
+          sortY: obj.y / this.dpr,
+          // ★ 类型必须叫 chestSprite（而非 chest）：引擎对 'chest' 走 hooks/emoji 默认渲染，
+          //   只有未知类型才落入 default 分支调用自定义 e.render
+          type: 'chestSprite',
+          render: (ctx) => this._renderChestSprite(ctx, obj, sx, sy)
+        })
       }
     }
 
@@ -4380,6 +4742,7 @@ baseRadius: 50 * this.dpr,    // 底座半径（缩小）
     // ★ 副本目标 HUD（阳光草原）
     this._renderDungeonHUD(ctx)
     if (this._dropFloaters && this._dropFloaters.length) this._renderDropFloaters(ctx)
+    if (this._chestFx && this._chestFx.length) this._renderChestFx(ctx)
     if (this.storyDialogue) this._renderStoryDialogue(ctx)
     
     // 摇杆

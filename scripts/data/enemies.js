@@ -46,6 +46,9 @@ const dustWraith = require('../entities/monsters/dust-wraith.js')
 const ruinColossus = require('../entities/monsters/ruin-colossus.js')
 const ancientWarden = require('../entities/monsters/ancient-warden.js')
 
+// === 终章怪物配置（虚无之雾）===
+const voidMistLord = require('../entities/monsters/void-mist-lord.js')
+
 // === 换肤 / 补帧派生变体（复用基础怪配置 + 替换资源路径）===
 const slimeCatSkins = require('../entities/monsters/slime_cat_skins.js')       // { flame_slime, aqua_slime, violet_slime }
 const shadowMouseSmooth = require('../entities/monsters/shadow-mouse-tween.js') // 暗影鼠·顺滑
@@ -87,6 +90,16 @@ const ENEMIES_CH4 = {
   dust_wraith: dustWraith,
   ruin_colossus: ruinColossus,
   ancient_warden: ancientWarden
+}
+
+const ENEMIES_CH5 = {
+  // 终章沿用古城遗迹的小怪 + 精英，Boss 为虚无之雾领主
+  ruin_sentry: ruinSentry,
+  bone_cat: boneCat,
+  cursed_idol: cursedIdol,
+  dust_wraith: dustWraith,
+  ruin_colossus: ruinColossus,
+  void_mist_lord: voidMistLord
 }
 
 /**
@@ -143,10 +156,10 @@ function getEnemyByLevel(enemyData, level = 1) {
   return finalEnemy
 }
 
-export { ENEMIES_CH1, ENEMIES_CH2, ENEMIES_CH3, ENEMIES_CH4, getEnemyByLevel }
+export { ENEMIES_CH1, ENEMIES_CH2, ENEMIES_CH3, ENEMIES_CH4, ENEMIES_CH5, getEnemyByLevel }
 
 // CommonJS 兼容导出：field-scene.js 通过 require() 动态加载怪物配置，
 // 而怪物文件再 require 本模块。为兼容 require 与 import 双模式，此处补充 CJS 导出。
 if (typeof module !== 'undefined' && module.exports) {
-  module.exports = { ENEMIES_CH1, ENEMIES_CH2, ENEMIES_CH3, ENEMIES_CH4, getEnemyByLevel }
+  module.exports = { ENEMIES_CH1, ENEMIES_CH2, ENEMIES_CH3, ENEMIES_CH4, ENEMIES_CH5, getEnemyByLevel }
 }

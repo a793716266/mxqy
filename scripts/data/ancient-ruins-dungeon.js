@@ -15,7 +15,7 @@
 
 export const ANCIENT_RUINS_DUNGEON = {
   /** 背景音乐 key（field-scene 进入副本时播放） */
-  bgm: 'bgm_ancient_ruins',
+  bgm: 'bgm_tower',
 
   /**
    * 击杀掉落表。key = 怪物 enemyId，value = 掉落条目数组。
