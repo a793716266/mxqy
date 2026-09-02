@@ -18,12 +18,14 @@ import { charStateManager } from '../data/character-state.js'
 import { CharacterState } from '../data/character-state.js'
 import { CharacterInfoPanel } from '../ui/character-info-panel.js'
 import { equipmentManager } from '../managers/equipment-manager.js'
-import { getBossDrop, getRandomEquipment } from '../data/equipment.js'
+import { getBossDrop, getRandomEquipment, RARITY_CONFIG, EQUIP_TYPE_CONFIG } from '../data/equipment.js'
+import { MATERIALS } from '../data/materials.js'
 import { Renderer2D5 } from '../engine/renderer-2.5d.js'
 import { CollisionEngine } from '../engine/collision-engine.js'
 import { roundRect, drawButton, darkenColor } from '../ui/canvas-utils.js'
 import { SceneBase } from '../core/scene-base.js'
 import { CharacterSprite } from '../core/character-sprite.js'
+import { toSerializable } from '../utils/save-sanitize.js'
 
 export class FieldScene extends SceneBase {
   constructor(game, data) {
@@ -164,7 +166,19 @@ export class FieldScene extends SceneBase {
       
       if (validMonsters.length === savedMonsters.length) {
         // 所有怪物都属于当前区域
-        this.mapMonsters = savedMonsters
+        // ★ 防御：老存档可能混入运行时瞬时态（_lightCharge/_jumpState/...）或循环引用残留，
+        //   统一净化 + 复位战斗状态，避免读档后怪物卡在施法/冲锋中
+        this.mapMonsters = validMonsters.map(m => {
+          const s = toSerializable(m) || {}
+          s.isCastingSkill = false
+          s.skillCastId = null
+          s.skillAnimTimer = 0
+          s.inCombat = false
+          s.isAttacking = false
+          s.hasDealtDamage = false
+          s.statusEffects = []
+          return s
+        })
         
         // ★ 属性迁移：补充缺失的战斗属性（兼容旧存档）
         this.mapMonsters.forEach(monster => {
@@ -983,7 +997,7 @@ baseRadius: 50 * this.dpr,    // 底座半径（缩小）
       this.game.data.delete('battleVictory')
 
       // 保存怪物状态（每个副本独立保存）
-      this.game.data.set(`fieldMonsters_${this.areaId}`, this.mapMonsters)
+      this._persistMapMonsters()
       console.log(`[Field] 已保存区域 ${this.areaId} 的怪物状态`)
     }
     
@@ -1066,9 +1080,48 @@ baseRadius: 50 * this.dpr,    // 底座半径（缩小）
     }
   }
   
+  /**
+   * ★ 持久化地图怪物（唯一入口）
+   *
+   * 背景：怪物是「活对象」，身上挂着运行时状态，其中
+   *   monster._lightCharge.zone.monsterRef === monster（光明冲锋警示区回引怪物）
+   * 构成循环引用，直接 data.set(...) 会让 DataManager.save() 的
+   * JSON.stringify 抛 "Converting circular structure to JSON" → 整个存档写失败。
+   *
+   * 这里统一走 toSerializable() 拍成纯数据快照：
+   *   1. 丢弃所有 `_` 前缀字段（_lightCharge / _jumpState / _stunned / _energyCharge ...）
+   *   2. 断环 + 去函数 + 去 live 引用（monsterRef / sprite / hero ...）
+   *   3. 复位战斗瞬时态，保证读档后怪物回到待机而不是卡在施法/冲锋/冰冻里
+   */
+  _persistMapMonsters(monsters) {
+    const list = monsters || this.mapMonsters || []
+    const snap = []
+    for (const m of list) {
+      if (!m) continue
+      const s = toSerializable(m)
+      if (!s) continue
+      // 战斗瞬时态复位（读档 = 重新进入场景，怪物应处于待机）
+      s.isCastingSkill = false
+      s.skillCastId = null
+      s.skillAnimTimer = 0
+      s.inCombat = false
+      s.isAttacking = false
+      s.hasDealtDamage = false
+      s.attackCDTimer = 0
+      s.animTimer = 0
+      s.animFrame = 0
+      // 状态效果（灼烧/感电/冰冻）是战斗内瞬时态，跨会话保留会出现
+      // `_remaining` 丢失导致的 NaN 永续问题 → 一律清空
+      s.statusEffects = []
+      snap.push(s)
+    }
+    this.game.data.set(`fieldMonsters_${this.areaId}`, snap)
+    return snap
+  }
+
   destroy() {
     // 保存怪物状态（每个副本独立保存）
-    this.game.data.set(`fieldMonsters_${this.areaId}`, this.mapMonsters)
+    this._persistMapMonsters()
     
     // 保存角色状态
     const charData = charStateManager.serialize()
@@ -1089,6 +1142,8 @@ baseRadius: 50 * this.dpr,    // 底座半径（缩小）
     this._updateDropFloaters(dt)
     // ★ 宝箱金币迸出粒子
     this._updateChestFx(dt)
+    // ★ 地面掉落物（材料/装备）：弹出滑行 + 存活时间
+    this._updateGroundDrops(dt)
 
     // ★ 副本：Boss 接近登场对话
     if (this.areaInfo && this.areaInfo.isDungeon) {
@@ -1549,6 +1604,13 @@ baseRadius: 50 * this.dpr,    // 底座半径（缩小）
       if (!monster.alive) {
         if (!monster._looted) {
           monster._looted = true
+          // ★ 死亡音效：与掉落同一个「刚死亡」跳变点，覆盖所有击杀路径且天然只播一次。
+          //   BOSS 用长尾下行的 boss_death，小怪用 monster_death。
+          const _da = this.audio || (this.game && this.game.audio)
+          if (_da && typeof _da.playSFX === 'function') {
+            _da.playSFX(monster.isBoss ? 'boss_death' : 'monster_death',
+              { pitch: monster.isBoss ? 0 : 0.07, minGapMs: monster.isBoss ? 0 : 50 })
+          }
           this._rollMonsterDrop(monster)
         }
         // ★ 击败 BOSS 即触发副本收尾（艾米加入 + 独白 + 回城），不必等清光所有小怪。
@@ -2295,7 +2357,7 @@ baseRadius: 50 * this.dpr,    // 底座半径（缩小）
     console.log(`[Field] 补充了 ${count} 只怪物`)
 
     // 保存怪物状态（每个副本独立保存）
-    this.game.data.set(`fieldMonsters_${this.areaId}`, this.mapMonsters)
+    this._persistMapMonsters()
   }
   
   _updateCamera() {
@@ -3350,6 +3412,23 @@ baseRadius: 50 * this.dpr,    // 底座半径（缩小）
       }
     }
 
+    // ★ 剧情对白点击推进：命中对白框 → 立即切下一条（越界则关闭），并吞掉本次点击
+    if (this.storyDialogue && this._storyDialogueBounds) {
+      const b = this._storyDialogueBounds
+      const hitPad = 16 * this.dpr
+      if (tap.x >= b.x - hitPad && tap.x <= b.x + b.width + hitPad &&
+          tap.y >= b.y - hitPad && tap.y <= b.y + b.height + hitPad) {
+        const d = this.storyDialogue
+        d.index++
+        d.timer = d.hold // 手动推进后重置自动播放计时，避免立刻又跳条
+        if (d.index >= d.lines.length) {
+          this.storyDialogue = null
+          this._storyDialogueBounds = null
+        }
+        return
+      }
+    }
+
     // 返回按钮（左上角）
     const backBtn = { x: 20 * this.dpr, y: 20 * this.dpr, w: 90 * this.dpr, h: 40 * this.dpr }
     if (tap.x >= backBtn.x && tap.x <= backBtn.x + backBtn.w &&
@@ -3371,6 +3450,9 @@ baseRadius: 50 * this.dpr,    // 底座半径（缩小）
     
     // 摇杆区域点击由touchStart事件处理，不再通过tap激活
     
+    // ★ 地面掉落物点击拾取（优先于宝箱：掉落物小、临时性强，命中半径也更小）
+    if (this._tryPickupGroundDrop(tap)) return
+
     // 检查地图对象（安全检查）
     if (!this.mapObjects || !Array.isArray(this.mapObjects)) return
     
@@ -3443,6 +3525,542 @@ baseRadius: 50 * this.dpr,    // 底座半径（缩小）
     if (goldTotal > 0) {
       this._pushDropFloater(obj.x, obj.y - 40 * dpr, `+${goldTotal} 金币`, '#FFD954')
     }
+  }
+
+  // ════════════════════════════════════════════════════════════════
+  // ★ 地面掉落物系统（材料/装备）：击杀散落 → 玩家点击拾取，不再强制入包
+  // ════════════════════════════════════════════════════════════════
+
+  /**
+   * ★ 在怪物死亡位置生成一件地面掉落物（弹出滑行 → 停住 → 可点击拾取）。
+   * def: { kind:'material'|'equipment', itemId, name, icon, rarity?, slot? }
+   *   slot: 装备槽位 'weapon'|'armor'|'accessory'（决定地面图标素材）
+   */
+  _spawnGroundDrop(monster, def) {
+    if (!monster || !def) return
+    if (this._groundDrops == null) this._groundDrops = []
+    const dpr = this.dpr
+    const ang = Math.random() * Math.PI * 2
+    const sp = (55 + Math.random() * 75) * dpr
+    this._dropSeq = (this._dropSeq || 0) + 1
+    this._groundDrops.push({
+      key: `drop_${this._dropSeq}`,
+      kind: def.kind,
+      itemId: def.itemId,
+      name: def.name || def.itemId,
+      icon: def.icon || '❓',
+      rarity: def.rarity || null,
+      slot: def.slot || null,
+      x: monster.x,
+      y: monster.y,
+      vx: Math.cos(ang) * sp,
+      vy: Math.sin(ang) * sp,
+      bornT: this.time,
+      ttl: 90
+    })
+    // 地面掉落上限：超过 30 件丢弃最老的一件（防长时间刷怪堆积）
+    if (this._groundDrops.length > 30) this._groundDrops.shift()
+  }
+
+  /** ★ 地面掉落物更新：弹出滑行（指数衰减停下）+ 存活时间 */
+  _updateGroundDrops(dt) {
+    if (!this._groundDrops || !this._groundDrops.length) return
+    const decay = Math.exp(-6 * dt)
+    for (let i = this._groundDrops.length - 1; i >= 0; i--) {
+      const d = this._groundDrops[i]
+      d.x += d.vx * dt
+      d.y += d.vy * dt
+      d.vx *= decay
+      d.vy *= decay
+      d.ttl -= dt
+      if (d.ttl <= 0) this._groundDrops.splice(i, 1)
+    }
+  }
+
+  /**
+   * ★ 拾取地面掉落物：装备入背包（equipmentManager）持久化；材料入材料库存。
+   * 返回拾取到的名字（供飘字/toast）。
+   */
+  _pickupDrop(drop) {
+    if (!drop) return null
+    const idx = this._groundDrops ? this._groundDrops.indexOf(drop) : -1
+    if (idx === -1) return null
+    this._groundDrops.splice(idx, 1)
+
+    if (drop.kind === 'equipment') {
+      equipmentManager.addItem(drop.itemId)
+      if (this.game && this.game.data) {
+        this.game.data.set('equipmentData', equipmentManager.serialize())
+      }
+      if (this.game.showToast) this.game.showToast(`获得装备：${drop.name}`)
+    } else {
+      this._addMaterial(drop.itemId, 1)
+      if (this.game.showToast) this.game.showToast(`获得材料：${drop.name} ×1`)
+    }
+    // 拾取反馈：上浮飘字 + 音效（装备更隆重）
+    const color = drop.kind === 'equipment'
+      ? (RARITY_CONFIG[drop.rarity] && RARITY_CONFIG[drop.rarity].color) || '#f39c12'
+      : '#7fe3ff'
+    this._pushDropFloater(drop.x, drop.y - 34 * this.dpr, `${drop.icon}${drop.name}`, color)
+    const a = this.audio || (this.game && this.game.audio)
+    if (a && typeof a.playSFX === 'function') {
+      a.playSFX(drop.kind === 'equipment' ? 'reward_achievement' : 'reward_coin')
+    }
+    console.log(`[Field] 拾取掉落: ${drop.kind} ${drop.name}(${drop.itemId})`)
+    return drop.name
+  }
+
+  /**
+   * ★ 地面掉落物渲染（Y 排序层内）—— ARPG 标准：
+   *   ① 地面光晕垫（离屏预渲染径向渐变，稀有度色，呼吸脉动）
+   *   ② 史诗/传说竖直光柱（离屏预渲染双向渐隐贴图，高度呼吸）
+   *   ③ 大徽章（46 逻辑px：整体烘焙贴图底盘 + 程序化矢量物品图标）
+   *   ④ 名字胶囊（稀有度色描边 + 文字）
+   *   存活最后 10 秒整体闪烁提醒即将消失。
+   *   性能：gradient/路径全部离屏预渲染缓存（按颜色），每帧仅 drawImage，零 gradient 创建。
+   */
+  _renderDropSprite(ctx, drop, sx, sy) {
+    const dpr = this.dpr
+    const rConf = drop.rarity ? RARITY_CONFIG[drop.rarity] : null
+    const color = (rConf && rConf.color) || '#7fe3ff'
+    const bob = Math.sin(this.time * 2.6 + drop.bornT * 7) * 3.5 * dpr
+    const isRare = drop.rarity === 'epic' || drop.rarity === 'legendary'
+    // 即将消失闪烁（最后 10 秒）
+    let alpha = 1
+    if (drop.ttl < 10) alpha = 0.35 + 0.65 * Math.abs(Math.sin(this.time * 6))
+    const pulse = 0.5 + 0.5 * Math.sin(this.time * 3 + drop.bornT * 5)
+
+    ctx.save()
+    ctx.globalAlpha = alpha
+    ctx.textAlign = 'center'
+    ctx.textBaseline = 'middle'
+
+    // ① 地面光晕垫（预渲染贴图，呼吸脉动）
+    const glow = this._getDropGlow(color)
+    if (glow && glow.width) {
+      const gw = (92 + 10 * pulse) * dpr
+      const gh = gw * (glow.height / glow.width)
+      ctx.globalAlpha = alpha * (0.55 + 0.25 * pulse)
+      ctx.drawImage(glow, sx - gw / 2, sy - gh / 2, gw, gh)
+      ctx.globalAlpha = alpha
+    } else {
+      // 降级：纯色椭圆垫
+      ctx.globalAlpha = alpha * (0.25 + 0.15 * pulse)
+      ctx.fillStyle = color
+      ctx.beginPath()
+      ctx.ellipse(sx, sy, 40 * dpr, 16 * dpr, 0, 0, Math.PI * 2)
+      ctx.fill()
+      ctx.globalAlpha = alpha
+    }
+
+    // ② 史诗/传说竖直光柱（预渲染贴图，高度呼吸伸缩）
+    if (isRare) {
+      const pillar = this._getDropPillar(color)
+      if (pillar && pillar.width) {
+        const pw = 34 * dpr
+        const ph = (66 + 10 * pulse) * dpr
+        ctx.globalAlpha = alpha * (0.5 + 0.3 * pulse)
+        ctx.drawImage(pillar, sx - pw / 2, sy - ph, pw, ph)
+        ctx.globalAlpha = alpha
+      }
+    }
+
+    // ③ 大徽章（46 逻辑px）：整体烘焙贴图底盘（深色渐变底 + 稀有度双环 + 顶部高光）
+    const iconCy = sy - 24 * dpr - bob
+    const badgeR = 23 * dpr
+    // 徽章投影（落回光晕垫，增强悬浮立体感）
+    ctx.globalAlpha = alpha * 0.22
+    ctx.fillStyle = '#000000'
+    ctx.beginPath()
+    ctx.ellipse(sx, sy, badgeR * 0.62, badgeR * 0.24, 0, 0, Math.PI * 2)
+    ctx.fill()
+    ctx.globalAlpha = alpha
+    const plate = this._getDropBadgePlate(color)
+    if (plate && plate.width) {
+      const ps = badgeR * 2 * (128 / 118)
+      ctx.drawImage(plate, sx - ps / 2, iconCy - ps / 2, ps, ps)
+    } else {
+      // 降级：内联画底盘（无离屏画布环境）
+      ctx.beginPath()
+      ctx.arc(sx, iconCy, badgeR, 0, Math.PI * 2)
+      ctx.fillStyle = 'rgba(14,17,24,0.86)'
+      ctx.fill()
+      ctx.lineWidth = 2.5 * dpr
+      ctx.strokeStyle = color
+      ctx.stroke()
+      ctx.beginPath()
+      ctx.arc(sx, iconCy, badgeR - 3.5 * dpr, -Math.PI * 0.82, -Math.PI * 0.18)
+      ctx.lineWidth = 2 * dpr
+      ctx.strokeStyle = 'rgba(255,255,255,0.5)'
+      ctx.stroke()
+    }
+    // 程序化矢量物品图标（宝剑/纹章盾/宝石戒指，宝石吃稀有度色）
+    // 兜底链：矢量图标 → UI 素材图标 → emoji
+    let vecIcon = drop.kind === 'equipment'
+      ? this._getDropIcon(drop.slot || 'weapon', color)
+      : null
+    let iconImg = vecIcon
+    if (!iconImg || !iconImg.width) {
+      const iconKey = drop.kind === 'equipment'
+        ? (drop.slot === 'armor' ? 'UI_ICON_DEFEND' : drop.slot === 'accessory' ? 'UI_ICON_MP' : 'UI_ICON_ATTACK')
+        : 'UI_ICON_ITEM'
+      iconImg = this.game.assets && this.game.assets.get && this.game.assets.get(iconKey)
+    }
+    if (iconImg && iconImg.width) {
+      // 矢量图标内容占画布 ~72%，放大到 0.84；UI 素材（材料袋）为全出血方块，缩到 0.60 留边
+      const isVec = drop.kind === 'equipment' && iconImg === vecIcon
+      const iw = badgeR * 2 * (isVec ? 0.84 : 0.60)
+      const ih = iconImg.height ? iw * (iconImg.height / iconImg.width) : iw
+      ctx.drawImage(iconImg, sx - iw / 2, iconCy - ih / 2, iw, ih)
+    } else {
+      ctx.font = `${22 * dpr}px sans-serif`
+      ctx.fillText(drop.icon, sx, iconCy)
+    }
+
+    // ④ 名字胶囊（稀有度描边 + 文字，12dpr 可读字号）
+    ctx.font = `bold ${13 * dpr}px sans-serif`
+    const label = drop.name
+    const tw = ctx.measureText(label).width
+    const lh = 22 * dpr
+    const ly = sy + 15 * dpr
+    const lx = sx - tw / 2 - 9 * dpr
+    ctx.fillStyle = 'rgba(10,12,18,0.72)'
+    this._roundRect(ctx, lx, ly - lh / 2, tw + 18 * dpr, lh, lh / 2)
+    ctx.fill()
+    ctx.lineWidth = 1 * dpr
+    ctx.strokeStyle = color
+    ctx.globalAlpha = alpha * 0.7
+    this._roundRect(ctx, lx, ly - lh / 2, tw + 18 * dpr, lh, lh / 2)
+    ctx.stroke()
+    ctx.globalAlpha = alpha
+    ctx.fillStyle = color
+    ctx.fillText(label, sx, ly)
+    ctx.restore()
+  }
+
+  /**
+   * ★ 地面光晕垫（离屏预渲染）：椭圆径向渐变（中心亮→边缘透明），按颜色缓存。
+   *   贴图内容 clamp 在画布内，drawImage 时按需缩放，无接缝/无每帧 gradient。
+   */
+  _getDropGlow(color) {
+    if (this._dropGlowCache == null) this._dropGlowCache = {}
+    if (this._dropGlowCache[color]) return this._dropGlowCache[color]
+    const c = this._createOffscreenCanvas && this._createOffscreenCanvas()
+    if (!c) return null
+    c.width = 128; c.height = 56
+    const g = c.getContext && c.getContext('2d')
+    if (!g) return null
+    g.save()
+    g.translate(64, 28)
+    g.scale(1, 0.42)
+    const grad = g.createRadialGradient(0, 0, 0, 0, 0, 62)
+    grad.addColorStop(0, this._hexToRgba(color, 0.85))
+    grad.addColorStop(0.45, this._hexToRgba(color, 0.38))
+    grad.addColorStop(1, this._hexToRgba(color, 0))
+    g.fillStyle = grad
+    g.beginPath()
+    g.arc(0, 0, 62, 0, Math.PI * 2)
+    g.fill()
+    g.restore()
+    this._dropGlowCache[color] = c
+    return c
+  }
+
+  /**
+   * ★ 竖直光柱贴图（离屏预渲染）：水平渐隐（透明→色→透明）× 垂直渐隐（上透明→下亮）。
+   *   用 destination-in 复合双向渐隐，得到柔和体积光，按颜色缓存。
+   */
+  _getDropPillar(color) {
+    if (this._dropPillarCache == null) this._dropPillarCache = {}
+    if (this._dropPillarCache[color]) return this._dropPillarCache[color]
+    const c = this._createOffscreenCanvas && this._createOffscreenCanvas()
+    if (!c) return null
+    c.width = 48; c.height = 128
+    const g = c.getContext && c.getContext('2d')
+    if (!g) return null
+    // ① 水平渐变（左透明→中色→右透明）
+    const hg = g.createLinearGradient(0, 0, 48, 0)
+    hg.addColorStop(0, this._hexToRgba(color, 0))
+    hg.addColorStop(0.5, this._hexToRgba(color, 0.75))
+    hg.addColorStop(1, this._hexToRgba(color, 0))
+    g.fillStyle = hg
+    g.fillRect(0, 0, 48, 128)
+    // ② 垂直渐隐 mask（上透明→下不透明）
+    const vg = g.createLinearGradient(0, 0, 0, 128)
+    vg.addColorStop(0, 'rgba(0,0,0,0)')
+    vg.addColorStop(0.55, 'rgba(0,0,0,0.55)')
+    vg.addColorStop(1, 'rgba(0,0,0,1)')
+    g.globalCompositeOperation = 'destination-in'
+    g.fillStyle = vg
+    g.fillRect(0, 0, 48, 128)
+    g.globalCompositeOperation = 'source-over'
+    this._dropPillarCache[color] = c
+    return c
+  }
+
+  /**
+   * ★ 徽章底盘贴图（离屏预渲染，按稀有度色缓存）：128 逻辑空间、圆形 R=59。
+   *   深色径向渐变底（中心微亮）→ 稀有度外环 → 内白细环 → 顶部受光高光弧。
+   *   整体烘焙后每帧一次 drawImage，替代旧的内联 5 次描边/填充。
+   */
+  _getDropBadgePlate(color) {
+    if (this._dropPlateCache == null) this._dropPlateCache = {}
+    if (this._dropPlateCache[color]) return this._dropPlateCache[color]
+    const c = this._createOffscreenCanvas && this._createOffscreenCanvas()
+    if (!c) return null
+    c.width = 128; c.height = 128
+    const g = c.getContext && c.getContext('2d')
+    if (!g) return null
+    const R = 59
+    // 深色径向渐变底（中心略亮，边缘沉暗）
+    const bg = g.createRadialGradient(64, 52, 6, 64, 64, R)
+    bg.addColorStop(0, 'rgba(36,43,55,0.96)')
+    bg.addColorStop(0.7, 'rgba(20,24,32,0.92)')
+    bg.addColorStop(1, 'rgba(10,12,18,0.9)')
+    g.beginPath()
+    g.arc(64, 64, R, 0, Math.PI * 2)
+    g.fillStyle = bg
+    g.fill()
+    // 稀有度外环（暗色衬底 + 亮色主环，双层更立体）
+    g.beginPath()
+    g.arc(64, 64, R - 2.5, 0, Math.PI * 2)
+    g.lineWidth = 5.5
+    g.strokeStyle = this._hexToRgba(color, 0.28)
+    g.stroke()
+    g.beginPath()
+    g.arc(64, 64, R - 4.5, 0, Math.PI * 2)
+    g.lineWidth = 2.5
+    g.strokeStyle = color
+    g.stroke()
+    // 内白细环（分隔底盘与图标）
+    g.beginPath()
+    g.arc(64, 64, R - 10, 0, Math.PI * 2)
+    g.lineWidth = 1.2
+    g.strokeStyle = 'rgba(255,255,255,0.18)'
+    g.stroke()
+    // 顶部受光高光弧
+    g.beginPath()
+    g.arc(64, 64, R - 7, -Math.PI * 0.8, -Math.PI * 0.2)
+    g.lineWidth = 2.5
+    g.strokeStyle = 'rgba(255,255,255,0.4)'
+    g.stroke()
+    this._dropPlateCache[color] = c
+    return c
+  }
+
+  /**
+   * ★ 程序化矢量物品图标（离屏预渲染，按 slot+稀有度色缓存）：128 逻辑空间。
+   *   weapon=宝剑（钢刃渐变+金护手+缠柄）/ armor=纹章盾（金边+盾钮+铆钉）/ accessory=宝石戒指（金环+稀有度色宝石）。
+   *   零包体增量、任意 dpr 锐利、风格与稀有度色统一。
+   */
+  _getDropIcon(slot, color) {
+    if (this._dropIconCache == null) this._dropIconCache = {}
+    const key = `${slot}_${color}`
+    if (this._dropIconCache[key]) return this._dropIconCache[key]
+    const c = this._createOffscreenCanvas && this._createOffscreenCanvas()
+    if (!c) return null
+    c.width = 128; c.height = 128
+    const g = c.getContext && c.getContext('2d')
+    if (!g) return null
+    // 盾/剑/戒指几何占画布比例不同，整体放大让三种图标视觉重量一致
+    // （剑 1.15：剑尖已缩短至 -62，1.15 倍后旋转边界 (99.7, 2.3) 恰好不裁）
+    const k = slot === 'armor' ? 1.3 : slot === 'accessory' ? 1.25 : 1.15
+    g.save()
+    g.translate(64, 64)
+    g.scale(k, k)
+    g.translate(-64, -64)
+    if (slot === 'armor') this._paintShieldIcon(g, color)
+    else if (slot === 'accessory') this._paintRingIcon(g, color)
+    else this._paintSwordIcon(g, color)
+    g.restore()
+    this._dropIconCache[key] = c
+    return c
+  }
+
+  /** 宝剑图标（直斜 30° 指向右上，画布利用率高于 45°）：钢刃横渐变 + 血槽 + 金护手 + 缠绳柄 + 金柄头 */
+  _paintSwordIcon(g, color) {
+    g.save()
+    g.translate(64, 64)
+    g.rotate(Math.PI / 6)
+    // 刀刃（钢，横向渐变：左亮刃→右暗背）
+    const bg = g.createLinearGradient(-11, 0, 11, 0)
+    bg.addColorStop(0, '#f4f8fc'); bg.addColorStop(0.35, '#c3cdd9')
+    bg.addColorStop(0.72, '#79848f'); bg.addColorStop(1, '#414a55')
+    g.beginPath()
+    g.moveTo(-11, -25); g.lineTo(11, -25); g.lineTo(11, -52)
+    g.lineTo(0, -62); g.lineTo(-11, -52)
+    g.closePath()
+    g.fillStyle = bg
+    g.fill()
+    g.lineWidth = 1.5
+    g.strokeStyle = 'rgba(10,14,20,0.45)'
+    g.stroke()
+    // 血槽（中央暗线）+ 左缘高光
+    g.fillStyle = 'rgba(35,42,52,0.5)'
+    g.fillRect(-2.2, -25, 4.4, 26)
+    g.strokeStyle = 'rgba(255,255,255,0.75)'
+    g.lineWidth = 1.6
+    g.beginPath(); g.moveTo(-8.2, -26); g.lineTo(-8.2, -49); g.stroke()
+    // 护手（金，横胶囊）
+    const gg = g.createLinearGradient(0, -30, 0, -19)
+    gg.addColorStop(0, '#ffe7a3'); gg.addColorStop(0.5, '#e0a83f'); gg.addColorStop(1, '#8f6118')
+    g.beginPath()
+    g.arc(-24, -24.5, 5.5, 0, Math.PI * 2)
+    g.arc(24, -24.5, 5.5, 0, Math.PI * 2)
+    g.rect(-24, -30, 48, 11)
+    g.fillStyle = gg
+    g.fill()
+    // 缠绳握柄
+    g.fillStyle = '#4e3520'
+    g.fillRect(-5.5, -19, 11, 33)
+    g.strokeStyle = 'rgba(0,0,0,0.38)'
+    g.lineWidth = 2.2
+    for (let wy = -13; wy <= 9; wy += 6) {
+      g.beginPath(); g.moveTo(-5.5, wy); g.lineTo(5.5, wy); g.stroke()
+    }
+    // 柄头（金球）+ 高光点
+    const pg = g.createRadialGradient(-2.6, 16, 1, 0, 19, 9.5)
+    pg.addColorStop(0, '#ffe9ae'); pg.addColorStop(0.6, '#d9a53f'); pg.addColorStop(1, '#7a5314')
+    g.beginPath()
+    g.arc(0, 19, 8.5, 0, Math.PI * 2)
+    g.fillStyle = pg
+    g.fill()
+    g.beginPath()
+    g.arc(-2.6, 16.4, 2.2, 0, Math.PI * 2)
+    g.fillStyle = 'rgba(255,255,255,0.8)'
+    g.fill()
+    g.restore()
+  }
+
+  /** 纹章盾图标（熨斗盾形）：钢蓝面渐变 + 金边内衬 + 中央金盾钮 + 铆钉 */
+  _paintShieldIcon(g, color) {
+    const shieldPath = (s) => {
+      g.beginPath()
+      g.moveTo(-32 * s, -30 * s)
+      g.lineTo(32 * s, -30 * s)
+      g.bezierCurveTo(32 * s, 6 * s, 20 * s, 30 * s, 0, 44 * s)
+      g.bezierCurveTo(-20 * s, 30 * s, -32 * s, 6 * s, -32 * s, -30 * s)
+      g.closePath()
+    }
+    g.save()
+    g.translate(64, 62)
+    // 金边（外层）
+    const go = g.createLinearGradient(-30, -30, 30, 40)
+    go.addColorStop(0, '#ffe7a3'); go.addColorStop(0.5, '#d9a53f'); go.addColorStop(1, '#8a5c1a')
+    shieldPath(1)
+    g.fillStyle = go
+    g.fill()
+    // 盾面（内衬 88%，钢蓝竖渐变）
+    const fs = g.createLinearGradient(0, -26, 0, 38)
+    fs.addColorStop(0, '#5a6b82'); fs.addColorStop(0.55, '#39465a'); fs.addColorStop(1, '#232b38')
+    shieldPath(0.86)
+    g.fillStyle = fs
+    g.fill()
+    // 稀有度色纹章 V 纹（低饱和叠加，呼应稀有度）
+    g.beginPath()
+    g.moveTo(0, -14); g.lineTo(13, 2); g.lineTo(0, 16); g.lineTo(-13, 2)
+    g.closePath()
+    g.fillStyle = this._hexToRgba(color, 0.5)
+    g.fill()
+    // 中央金盾钮（径向渐变球）
+    const bg = g.createRadialGradient(-2.5, -6, 1.5, 0, -3.5, 10)
+    bg.addColorStop(0, '#ffe9ae'); bg.addColorStop(0.6, '#d9a53f'); bg.addColorStop(1, '#7a5314')
+    g.beginPath()
+    g.arc(0, -3.5, 8.5, 0, Math.PI * 2)
+    g.fillStyle = bg
+    g.fill()
+    g.beginPath()
+    g.arc(-2.6, -6.2, 2.2, 0, Math.PI * 2)
+    g.fillStyle = 'rgba(255,255,255,0.8)'
+    g.fill()
+    // 顶部铆钉 ×2
+    g.fillStyle = '#e8c169'
+    g.beginPath(); g.arc(-22, -23, 2.4, 0, Math.PI * 2); g.fill()
+    g.beginPath(); g.arc(22, -23, 2.4, 0, Math.PI * 2); g.fill()
+    // 左缘受光高光
+    g.strokeStyle = 'rgba(255,255,255,0.35)'
+    g.lineWidth = 2
+    g.beginPath()
+    g.moveTo(-27, -22)
+    g.bezierCurveTo(-27, 4, -17, 24, -3, 36)
+    g.stroke()
+    g.restore()
+  }
+
+  /** 宝石戒指图标：金环托 + 稀有度色菱形宝石（切面线 + 星光） */
+  _paintRingIcon(g, color) {
+    g.save()
+    g.translate(64, 64)
+    // 戒环（暗衬 → 金主环 → 顶部高光弧）
+    g.beginPath()
+    g.arc(0, 12, 20, 0, Math.PI * 2)
+    g.lineWidth = 13
+    g.strokeStyle = '#6b4a16'
+    g.stroke()
+    const gg = g.createLinearGradient(-20, -6, 20, 30)
+    gg.addColorStop(0, '#ffeeb0'); gg.addColorStop(0.5, '#dca644'); gg.addColorStop(1, '#7c5518')
+    g.beginPath()
+    g.arc(0, 12, 20, 0, Math.PI * 2)
+    g.lineWidth = 9
+    g.strokeStyle = gg
+    g.stroke()
+    g.beginPath()
+    g.arc(0, 12, 20, -Math.PI * 0.85, -Math.PI * 0.35)
+    g.lineWidth = 3
+    g.strokeStyle = 'rgba(255,255,255,0.65)'
+    g.stroke()
+    // 菱形宝石（稀有度色，纵向渐变亮→暗）
+    const lg = g.createLinearGradient(0, -42, 0, -8)
+    lg.addColorStop(0, this._hexToRgba(color, 1))
+    lg.addColorStop(1, this._hexToRgba(color, 0.55))
+    g.beginPath()
+    g.moveTo(0, -42); g.lineTo(14, -25); g.lineTo(0, -8); g.lineTo(-14, -25)
+    g.closePath()
+    g.fillStyle = lg
+    g.fill()
+    g.lineWidth = 1.6
+    g.strokeStyle = 'rgba(0,0,0,0.35)'
+    g.stroke()
+    // 切面线（中心向四角）
+    g.strokeStyle = 'rgba(255,255,255,0.35)'
+    g.lineWidth = 1
+    g.beginPath()
+    g.moveTo(0, -42); g.lineTo(0, -8); g.moveTo(-14, -25); g.lineTo(14, -25)
+    g.stroke()
+    // 星光点
+    g.fillStyle = 'rgba(255,255,255,0.85)'
+    g.beginPath()
+    g.moveTo(-4, -31); g.lineTo(-2.4, -28); g.lineTo(-6, -27.4); g.lineTo(-4.6, -30.4)
+    g.closePath()
+    g.fill()
+    g.restore()
+  }
+
+  /** hex → rgba 字符串（非法输入返回白色） */
+  _hexToRgba(hex, a) {
+    const m = /^#([0-9a-f]{6})$/i.exec(hex || '')
+    if (!m) return `rgba(255,255,255,${a})`
+    const n = parseInt(m[1], 16)
+    return `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${a})`
+  }
+
+  /**
+   * ★ 点击拾取地面掉落物：命中任意一件（取距离最近）即拾取。
+   * 返回 true 表示本次点击已被掉落物消费。
+   */
+  _tryPickupGroundDrop(tap) {
+    if (!this._groundDrops || !this._groundDrops.length) return false
+    const mapTapX = tap.x + this.cameraX
+    const mapTapY = tap.y + this.cameraY
+    const hitR = 46 * this.dpr
+    let best = null
+    let bestDist = Infinity
+    for (const d of this._groundDrops) {
+      const dist = Math.sqrt((mapTapX - d.x) ** 2 + (mapTapY - d.y) ** 2)
+      if (dist < hitR && dist < bestDist) { best = d; bestDist = dist }
+    }
+    if (!best) return false
+    return !!this._pickupDrop(best)
   }
 
   _updateChestFx(dt) {
@@ -3569,24 +4187,60 @@ baseRadius: 50 * this.dpr,    // 底座半径（缩小）
   _rollMonsterDrop(monster) {
     if (!monster || !this._dungeonCfg || !this._dungeonCfg.lootTable) return
     const table = this._dungeonCfg.lootTable[monster.enemyId]
-    if (!table || !table.length) return
     const parts = []
-    for (const entry of table) {
-      if (entry.rate != null && Math.random() > entry.rate) continue
-      if (entry.type === 'gold') {
-        const amt = entry.min + Math.floor(Math.random() * (entry.max - entry.min + 1))
-        this._addGold(amt)
-        parts.push(`💰+${amt}`)
-        this._pushDropFloater(monster.x, monster.y, `💰+${amt}`, '#ffd84d')
-      } else if (entry.type === 'material') {
-        const c = entry.count || 1
-        this._addMaterial(entry.id, c)
-        parts.push(`🧪${entry.id}×${c}`)
-        this._pushDropFloater(monster.x, monster.y - 16 * this.dpr, `🧪${entry.id}`, '#7fe3ff')
+    if (table && table.length) {
+      for (const entry of table) {
+        if (entry.rate != null && Math.random() > entry.rate) continue
+        if (entry.type === 'gold') {
+          const amt = entry.min + Math.floor(Math.random() * (entry.max - entry.min + 1))
+          this._addGold(amt)
+          parts.push(`💰+${amt}`)
+          this._pushDropFloater(monster.x, monster.y, `💰+${amt}`, '#ffd84d')
+        } else if (entry.type === 'material') {
+          // ★ 材料不再强制入包：散落在地面，玩家点击拾取
+          const c = entry.count || 1
+          const def = MATERIALS[entry.id]
+          for (let i = 0; i < c; i++) {
+            this._spawnGroundDrop(monster, {
+              kind: 'material', itemId: entry.id,
+              name: (def && def.name) || entry.id,
+              icon: (def && def.icon) || '🧪'
+            })
+          }
+          parts.push(`🧪${(def && def.name) || entry.id}×${c}`)
+        } else if (entry.type === 'equipment') {
+          // ★ lootTable 显式装备条目：{ type:'equipment', rarity:'common'|'rare'..., rate }
+          const equip = getRandomEquipment(entry.rarity || 'common')
+          if (equip) {
+            this._spawnGroundDrop(monster, {
+              kind: 'equipment', itemId: equip.id, name: equip.name,
+              rarity: equip.rarity, slot: equip.type,
+              icon: (EQUIP_TYPE_CONFIG[equip.type] && EQUIP_TYPE_CONFIG[equip.type].icon) || '⚔️'
+            })
+            parts.push(`⚔️${equip.name}`)
+          }
+        }
       }
     }
+    // ★ 装备兜底掷骰（代码层，全副本生效，无需逐副本改配置）：
+    //   Boss 必掉 1 件（优先 BOSS_DROPS[enemyId]，未配置的副本 Boss 落到稀有池必掉）
+    //   → elite 按稀有池 30% → normal 按普通池 10%
+    const fallbackEquip = monster.isBoss
+      ? (getBossDrop(monster.enemyId) || getRandomEquipment('rare'))
+      : (monster.isElite
+        ? (Math.random() < 0.30 ? getRandomEquipment('rare') : null)
+        : (Math.random() < 0.10 ? getRandomEquipment('common') : null))
+    if (fallbackEquip) {
+      this._spawnGroundDrop(monster, {
+        kind: 'equipment', itemId: fallbackEquip.id, name: fallbackEquip.name,
+        rarity: fallbackEquip.rarity, slot: fallbackEquip.type,
+        icon: (EQUIP_TYPE_CONFIG[fallbackEquip.type] && EQUIP_TYPE_CONFIG[fallbackEquip.type].icon) || '⚔️'
+      })
+      parts.push(`⚔️${fallbackEquip.name}`)
+      this._pushDropFloater(monster.x, monster.y - 16 * this.dpr, `⚔️${fallbackEquip.name}`, (RARITY_CONFIG[fallbackEquip.rarity] && RARITY_CONFIG[fallbackEquip.rarity].color) || '#fff')
+    }
     if (parts.length && this.game.showToast) {
-      this.game.showToast(`击败 ${monster.name}：${parts.join('  ')}`)
+      this.game.showToast(`${monster.name} 掉落了物品，点击地面物品拾取！`)
     }
     console.log(`[Field] ${monster.name}(${monster.enemyId}) 掉落: ${parts.join('  ') || '无'}`)
     // ★ 经验奖励：此前副本击杀只发金币/素材，从不调用角色状态经验系统 → 刷副本不涨经验。
@@ -4000,6 +4654,23 @@ baseRadius: 50 * this.dpr,    // 底座半径（缩小）
           //   只有未知类型才落入 default 分支调用自定义 e.render
           type: 'chestSprite',
           render: (ctx) => this._renderChestSprite(ctx, obj, sx, sy)
+        })
+      }
+    }
+
+    // ── layer=2：地面掉落物（材料/装备，点击拾取）──
+    if (this._groundDrops && this._groundDrops.length) {
+      for (const drop of this._groundDrops) {
+        const sx = drop.x - this.cameraX
+        const sy = drop.y - this.cameraY
+        const margin = 60 * this.dpr
+        if (sx < -margin || sx > this.width + margin || sy < -margin || sy > this.height + margin) continue
+        engine.addEntity({
+          layer: 2,
+          sortY: drop.y / this.dpr,
+          // ★ 类型用未知值 'dropSprite'：引擎只对未知类型走 default 分支调用自定义 e.render
+          type: 'dropSprite',
+          render: (ctx) => this._renderDropSprite(ctx, drop, sx, sy)
         })
       }
     }
@@ -4643,7 +5314,22 @@ baseRadius: 50 * this.dpr,    // 底座半径（缩小）
         const useCatAnim = ['slime_cat', 'shadow_mouse', 'wild_cat', 'lost_healer_cat', 'flame_slime', 'aqua_slime', 'violet_slime', 'shadow_mouse_smooth', 'stone_golem', 'thug_leader', 'tower_guardian'].includes(monster.enemyId)
         // ★ 跳跃攻击动画：按抛物线高度上移渲染（跳跃期间怪物在空中）
         const jumpY = sy + (monster._jumpOffsetY || 0)
-        if (useCatAnim) {
+        // ★ 受击挤压变形（squash & stretch）：命中瞬间横向微胀、纵向微压，
+        //   随 _hitFlash 前半程（1→0.5，约 0.1s）线性回落——经典"果冻受击"重量感。
+        //   以精灵中心（sx, jumpY）为原点缩放，恢复矩阵后继续走原渲染路径。
+        const _squash = (monster._hitFlash && monster._hitFlash > 0.5)
+          ? (monster._hitFlash - 0.5) / 0.5 : 0
+        if (_squash > 0) {
+          ctx.save()
+          ctx.translate(sx, jumpY)
+          ctx.scale(1 + 0.13 * _squash, 1 - 0.10 * _squash)
+          if (useCatAnim) {
+            self._renderCatMonster(ctx, monster, 0, 0)
+          } else {
+            self._renderEmojiMonster(ctx, monster, 0, 0)
+          }
+          ctx.restore()
+        } else if (useCatAnim) {
           self._renderCatMonster(ctx, monster, sx, jumpY)
         } else {
           self._renderEmojiMonster(ctx, monster, sx, jumpY)
@@ -4709,10 +5395,17 @@ baseRadius: 50 * this.dpr,    // 底座半径（缩小）
       }
     }
     // ══ 世界层（背景 + 实体）震屏包裹：命中/受击时整屏轻震，仅世界层、不动 HUD ══
+    // ★ 方向性震屏：在随机全向抖动上叠加「攻击者→受击者」方向的偏置（_onHitFeedback 记录），
+    //   命中瞬间画面朝击退方向"窜"一下 → 这一击把怪打飞的指向感（纯随机抖没有方向信息）。
     const _shake = (this.battleSystem && this.battleSystem._shake) || 0
     ctx.save()
     if (_shake > 0) {
-      ctx.translate((Math.random() - 0.5) * 2 * _shake, (Math.random() - 0.5) * 2 * _shake)
+      const _dirX = (this.battleSystem && this.battleSystem._shakeDirX) || 0
+      const _dirY = (this.battleSystem && this.battleSystem._shakeDirY) || 0
+      ctx.translate(
+        (Math.random() - 0.5) * 2 * _shake + _dirX * _shake * 0.6,
+        (Math.random() - 0.5) * 2 * _shake + _dirY * _shake * 0.6
+      )
     }
     // 地图背景（程序化渲染只画草地纹理）
     if (this.areaInfo.fieldBg) {
@@ -4736,6 +5429,17 @@ baseRadius: 50 * this.dpr,    // 底座半径（缩小）
     // 树木/装饰/宝箱/怪物/队友/主角 全部按底部Y坐标排序后绘制
     this._renderYSortedEntities(ctx)
     ctx.restore()
+
+    // ★ 暴击/击杀全屏白闪：一闪而过（峰值 alpha ≤ 0.12，随 _critFlash 衰减归零），
+    //   画在世界层 restore 之后 → 只闪战斗画面，不盖 HUD。
+    const _critFlash = (this.battleSystem && this.battleSystem._critFlash) || 0
+    if (_critFlash > 0) {
+      ctx.save()
+      ctx.globalAlpha = Math.min(0.12, _critFlash * 0.12)
+      ctx.fillStyle = '#ffffff'
+      ctx.fillRect(0, 0, this.width, this.height)
+      ctx.restore()
+    }
     
     // 顶部UI
     this._renderTopUI(ctx)
@@ -4743,7 +5447,7 @@ baseRadius: 50 * this.dpr,    // 底座半径（缩小）
     this._renderDungeonHUD(ctx)
     if (this._dropFloaters && this._dropFloaters.length) this._renderDropFloaters(ctx)
     if (this._chestFx && this._chestFx.length) this._renderChestFx(ctx)
-    if (this.storyDialogue) this._renderStoryDialogue(ctx)
+    // ★ 剧情对白已移到 render() 尾部渲染（在全部 HUD 之后），避免被队伍卡片/按钮遮挡
     
     // 摇杆
     this._renderJoystick(ctx)
@@ -4919,6 +5623,8 @@ baseRadius: 50 * this.dpr,    // 底座半径（缩小）
       this._renderTargetPanel(ctx)
       this._renderCombo(ctx)
     }
+    // ★ 剧情对白最后渲染：位于全部 HUD 之上（仅低于通关遮罩），保证不被队伍卡片/按钮遮挡
+    if (this.storyDialogue) this._renderStoryDialogue(ctx)
     // ★ 副本通关遮罩（最上层）
     this._renderDungeonClear(ctx)
   }
@@ -5112,12 +5818,15 @@ baseRadius: 50 * this.dpr,    // 底座半径（缩小）
     if (!d) return
     const dpr = this.dpr
     const line = d.lines[d.index] || ''
-    const boxW = Math.min(580 * dpr, this.width * 0.92)
+    // ★ 位置放屏幕底部安全带（技能按钮/摇杆区上方）：顶部被队伍卡片/返回按钮遮挡
+    const boxW = Math.min(520 * dpr, this.width * 0.86)
     const boxH = 92 * dpr
     const x = (this.width - boxW) / 2
-    const y = 64 * dpr
+    const y = this.height - boxH - 185 * dpr
+    // 记录命中区（tap 推进对白用）
+    this._storyDialogueBounds = { x, y, width: boxW, height: boxH }
     ctx.save()
-    ctx.fillStyle = 'rgba(0,0,0,0.62)'
+    ctx.fillStyle = 'rgba(0,0,0,0.72)'
     this._roundRect(ctx, x, y, boxW, boxH, 12 * dpr)
     ctx.fill()
     ctx.strokeStyle = 'rgba(255,233,168,0.85)'
@@ -5140,6 +5849,10 @@ baseRadius: 50 * this.dpr,    // 底座半径（缩小）
     ctx.fillStyle = 'rgba(255,255,255,0.6)'
     ctx.font = `${12 * dpr}px sans-serif`
     ctx.fillText(`${d.index + 1}/${d.lines.length}`, x + boxW - 14 * dpr, y + boxH - 22 * dpr)
+    // 点击推进提示（呼吸闪烁）
+    ctx.globalAlpha = 0.55 + 0.35 * Math.sin(this.time * 4)
+    ctx.textAlign = 'left'
+    ctx.fillText('▼ 点击继续', x + 18 * dpr, y + boxH - 22 * dpr)
     ctx.restore()
   }
 
@@ -5292,6 +6005,13 @@ baseRadius: 50 * this.dpr,    // 底座半径（缩小）
     ctx.font = `${14 * dpr}px sans-serif`
     const sec = Math.max(0, Math.ceil(this.dungeonClearTimer))
     ctx.fillText(`点击任意处 / ${sec}s 后返回城镇`, this.width / 2, py + 188 * dpr)
+    // ★ 地面还有未拾取的掉落物：提醒玩家（返回城镇将放弃）
+    const dropN = (this._groundDrops || []).length
+    if (dropN > 0) {
+      ctx.fillStyle = '#7fe3ff'
+      ctx.font = `bold ${14 * dpr}px sans-serif`
+      ctx.fillText(`⚠ 地上还有 ${dropN} 件掉落物未拾取（返回将放弃）`, this.width / 2, py + ph - 24 * dpr)
+    }
     ctx.restore()
   }
 

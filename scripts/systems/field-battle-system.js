@@ -280,8 +280,9 @@ export function installFieldBattleSystem(FieldSceneClass) {
       }
     }
 
-    // 保存怪物状态
-    this.game.data.set(`fieldMonsters_${this.areaId}`, this.mapMonsters)
+    // 保存怪物状态（★ 走快照入口，避免活对象上的循环引用让存档 JSON 化失败）
+    if (typeof this._persistMapMonsters === 'function') this._persistMapMonsters()
+    else this.game.data.set(`fieldMonsters_${this.areaId}`, this.mapMonsters)
   }
 
   // ==========================================================================
@@ -371,22 +372,44 @@ export function installFieldBattleSystem(FieldSceneClass) {
   // 4. 更新战斗系统
   // ==========================================================================
   /**
-   * ★ 命中打击感反馈：顿帧 + 震屏 + 怪物闪白（复用回合制 BattleScene 的同类语义）。
+   * ★ 命中打击感反馈：顿帧 + 震屏 + 怪物闪白 + 命中环 + 暴击白闪（复用回合制 BattleScene 的同类语义）。
    *   在「玩家命中怪物」的结算点调用（近战 pendingDamages / 远程投射物命中）。
+   *   from: 攻击来源坐标 {x,y}（可选）——提供时震屏带方向性偏置（受击者被"推"的方向），
+   *         这是打击方向感的关键（只有全向随机抖的震屏缺乏"这一击把怪打飞"的指向性）。
+   *   注意：本方法在 _damageMonster 之后调用（hp 已扣），故可直接用 hp<=0 判定击杀。
    */
-  proto._onHitFeedback = function(monster, isCrit, hitType) {
+  proto._onHitFeedback = function(monster, isCrit, hitType, skillId, from) {
     if (!monster) return
-    // 顿帧：命中瞬间冻结战斗实体 ~60-90ms（暴击更久）→ 打击重量感
-    const hs = isCrit ? 0.09 : 0.06
+    // ★ 击杀反馈：致死一击顿帧更长、震屏更强（kill shot 级别的"终结感"）
+    const killed = (typeof monster.hp === 'number') && monster.hp <= 0
+    // 顿帧：普通 ~60ms / 暴击 ~90ms / 击杀 ~130ms（冻结战斗实体，渲染继续 → 命中重量感）
+    const hs = killed ? 0.13 : (isCrit ? 0.09 : 0.06)
     this.battleSystem._hitStop = Math.max(this.battleSystem._hitStop || 0, hs)
-    // 震屏：命中小幅震屏，暴击更强（渲染层读取 _shake 叠加到相机偏移）
-    const amp = (isCrit ? 6 : 3) * this.dpr
+    // 震屏：命中小幅震屏，暴击更强，击杀最强（渲染层读取 _shake 叠加到相机偏移）
+    const amp = (killed ? 9 : (isCrit ? 6 : 3)) * this.dpr
     this.battleSystem._shake = Math.max(this.battleSystem._shake || 0, amp)
+    // ★ 方向性震屏：记录本次命中的"攻击者→受击者"方向（单位向量），
+    //   渲染层在随机抖动上叠加该方向的偏置 → 命中瞬间画面朝击退方向"窜"一下。
+    //   仅当本次震幅 ≥ 当前残量时刷新方向（避免弱击覆盖重击的方向感）。
+    if (amp >= (this.battleSystem._shake || 0) - 0.001 && from && monster.x != null) {
+      const ddx = monster.x - from.x
+      const ddy = monster.y - from.y
+      const dlen = Math.sqrt(ddx * ddx + ddy * ddy)
+      if (dlen > 0.001) {
+        this.battleSystem._shakeDirX = ddx / dlen
+        this.battleSystem._shakeDirY = ddy / dlen
+      }
+    }
     // 闪白：怪物受击瞬间全身泛白（渲染层读取 _hitFlash 绘制半透明白覆盖）
     monster._hitFlash = 1
     // ★ P2 连击累计：每次成功命中 +1，并刷新连击窗口（断连超时清零）
     this.battleSystem.combo = (this.battleSystem.combo || 0) + 1
     this.battleSystem.comboTimer = 2.2
+    // ★ 暴击/击杀全屏白闪：极克制的一闪（渲染层读取 _critFlash，峰值 alpha ≤ 0.12），
+    //   参考 SF6 暴击 zoom+flash 的弱化版——手游上大面积特效会喧宾夺主，只留 10% 白闪。
+    if (isCrit || killed) {
+      this.battleSystem._critFlash = Math.max(this.battleSystem._critFlash || 0, killed ? 1 : 0.7)
+    }
     // ★ P2 命中环：在怪物位置生成扩散圈（暴击更大更亮）
     if (!this.battleSystem.hitRings) this.battleSystem.hitRings = []
     this.battleSystem.hitRings.push({
@@ -398,9 +421,17 @@ export function installFieldBattleSystem(FieldSceneClass) {
       r1: (isCrit ? 42 : 30) * this.dpr,
       color: isCrit ? '255, 220, 90' : '170, 220, 255'
     })
-    // ★ P2 合成打击音（WebAudio，无需音频文件）：按武器类型区分音色
-    if (this.game && this.game.audio && this.game.audio.playHitSynth) {
-      this.game.audio.playHitSynth({ type: hitType || 'slash', crit: isCrit })
+    // ★ 命中音效：
+    //   1) 技能弹道命中（传入 skillId）且非暴击 → 播放该技能的元素命中音（火焰爆裂/冰晶碎裂/雷电撕裂…）
+    //   2) 其他情况 → 通用打击音（暴击=hit_crit，近战=monster_hit 肉感，法术=battle_hit 短脆）
+    //   暴击优先走 hit_crit，因为暴击的听觉反馈比元素辨识更重要。
+    const _audio = this.game && this.game.audio
+    if (_audio) {
+      if (skillId && !isCrit && _audio.playSkillHitSFX) {
+        _audio.playSkillHitSFX(skillId)
+      } else if (_audio.playHitSynth) {
+        _audio.playHitSynth({ type: hitType || 'slash', crit: isCrit })
+      }
     }
   }
 
@@ -523,8 +554,9 @@ export function installFieldBattleSystem(FieldSceneClass) {
               fromY: (pd.hero && pd.hero.getPos ? pd.hero.getPos().y : this.playerY)
             })
             if (dealt > 0) {
-              // ★ 命中打击感：顿帧 + 震屏 + 闪白
-              this._onHitFeedback(m, pd.isCrit, 'slash')
+              // ★ 命中打击感：顿帧 + 震屏 + 闪白（带攻击者方向 → 方向性震屏）
+              const _fromPos = (pd.hero && pd.hero.getPos) ? pd.hero.getPos() : { x: this.playerX, y: this.playerY }
+              this._onHitFeedback(m, pd.isCrit, 'slash', null, _fromPos)
               // ★ 诅咒：对命中怪物施加降攻（虚弱）状态
               if (pd.debuff && pd.debuff.type === 'atk_down') {
                 this._applyMonsterStatus(m, 'atk_down', { duration: pd.debuff.duration || 3, value: pd.debuff.value || 0.3 }, pd.hero)
@@ -666,8 +698,15 @@ export function installFieldBattleSystem(FieldSceneClass) {
     this._updateMonsterAttack(dt)
 
     // 6. 打击感衰减：震屏强度递减 + 怪物受击闪白递减（仅渲染读取，不影响逻辑）
+    // ★ 震屏衰减：指数衰减（先猛后柔——"刚性碰撞→弹性余震"），比旧线性衰减更有打击层次；
+    //   低于感知阈值直接清零，避免无限拖尾。
     if (this.battleSystem._shake > 0) {
-      this.battleSystem._shake = Math.max(0, this.battleSystem._shake - dt * 60)
+      this.battleSystem._shake *= Math.exp(-dt * 10)
+      if (this.battleSystem._shake < 0.25 * (this.dpr || 1)) this.battleSystem._shake = 0
+    }
+    // ★ 暴击/击杀白闪衰减
+    if (this.battleSystem._critFlash > 0) {
+      this.battleSystem._critFlash = Math.max(0, this.battleSystem._critFlash - dt * 6)
     }
     for (const m of (this.mapMonsters || [])) {
       if (m._hitFlash && m._hitFlash > 0) {
@@ -794,6 +833,13 @@ export function installFieldBattleSystem(FieldSceneClass) {
         this._triggerMpShake(ctrl)
       }
       return
+    }
+
+    // ★ 技能释放音效：MP 检查通过后、动画开始前播放（此处是所有非大招技能的唯一必经点）。
+    //   按 skill.id 精确匹配元素音色（火球/冰晶/雷电/治疗/增益…），未配置则按 skill.type 兜底。
+    //   普攻(skill===null)不在此处出声——普攻用挥击破风声 + 命中音的两段式反馈。
+    if (skill && this.game && this.game.audio && this.game.audio.playSkillSFX) {
+      this.game.audio.playSkillSFX(skill.id, skill.type)
     }
 
     if (sprite) {
@@ -1141,6 +1187,11 @@ export function installFieldBattleSystem(FieldSceneClass) {
     }
     if ((skill.mpCost || 0) > 0) {
       mainHero.mp = Math.max(0, mainHero.mp - (skill.mpCost || 0))
+    }
+    // ★ 大招释放音效：MP 扣除成功后播放（剑气风暴走独立分发，不经过 _playerAttackMonster
+    //   的通用 SFX 埋点，故在此单独出声）。旋转风声 + 多段刃鸣 + 收束重击。
+    if (this.game && this.game.audio && this.game.audio.playSkillSFX) {
+      this.game.audio.playSkillSFX(skill.id, skill.type)
     }
     // ★ 霸体标志：剑气风暴配置 superArmor:true，必须落到英雄实例上。
     //   否则 isHeroSuperArmor() 为 false → 受击不走霸体豁免，_interruptCastingForHero /
@@ -3304,8 +3355,10 @@ export function installFieldBattleSystem(FieldSceneClass) {
           dmg = this._calcSkillDamageToMonster(hitMonster, p.skill, p.hero, isCrit)
         }
         this._damageMonster(hitMonster, dmg, { knockback: true, fromX: p.x, fromY: p.y })
-        // ★ 命中打击感：顿帧 + 震屏 + 闪白
-        this._onHitFeedback(hitMonster, isCrit, 'magic')
+        // ★ 命中打击感：顿帧 + 震屏 + 闪白 + 命中音
+        //   技能弹道传入 skill.id → 播放元素专属命中音；普攻弹道走通用法术命中音
+        this._onHitFeedback(hitMonster, isCrit, 'magic',
+          (!p.isBasicAttack && p.skill) ? p.skill.id : null)
         // 灼烧状态（仅技能火球）
         if (p.burn) this._applyMonsterStatus(hitMonster, 'burn', p.burn, p.hero)
         this._pushDamageText(hitMonster, dmg, isCrit, p.isBasicAttack ? '#ffffff' : '#ff6b35')
@@ -4688,32 +4741,62 @@ export function installFieldBattleSystem(FieldSceneClass) {
   // ==========================================================================
   // 7. 更新伤害数字
   // ==========================================================================
+  /**
+   * ★ 打击感升级版伤害数字运动模型（对照动作游戏通用做法）：
+   *   1) 物理抛物线：向上初速 + 重力回落（先快升再微降），比旧 ease-out 直线上升更有"重量"；
+   *   2) 横向随机抖动：同屏多个数字彼此错开，不叠成一团（可读性）；
+   *   3) 出生弹性缩放：easeOutBack 从 1.35 倍回弹到基准（暴击基准更大）→ 迸发感；
+   *   4) 两段式淡出：前 55% 生命周期完全不透明，之后快速淡出（信息保留 + 干净退场）；
+   *   5) 同屏上限 28：超出移除最老的（怪物群/AOE 数字风暴不至于淹没画面）。
+   *   顿帧（hitStop）期间本函数不执行 → 数字与画面一起凝滞，强化命中停顿。
+   */
   proto._updateFieldDamageTexts = function(dt) {
     if (!this.battleSystem.damageTexts || !Array.isArray(this.battleSystem.damageTexts)) return
 
-    for (let i = this.battleSystem.damageTexts.length - 1; i >= 0; i--) {
-      const item = this.battleSystem.damageTexts[i]
+    const texts = this.battleSystem.damageTexts
+    if (texts.length > 28) texts.splice(0, texts.length - 28)
 
-      // 计算动画进度
-      const progress = 1 - (item.life / (item.maxLife || 1.0))
+    for (let i = texts.length - 1; i >= 0; i--) {
+      const item = texts[i]
+      const maxLife = item.maxLife || 1.0
+      const progress = 1 - (item.life / maxLife)
+      const isCrit = !!item.isCrit
 
-      // Ease-out 上升：y 坐标随时间向上移动
-      if (!item._startY) item._startY = item.y
-      const easeOut = progress * (2 - progress) // ease-out 函数
-      item.y = item._startY - (easeOut * 60 * this.dpr) // 上升60px
+      // 物理参数懒初始化（兼容所有旧 push 点——只带 text/x/y/color/life 也能跑）
+      if (item.vy == null) {
+        if (!item._startY) item._startY = item.y
+        // 出生横向错位：同一目标身上连续命中的数字彼此岔开
+        item.x += (Math.random() * 2 - 1) * 14 * this.dpr
+        item._startX = item.x
+        // 向上初速（暴击更高）+ 横向漂移速度 + 重力
+        item.vy = -(isCrit ? 190 : 150) * this.dpr * (0.9 + Math.random() * 0.2)
+        item.vx = (Math.random() * 2 - 1) * 26 * this.dpr
+        item.gravity = (isCrit ? 430 : 380) * this.dpr
+      }
 
-      // 缩放效果：从 1.5 倍缩放到 1.0 倍
-      item._scale = 1.5 - (easeOut * 0.5)
+      // 抛物线运动：vy 受重力，x 漂移带摩擦
+      item.vy += item.gravity * dt
+      item.y += item.vy * dt
+      item.x += item.vx * dt
+      item.vx *= Math.exp(-dt * 3)
 
-      // 透明度：逐渐消失
-      item._alpha = 1 - progress
+      // 出生弹性缩放（easeOutBack）：快速从 1.35 倍回落到基准，轻微过冲再稳住
+      const popT = Math.min(1, progress / 0.18)
+      const c1 = 1.70158, c3 = c1 + 1
+      const pop = 1 + c3 * Math.pow(popT - 1, 3) + c1 * Math.pow(popT - 1, 2)
+      const baseScale = isCrit ? 1.45 : 1.0
+      const startScale = baseScale * 1.35
+      item._scale = startScale + (baseScale - startScale) * pop
+
+      // 两段式淡出：前 55% 全不透明（玩家来得及读数），之后 45% 线性淡出
+      item._alpha = progress < 0.55 ? 1 : Math.max(0, 1 - (progress - 0.55) / 0.45)
 
       // 更新生命周期
       item.life -= dt
 
       // 移除过期的伤害数字
       if (item.life <= 0) {
-        this.battleSystem.damageTexts.splice(i, 1)
+        texts.splice(i, 1)
       }
     }
   }
@@ -4843,22 +4926,35 @@ export function installFieldBattleSystem(FieldSceneClass) {
   // ==========================================================================
   // 11. 渲染伤害数字
   // ==========================================================================
+  /**
+   * ★ 打击感升级版伤害数字渲染：
+   *   - 全部数字带深色描边（任何地图背景下都可读——白描边依赖亮背景会翻车）；
+   *   - 暴击：更大字号（1.45 倍基准）+ 暖棕描边强化金色，`!` 已由结算点带上；
+   *   - 字体加粗：粗笔画在战斗特效叠加层上仍保持辨识。
+   */
   proto._renderDamageTexts = function(ctx) {
     if (!this.battleSystem.damageTexts || !Array.isArray(this.battleSystem.damageTexts)) return
 
     for (const item of this.battleSystem.damageTexts) {
       ctx.save()
 
-      // 设置透明度
-      ctx.globalAlpha = item._alpha || 1
+      // 设置透明度（两段式淡出由 _updateFieldDamageTexts 计算）
+      ctx.globalAlpha = item._alpha == null ? 1 : item._alpha
 
-      // 设置字体和颜色
-      ctx.font = `${16 * this.dpr * (item._scale || 1)}px sans-serif`
-      ctx.fillStyle = item.color || '#ff4757'
+      // 设置字体和颜色（暴击字号更大）
+      const isCrit = !!item.isCrit
+      const baseSize = (isCrit ? 23 : 16) * this.dpr
+      ctx.font = `bold ${baseSize * (item._scale || 1)}px sans-serif`
       ctx.textAlign = 'center'
       ctx.textBaseline = 'middle'
 
-      // 绘制伤害数字
+      // 深色描边（先描后填）：暴击暖棕描边烘金色，其余近黑描边保证亮色数字可读
+      ctx.lineJoin = 'round'
+      ctx.lineWidth = 3.5 * this.dpr * (item._scale || 1)
+      ctx.strokeStyle = isCrit ? 'rgba(122, 53, 0, 0.95)' : 'rgba(20, 10, 10, 0.75)'
+      ctx.strokeText(item.text, item.x, item.y)
+
+      ctx.fillStyle = item.color || '#ff4757'
       ctx.fillText(item.text, item.x, item.y)
 
       ctx.restore()
