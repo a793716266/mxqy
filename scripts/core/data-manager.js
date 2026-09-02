@@ -11,6 +11,8 @@
  *   内部自动映射到 data.player.gold（见 _resolve）
  */
 
+import { safeStringify } from '../utils/save-sanitize.js'
+
 export class DataManager {
   // ======== 单例模式 ========
   static _instance = null
@@ -264,7 +266,11 @@ export class DataManager {
   save() {
     this.data.player.playTime = (this.data.player.playTime || 0) + 1
     try {
-      wx.setStorageSync(this.saveKey, JSON.stringify(this.data))
+      // ★ 兜底：任何模块把活对象（含循环引用/函数）塞进 this.data 时，
+      //   safeStringify 会自动剔除不可序列化部分后保存，而不是让整个存档失败。
+      const json = safeStringify(this.data)
+      if (json == null) throw new Error('序列化结果为空，已放弃保存')
+      wx.setStorageSync(this.saveKey, json)
       console.log('[存档] 保存成功，版本:', this.data.version)
       return true
     } catch (e) {

@@ -14,7 +14,8 @@
 
 const canvasCtx = new Proxy({}, {
   get(target, prop) {
-    if (prop === 'canvas' || prop === 'measureText') return undefined
+    if (prop === 'canvas') return undefined
+    if (prop === 'measureText') return () => ({ width: 10 })  // 真实契约：返回 TextMetrics 对象
     if (prop === 'createLinearGradient' || prop === 'createRadialGradient') return () => ({ addColorStop() {} })
     return () => {}
   },
@@ -49,6 +50,7 @@ globalThis.require = (p) => {
 
 const THEMES = await import(path.resolve(projectRoot, 'scripts', 'data', 'field-map-themes.js'))
 const { FieldScene } = await import(path.resolve(projectRoot, 'scripts', 'scenes', 'field-scene.js'))
+const { equipmentManager } = await import(path.resolve(projectRoot, 'scripts', 'managers', 'equipment-manager.js'))
 
 class MockGame {
   constructor() {
@@ -166,6 +168,80 @@ for (const area of AREAS) {
     scene._updateChestFx(0.016)
   } catch (e) { openRenderErr = e }
   assert(!openRenderErr, `${area}: 开箱特效渲染/更新不抛异常`, openRenderErr && openRenderErr.message)
+
+  // 9. 剧情对白：底部安全带位置 + 渲染不抛异常 + tap 点击推进
+  scene._showStoryDialogue('迷途的治愈猫', ['第一句', '第二句'])
+  assert(scene.storyDialogue && scene.storyDialogue.index === 0, `${area}: 对白启动 (index=0)`)
+  let dlgErr = null
+  try { scene._renderStoryDialogue(canvasCtx) } catch (e) { dlgErr = e }
+  assert(!dlgErr, `${area}: 对白渲染不抛异常`, dlgErr && dlgErr.message)
+  const b = scene._storyDialogueBounds
+  assert(!!b, `${area}: 对白命中区已记录`)
+  assert(b && b.y + b.height <= scene.height - 180 * dpr,
+    `${area}: 对白框位于底部技能按钮安全带之上 (boxBottom=${Math.round((b ? b.y + b.height : 0) / dpr)} ≤ ${Math.round(scene.height / dpr) - 180})`)
+  if (b) {
+    const cx = b.x + b.width / 2, cy = b.y + b.height / 2
+    scene._handleTap({ x: cx, y: cy })
+    assert(scene.storyDialogue && scene.storyDialogue.index === 1, `${area}: 点击对白推进到第 2 条`,
+      `index=${scene.storyDialogue ? scene.storyDialogue.index : 'null'}`)
+    scene._handleTap({ x: cx, y: cy })
+    assert(scene.storyDialogue === null, `${area}: 最后一条点击后对白关闭`)
+  }
+
+  // 10. 地面掉落物系统：散落 → 渲染 → 点击拾取入包（装备/材料不再强制获取）
+  const baseDrops = (scene._groundDrops || []).length
+  const eqBefore = equipmentManager.unequippedItems.length
+  const matsBefore = ((game.data.get('materials')) || {}).slime_gel || 0
+  const monsterAt = { x: scene.playerX, y: scene.playerY, name: '验证怪', enemyId: 'green_slime' }
+  // 10a. 生成：材料 + 史诗装备（含稀有光柱渲染分支）
+  scene._spawnGroundDrop(monsterAt, { kind: 'material', itemId: 'slime_gel', name: '史莱姆凝胶', icon: '🫧' })
+  scene._spawnGroundDrop(monsterAt, { kind: 'equipment', itemId: 'flame_sword', name: '炎之剑', rarity: 'epic', slot: 'weapon', icon: '⚔️' })
+  const drops2 = scene._groundDrops || []
+  assert(drops2.length === baseDrops + 2, `${area}: 散落 2 件掉落物`, `实际 ${drops2.length - baseDrops}`)
+  const eqDrop = drops2.find(d => d.kind === 'equipment')
+  const matDrop = drops2.find(d => d.kind === 'material')
+  assert(!!eqDrop && eqDrop.icon === '⚔️' && eqDrop.rarity === 'epic' && eqDrop.slot === 'weapon' && eqDrop.ttl === 90,
+    `${area}: 掉落物结构齐全（icon/rarity/slot/ttl）`)
+  assert(!!matDrop && (matDrop.vx !== 0 || matDrop.vy !== 0), `${area}: 掉落物带弹出滑行初速`)
+  let dropErr = null
+  try {
+    scene._updateGroundDrops(0.016)
+    scene._renderDropSprite(canvasCtx, matDrop, scene.width / 2, scene.height / 2)
+    scene._renderDropSprite(canvasCtx, eqDrop, scene.width / 2, scene.height / 2)
+    scene._renderYSortedEntities(canvasCtx)
+  } catch (e) { dropErr = e }
+  assert(!dropErr, `${area}: 掉落物更新/渲染（含光柱）不抛异常`, dropErr && dropErr.message)
+  // 10b. 材料拾取 → 材料库存 +1，掉落移除
+  scene._pickupDrop(matDrop)
+  const matsAfter = ((game.data.get('materials')) || {}).slime_gel || 0
+  assert(matsAfter === matsBefore + 1, `${area}: 拾取材料 → 材料库存 +1`, `${matsBefore}→${matsAfter}`)
+  assert(!(scene._groundDrops || []).includes(matDrop), `${area}: 拾取后掉落物从地面移除`)
+  // 10c. 装备拾取 → equipmentManager 背包 +1 且持久化 equipmentData
+  scene._pickupDrop(eqDrop)
+  assert(equipmentManager.unequippedItems.length === eqBefore + 1, `${area}: 拾取装备 → 背包 +1`)
+  assert(!!game.data.get('equipmentData'), `${area}: 装备拾取后持久化 equipmentData`)
+  // 10d. boss 端到端：击杀 Boss 必掉 1 件装备（getBossDrop 兜底掷骰确定性必中）
+  const bossDropBefore = (scene._groundDrops || []).length
+  scene._rollMonsterDrop({ x: scene.playerX, y: scene.playerY, name: '迷途的治愈猫', enemyId: 'lost_healer_cat', isBoss: true })
+  const bossDrops = (scene._groundDrops || []).slice(bossDropBefore)
+  assert(bossDrops.some(d => d.kind === 'equipment'), `${area}: Boss 击杀必掉 1 件装备到地面`,
+    `新增掉落: [${bossDrops.map(d => d.kind).join(',') || '无'}]`)
+  // 10e. 点击拾取：屏幕坐标命中 → 拾取成功（先清掉其它掉落物，排除「取最近命中」语义干扰）
+  const tapDrop = bossDrops.find(d => d.kind === 'equipment')
+  if (tapDrop) {
+    scene._groundDrops = [tapDrop]
+    // 注意：掉落物有弹出滑行位移，tap 必须用当前坐标（drop.x 已被 _updateGroundDrops 更新）
+    const tapped = scene._tryPickupGroundDrop({ x: tapDrop.x - scene.cameraX, y: tapDrop.y - scene.cameraY })
+    assert(tapped === true, `${area}: 点击掉落物 → 拾取成功`)
+    assert(!(scene._groundDrops || []).includes(tapDrop), `${area}: 点击拾取后地面移除`)
+  }
+  // 10f. 上限保护：堆积超过 30 件丢弃最老
+  for (let i = 0; i < 35; i++) {
+    scene._spawnGroundDrop(monsterAt, { kind: 'material', itemId: 'slime_gel', name: '史莱姆凝胶', icon: '🫧' })
+  }
+  assert((scene._groundDrops || []).length <= 30, `${area}: 地面掉落上限 30 件`,
+    `实际 ${(scene._groundDrops || []).length}`)
+  scene._groundDrops = []
 
   console.log('')
 }
