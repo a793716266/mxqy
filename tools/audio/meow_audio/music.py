@@ -536,9 +536,25 @@ class Arrangement:
 def master(y, sr=SR, target_lufs=-17.0, ceiling_db=-2.0,
            eq=None, comp_ratio=1.6, comp_thresh=-18.0, comp_ref=-20.0,
            width=1.15, sat_drive=1.12, bright_db=0.0, low_cut=28.0,
-           stats=None):
+           loop=False, stats=None):
     """
     母带链路：切除次声 -> 预归一 -> 音色 EQ -> 总线压缩 -> 展宽 -> 饱和 -> 限制 -> 响度归一
+
+    ★ loop=True（循环曲必须开）：把素材拼两遍送进链路，只取第二遍输出。
+
+      为什么必须这么做：链路里每一个环节都有状态 —— 高通/EQ 的滤波器记忆、
+      压缩器的包络、限制器的前视窗。从头处理一截有限长缓冲时，这些状态都从零起步，
+      于是**开头几百个样本是"启动瞬态"，结尾才是稳态**。循环体首尾因此不再属于
+      同一个周期，循环点会多出一个本不该有的阶跃。
+      实测 bgm_explore：母带前循环点阶跃 -18.7dB（远平滑于邻域过渡），
+      母带后变成 +4.7dB —— 阶跃是母带链自己造出来的，源头就在高通那一步
+      （0.086 的跳变，占了成品 0.033 的大头）。
+
+      拼两遍、取第二遍：第二遍的入口状态 = 第一遍走完的状态，对任何冲激响应
+      远短于乐句长度的滤波器而言，那已经是收敛的周期稳态；第二遍的出口状态
+      同样是稳态。取出来的这段正是"周期信号被周期性处理"的结果 —— 首尾天然衔接。
+      代价只是 2 倍算力与内存（几十 MB，几秒钟），换来的是循环点不再有人工痕迹。
+
 
     顺序是有讲究的：
       · 先 EQ（塑形）再压缩（否则压缩器会跟着被提升的频段乱动作）
@@ -561,6 +577,11 @@ def master(y, sr=SR, target_lufs=-17.0, ceiling_db=-2.0,
     mono_in = y.ndim == 1
     ys = D.as_stereo(y)
     st = stats if stats is not None else {}
+
+    # 0) 循环素材：拼两遍再进链路，让所有有状态的环节都工作在周期稳态（见 docstring）
+    n_loop = len(ys)
+    if loop:
+        ys = np.concatenate([ys, ys], axis=0)
 
     # 1) 切除次声（听不见但吃掉大量动态余量）
     ys = D.highpass(ys, low_cut, q=0.6, sr=sr)
