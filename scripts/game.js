@@ -154,6 +154,10 @@ export class Game {
   changeScene(sceneName, data) {
     this.sceneName = sceneName
 
+    // ★ 音频：进入场景切换。清除"显式指定 BGM"标记，
+    //   这样若新场景自己不调 playBGM，切换完成后会自动播放该场景的默认 BGM。
+    if (this.audio && this.audio.beginSceneChange) this.audio.beginSceneChange()
+
     // 淡出 → 切换 → 淡入
     this._fadeTo(async () => {
       switch (sceneName) {
@@ -180,6 +184,10 @@ export class Game {
       if (this.currentScene) {
         this.currentScene.init()
       }
+
+      // ★ 音频：场景 BGM 兜底。场景 init() 里若已显式 playBGM 则尊重其选择，
+      //   否则按 SCENE_BGM 映射自动播放（battle/collection 等场景原先是没有 BGM 的）
+      if (this.audio && this.audio.setScene) this.audio.setScene(sceneName)
 
       // ★ 自动存档：每次切换场景后，记录当前位置并落盘
       //   这样重载游戏后能精确恢复到上次所在场景与位置

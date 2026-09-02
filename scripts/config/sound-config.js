@@ -1,111 +1,238 @@
 /**
- * sound-config.js - 音效资源配置
+ * sound-config.js - 音效资源配置（喵星奇缘）
+ *
+ * 所有音效均为「管弦乐 + 民谣」风格的程序化合成成品（非采样库），
+ * 由 tools/audio/ 下的合成管线生成，部署到 subpackages/sound/。
  *
  * 使用方式：
- *   import { SOUND_CONFIG, SOUNDS, playBGM, playSFX } from './sound-config.js'
- *   playBGM('bgm_town')
- *   playSFX('ui_click')
+ *   import { SOUNDS, SOUND_CONFIG, SCENE_BGM, getSoundPath, getSceneBGM, playBGM, playSFX } from './sound-config.js'
+ *   playBGM(getSceneBGM('town'))      // 进入城镇时
+ *   playSFX('ui_click')               // 按钮点击
  */
 
+const BGM_DIR = 'subpackages/sound/game_bgm/'
+const SFX_DIR = 'subpackages/sound/game_sfx/'
+
 // ============================================================
-// 音效文件路径配置（音效ID → 文件路径）
+// 音效文件路径配置（音效ID → 文件路径）。null = 暂无资源（不会播放）。
 // ============================================================
 export const SOUNDS = {
   // ==================== 背景音乐 ====================
-  bgm_title:    null,                         // 标题画面（待制作）
-  bgm_town:      'subpackages/sound/game_bgm/town_village.mp3',   // 小镇/主城
-  bgm_explore:   'subpackages/sound/game_bgm/fantasy_explore.mp3',    // 野外/探索
-  bgm_grassland: 'subpackages/sound/game_bgm/grassland.mp3',          // 阳光草原副本（专属明亮欢快曲）
-  bgm_tower:     'subpackages/sound/game_bgm/brainiac_maniac.mp3',// 塔防战斗
-  bgm_battle:    'subpackages/sound/game_bgm/fantasy_battle.mp3',     // 普通战斗
-  bgm_boss:      'subpackages/sound/game_bgm/fantasy_boss.mp3',        // BOSS战
-  bgm_victory:   'subpackages/sound/game_bgm/fantasy_victory.mp3',    // 胜利
-  bgm_menu:      'subpackages/sound/game_bgm/fantasy_menu.mp3',       // 菜单界面
+  bgm_title:      BGM_DIR + 'bgm_menu.mp3',        // 标题画面（复用 menu）
+  bgm_menu:       BGM_DIR + 'bgm_menu.mp3',        // 菜单界面（D 多利亚，宁静神秘）
+  bgm_town:       BGM_DIR + 'bgm_town.mp3',        // 小镇/主城（G 大调民谣）
+  bgm_explore:    BGM_DIR + 'bgm_explore.mp3',     // 野外/探索（D 大调）
+  bgm_grassland:  BGM_DIR + 'bgm_grassland.mp3',    // 草原副本（C 大调五声，明亮欢快）
+  bgm_tower:      BGM_DIR + 'bgm_boss.mp3',        // 塔防战斗（复用 boss，激烈）
+  bgm_battle:     BGM_DIR + 'bgm_battle.mp3',       // 普通战斗（E 小调）
+  bgm_boss:       BGM_DIR + 'bgm_boss.mp3',        // BOSS 战（C 小调，压迫感）
+  bgm_victory:    BGM_DIR + 'bgm_victory.mp3',      // 胜利（C 大调，三段落凯旋）
 
   // ==================== UI 交互音效 ====================
-  ui_click:      'subpackages/sound/game_sfx/ui/ui_click.mp3',       // 按钮点击
-  ui_confirm:    'subpackages/sound/game_sfx/ui/ui_confirm.mp3',     // 确认
-  ui_cancel:     'subpackages/sound/game_sfx/ui/ui_cancel.mp3',      // 取消/返回
-  ui_popup:      'subpackages/sound/game_sfx/ui/ui_popup.mp3',       // 弹窗打开
-  ui_error:      null,                                               // 操作错误（待制作）
-  ui_success:    null,                                               // 操作成功（待制作）
-  ui_countdown:  null,                                               // 倒计时（待制作）
+  ui_click:      SFX_DIR + 'ui/ui_click.mp3',       // 按钮点击（木质短促）
+  ui_confirm:    SFX_DIR + 'ui/ui_confirm.mp3',     // 确认（上行纯五度）
+  ui_cancel:     SFX_DIR + 'ui/ui_cancel.mp3',      // 取消/返回（下行纯四度）
+  ui_popup:      SFX_DIR + 'ui/ui_popup.mp3',      // 弹窗打开（轻柔 whoosh + 铃）
+  ui_error:      SFX_DIR + 'ui/ui_error.mp3',       // 操作错误（小二度不协和）
+  ui_success:    SFX_DIR + 'ui/ui_success.mp3',     // 操作成功（明亮上行三音）
+  dmg_crit:      SFX_DIR + 'ui/dmg_crit.mp3',       // 暴击飘字（极短高频 ping）
+  dmg_heal:      SFX_DIR + 'ui/dmg_heal.mp3',       // 治疗飘字（柔和上行双音）
 
-  // ==================== 战斗技能音效 ====================
-  // 主动释放
-  cast_ice_shard:   null,    // 冰晶术蓄力（待制作）
-  cast_fireball:    null,    // 火球术蓄力（待制作）
-  cast_lightning:   null,    // 雷电术蓄力（待制作）
-  cast_meteor:      null,    // 陨石术蓄力（待制作）
-  battle_skill:     'subpackages/sound/game_sfx/battle/battle_skill.mp3', // 战斗技能释放
+  // 背包/装备操作（复用 UI 音色，语义对齐：装上=确认、卸下=取消、使用=成功）
+  ui_equip:      SFX_DIR + 'ui/ui_confirm.mp3',     // 装备穿上
+  ui_unequip:    SFX_DIR + 'ui/ui_cancel.mp3',      // 装备卸下
+  ui_use:        SFX_DIR + 'ui/ui_success.mp3',     // 使用消耗品
 
-  // 命中反馈
-  hit_ice_shard:    null,    // 冰晶术命中（待制作）
-  hit_fireball:     null,    // 火球术命中（待制作）
-  hit_lightning:    null,    // 雷电术命中（待制作）
-  hit_meteor:       null,    // 陨石术命中（待制作）
-  battle_explosion: 'subpackages/sound/game_sfx/battle/battle_explosion.mp3', // 爆炸
+  // ==================== 战斗技能（主动释放）====================
+  cast_fireball:    SFX_DIR + 'battle/cast_fireball.mp3',    // 火球术（蓄力上涌 + 爆燃）
+  cast_ice_shard:   SFX_DIR + 'battle/cast_ice_shard.mp3',   // 冰晶术（非谐铃 + 碎裂）
+  cast_lightning:   SFX_DIR + 'battle/cast_lightning.mp3',    // 雷电术（极快撕裂放电）
+  cast_meteor:      SFX_DIR + 'battle/cast_meteor.mp3',       // 陨石术（长蓄力 + 轰鸣坠落 + 爆炸）
+  cast_heal:        SFX_DIR + 'battle/cast_heal.mp3',         // 治疗（艾米治愈冲击：上行琶音 + 铃 + 铺底）
+  cast_blade_storm: SFX_DIR + 'battle/cast_blade_storm.mp3',  // 剑气风暴（旋转风声 + 多段刃鸣 + 收束重击）
+  cast_buff:        SFX_DIR + 'battle/cast_buff.mp3',         // 增益（艾米 BUFF：五声上行琶音 + 和声）
+  battle_skill:     SFX_DIR + 'battle/battle_skill.mp3',       // 通用技能释放
 
-  // ==================== 普攻音效 ====================
-  attack_melee:    null,    // 近战普攻（待制作）
-  attack_range:    null,    // 远程普攻（待制作）
-  battle_attack:   'subpackages/sound/game_sfx/battle/battle_attack.mp3',  // 战斗攻击
-  battle_hit:      'subpackages/sound/game_sfx/battle/battle_hit.mp3',    // 命中反馈
-  battle_sword:    'subpackages/sound/game_sfx/battle/battle_sword_slash.mp3', // 剑击
+  // ==================== 技能命中反馈 ====================
+  hit_fireball:   SFX_DIR + 'battle/hit_fireball.mp3',   // 火球命中（爆炸）
+  hit_ice_shard:  SFX_DIR + 'battle/hit_ice_shard.mp3',  // 冰晶命中（碎裂 + 铃）
+  hit_lightning:  SFX_DIR + 'battle/hit_lightning.mp3',  // 雷电命中（撕裂）
+  hit_meteor:     SFX_DIR + 'battle/hit_meteor.mp3',     // 陨石命中（大爆炸）
 
-  // ==================== 怪物音效 ====================
-  monster_death:   null,    // 怪物死亡（待制作）
-  monster_hit:     null,    // 怪物受击（待制作）
-  monster_spawn:   null,    // 怪物生成（待制作）
-  boss_death:      null,    // BOSS死亡（待制作）
+  // ==================== 普攻 / 打击 ====================
+  attack_melee:    SFX_DIR + 'battle/attack_melee.mp3',    // 近战普攻（挥击 + 命中）
+  attack_range:    SFX_DIR + 'battle/attack_range.mp3',    // 远程普攻（弓弦 + 箭矢破空）
+  battle_attack:   SFX_DIR + 'battle/battle_attack.mp3',   // 通用攻击
+  battle_hit:      SFX_DIR + 'battle/battle_hit.mp3',      // 通用命中反馈（短脆）
+  battle_sword:    SFX_DIR + 'battle/battle_sword_slash.mp3', // 剑击（锐利挥击 + 刃鸣 + 命中）
+  hit_crit:        SFX_DIR + 'battle/hit_crit.mp3',        // 暴击（重低频 + 金属爆响 + 宽声像）
+  hit_block:       SFX_DIR + 'battle/hit_block.mp3',       // 格挡（金属对撞 + 刮擦，无肉感）
+  battle_explosion:SFX_DIR + 'battle/battle_explosion.mp3',// 爆炸
 
-  // ==================== 奖励/成就 ====================
-  reward_coin:      'subpackages/sound/game_sfx/reward/reward_coin.mp3',      // 获得金币
-  reward_levelup:   'subpackages/sound/game_sfx/reward/reward_levelup.mp3',   // 升级
-  reward_achievement: 'subpackages/sound/game_sfx/reward/reward_achievement.mp3', // 成就获得
-  reward_get_item:  null,    // 获得物品（待制作）
+  // ==================== 怪物 ====================
+  monster_hit:   SFX_DIR + 'monster/monster_hit.mp3',   // 怪物受击（肉感低通）
+  monster_death: SFX_DIR + 'monster/monster_death.mp3',  // 怪物死亡
+  monster_spawn: SFX_DIR + 'monster/monster_spawn.mp3',  // 怪物生成（低频上扫 + 不祥）
+  boss_death:    SFX_DIR + 'monster/boss_death.mp3',     // BOSS 死亡（长尾下行）
 
-  // ==================== 战场环境 ====================
-  wave_start:    null,    // 波次开始（待制作）
-  wave_complete: null,    // 波次完成（待制作）
-  game_victory:  'subpackages/sound/game_bgm/fantasy_victory.mp3', // 胜利
-  game_defeat:   null,    // 失败（待制作）
+  // ==================== 奖励 / 成就 ====================
+  reward_coin:         SFX_DIR + 'reward/reward_coin.mp3',         // 金币
+  reward_levelup:      SFX_DIR + 'reward/reward_levelup.mp3',      // 升级
+  reward_achievement:  SFX_DIR + 'reward/reward_achievement.mp3',  // 成就（短号角 + 铃）
+  reward_get_item:     SFX_DIR + 'reward/reward_get_item.mp3',     // 获得物品
 
-  // ==================== 伤害飘字（可选）====================
-  dmg_crit:  null,    // 暴击飘字（待制作）
-  dmg_heal:  null,    // 治疗飘字（待制作）
+  // ==================== 战场 / 流程 ====================
+  wave_start:    SFX_DIR + 'system/wave_start.mp3',    // 波次开始（号角 + 战鼓）
+  wave_complete: SFX_DIR + 'system/wave_complete.mp3', // 波次完成（上行三音 + 铃）
+  game_victory:  BGM_DIR + 'bgm_victory.mp3',          // 胜利（复用 victory BGM 段落）
+  game_defeat:   SFX_DIR + 'system/game_defeat.mp3',   // 失败（下行低沉 + 消逝）
+  char_jump:     SFX_DIR + 'system/char_jump.mp3',     // 跳跃（短促上扫）
+  char_land:     SFX_DIR + 'system/char_land.mp3',     // 落地（轻冲击 + 脚步）
 
-  // ==================== 角色（可选）====================
-  char_jump: null,    // 跳跃（待制作）
-  char_land: null,    // 落地（待制作）
+  // ==================== 倒计时（暂无资源，留接口）====================
+  // ui_countdown: null,
 }
 
 // ============================================================
-// 音量配置
+// 场景 → BGM 自动映射（进入场景时由 AudioManager.setScene 调用）
+// ============================================================
+export const SCENE_BGM = {
+  'main-menu': 'bgm_menu',
+  'town':      'bgm_town',
+  'map':       'bgm_explore',
+  'field':     'bgm_grassland',   // 草原风格副本
+  'battle':    'bgm_battle',
+  'collection': 'bgm_town',
+  'tower':     'bgm_tower',
+}
+
+// ============================================================
+// 技能 ID → 释放音效（heroes.js 里的 skill.id）
+//   物理近战 → attack_melee / battle_sword（重击类更厚）
+//   元素法术 → 对应元素 cast_*
+//   治疗/增益 → cast_heal / cast_buff
+// ============================================================
+export const SKILL_SFX = {
+  // —— 物理近战 ——
+  slash:          'attack_melee',
+  staff_strike:   'attack_melee',
+  cat_paw:        'attack_melee',
+  shadow_touch:   'attack_melee',
+  punch:          'attack_melee',
+  smash:          'battle_sword',
+  shield_bash:    'battle_sword',
+  shield_bash_xb: 'battle_sword',
+  counter:        'battle_sword',
+  // —— 物理远程 ——
+  coin_throw:     'attack_range',
+  // —— 大招 ——
+  blade_storm:    'cast_blade_storm',
+  dark_nova:      'cast_meteor',
+  // —— 元素法术 ——
+  fireball:       'cast_fireball',
+  ice_shard:      'cast_ice_shard',
+  thunder:        'cast_lightning',
+  shadow_ball:    'cast_fireball',    // 暗影球：低沉爆燃质感最贴近
+  curse:          'cast_ice_shard',   // 诅咒：非谐铃声的不祥感
+  drain:          'cast_heal',        // 吸命：柔和能量抽取
+  // —— 治疗 ——
+  heal_light:     'cast_heal',
+  heal_strike:    'cast_heal',
+  // —— 增益 / 防御 ——
+  war_cry:        'cast_buff',
+  berserk:        'cast_buff',
+  holy_shield:    'cast_buff',
+  gold_shield:    'cast_buff',
+  fortune:        'cast_buff',
+  taunt:          'cast_buff',
+  iron_wall:      'cast_buff',
+  guard:          'cast_buff',
+  mana_shield:    'cast_buff',
+}
+
+// 技能 ID → 命中音效（投射物/AoE 落地时播放；未列出则回落到通用命中）
+export const SKILL_HIT_SFX = {
+  fireball:    'hit_fireball',
+  shadow_ball: 'hit_fireball',
+  ice_shard:   'hit_ice_shard',
+  curse:       'hit_ice_shard',
+  thunder:     'hit_lightning',
+  dark_nova:   'hit_meteor',
+  blade_storm: 'hit_crit',
+}
+
+// ============================================================
+// 音效优先级（用于语音抢占 / 并发上限）
+//  优先级高者可在达到最大并发时抢占低优先级实例。
+//  1=普通(UI/飘字)  2=打击/命中/爆炸  3=重要(胜利/失败/成就/波次)
+// ============================================================
+export const SFX_PRIORITY = {
+  ui_click: 1, ui_confirm: 1, ui_cancel: 1, ui_popup: 1, ui_error: 1, ui_success: 1,
+  ui_equip: 1, ui_unequip: 1, ui_use: 1,
+  dmg_crit: 1, dmg_heal: 1,
+  attack_melee: 2, attack_range: 2, battle_attack: 2, battle_hit: 2,
+  battle_sword: 2, hit_crit: 3, hit_block: 2,
+  cast_fireball: 2, cast_ice_shard: 2, cast_lightning: 2, cast_meteor: 2,
+  cast_heal: 2, cast_blade_storm: 2, cast_buff: 2, battle_skill: 2,
+  hit_fireball: 2, hit_ice_shard: 2, hit_lightning: 2, hit_meteor: 2,
+  battle_explosion: 3,
+  monster_hit: 2, monster_death: 2, monster_spawn: 2, boss_death: 3,
+  reward_coin: 2, reward_levelup: 2, reward_achievement: 3, reward_get_item: 2,
+  wave_start: 3, wave_complete: 2, game_victory: 3, game_defeat: 3,
+  char_jump: 1, char_land: 1,
+}
+
+// ============================================================
+// 音量 / 全局配置
 // ============================================================
 export const SOUND_CONFIG = {
   bgm: {
-    volume: 0.6,      // BGM 音量 0.0 ~ 1.0
-    loop: true,       // 默认循环播放
+    volume: 0.6,        // BGM 音量 0.0 ~ 1.0
+    loop: true,         // 默认循环
+    crossfade: 1.4,     // 切换 BGM 时的淡入淡出时长（秒）
   },
   sfx: {
-    volume: 0.8,      // 音效音量
-    maxInstances: 4,   // 最多同时播放几个同类音效（防止重叠太吵）
+    volume: 0.85,       // 音效音量
+    maxInstances: 8,    // 同时播放的 SFX 实例上限（超过则按优先级抢占）
+    defaultPriority: 2,
   },
-  // 是否静音（上线时可一键关闭）
-  muted: false,
+  muted: false,         // 是否静音（设置面板可一键关闭）
 }
 
 // ============================================================
-// 辅助函数：判断音效文件是否存在
+// 辅助函数
 // ============================================================
 export function hasSound(soundId) {
   return SOUNDS[soundId] !== undefined && SOUNDS[soundId] !== null
 }
 
-// ============================================================
-// 辅助函数：根据ID获取文件路径
-// ============================================================
 export function getSoundPath(soundId) {
   return SOUNDS[soundId] || null
+}
+
+export function getSceneBGM(sceneName) {
+  return SCENE_BGM[sceneName] || null
+}
+
+export function getPriority(soundId) {
+  return SFX_PRIORITY[soundId] !== undefined ? SFX_PRIORITY[soundId] : SOUND_CONFIG.sfx.defaultPriority
+}
+
+/** 技能 ID → 释放音效 ID（找不到时按技能类型兜底） */
+export function getSkillSFX(skillId, skillType) {
+  if (skillId && SKILL_SFX[skillId]) return SKILL_SFX[skillId]
+  switch (skillType) {
+    case 'heal':        return 'cast_heal'
+    case 'attack_heal': return 'cast_heal'
+    case 'buff':        return 'cast_buff'
+    case 'debuff':      return 'cast_buff'
+    case 'magic':       return 'battle_skill'
+    case 'attack':      return 'attack_melee'
+    default:            return 'battle_skill'
+  }
+}
+
+/** 技能 ID → 命中音效 ID（未配置则回落到通用命中） */
+export function getSkillHitSFX(skillId) {
+  return (skillId && SKILL_HIT_SFX[skillId]) || 'battle_hit'
 }

@@ -1,0 +1,207 @@
+{
+ "attack_melee": {
+  "cat": "battle",
+  "lufs": -16.0,
+  "tp": -3.0
+ },
+ "attack_range": {
+  "cat": "battle",
+  "lufs": -16.0,
+  "tp": -3.0
+ },
+ "battle_attack": {
+  "cat": "battle",
+  "lufs": -16.0,
+  "tp": -3.0
+ },
+ "battle_hit": {
+  "cat": "battle",
+  "lufs": -16.0,
+  "tp": -3.0
+ },
+ "battle_sword_slash": {
+  "cat": "battle",
+  "lufs": -16.0,
+  "tp": -3.0
+ },
+ "hit_crit": {
+  "cat": "battle",
+  "lufs": -16.0,
+  "tp": -3.0
+ },
+ "hit_block": {
+  "cat": "battle",
+  "lufs": -16.0,
+  "tp": -3.0
+ },
+ "cast_fireball": {
+  "cat": "magic",
+  "lufs": -15.5,
+  "tp": -3.0
+ },
+ "cast_ice_shard": {
+  "cat": "magic",
+  "lufs": -15.5,
+  "tp": -3.0
+ },
+ "cast_lightning": {
+  "cat": "magic",
+  "lufs": -15.5,
+  "tp": -3.0
+ },
+ "cast_meteor": {
+  "cat": "magic",
+  "lufs": -15.5,
+  "tp": -3.0
+ },
+ "cast_heal": {
+  "cat": "magic",
+  "lufs": -15.5,
+  "tp": -3.0
+ },
+ "cast_blade_storm": {
+  "cat": "magic",
+  "lufs": -15.5,
+  "tp": -3.0
+ },
+ "cast_buff": {
+  "cat": "magic",
+  "lufs": -15.5,
+  "tp": -3.0
+ },
+ "battle_skill": {
+  "cat": "magic",
+  "lufs": -15.5,
+  "tp": -3.0
+ },
+ "hit_fireball": {
+  "cat": "magic",
+  "lufs": -15.5,
+  "tp": -3.0
+ },
+ "hit_ice_shard": {
+  "cat": "magic",
+  "lufs": -15.5,
+  "tp": -3.0
+ },
+ "hit_lightning": {
+  "cat": "magic",
+  "lufs": -15.5,
+  "tp": -3.0
+ },
+ "hit_meteor": {
+  "cat": "magic",
+  "lufs": -15.5,
+  "tp": -3.0
+ },
+ "battle_explosion": {
+  "cat": "battle",
+  "lufs": -16.0,
+  "tp": -3.0
+ },
+ "monster_hit": {
+  "cat": "monster",
+  "lufs": -16.5,
+  "tp": -3.5
+ },
+ "monster_death": {
+  "cat": "monster",
+  "lufs": -16.5,
+  "tp": -3.5
+ },
+ "monster_spawn": {
+  "cat": "monster",
+  "lufs": -16.5,
+  "tp": -3.5
+ },
+ "boss_death": {
+  "cat": "monster",
+  "lufs": -16.5,
+  "tp": -3.5
+ },
+ "ui_click": {
+  "cat": "ui",
+  "lufs": -20.0,
+  "tp": -5.0
+ },
+ "ui_confirm": {
+  "cat": "ui",
+  "lufs": -20.0,
+  "tp": -5.0
+ },
+ "ui_cancel": {
+  "cat": "ui",
+  "lufs": -20.0,
+  "tp": -5.0
+ },
+ "ui_popup": {
+  "cat": "ui",
+  "lufs": -20.0,
+  "tp": -5.0
+ },
+ "ui_error": {
+  "cat": "ui",
+  "lufs": -20.0,
+  "tp": -5.0
+ },
+ "ui_success": {
+  "cat": "ui",
+  "lufs": -20.0,
+  "tp": -5.0
+ },
+ "reward_coin": {
+  "cat": "reward",
+  "lufs": -15.0,
+  "tp": -3.0
+ },
+ "reward_levelup": {
+  "cat": "reward",
+  "lufs": -15.0,
+  "tp": -3.0
+ },
+ "reward_achievement": {
+  "cat": "reward",
+  "lufs": -15.0,
+  "tp": -3.0
+ },
+ "reward_get_item": {
+  "cat": "reward",
+  "lufs": -15.0,
+  "tp": -3.0
+ },
+ "wave_start": {
+  "cat": "system",
+  "lufs": -16.0,
+  "tp": -3.0
+ },
+ "wave_complete": {
+  "cat": "system",
+  "lufs": -16.0,
+  "tp": -3.0
+ },
+ "game_defeat": {
+  "cat": "system",
+  "lufs": -16.0,
+  "tp": -3.0
+ },
+ "dmg_crit": {
+  "cat": "hud",
+  "lufs": -17.0,
+  "tp": -3.5
+ },
+ "dmg_heal": {
+  "cat": "hud",
+  "lufs": -17.0,
+  "tp": -3.5
+ },
+ "char_jump": {
+  "cat": "system",
+  "lufs": -16.0,
+  "tp": -3.0
+ },
+ "char_land": {
+  "cat": "system",
+  "lufs": -16.0,
+  "tp": -3.0
+ }
+}
