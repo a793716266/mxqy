@@ -31,6 +31,7 @@ import numpy as np
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from meow_audio import dsp as D
+import build_bgm as B        # 只为 TRACKS 里的 loop 标记，别再抄一份"哪些曲子要循环"
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 WAV = os.path.join(HERE, 'out', 'wav')
@@ -48,6 +49,17 @@ PEAK_CEIL_DBFS = 0.0        # MP3 解码后不得超过 0 dBFS（设备定点输
 DELIVERED_TP_MAX = -1.0
 # 编码过冲只作**诊断**，不作为判据（见 check() 里的 ★ 说明）
 DUR_TOL_S = 0.06            # 时长偏差（MP3 编码器补零，60ms 内属正常）
+# 循环交付物的循环点阶跃上限（dB）。与 qa.SEAM_MAX_DB 同一个判据，
+# 但量的是**解码回 PCM 的 MP3**，不是母版 WAV —— 玩家听到的是前者。
+#   ★ 为什么要单独量一遍：BGM 是 wx.createInnerAudioContext().loop=true 由
+#     微信的解码器循环播放的，它循环的 PCM 是 MP3 解出来的，不是我们的 WAV。
+#     MP3 会在头部插 encoder delay、尾部补 padding（实测本批每首被吃掉
+#     1152~2061 样本），解码器按 LAME/Xing tag 做 gapless 校正后长度虽然对得上，
+#     但校正做没做、做对没做对，只有把 MP3 解回来量才知道。
+#     WAV 上量再漂亮，也不等于玩家耳朵里没有咔哒。
+DELIVERED_SEAM_MAX_DB = 0.0
+# 只有真正在游戏里循环的曲子才判循环点（bgm_victory 是一次性播放）
+LOOPING_BGM = {n: bool(loop) for n, _fn, _p, loop in B.TRACKS}
 
 
 def probe_channels(path):
@@ -70,6 +82,26 @@ def decode(path):
         x = x[:n].reshape(-1, ch)
         return x.mean(axis=1), np.abs(x).max()     # 返回(降混信号, 各声道真实峰值)
     return x, float(np.abs(x).max()) if len(x) else 0.0
+
+
+def decode_stereo(path):
+    """
+    按原始声道数解码，**不做降混**。
+
+    ★ 判循环点必须用它，不能用上面的 decode()：decode() 为了安全地量峰值而降混到单声道，
+      而降混会把反相的阶跃互相抵消 —— 左声道 +0.03、右声道 -0.03 这种
+      "两边都有咔哒、听着最明显"的情况，降混之后正好等于 0，判据就瞎了。
+      dsp.loop_seam_error 内部是逐声道取 max，必须喂它真的多声道数据。
+    """
+    ch = probe_channels(path)
+    raw = subprocess.run(
+        ['ffmpeg', '-v', 'error', '-i', path, '-f', 'f32le', '-ar', str(SR), '-'],
+        capture_output=True, check=True).stdout
+    x = np.frombuffer(raw, dtype=np.float32).astype(np.float64)
+    if ch > 1:
+        n = (len(x) // ch) * ch
+        return x[:n].reshape(-1, ch)
+    return x[:, None]
 
 
 def align(ref, test, max_lag=4096):
@@ -139,6 +171,13 @@ def check(kind, name, wav_path, mp3_path):
     #   现在直接断言真实目标（≤-1dBTP），过冲仍然打印出来供诊断。
     tp_test = D.true_peak_db(test, SR)
 
+    # 循环曲：在交付文件（解码后的 MP3）上量循环点，见 DELIVERED_SEAM_MAX_DB 的说明。
+    # 用 decode_stereo 而不是 decode —— 降混会抵消反相阶跃，见该函数的 ★。
+    seam_db = None
+    if kind == 'BGM' and LOOPING_BGM.get(name):
+        smp = decode_stereo(mp3_path)
+        seam_db = D.loop_seam_error(smp, SR)
+
     fails = []
     if bw_test < bw_floor:
         fails.append(f'高频被压掉 {bw_test:.0f}Hz < 下限 {bw_floor:.0f}Hz')
@@ -152,11 +191,14 @@ def check(kind, name, wav_path, mp3_path):
         fails.append(f'相关系数 {corr:.3f} < {th["corr_min"]}')
     if abs(dur_test - dur_ref) > DUR_TOL_S:
         fails.append(f'时长偏差 {dur_test - dur_ref:+.3f}s')
+    if seam_db is not None and seam_db > DELIVERED_SEAM_MAX_DB:
+        fails.append(f'交付文件循环点阶跃 {seam_db:+.2f}dB > '
+                     f'{DELIVERED_SEAM_MAX_DB:+.1f}（播放到第 2 遍会咔哒）')
 
     return dict(kind=kind, name=name, snr=snr, bw_ref=bw_ref, bw_test=bw_test,
                 rms_d=rms_d, peak_db=db(test_peak), ref_peak_db=db(ref_peak),
                 tp_test=tp_test, overshoot=db(test_peak) - db(ref_peak),
-                corr=corr, lag=lag, dur=dur_test, fails=fails)
+                corr=corr, lag=lag, dur=dur_test, seam_db=seam_db, fails=fails)
 
 
 def main():
@@ -184,6 +226,15 @@ def main():
               f'{r["peak_db"]:>+9.2f}dB{r["rms_d"]:>+8.2f}dB{r["corr"]:>7.3f}{flag}')
 
     print('-' * 88)
+    # 循环曲的循环点：量的是解码回 PCM 的 MP3，即玩家耳朵里被循环的那一段
+    loops = [r for r in rows if r['seam_db'] is not None]
+    if loops:
+        print('循环交付物的循环点（判据 ≤ '
+              f'{DELIVERED_SEAM_MAX_DB:+.1f}dB；负=比邻域正常过渡还平滑）:')
+        for r in loops:
+            flag = '' if not r['fails'] or not any('循环点' in f for f in r['fails']) else '  ✗'
+            print(f'  {r["name"]:<24}{r["seam_db"]:>+7.2f} dB{flag}')
+        print('-' * 88)
     worst = sorted(rows, key=lambda r: r['snr'])[:3]
     print('SNR 最低 3 个（内容最难压，值得人耳复听）: '
           + ', '.join(f'{r["name"]}({r["snr"]:.1f}dB)' for r in worst))

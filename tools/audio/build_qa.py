@@ -212,7 +212,10 @@ h3 {{ border-left:3px solid #38bdf8; padding-left:10px; margin:26px 0 12px;
 </div>
 <p class="sub">说明：BGM 按 LUFS 区间 [-20,-15] 与真峰值 ≤-1dBTP 质检；SFX 按真实峰值分类归一（战斗 -1.0 / 技能·怪物·系统 -1.5 / 奖励 -2.0 / UI -3.0 dBTP），故集成 LUFS 因瞬态长度而异属正常。波形图：BGM 取开头 1.2s 代表。频率平衡条（Sub/Low/Mid/High）越满代表该频段能量越强。</p>
 {''.join(ordered)}
-<div class="legend">量化指标含义：LUFS=集成响度；TP=真峰值（&gt;0 即削波风险）；crest=峰均比（动态余量）；质心=频谱重心（明亮度）；相关=立体声相关（1=单声，-1=反相）；接缝=循环点单样本阶跃（>0dB 才有咔哒）；削波=满刻度采样点占比。</div>
+<div class="legend">量化指标含义：LUFS=集成响度；TP=真峰值（&gt;0 即削波风险）；crest=峰均比（动态余量）；质心=频谱重心（明亮度）；相关=立体声相关（1=单声，-1=反相）；接缝=循环点单样本阶跃（&gt;0dB 才有咔哒）；削波=满刻度采样点占比。<br>
+★ 本表量的是<b>母版 WAV</b>。游戏端循环的是 <b>MP3 解码出的 PCM</b>，另有一道判据在
+<code>verify_encode_quality.py</code> 的 <code>DELIVERED_SEAM_MAX_DB</code> ——
+MP3 头部 encoder delay 与尾部 padding 由解码器做 gapless 校正，只有把 MP3 解回来量才算数。</div>
 </div></body></html>"""
 
     out_path = os.path.join(OUT, 'qa_report.html')

@@ -155,7 +155,10 @@ def main():
         cur[0] = name
         a = fn()
         y, _dry, _loop_n = B.render_track(a, preset, loop)
-        y = M.master(y, sr=SR, ceiling_db=B.CEILING_DBTP, **B.MASTER[preset])
+        # loop=loop：量的是交付出去的那一段，母带链的启动瞬态不能算进来。
+        # 循环曲若不开，量到的 LRA/L10 会带上一段不属于成品的预热噪声。
+        y = M.master(y, sr=SR, ceiling_db=B.CEILING_DBTP,
+                     **B.MASTER[preset], loop=loop)
         lra = D.lra(y)
         ck(LRA_MIN <= lra <= LRA_MAX, f'{name:14s} LRA = {lra:5.2f} LU',
            f'越界（{"太平" if lra < LRA_MIN else "安静段会听不见"}）')

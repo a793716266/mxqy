@@ -649,6 +649,11 @@ def master(y, sr=SR, target_lufs=-17.0, ceiling_db=-2.0,
     # 9) 去直流偏移（保险，避免亚音速成分带来的轻微 DC）
     ys = ys - ys.mean(axis=0, keepdims=True)
 
+    # 10) 循环素材：丢掉用来预热状态的第一遍，只留工作在周期稳态上的第二遍。
+    #     统计量也必须在这一步之后量 —— 量的必须是交付出去的那一段。
+    if loop:
+        ys = ys[n_loop:]
+
     st['lufs'] = D.lufs(ys, sr)
     st['tp'] = D.true_peak_db(ys, sr)
     st['lra'] = D.lra(ys, sr)

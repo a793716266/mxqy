@@ -26,13 +26,14 @@ from meow_audio.dsp import SR
 import build_bgm as B
 
 
-def chain(y, preset, comp_ratio, target_lufs, ceiling=-2.0):
+def chain(y, preset, comp_ratio, target_lufs, ceiling=-2.0, loop=False):
     """复刻 build_bgm.main 的链路，但压缩比可调"""
     st = {}
     y = B.apply_space(y, preset)
     lra_in = D.lra(y)
+    # loop 必须与生产一致：探针量到的东西要等于投产的东西。
     y = M.master(y, sr=SR, ceiling_db=ceiling, target_lufs=target_lufs,
-                 comp_ratio=comp_ratio,
+                 comp_ratio=comp_ratio, loop=loop,
                  **{k: v for k, v in B.MASTER[preset].items()
                     if k not in ('comp_ratio', 'target_lufs')},
                  stats=st)
@@ -58,7 +59,7 @@ def main():
         print('-' * 88)
         tgt = B.MASTER[preset]['target_lufs']
         for ratio in (1.0, 1.2, 1.35, 1.5, 1.8, 2.0):
-            lra_in, st = chain(y, preset, ratio, tgt)
+            lra_in, st = chain(y, preset, ratio, tgt, loop=loop)
             print(f'{ratio:>7.2f}{lra_in:>16.2f}{st["lra"]:>11.2f}'
                   f'{lra_in - st["lra"]:>+11.2f}{lra_dry - st["lra"]:>+10.2f}'
                   f'{st["gr_peak_db"]:>+10.2f}{st["gr_rms_db"]:>+10.2f}')

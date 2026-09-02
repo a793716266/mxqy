@@ -981,8 +981,11 @@ def main():
         y, dry, loop_n = render_track(a, space_preset, loop)
         lra_dry = D.lra(dry)            # 套曲式后的"编曲层"动态，母带前
         st = {}
+        # loop=True 必须传：让母带链工作在周期稳态上（见 M.master 的 ★ 说明）。
+        # 否则链路各环节的启动瞬态会在循环点造出一个本不该有的阶跃 ——
+        # bgm_explore 母带前 -18.7dB、母带后 +4.7dB，就是这么来的。
         y = M.master(y, sr=SR, ceiling_db=CEILING_DBTP,
-                     **MASTER[space_preset], stats=st)
+                     **MASTER[space_preset], loop=loop, stats=st)
 
         wav = os.path.join(OUT_WAV, f'{name}.wav')
         mp3 = os.path.join(OUT_MP3, f'{name}.mp3')
