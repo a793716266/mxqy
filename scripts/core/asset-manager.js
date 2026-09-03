@@ -469,4 +469,12 @@ export const ASSETS = {
     { action: 'attack', frames: 8 },
     { action: 'skill',  frames: 8 },
   ]),
+
+  // --- 城镇村长 NPC（主包资源，4×2 走路循环切片自 _source_backup/村长/image.png 棋盘格底，
+  //                  单帧待机切片自 idle_side_shepherd.png 纯白底）
+  //    8 帧 walk 用棋盘格键控；idle 源图含黑色椭圆地影，已用连通域清掉
+  ...buildFrames('NPC_VILLAGE_CHIEF', 'images/npc/village_chief', [
+    { action: 'walk', frames: 8 },
+    { action: 'idle', frames: 1 },
+  ], { battlePkg: false }),
 }

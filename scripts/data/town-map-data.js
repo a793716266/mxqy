@@ -2759,12 +2759,13 @@ export const TOWN_MAP_OBJECTS = [
 // ========== NPC初始位置配置 ==========
 // 与地图对象关联，NPC站在对应建筑附近
 export const TOWN_NPC_POSITIONS = {
-  village_chief: { x: 750, y: 700 },         // 村长 - 中央广场西侧（主干道旁）
+  village_chief: { x: 850, y: 620 },         // 村长 - 主干道十字路口西侧路肩（2026-09-03 从告示栏碰撞盒 {750,700} 移出，避免精灵与告示栏视觉重叠）
   shop_keeper: { x: 1630, y: 350 },          // 商店老板 - 商店前方
-  blacksmith: { x: 1680, y: 700 },           // 铁匠 - 武器库前方
-  quest_giver: { x: 770, y: 780 },           // 冒险者公会 - 告示栏下方
+  blacksmith: { x: 1730, y: 700 },           // 铁匠 - TOWN_MAPS_002 东侧 east_branch_path 路上（2026-09-03 从房中心 {1680,700} 移出）
+  quest_giver: { x: 690, y: 730 },           // 冒险者公会 - 告示栏西侧 southwest_branch_path 路上（2026-09-03 从告示栏碰撞盒 {770,780} 移出）
   potion_seller: { x: 235, y: 950 },         // 药剂师 - 药品店前方
   save_point: { x: 985, y: 950 },            // 存档点 - 中央南端广场
+  enhance_machine: { x: 1830, y: 620 },      // 装备强化器（强化舱）- TOWN_MAPS_003 西侧主干道上（2026-09-03 从房中心 {1880,700} 移出）
 }
 
 // ========== 出生点 ==========
