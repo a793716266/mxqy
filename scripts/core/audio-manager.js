@@ -61,6 +61,30 @@ export class AudioManager {
     this._timers = new Set()    // 所有 ramp 定时器（销毁时统一清理）
     this._webaudio = null       // WebAudio 上下文（挥击破风声等纯合成音）
     this._tokenSeq = 0
+
+    this._initWxAudioOption()
+  }
+
+  /**
+   * 设置 InnerAudioContext 的全局播放选项。
+   *
+   * ★ obeyMuteSwitch 必须显式关掉，否则手机静音模式下整个游戏一声不出。
+   *   微信默认 obeyMuteSwitch: true —— 用户拨了静音拨片（iOS）或开了静音
+   *   （Android），InnerAudioContext 就**静默不发声**，且不报错、不触发
+   *   onError：代码看着全在跑，控制台干干净净，就是没声音。
+   *   玩家只会认为"游戏音频坏了"，根本想不到是自己的静音开关。
+   *
+   *   注意这是**全局**设置，对之后创建的所有 InnerAudioContext 生效，
+   *   所以只需要在管理器构造时调一次；游戏内的静音按钮走 this._muted，
+   *   与系统的静音开关是两回事，不要混用。
+   */
+  _initWxAudioOption() {
+    if (typeof wx === 'undefined' || !wx.setInnerAudioOption) return
+    try {
+      wx.setInnerAudioOption({ obeyMuteSwitch: false })
+    } catch (e) {
+      // 基础库版本不支持时静默降级 —— 只是拿不到静音豁免，不影响播放
+    }
   }
 
   // ==========================================================
