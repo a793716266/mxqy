@@ -309,6 +309,33 @@ export class DataManager {
     }
   }
 
+  /**
+   * 存档摘要 —— 给「确认清档」类弹窗用，让玩家看清自己要丢掉什么。
+   *
+   * ★ 为什么必须单独有这个方法：清档是不可逆操作，光问一句"确定吗"没用，
+   *   玩家根本不知道会丢什么。把章节/等级/金币/队伍摆出来，他才可能察觉
+   *   "这是我玩了很久的档"，从而停下来。
+   *
+   * ★ 不返回 playTime：它记录的是**保存次数**（save() 里 +1），不是游戏时长。
+   *   当成时长显示会严重误导（"游戏时长 3 秒"看着像空档，其实玩了很久）。
+   *
+   * @param {boolean} reload 是否先 load 一次（主菜单进场景时 this.data 可能仍是默认值）
+   * @returns {{chapter:number, level:number, gold:number, partyCount:number, catCount:number}}
+   */
+  getSaveSummary(reload = false) {
+    if (reload) this.load()
+    const d = this.data || {}
+    const chars = Array.isArray(d.characters) ? d.characters : []
+    const cats = Array.isArray(d.catsDiscovered) ? d.catsDiscovered : []
+    return {
+      chapter: (d.progression && d.progression.currentChapter) || 1,
+      level: (d.player && d.player.level) || 1,
+      gold: (d.player && d.player.gold) || 0,
+      partyCount: chars.length,
+      catCount: cats.length,
+    }
+  }
+
   clear() {
     this.data = this._defaultData()
     try {
