@@ -843,12 +843,36 @@ export class TownScene {
       ctx.fill()
     }
 
-    // NPC图标
-    ctx.font = `${40 * dpr}px sans-serif`
-    ctx.textAlign = 'center'
-    ctx.textBaseline = 'middle'
-    ctx.fillText(npc.sprite || '🐱', sx, sy)
-    
+    // ★ 村长精灵：优先用真实角色立绘（93×120 透明 PNG），资源未加载则降级 emoji
+    if (npc.id === 'village_chief') {
+      const chiefImg = this.game.assets.get('NPC_VILLAGE_CHIEF_IDLE_01')
+      if (chiefImg) {
+        // 与主角一致的高度基准（field-movement 主角 = 80*dpr 高）
+        const targetH = 80 * dpr
+        const scale = targetH / chiefImg.height
+        const w = chiefImg.width * scale
+        const h = chiefImg.height * scale
+        // 脚下椭圆地影（与 field-movement 主角一致）
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.28)'
+        ctx.beginPath()
+        ctx.ellipse(sx, sy, w * 0.35, w * 0.1, 0, 0, Math.PI * 2)
+        ctx.fill()
+        // 脚底对齐 sy：图片 bottom 贴 sy
+        ctx.drawImage(chiefImg, sx - w / 2, sy - h, w, h)
+      } else {
+        ctx.font = `${40 * dpr}px sans-serif`
+        ctx.textAlign = 'center'
+        ctx.textBaseline = 'middle'
+        ctx.fillText(npc.sprite || '👴', sx, sy)
+      }
+    } else {
+      // NPC图标（emoji）
+      ctx.font = `${40 * dpr}px sans-serif`
+      ctx.textAlign = 'center'
+      ctx.textBaseline = 'middle'
+      ctx.fillText(npc.sprite || '🐱', sx, sy)
+    }
+
     // 名称标签
     ctx.font = `bold ${14 * dpr}px sans-serif`
     ctx.fillStyle = '#ffffff'
