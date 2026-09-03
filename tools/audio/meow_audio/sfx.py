@@ -90,38 +90,121 @@ def spin_whoosh(dur=0.9, sr=SR, f_lo=280.0, f_hi=2600.0, rate=3.2, q=1.6,
 
 def impact(dur=0.5, sr=SR, body_hz=140.0, body_decay=0.10, pitch_sweep=0.55,
            transient_hz=2600.0, transient_decay=0.010, transient_level=0.7,
-           tail_hz=700.0, tail_decay=0.10, tail_level=0.22, vel=1.0, seed=None):
+           tail_hz=700.0, tail_decay=0.10, tail_level=0.22, vel=1.0, seed=None,
+           sub_level=0.45, crack_attack_ms=0.6, body_attack_ms=1.6,
+           space=0.10, drive=1.7, body_brightness=1.0, air_level=0.18,
+           sub_decay_mul=0.95, body_q_hz=16.0, sub_hz=None):
     """
-    冲击音。三层：瞬态（脆）+ 体（力量）+ 尾（材质）。
-    pitch_sweep 是"力量感"的关键：真实撞击的音高会瞬间下坠。
+    冲击音 —— 格斗游戏式打击。
+
+    五层：次低频(重量) + 体(肉感) + 瞬态(脆) + 尾(材质) + 空气(清晰度)，外加一点空间。
+
+    ★ 2026-09-03 重写。用户反馈"像小霸王"，量出来确实是。旧版实测（撞击点开窗）：
+
+        battle_hit    sub -15.4  mid -29.7  air  -0.9   质心 3534  sfm 0.271
+        hit_crit      sub -14.6  mid  -4.9  air  -3.2   质心 2698  sfm 0.349
+        hit_block     sub -17.8  mid -20.9  air  -0.8   质心 2991  sfm 0.310
+        attack_melee  sub -13.8  mid -13.4  air  -1.6   质心 2719  sfm 0.320
+        battle_attack sub -20.7  mid  -1.8  air -18.6   质心  679  sfm 0.122
+        monster_hit   sub  -7.4  mid -19.8  air -27.8   质心  298  sfm 0.017
+
+      「小霸王」不是一种毛病，是**两种**，正好对应 8 位机音源的两个通道：
+        音调通道病（battle_attack / monster_hit）：sfm 0.017~0.122，一根谱线。
+          旧体层是 `sin(2π·cumsum(f)/sr)` 配音高下扫 —— 单振荡器 + 音高包络，
+          这就是 8 位机激光音的定义。真实撞击的体层没有音高，是宽带脉冲激励出的
+          一簇密集非谐模态 → 改用 modal_synth。
+        噪声通道病（battle_hit / hit_block / attack_melee）：air 比 mid 高 12~29dB。
+          全是高频噪声、没有肉 —— 像芯片的噪声通道。→ 压 transient_level、
+          抬 body_brightness，把能量搬回 150~2000Hz。
+        两者共同的病：sub 全部 ≤ -13.8dB，一个都没有重量。
+
+    ⚠️ 诊断过程本身踩了三个坑，全都是"判据量错东西"，改素材之前先改判据：
+        ① 拿 np.abs(x) 量起振 → 量到的是**波形周期**不是包络（2600Hz 的
+           四分之一周期 = 0.096ms，和实测"起振 0.11ms"完全对上）。
+           起振必须用 Hilbert 解析包络。旧素材起振其实没问题。
+        ② 在"前 40ms"开窗算频谱 → 对"先挥后中"的音效量到的是风声不是撞击。
+           必须从**包络峰值**处开窗。
+        ③ 质心按全频带算 → 把手机喇叭放不出来的 <300Hz 也算进去，
+          "有重量"和"质心达标"就永远打架。质心只量 250~8000Hz。
+      判据最终落在 verify_hit_character.py，那里是唯一事实源。
+
+    五层的频域职责（业界通行分法）：
+        sub   40~120Hz    重量 / 胸腔感
+        body  120~1500Hz  材质 / 肉感 / 辨识度
+        crack 1.5~5kHz    穿透力 —— 手机喇叭上真正"听得见"的就是它
+        tail  400~1500Hz  余韵 / 材质
+        air   4~9kHz      清晰度
+
+    ★ sub 层为什么必须饱和（移动端的关键，别删）：
+      手机喇叭 300Hz 以下就滚降，纯 40~80Hz 在手机上根本放不出来，
+      只会白占动态余量、把限制器顶得更狠（响度反而做不上去）。
+      饱和产生的 2/3/4 次谐波落在 160~360Hz —— 手机听得到，
+      而大脑会按谐波列反推出缺失的基频（缺失基频效应），
+      于是"手机上依然觉得这一下很重"。这是移动端打击感的通用做法。
+
+    ★ 起振时间：所有层都在撞击瞬间同时达峰（transient stacking），
+      但每层都需要一个**非零**的起振斜坡，否则就是削不掉的数字咔哒。
+      crack 0.6ms / body 1.6ms —— 短到保持"脆"，长到不再是点击。
+      （旧素材实测起振 0.18~6.4ms，本来就在合理区间；真正的问题是配比不是起振。）
+
+    ★ space：极短的房间。全干的声音会贴脸、像贴在耳边的电子音；
+      加一点点早期反射，声音才"发生在某个地方"（worldization）。
     """
     n = int(dur * sr)
     t = np.arange(n) / sr
     rng = np.random.default_rng(seed)
+    sd1 = (seed + 1) if seed is not None else None
 
-    # 体层：音高下扫（撞击瞬间鼓皮/物体张力松弛）
-    fe = body_hz * (1.0 + pitch_sweep * np.exp(-t / max(body_decay * 0.35, 1e-4)))
-    body = np.sin(2 * np.pi * np.cumsum(fe) / sr) * np.exp(-t / body_decay)
-    # 加一个次谐波，让低频更"实"
-    body = body + 0.45 * np.sin(2 * np.pi * np.cumsum(fe * 0.5) / sr) * np.exp(-t / (body_decay * 1.4))
+    # ── 1) 次低频「重量层」：音高下坠 + 饱和（手机可听性的关键，见上面 ★）
+    # ★ sub_hz 必须封顶：body_hz 一高（>300），body_hz*0.42 就跑出 sub 频段了 ——
+    #   实测 body_hz=340 时 sub 掉到 -33dB，因为 143Hz 再加音高包络起振到 210Hz，
+    #   整段都在 150Hz 以上，一格能量都没落进 20~150 的 sub 窗。
+    sub_hz = min(body_hz * 0.42, 95.0) if sub_hz is None else sub_hz
+    fe = sub_hz * (1.0 + pitch_sweep * 0.85 * np.exp(-t / max(body_decay * 0.5, 1e-4)))
+    sub = np.sin(2 * np.pi * np.cumsum(fe) / sr) * np.exp(-t / (body_decay * sub_decay_mul))
+    sub = D.saturate(sub * 1.5, drive=drive, blend=0.8, kind='tanh')
+    sub = sub * np.exp(-t / (body_decay * 0.8))
+    # 质量问题响应滞后于接触面，所以体层的起振比脆层慢一点
+    sub = sub * (1.0 - np.exp(-t / max(body_attack_ms / 1000.0, 1e-5)))
 
-    # 瞬态层
+    # ── 2) 体层：非谐模态簇（取代旧的纯正弦 —— 这是"小霸王感"的根因）
+    body = D.modal_synth(body_hz, dur, sr=sr, partials=9,
+                         decay_s=max(body_decay * 1.5, 1e-3), decay_pow=1.35,
+                         amp_pow=0.85, inharmonic=0.16, brightness=body_brightness,
+                         attack_s=body_attack_ms / 1000.0, level=1.0, seed=sd1)
+    body = D.lowpass(body, min(body_hz * body_q_hz, sr * 0.45), q=0.7, sr=sr)
+
+    # ── 3) 瞬态「脆层」：非零起振 + 两段式衰减
+    #      （快段=接触瞬间，慢段=材料响应；只有快段会像"啪"的点击）
+    atk_s = max(crack_attack_ms / 1000.0, 1e-5)
     tr = rng.standard_normal(n)
-    tr = D.highpass(tr, transient_hz, q=0.7, sr=sr) * np.exp(-t / transient_decay)
+    tr = D.bandpass(tr, transient_hz, q=0.65, sr=sr)
+    tr = tr * (1.0 - np.exp(-t / atk_s))
+    tr = tr * (np.exp(-t / max(transient_decay, 1e-4))
+               + 0.40 * np.exp(-t / max(transient_decay * 7.0, 1e-4)))
 
-    # 尾层（材质感）
+    # ── 4) 尾层（材质余韵）
     tl = rng.standard_normal(n)
     tl = D.bandpass(tl, tail_hz, q=0.6, sr=sr) * np.exp(-t / tail_decay)
 
-    # ★ 三层必须先各自归一到单位峰值，再按系数配比。
-    #   不归一的话 transient_level / tail_level 没有任何参考意义：高通白噪声的
-    #   峰值在 1.5 上下，体层峰值只有 1.45×0.85≈1.23，直接相加等于让瞬态层
-    #   凭空比体层热十几 dB。实测 impact 的峰均比因此高达 21.6dB，而真实撞击
-    #   录音一般在 12~16dB —— 这是 battle / magic / monster 三类音效峰均比
-    #   集体失控的直接来源，也是它们达不到分类响度目标的根因。
-    return (_unit_peak(body) * 0.85
-            + _unit_peak(tr) * transient_level
-            + _unit_peak(tl) * tail_level) * vel
+    # ── 5) 空气层（清晰度，量要小 —— 多了就刺耳）
+    air = rng.standard_normal(n)
+    air = D.highpass(air, min(max(tail_hz * 4.0, 3000.0), sr * 0.45), q=0.7, sr=sr)
+    air = air * np.exp(-t / max(transient_decay * 2.2, 1e-4))
+
+    # ★ 各层先归一到单位峰值，层间系数才是真正的"配比"。不归一的话
+    #   transient_level / tail_level 没有任何参考意义：带通白噪声的峰值在 1.5 上下，
+    #   体层只有 1.0 出头，直接相加等于让脆层凭空比体层热十几 dB。
+    y = (_unit_peak(body) * 1.0
+         + _unit_peak(sub) * sub_level
+         + _unit_peak(tr) * transient_level
+         + _unit_peak(tl) * tail_level
+         + _unit_peak(air) * air_level * min(1.0, transient_level))
+
+    if space > 0:
+        y = D.reverb(y, sr=sr, decay_s=min(0.34, dur * 0.5), predelay_s=0.003,
+                     size=0.35, mix=space, damp_hz=3800.0, seed=seed)
+    return y * vel
 
 
 def metal_ping(freq=1800.0, dur=0.55, sr=SR, inharmonic=0.035, vel=1.0,
@@ -450,16 +533,38 @@ def boss_die(dur=2.6, sr=SR, vel=1.0, seed=None):
 #   这条线就把大量音效卡在分类响度目标之下 —— 这才是同类音效散开 6.5 LU
 #   的根因，跟归一化策略无关。
 #
-#   做法：vel=1.0 时把所有原语的输出峰值统一到 _PRIM_PEAK。
+#   做法：先把原语的输出峰值统一到 _PRIM_PEAK，再把 vel 作为干净增益加回去。
 #   选峰值而不是 RMS：峰值归一是**幂等**的，原语之间的内部调用
 #   （elemental_cast 调 metal_ping / glass_shatter）重复作用也不会改变结果。
+#
+# ⚠️ 2026-09-03 修：上面两步缺了第二步，vel 被归一化整个吃掉，变成**空转**。
+#    实测 whoosh / metal_ping / impact 在 vel=0.2 / 0.5 / 1.0 下峰值一律 0.900，
+#    RMS 也基本不动 —— 这意味着：
+#      · whoosh(vel=0.9) 和 impact(vel=1.0) 一样响，风声把撞击盖住，没有"打"的感觉
+#      · build_sfx.py 里所有靠 vel 调的配比**全部无效**，怎么调输出都不变
+#    归一化必须作用在"vel=1.0 的参考电平"上，而不是作用在"已经乘过 vel 的输出"上。
+#    保留内部 _vel() 的亮度随力度变化（真实乐器就是这样），只把电平交给外部增益。
 
 def _stage(fn):
+    sig = inspect.signature(fn)
+    _has_vel = 'vel' in sig.parameters
+
     @functools.wraps(fn)
     def wrapper(*a, **kw):
         y = np.asarray(fn(*a, **kw), dtype=np.float64)
         pk = float(np.max(np.abs(y))) if y.size else 0.0
-        return y * (_PRIM_PEAK / pk) if pk > 1e-9 else y
+        if pk <= 1e-9:
+            return y
+        # 1) 抹平原语之间的电平差异（本段存在的初衷）
+        y = y * (_PRIM_PEAK / pk)
+        # 2) 再把 vel 作为**干净的外部增益**加回去
+        if _has_vel:
+            try:
+                v = float(sig.bind(*a, **kw).arguments.get('vel', 1.0))
+            except TypeError:
+                v = 1.0
+            y = y * v
+        return y
     return wrapper
 
 

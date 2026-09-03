@@ -8,9 +8,12 @@
     "verify-package-size": "node devtools/verify_package_size.mjs",
     "verify-audio": "node devtools/verify_audio_engine.mjs",
     "verify-audio-quality": "./.venv/bin/python tools/audio/verify_encode_quality.py",
+    "verify-hit-character": "./.venv/bin/python tools/audio/verify_hit_character.py",
+    "verify-deployed": "node tools/audio/verify_deployed.js",
     "encode-audio": "node tools/audio/encode_mp3.js && node tools/audio/deploy_audio.js",
     "optimize-images": "node tools/images/optimize_png.js",
-    "verify-hit-feedback": "node --no-warnings --loader ./devtools/_dungeon_enemies_loader.mjs devtools/verify_hit_feedback.mjs"
+    "verify-hit-feedback": "node --no-warnings --loader ./devtools/_dungeon_enemies_loader.mjs devtools/verify_hit_feedback.mjs",
+    "verify-affixes": "node --no-warnings devtools/verify_equipment_affixes.mjs"
   },
   "devDependencies": {
     "@babel/core": "^7.29.0",

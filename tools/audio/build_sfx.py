@@ -67,9 +67,13 @@ def mix_at(sigs, sr=SR):
 #   里程碑事件，必须盖过一切。
 LOUDNESS_BY_CAT = Q.SFX_LOUDNESS_BY_CAT
 
-# 真峰值上限统一比 -1 dBTP 硬标准再低 2 dB，留给 MP3 编码过冲
-# （有损编码会引起 0.5~1 dB 的真峰值抬升）
-SFX_CEILING_DBTP = -2.0
+# 真峰值上限：比 -1 dBTP 硬标准留出 MP3 编码过冲的余量。
+# ⚠️ 2026-09-03 从 -2.0 压到 -2.6：修好 vel（见 sfx._stage 的 ⚠️）之后层间
+#    电平终于拉开了，瞬态材料的过冲实测从 +1.51dB 涨到 +2.50dB —— 原来的
+#    2dB 余量只剩 0.40dB（交付真峰值 -1.40dBTP 对红线 -1.0），太薄。
+#    注：过冲幅度取决于素材，不是常数；改完必须重跑 verify_encode_quality 看
+#    "交付真峰值最高"这一行，不能只信注释里写的经验值。
+SFX_CEILING_DBTP = -2.6
 
 # ============================================================
 # 打击 / 近战
@@ -78,10 +82,12 @@ SFX_CEILING_DBTP = -2.0
 def sfx_attack_melee():
     """近战普攻：挥击风声 + 命中（一次普攻的完整反馈）"""
     return mix_at([
-        (X.whoosh(0.20, f0=340, f1=2900, q=1.2, vel=0.9, seed=11), 0.0),
+        # 挥击是"前摇"，必须明显弱于命中 —— 撞击才是这条音效的主角
+        (X.whoosh(0.20, f0=340, f1=2900, q=1.2, vel=0.45, seed=11), 0.0),
         (X.impact(0.40, body_hz=155, body_decay=0.09, pitch_sweep=0.6,
-                  transient_hz=2800, transient_level=0.85, vel=1.0, seed=12), 0.075),
-        (X.metal_ping(2400, 0.22, vel=0.22, inharmonic=0.05, seed=13), 0.078),
+                  transient_hz=2600, transient_level=0.7, sub_level=0.40,
+                  body_brightness=1.0, vel=1.2, seed=12), 0.075),
+        (X.metal_ping(2400, 0.22, vel=0.14, inharmonic=0.05, seed=13), 0.078),
     ])
 
 
@@ -98,7 +104,8 @@ def sfx_battle_attack():
     return mix_at([
         (X.whoosh(0.18, f0=400, f1=3100, q=1.4, vel=0.85, seed=31), 0.0),
         (X.impact(0.34, body_hz=170, body_decay=0.085, pitch_sweep=0.5,
-                  transient_hz=3200, transient_level=0.8, vel=0.95, seed=32), 0.06),
+                  transient_hz=2600, transient_level=0.62, sub_level=0.42,
+                  body_brightness=1.0, vel=0.95, seed=32), 0.06),
     ])
 
 
@@ -106,8 +113,9 @@ def sfx_battle_hit():
     """通用命中反馈：短、脆、不抢戏"""
     return mix_at([
         (X.impact(0.26, body_hz=190, body_decay=0.065, pitch_sweep=0.55,
-                  transient_hz=3000, transient_decay=0.008, transient_level=0.9,
-                  tail_hz=1400, tail_decay=0.06, tail_level=0.2, vel=1.0, seed=41), 0.0),
+                  transient_hz=2800, transient_decay=0.008, transient_level=0.78,
+                  tail_hz=1400, tail_decay=0.06, tail_level=0.2,
+                  sub_level=0.30, body_brightness=1.0, vel=1.0, seed=41), 0.0),
         (X.metal_ping(3100, 0.12, vel=0.18, seed=42), 0.002),
     ])
 
@@ -115,10 +123,12 @@ def sfx_battle_hit():
 def sfx_battle_sword():
     """剑击：锐利的挥击 + 刃鸣 + 命中"""
     return mix_at([
-        (X.whoosh(0.16, f0=600, f1=5200, q=2.6, vel=1.0, seed=51), 0.0),
-        (X.metal_scrape(0.14, f_center=4200, q=4.5, vel=0.45, seed=52), 0.05),
+        (X.whoosh(0.16, f0=600, f1=5200, q=2.6, vel=0.50, seed=51), 0.0),
+        (X.metal_scrape(0.14, f_center=4200, q=4.5, vel=0.28, seed=52), 0.05),
+        # 剑的"锐"在刃鸣与刮擦上，重量仍然得由撞击层给 —— 否则只剩一层高频噪声
         (X.impact(0.36, body_hz=150, body_decay=0.095, pitch_sweep=0.65,
-                  transient_hz=3600, transient_level=0.75, vel=0.9, seed=53), 0.075),
+                  transient_hz=3600, transient_level=0.68, sub_level=0.55,
+                  body_brightness=1.1, vel=1.2, seed=53), 0.075),
     ])
 
 
@@ -126,8 +136,9 @@ def sfx_hit_crit():
     """暴击：更重的低频 + 金属爆响 + 更宽声像"""
     y = mix_at([
         (X.impact(0.55, body_hz=110, body_decay=0.14, pitch_sweep=0.8,
-                  transient_hz=2400, transient_decay=0.014, transient_level=1.1,
-                  tail_hz=900, tail_decay=0.16, tail_level=0.3, vel=1.2, seed=61), 0.0),
+                  transient_hz=2200, transient_decay=0.014, transient_level=0.95,
+                  tail_hz=900, tail_decay=0.16, tail_level=0.3,
+                  sub_level=0.75, body_brightness=1.0, vel=1.2, seed=61), 0.0),
         (X.metal_ping(1750, 0.5, vel=0.5, inharmonic=0.045, seed=62), 0.004),
         (X.metal_ping(2600, 0.35, vel=0.3, inharmonic=0.06, seed=63), 0.012),
     ])
@@ -137,10 +148,14 @@ def sfx_hit_crit():
 def sfx_hit_block():
     """格挡：金属对撞（高 Q 共振 + 刮擦，没有肉感低频）"""
     return mix_at([
-        (X.metal_scrape(0.18, f_center=3400, q=5.5, vel=0.8, seed=71), 0.0),
-        (X.metal_ping(2100, 0.45, vel=0.6, inharmonic=0.04, seed=72), 0.003),
-        (X.impact(0.20, body_hz=260, body_decay=0.05, pitch_sweep=0.3,
-                  transient_hz=4200, transient_level=0.6, vel=0.5, seed=73), 0.0),
+        # 金属音色是这条音效的"身份"，但撞击必须撑住重量 ——
+        # 旧版 vel 是坏的（见 sfx._stage 的 ⚠️），刮擦与撞击一样响，
+        # 于是整条听起来只是一层薄薄的高频噪声，没有"挡住了"的实感。
+        (X.metal_scrape(0.18, f_center=3400, q=5.5, vel=0.45, seed=71), 0.0),
+        (X.metal_ping(2100, 0.45, vel=0.42, inharmonic=0.04, seed=72), 0.003),
+        (X.impact(0.20, body_hz=300, body_decay=0.05, pitch_sweep=0.3,
+                  transient_hz=3600, transient_level=0.42, sub_level=0.95,
+                  body_brightness=1.0, vel=1.15, seed=73), 0.0),
     ])
 
 
@@ -263,11 +278,19 @@ def sfx_battle_explosion():
 # ============================================================
 
 def sfx_monster_hit():
-    """怪物受击：肉感（低通，无金属）"""
-    y = X.impact(0.24, body_hz=200, body_decay=0.06, pitch_sweep=0.5,
-                 transient_hz=1600, transient_decay=0.009, transient_level=0.7,
-                 tail_hz=600, tail_decay=0.05, tail_level=0.25, vel=1.0, seed=301)
-    return D.lowpass(y, 2600, q=0.7)
+    """怪物受击：肉感（无金属）
+
+    ★ 低通从 2600Hz 抬到 5200Hz。旧版 2600 把脆层整个滤掉，实测
+      sfm 0.017（纯正弦）、质心 298Hz、手机上少听 5.9dB —— 手机上几乎听不见。
+      "肉感"要靠**分音密集的低频簇**（modal_synth 非谐模态）做，
+      不能靠一刀切掉所有高频：切完就只剩一根闷在 200Hz 的正弦线，
+      那正是 8 位机音调通道的听感。
+    """
+    y = X.impact(0.24, body_hz=175, body_decay=0.06, pitch_sweep=0.5,
+                 transient_hz=1800, transient_decay=0.009, transient_level=0.55,
+                 tail_hz=600, tail_decay=0.05, tail_level=0.25,
+                 sub_level=0.50, body_brightness=1.0, vel=1.0, seed=301)
+    return D.lowpass(y, 5200, q=0.7)
 
 
 def sfx_monster_death():

@@ -62,9 +62,26 @@ DELIVERED_SEAM_MAX_DB = 0.0
 LOOPING_BGM = {n: bool(loop) for n, _fn, _p, loop in B.TRACKS}
 
 
+def _input_args(path):
+    """输入格式参数：mp3 强制解复用器，其它（wav 母版）交给自动探测。
+
+    ★ 不能对 wav 也加 -f mp3 —— decode() 同时用来读母版 WAV 和交付 MP3，
+      无脑强制会让 wav 解码直接失败（exit 69）。
+    """
+    return ['-f', 'mp3'] if str(path).lower().endswith('.mp3') else []
+
+
 def probe_channels(path):
+    """★ mp3 必须 `-f mp3` 强制解复用器，不能靠格式自动探测。
+
+    实测：ui_click 只有 90ms（1925 字节），ffprobe 自动探测报
+    "Invalid data found when processing input"，但加 -f mp3 就能正常读出 1 声道。
+    更麻烦的是它**不稳定**：新旧两版 wav 只差小数点后第 7 位，编码出的 mp3
+    同样 1925 字节，旧版能自动探测、新版不能 —— 也就是说文件是完好的，
+    坏的是探测方式。判据不能建在这种脆性上。
+    """
     out = subprocess.run(
-        ['ffprobe', '-v', 'error', '-select_streams', 'a:0',
+        ['ffprobe', '-v', 'error', *_input_args(path), '-select_streams', 'a:0',
          '-show_entries', 'stream=channels', '-of', 'csv=p=0', path],
         capture_output=True, text=True, check=True).stdout.strip()
     return int(out.split(',')[0])
@@ -74,7 +91,8 @@ def decode(path):
     """解码为单声道 float64。按原始声道数取回再自己平均，绝不让 swr 帮忙降混（见文件头陷阱 1）。"""
     ch = probe_channels(path)
     raw = subprocess.run(
-        ['ffmpeg', '-v', 'error', '-i', path, '-f', 'f32le', '-ar', str(SR), '-'],
+        ['ffmpeg', '-v', 'error', *_input_args(path), '-i', path,
+         '-f', 'f32le', '-ar', str(SR), '-'],
         capture_output=True, check=True).stdout
     x = np.frombuffer(raw, dtype=np.float32).astype(np.float64)
     if ch > 1:
@@ -95,7 +113,8 @@ def decode_stereo(path):
     """
     ch = probe_channels(path)
     raw = subprocess.run(
-        ['ffmpeg', '-v', 'error', '-i', path, '-f', 'f32le', '-ar', str(SR), '-'],
+        ['ffmpeg', '-v', 'error', *_input_args(path), '-i', path,
+         '-f', 'f32le', '-ar', str(SR), '-'],
         capture_output=True, check=True).stdout
     x = np.frombuffer(raw, dtype=np.float32).astype(np.float64)
     if ch > 1:
