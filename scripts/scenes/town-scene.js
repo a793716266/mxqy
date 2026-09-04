@@ -857,8 +857,17 @@ export class TownScene {
         ctx.beginPath()
         ctx.ellipse(sx, sy, w * 0.35, w * 0.1, 0, 0, Math.PI * 2)
         ctx.fill()
+        // 朝向：立绘是侧脸朝右（牧羊杖在左），玩家在左侧时水平翻转避免背对
+        const facingLeft = typeof this.movement.playerX === 'number' && this.movement.playerX < npc.x
+        ctx.save()
+        if (facingLeft) {
+          ctx.translate(sx, 0)
+          ctx.scale(-1, 1)
+          ctx.translate(-sx, 0)
+        }
         // 脚底对齐 sy：图片 bottom 贴 sy
         ctx.drawImage(chiefImg, sx - w / 2, sy - h, w, h)
+        ctx.restore()
       } else {
         ctx.font = `${40 * dpr}px sans-serif`
         ctx.textAlign = 'center'
