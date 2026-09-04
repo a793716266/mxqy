@@ -21,9 +21,17 @@ const ROOT = path.resolve(__dirname, '..', '..')
 const OUT_MP3 = path.join(ROOT, 'tools', 'audio', 'out', 'mp3')
 const PKG = path.join(ROOT, 'subpackages', 'sound')
 
-// 分包内的实际布局（与 deploy_audio.js 保持一致）
-const BGM = ['bgm_menu', 'bgm_town', 'bgm_explore', 'bgm_grassland',
-             'bgm_battle', 'bgm_boss', 'bgm_victory']
+// ★ BGM 从 out/mp3 的实际产物推导（与 deploy_audio.js 同源约定），不再硬编码曲名。
+// 为什么必须改：硬编码的代价已经付过一次 —— 新增 BGM 时漏改这张表，
+//   新曲就进不了这道闸门，"回归 48/48 全绿"里其实根本没检查过它。
+// 约定：out/mp3 下一级的 bgm_*.mp3 即投产 BGM；SFX 在 out/mp3/sfx/ 子目录。
+const BGM = fs.readdirSync(OUT_MP3)
+  .filter(f => f.endsWith('.mp3') && f.startsWith('bgm_'))
+  .map(f => f.replace(/\.mp3$/, ''))
+  .sort()
+
+// 注意：SFX 的类别（ui/battle/monster/reward/system）无法从扁平的 out/mp3/sfx/
+// 推导出来，只能靠下面这张表；产物缺失类别的漏洞由下面的"未登记检查"兜住。
 const SFX = {
   ui: ['ui_click', 'ui_confirm', 'ui_cancel', 'ui_popup', 'ui_error', 'ui_success',
        'dmg_crit', 'dmg_heal'],
@@ -57,6 +65,20 @@ function check(name, src, dst) {
   if (b === null) { fails.push(`${name}: 分包缺失 —— 重建后忘了跑 npm run deploy-audio`) ; return }
   if (a !== b) { fails.push(`${name}: 内容不一致 —— 重建后忘了跑 npm run deploy-audio`); return }
   npass++
+}
+
+// ★ 堵住"SFX 类别表漏登记"这个漏洞：out/mp3/sfx/ 下凡产出了却没登记类别的音效，
+//   直接判失败。否则它会既不部署也不校验，却静默逃过整道闸门 ——
+//   与上面 BGM 硬编码那次是同一类事故。
+const SFX_DIR = path.join(OUT_MP3, 'sfx')
+const sfxRegistered = new Set(Object.values(SFX).flat())
+const sfxProduced = fs.existsSync(SFX_DIR)
+  ? fs.readdirSync(SFX_DIR).filter(f => f.endsWith('.mp3')).map(f => f.replace(/\.mp3$/, ''))
+  : []
+for (const n of sfxProduced) {
+  if (!sfxRegistered.has(n)) {
+    fails.push(`音效 ${n} 已生成但未登记到 SFX 类别表 —— 它不会被部署、也不会被校验`)
+  }
 }
 
 console.log('交付一致性检查：tools/audio/out/mp3  ↔  subpackages/sound/')

@@ -15,6 +15,13 @@
 
 export const GRASSLAND_DUNGEON = {
   /**
+   * 背景音乐 key（field-scene 进入副本时播放）
+   * ★ 草原专属曲。此前靠 field-scene 的 `|| 'bgm_grassland'` 兜底隐式生效，
+   *   这里显式写出，与其它四个副本保持一致的"每个副本显式声明自己的曲子"契约。
+   */
+  bgm: 'bgm_grassland',
+
+  /**
    * 击杀掉落表。
    * key   = 怪物 enemyId
    * value = 掉落条目数组，每条：

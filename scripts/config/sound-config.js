@@ -23,10 +23,18 @@ export const SOUNDS = {
   bgm_town:       BGM_DIR + 'bgm_town.mp3',        // 小镇/主城（G 大调民谣）
   bgm_explore:    BGM_DIR + 'bgm_explore.mp3',     // 野外/探索（D 大调）
   bgm_grassland:  BGM_DIR + 'bgm_grassland.mp3',    // 草原副本（C 大调五声，明亮欢快）
-  bgm_tower:      BGM_DIR + 'bgm_boss.mp3',        // 塔防战斗（复用 boss，激烈）
+  bgm_tower:      BGM_DIR + 'bgm_boss.mp3',        // 塔防小游戏（复用旧 boss 曲，激烈）
   bgm_battle:     BGM_DIR + 'bgm_battle.mp3',       // 普通战斗（E 小调）
-  bgm_boss:       BGM_DIR + 'bgm_boss.mp3',        // BOSS 战（C 小调，压迫感）
+  bgm_boss:       BGM_DIR + 'bgm_boss.mp3',        // 旧 BOSS 曲（C 小调，教堂式压迫）
   bgm_victory:    BGM_DIR + 'bgm_victory.mp3',      // 胜利（C 大调，三段落凯旋）
+
+  // ==================== 副本专属 BGM（每个副本一首，不再互相复用） ====================
+  bgm_magic_tower:   BGM_DIR + 'bgm_magic_tower.mp3',   // 魔法塔（A 小调，水晶闪烁）
+  bgm_merchant_town: BGM_DIR + 'bgm_merchant_town.mp3', // 商人镇（D 多利亚，异域集市）
+  bgm_ancient_ruins: BGM_DIR + 'bgm_ancient_ruins.mp3', // 远古遗迹（E 弗里几亚，庄严古老）
+  bgm_void_mist:     BGM_DIR + 'bgm_void_mist.mp3',     // 虚空迷雾（D 小调，阴森压抑）
+  // ★ BOSS 专属：遇到 BOSS 时切到这首（battle-scene.init 内按 enemy.isBoss 触发）
+  bgm_the_king:      BGM_DIR + 'bgm_the_king.mp3',      // BOSS 战（D 小调，PvZ "The King" 风格）
 
   // ==================== UI 交互音效 ====================
   ui_click:      SFX_DIR + 'ui/ui_click.mp3',       // 按钮点击（木质短促）

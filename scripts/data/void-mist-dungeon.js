@@ -8,8 +8,8 @@
  */
 
 export const VOID_MIST_DUNGEON = {
-  /** 背景音乐 key */
-  bgm: 'bgm_boss',
+  /** 背景音乐 key ★ 副本专属曲（阴森迷雾，BOSS 战另切 bgm_the_king） */
+  bgm: 'bgm_void_mist',
 
   /**
    * 击杀掉落表。

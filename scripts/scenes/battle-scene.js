@@ -249,6 +249,23 @@ export class BattleScene extends SceneBase {
 
     this.enemy = this.enemies[0] || {}
 
+    // ★ BOSS 专属音乐：任一敌人是 BOSS 就切到 The King（PvZ Zomboss 风格）
+    //
+    // 为什么写在这里、而不是改 SCENE_BGM['battle']：
+    //   SCENE_BGM 是"场景 → 曲目"的静态映射，表达不了"同样是 battle 场景、
+    //   但这次打的是 BOSS"这个区别 —— 它无法读到敌人数据。
+    //
+    // 为什么能覆盖默认曲：
+    //   playBGM() 会置 audio._explicitBGM = true；而 game.changeScene 的顺序是
+    //   init() → audio.setScene(sceneName)，setScene 看到 _explicitBGM 为真就会
+    //   尊重场景的选择、不再播放 bgm_battle。非 BOSS 战这里不调用，
+    //   _explicitBGM 保持 false，setScene 照常兜底播 bgm_battle。
+    if (this.enemies.some(e => e && e.isBoss)) {
+      if (this.game.audio && this.game.audio.playBGM) {
+        this.game.audio.playBGM('bgm_the_king')
+      }
+    }
+
     // 标准化 party：支持字符串数组（['hero_lixiaobao']）和对象数组（[{id: 'hero_lixiaobao'}]）两种格式
     this.party = this.party.map(h => {
       // 如果是字符串（英雄ID），先查 HEROES 获取完整数据

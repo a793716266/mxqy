@@ -17,8 +17,17 @@ const OUT_MP3 = path.join(ROOT, 'tools', 'audio', 'out', 'mp3')
 const PKG_BGM = path.join(ROOT, 'subpackages', 'sound', 'game_bgm')
 const PKG_SFX = path.join(ROOT, 'subpackages', 'sound', 'game_sfx')
 
-const BGM = ['bgm_menu', 'bgm_town', 'bgm_explore', 'bgm_grassland',
-             'bgm_battle', 'bgm_boss', 'bgm_victory']
+// ★ BGM 列表从 out/mp3 的实际产物推导，不再硬编码曲名。
+//
+// 为什么必须改：硬编码曲目表是"重建了但玩家没听到"这类事故的根因。
+//   新增一首 BGM 时，只要漏改这一行，它就永远进不了 subpackages/sound/，
+//   而所有回归脚本量的都是 tools/audio/out/（玩家加载的是分包不是它）——
+//   于是回归全绿、游戏里一点没变。
+// 约定：out/mp3 下一级的 bgm_*.mp3 即投产 BGM；SFX 在 out/mp3/sfx/ 子目录下。
+const BGM = fs.readdirSync(OUT_MP3)
+  .filter(f => f.endsWith('.mp3') && f.startsWith('bgm_'))
+  .map(f => f.replace(/\.mp3$/, ''))
+  .sort()
 
 const SFX = {
   ui:      ['ui_click', 'ui_confirm', 'ui_cancel', 'ui_popup', 'ui_error', 'ui_success',

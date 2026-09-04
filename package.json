@@ -13,7 +13,9 @@
     "encode-audio": "node tools/audio/encode_mp3.js && node tools/audio/deploy_audio.js",
     "optimize-images": "node tools/images/optimize_png.js",
     "verify-hit-feedback": "node --no-warnings --loader ./devtools/_dungeon_enemies_loader.mjs devtools/verify_hit_feedback.mjs",
-    "verify-affixes": "node --no-warnings devtools/verify_equipment_affixes.mjs"
+    "verify-affixes": "node --no-warnings devtools/verify_equipment_affixes.mjs",
+    "verify-cutscene": "node --no-warnings --loader ./devtools/_dungeon_enemies_loader.mjs devtools/verify_cutscene.mjs",
+    "verify-dungeon-bgm": "node --no-warnings --loader ./devtools/_dungeon_enemies_loader.mjs devtools/verify_dungeon_bgm.mjs"
   },
   "devDependencies": {
     "@babel/core": "^7.29.0",

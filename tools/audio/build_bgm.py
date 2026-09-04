@@ -43,6 +43,17 @@ REVERB = {
     'battle':  dict(mix=0.19, decay_s=1.5, size=0.8, damp_hz=4400, predelay_s=0.011),
     'boss':    dict(mix=0.34, decay_s=3.2, size=1.4, damp_hz=3200, predelay_s=0.026),
     'victory': dict(mix=0.30, decay_s=2.8, size=1.25, damp_hz=4000, predelay_s=0.018),
+    # —— 副本专属曲 ——
+    # 魔法塔：中等房间，高阻尼（水晶/魔法质感，尾巴要"亮"不要"糊"）
+    'magic_tower':   dict(mix=0.22, decay_s=1.7, size=0.78, damp_hz=5200, predelay_s=0.013),
+    # 商人镇：小房间、极干（街头集市的亲近感，和 town 同族但更紧凑）
+    'merchant_town': dict(mix=0.15, decay_s=1.0, size=0.55, damp_hz=5600, predelay_s=0.010),
+    # 远古遗迹：大空间、低阻尼（空旷石殿，混响尾巴长，营造岁月感）
+    'ancient_ruins': dict(mix=0.28, decay_s=2.4, size=1.05, damp_hz=3600, predelay_s=0.020),
+    # 虚空迷雾：最大空间、阻尼最低（雾气弥漫，声音化不开）
+    'void_mist':     dict(mix=0.36, decay_s=3.0, size=1.30, damp_hz=3000, predelay_s=0.028),
+    # The King（BOSS）：大但收得住 —— 铜管要宏大，但鼓组不能被混响拖散
+    'the_king':      dict(mix=0.30, decay_s=2.8, size=1.20, damp_hz=3400, predelay_s=0.024),
 }
 
 # target_lufs: 便携平台目标 -18 LUFS ±2（手机扬声器场景；主机/PC 的 -23/-24 是另一套标准）。
@@ -65,6 +76,18 @@ MASTER = {
     'battle':  dict(target_lufs=-17.5, comp_ratio=2.0, comp_thresh=-18.0, width=1.10, bright_db=0.6),
     'boss':    dict(target_lufs=-17.0, comp_ratio=2.0, comp_thresh=-18.0, width=1.15, bright_db=-0.5),
     'victory': dict(target_lufs=-17.0, comp_ratio=1.8, comp_thresh=-18.0, width=1.30, bright_db=1.0),
+    # —— 副本专属曲 ——
+    # 四首副本环境曲都定在 -18.0（与 town/field 同层）：它们是"探索时的背景"，
+    # 不该抢 BOSS 曲的位置；强度差异交给配器密度与 LRA，不靠音量旋钮。
+    'magic_tower':   dict(target_lufs=-18.0, comp_ratio=1.6, comp_thresh=-18.0, width=1.18, bright_db=1.2),
+    'merchant_town': dict(target_lufs=-18.0, comp_ratio=1.7, comp_thresh=-18.0, width=1.12, bright_db=1.0),
+    # 遗迹压暗（bright 负）：石造空间的音色本就沉，硬提亮会失真
+    'ancient_ruins': dict(target_lufs=-18.0, comp_ratio=1.5, comp_thresh=-18.0, width=1.20, bright_db=-0.6),
+    # 虚空迷雾最暗，但仍留一点低频"撑住"，避免手机上整首听不见
+    'void_mist':     dict(target_lufs=-17.8, comp_ratio=1.8, comp_thresh=-18.0, width=1.22, bright_db=-1.0),
+    # The King 是 BOSS 曲，与 boss/victory 同层（-17.0），压缩比给到 2.0
+    # 把铜管与鼓的动态粘住 —— 这是全曲最"满"的一首。
+    'the_king':      dict(target_lufs=-17.0, comp_ratio=2.0, comp_thresh=-18.0, width=1.20, bright_db=0.2),
 }
 
 # 真峰值上限：-1 dBTP 是各平台硬标准，再留 1 dB 给 MP3 编码过冲
@@ -897,6 +920,474 @@ def compose_victory():
 
 
 # ============================================================
+# 8. 魔法塔（第 2 章副本）—— A 小调，神秘闪耀
+# ============================================================
+
+def compose_magic_tower():
+    """
+    塔是"水晶与法术"的空间，所以要**亮、薄、有折射感**：
+      · 钟琴 + 竖琴 做高频闪烁（魔法的"光"）
+      · 长笛 + 木笛 旋律（轻、飘，不要铜管的重量）
+      · pad 只做远景（塔的结构），不做厚和声垫 —— 那会把它变成城镇曲
+      · 打击乐极轻：只有铃鼓与沙锤，给律动不给冲击
+    与 grassland 的区别：grassland 是"阳光下的草原"（厚、暖、外向），
+    魔法塔是"室内的水晶"（薄、冷、内省）。
+    """
+    a = M.Arrangement(bpm=108, sr=SR, bars=16)
+    k = M.Key('A', 'minor')
+    prog = [0, 5, 2, 6, 0, 5, 3, 4]   # Am F C G | Am F Dm Em
+    bpc = 2
+
+    # 远景 pad：塔的空间感
+    lay_harmony(a, k, prog, 16, inst='pad', octave=4, low=48, high=72,
+                vel=0.34, bars_per_chord=bpc, spread=0.0, pan_base=0.0,
+                attack=0.7, release=1.0)
+
+    # 合唱 'ah'：塔的"神圣"底色（比遗迹曲轻得多）
+    for ci, deg in enumerate(prog):
+        root = k.degree(deg, 4)
+        a.add_chord('choir', ci * bpc * 4, bpc * 4 + 0.4, [root, root + 7],
+                    vel=0.18, spread=0.0, pan=0.0, vowel='ah',
+                    attack=0.9, release=1.1)
+
+    # 竖琴琶音：主要织体（上行往复，闪烁）
+    arpeggio(a, k, prog, inst='harp', octave=4, low_oct=4, step=0.5,
+             bars_per_chord=bpc, vel=0.44, pan=-0.28, note_dur=0.75, up_down=True)
+
+    # 钟琴：旋律骨干上方的"光点"
+    for ci, deg in enumerate(prog):
+        ch = M.chord_midi(k, deg, 'triad', 5)
+        for i, p in enumerate(ch + [ch[0] + 12]):
+            a.add('glockenspiel', ci * bpc * 4 + i * 0.25 + 1.5, 0.5, p,
+                  vel=0.30, pan=0.42, humanize=0.15)
+
+    # 拨弦贝斯（轻，不做驱动 —— 让竖琴/钟琴当主角）
+    bass_line(a, k, prog, inst='pizz_bass', octave=2, bars_per_chord=bpc,
+              pattern=(0, 2), vel=0.62)
+
+    # 主旋律：长笛（飘）；A' 段木笛跟奏加厚
+    mel = [
+        ('A4', 0, 1.0, 0.80), ('C5', 1, 1.0, 0.82), ('E5', 2, 2.0, 0.88),
+        ('D5', 4, 1.0, 0.78), ('C5', 5, 1.0, 0.76), ('A4', 6, 2.0, 0.74),
+        ('G4', 8, 1.0, 0.78), ('E5', 9, 1.0, 0.82), ('A5', 10, 2.0, 0.88),
+        ('G5', 12, 1.0, 0.80), ('E5', 13, 1.0, 0.78), ('D5', 14, 2.0, 0.76),
+        ('C5', 16, 1.0, 0.80), ('A4', 17, 1.0, 0.78), ('D5', 18, 2.0, 0.84),
+        ('C5', 20, 1.0, 0.78), ('E5', 21, 1.0, 0.80), ('A5', 22, 2.0, 0.86),
+        ('G5', 24, 1.0, 0.80), ('F5', 25, 1.0, 0.78), ('E5', 26, 2.0, 0.80),
+        ('D5', 28, 1.0, 0.76), ('C5', 29, 1.0, 0.74), ('A4', 30, 2.0, 0.72),
+    ]
+    for p, s, d, v in mel:
+        a.add('flute', s, d, p, vel=v, pan=0.10, humanize=0.45)
+    for p, s, d, v in mel:
+        a.add('recorder', s + 32, d, p, vel=v * 0.80, pan=-0.14, humanize=0.5)
+
+    # 打击乐：极轻
+    for bar in range(16):
+        b = bar * 4
+        if bar % 2 == 0:
+            a.add_perc('tambourine', b + 2, vel=0.30, pan=-0.35)
+        a.add_perc('shaker', b + 3.5, vel=0.22, pan=0.30)
+
+    return apply_form(a, [
+        (0, -5.0), (3, -1.2), (8, -3.8), (12, 0.0), (15, -1.8),
+    ], {
+        # ★ 竖琴是这首的**织体主体**，不是"事件"：门控成只在 A/A' 段出现会把
+        #   intro / 桥段抽空 —— 成品 LRA 冲到 17.16 LU（窗口 10~15），
+        #   循环时听成"音乐没了又回来"。改为全曲在场、稀疏段减益退到背景。
+        #   但矫枉也会过正：地板抬太高 + 弧线收太浅 → LRA 掉到 9.38（低于下限 10）。
+        #   现在这版是两头的折中：竖琴保留全曲在场，地板与弧线各退一步，
+        #   对比主要由旋律/色彩声部（长笛、木笛、钟琴、合唱）的进出承担。
+        'pad':          ([(0, 3, 0.62), (8, 12, 0.58)], 1.0),
+        'pizz_bass':    ([(0, 3, 0.60), (8, 12, 0.56)], 1.0),
+        'harp':         ([(0, 3, 0.50), (8, 12, 0.45)], 1.0),
+        'glockenspiel': [(4, 8, 1.0), (12, 16, 1.0)],
+        'flute':        [(3, 8, 1.0)],
+        'recorder':     [(12, 16, 1.0)],
+        'choir':        [(4, 12, 1.0)],
+        'tambourine':   [(3, 8, 1.0), (12, 16, 1.0)],
+        'shaker':       [(3, 8, 1.0), (12, 16, 1.0)],
+    })
+
+
+# ============================================================
+# 9. 商人镇（第 3 章副本）—— D 多利亚，热闹集市
+# ============================================================
+
+def compose_merchant_town():
+    """
+    town 与 grassland 都已经是"欢快"了，这首必须拉开定位：
+      · 用**多利亚**而非大调：小三度 + 大六度，是"异域集市/商队"的经典音响
+      · 鲁特琴密集 8 分音符分解和弦 = 集市的"人流"引擎
+      · 手鼓走切分（叫卖/交易的错落），不用 grassland 那种均匀四拍
+      · 旋律用木笛，但节奏更碎（短句 + 停顿，像讨价还价）
+    """
+    a = M.Arrangement(bpm=120, sr=SR, bars=16)
+    k = M.Key('D', 'dorian')
+    prog = [0, 6, 2, 6, 0, 6, 3, 4]   # Dm C F C | Dm C G Am
+    bpc = 2
+
+    # 弦乐拨奏：和声骨架（轻快，不做长音）
+    for ci, deg in enumerate(prog):
+        ch = M.chord_midi(k, deg, 'triad', 4)
+        v = M.voice_lead(None, ch, low=55, high=76)
+        for beat in (0, 1.5, 2.5):
+            a.add_chord('strings_pizz', ci * bpc * 4 + beat, 0.5, v,
+                        vel=0.44 if beat == 0 else 0.30, spread=0.35, pan=-0.12)
+
+    # 鲁特琴：人流/交易引擎
+    arpeggio(a, k, prog, inst='lute', octave=4, low_oct=3, step=0.5,
+             bars_per_chord=bpc, vel=0.52, pan=0.30, note_dur=0.38, up_down=True)
+
+    # 拨弦贝斯（切分跳跃）
+    bass_line(a, k, prog, inst='pizz_bass', octave=2, bars_per_chord=bpc,
+              pattern=(0, 2, 0, 2), vel=0.78)
+
+    # 主旋律：木笛，短句 + 停顿
+    mel = [
+        ('D5', 0, 0.5, 0.86), ('F5', 0.5, 0.5, 0.82), ('A5', 1, 1.0, 0.88),
+        ('G5', 2, 0.5, 0.80), ('F5', 2.5, 0.5, 0.78), ('E5', 3, 1.0, 0.80),
+        ('D5', 4, 0.5, 0.84), ('C5', 4.5, 0.5, 0.80), ('D5', 5, 1.0, 0.82),
+        ('A4', 6, 2.0, 0.76),
+        ('F5', 8, 0.5, 0.86), ('A5', 8.5, 0.5, 0.88), ('G5', 9, 1.0, 0.84),
+        ('F5', 10, 0.5, 0.80), ('E5', 10.5, 0.5, 0.78), ('D5', 11, 1.0, 0.80),
+        ('C5', 12, 0.5, 0.82), ('D5', 12.5, 0.5, 0.84), ('F5', 13, 1.0, 0.86),
+        ('A5', 14, 2.0, 0.88),
+        ('G5', 16, 0.5, 0.84), ('A5', 16.5, 0.5, 0.86), ('C6', 17, 1.0, 0.90),
+        ('A5', 18, 0.5, 0.82), ('G5', 18.5, 0.5, 0.80), ('F5', 19, 1.0, 0.82),
+        ('E5', 20, 0.5, 0.80), ('D5', 20.5, 0.5, 0.78), ('E5', 21, 1.0, 0.80),
+        ('D5', 22, 2.0, 0.78),
+        ('A4', 24, 0.5, 0.80), ('C5', 24.5, 0.5, 0.82), ('F5', 25, 1.0, 0.86),
+        ('E5', 26, 0.5, 0.80), ('D5', 26.5, 0.5, 0.78), ('C5', 27, 1.0, 0.80),
+        ('D5', 28, 0.5, 0.82), ('F5', 28.5, 0.5, 0.84), ('A5', 29, 1.0, 0.88),
+        ('G5', 30, 2.0, 0.82),
+    ]
+    for p, s, d, v in mel:
+        a.add('recorder', s, d, p, vel=v, pan=-0.14, humanize=0.6, breath=0.7)
+    for p, s, d, v in mel:
+        a.add('flute', s + 32, d, p, vel=v * 0.78, pan=0.16, humanize=0.6)
+
+    # 打击乐：手鼓切分 + 铃鼓 + 沙锤
+    for bar in range(16):
+        b = bar * 4
+        a.add_perc('hand_drum', b, vel=0.72, pitch='D2', pan=0.18)
+        a.add_perc('hand_drum', b + 1.5, vel=0.44, pitch='A2', pan=-0.12)
+        a.add_perc('hand_drum', b + 2.5, vel=0.58, pitch='D2', pan=0.12)
+        a.add_perc('tambourine', b + 1, vel=0.38, pan=-0.34)
+        a.add_perc('tambourine', b + 3, vel=0.46, pan=0.30)
+        if bar % 2 == 1:
+            a.add_perc('shaker', b + 3.5, vel=0.28, pan=0.24)
+
+    return apply_form(a, [
+        (0, -4.0), (3, -1.0), (8, -3.2), (12, 0.0), (15, -1.5),
+    ], {
+        # ★ 同 magic_tower / void_mist 的教训：拨弦织体、贝斯、鲁特琴都是
+        #   **地基声部**，不是"事件"。第一版把它们压到 0.30~0.45 且弧线开到 5dB，
+        #   结果安静段短时响度 L10 掉到 -31.53 LUFS —— 低于 -30 门限，
+        #   手机外放上整段被环境噪声埋掉，循环时听成"音乐没了又回来"；
+        #   同时 LRA 顶到 14.93（窗口上限 15），是同一个病的两个症状。
+        #   抬高地板、收浅弧线后，对比仍由旋律（木笛→长笛）与打击乐的进出承担。
+        'strings_pizz': ([(0, 3, 0.55), (8, 12, 0.50)], 1.0),
+        'pizz_bass':    ([(0, 3, 0.62), (8, 12, 0.58)], 1.0),
+        'lute':         ([(0, 3, 0.55), (8, 12, 0.50)], 1.0),
+        'recorder':     [(3, 8, 1.0)],
+        'flute':        [(12, 16, 1.0)],
+        'hand_drum':    [(3, 8, 1.0), (12, 16, 1.0)],
+        'tambourine':   [(3, 8, 1.0), (12, 16, 1.0)],
+        'shaker':       [(12, 16, 1.0)],
+    })
+
+
+# ============================================================
+# 10. 远古遗迹（第 4 章副本）—— E 弗里几亚，庄严古老
+# ============================================================
+
+def compose_ancient_ruins():
+    """
+    弗里几亚的关键音响是 **bII**（这里的 F）：主音上方小二度，
+    是"古老/异教/东方"最直接的色彩，从文艺复兴到现代游戏配乐都用它。
+    配器：低弦乐长音（石殿的重量）+ 圆号远调（空旷）+ 定音鼓（仪式）
+    + 合唱 'oo'（祭祀）。打击乐刻意稀疏 —— 遗迹是安静的，不是战场。
+    """
+    a = M.Arrangement(bpm=88, sr=SR, bars=16)
+    k = M.Key('E', 'phrygian')
+    prog = [0, 1, 0, 5, 0, 1, 3, 0]   # Em F Em C | Em F Am Em
+    bpc = 2
+
+    # 低弦乐长音：石殿的重量
+    lay_harmony(a, k, prog, 16, inst='strings', octave=4, low=48, high=72,
+                vel=0.42, bars_per_chord=bpc, spread=0.30, pan_base=0.0,
+                attack=0.5, release=0.9)
+
+    # 圆号：远处的号角（空旷回响）
+    for ci, deg in enumerate(prog):
+        ch = M.chord_midi(k, deg, 'triad', 3)
+        a.add_chord('horn', ci * bpc * 4, bpc * 4 + 0.3, [ch[0], ch[2]],
+                    vel=0.34, spread=0.14, pan=0.30, attack=0.25, release=0.6)
+
+    # 合唱 'oo'：祭祀感
+    for ci, deg in enumerate(prog):
+        ch = M.chord_midi(k, deg, 'triad', 4)
+        a.add_chord('choir', ci * bpc * 4, bpc * 4 + 0.5, ch,
+                    vel=0.26, spread=0.08, pan=0.0, vowel='oo',
+                    attack=0.7, release=1.0)
+
+    # 低音长音
+    bass_line(a, k, prog, inst='bass', octave=2, bars_per_chord=bpc,
+              pattern=(0, 0), vel=0.62)
+
+    # 竖琴：极稀疏的装饰（石缝里的光）
+    for ci in (1, 3, 5, 7):
+        ch = M.chord_midi(k, prog[ci], 'triad', 5)
+        for i, p in enumerate(ch):
+            a.add('harp', ci * bpc * 4 + 2 + i * 0.25, 0.8, p, vel=0.26, pan=0.40)
+
+    # 主旋律：木笛，级进为主（古老朴素，不要跳进的活泼感）
+    mel = [
+        ('E4', 0, 1.5, 0.72), ('F4', 1.5, 0.5, 0.68), ('E4', 2, 2.0, 0.70),
+        ('C4', 4, 1.5, 0.68), ('D4', 5.5, 0.5, 0.66), ('E4', 6, 2.0, 0.72),
+        ('G4', 8, 1.5, 0.74), ('F4', 9.5, 0.5, 0.70), ('E4', 10, 2.0, 0.72),
+        ('C4', 12, 2.0, 0.68), ('B3', 14, 2.0, 0.66),
+        ('E4', 16, 1.5, 0.74), ('G4', 17.5, 0.5, 0.72), ('A4', 18, 2.0, 0.78),
+        ('G4', 20, 1.5, 0.72), ('F4', 21.5, 0.5, 0.70), ('E4', 22, 2.0, 0.72),
+        ('C4', 24, 1.5, 0.68), ('E4', 25.5, 0.5, 0.70), ('G4', 26, 2.0, 0.74),
+        ('F4', 28, 2.0, 0.70), ('E4', 30, 2.0, 0.66),
+    ]
+    for p, s, d, v in mel:
+        a.add('recorder', s, d, p, vel=v, pan=0.04, humanize=0.5, breath=0.85)
+    # A' 段：圆号叠旋律（遗迹的回声）
+    for p, s, d, v in mel:
+        if d >= 1.5:
+            a.add('horn', s + 32, d, p, vel=v * 0.34, pan=-0.22, attack=0.2,
+                  humanize=0.3)
+
+    # 定音鼓：仪式性的稀疏重击（跟随和声根音）
+    for ci, deg in enumerate(prog):
+        root = k.degree(deg, 2)
+        a.add_perc('timpani', ci * bpc * 4, vel=0.52, pitch=root, pan=0.0)
+        if ci % 2 == 1:
+            a.add_perc('timpani', ci * bpc * 4 + 4, vel=0.34, pitch=root)
+
+    return apply_form(a, [
+        (0, -6.5), (3, -1.5), (8, -5.0), (12, 0.0), (15, -2.5),
+    ], {
+        'strings':  ([(0, 3, 0.45), (8, 12, 0.40)], 1.0),
+        'bass':     ([(0, 3, 0.40), (8, 12, 0.38)], 1.0),
+        'horn':     ([(0, 3, 0.45), (8, 12, 0.50)], 1.0),
+        'choir':    [(4, 8, 1.0), (12, 16, 1.0)],
+        'recorder': [(3, 8, 1.0), (12, 16, 1.0)],
+        'harp':     [(4, 8, 1.0), (12, 16, 1.0)],
+        'timpani':  [(3, 8, 1.0), (12, 16, 1.0)],
+    })
+
+
+# ============================================================
+# 11. 虚空迷雾（终章副本）—— D 小调，阴森不安
+# ============================================================
+
+def compose_void_mist():
+    """
+    这是 BOSS 战之前的"迷雾区"，情绪要**压抑但不释放**：
+      · 弦乐震音 + 半音邻音（不安，但力度留到 BOSS 曲再爆发）
+      · 极低 pad 持续音（雾的"底"）
+      · 稀疏的钟 —— 远处、不知来源，比密集打击乐更瘆人
+      · 合唱 'oo' 低沉长音；旋律半音下行（迷途感）
+    刻意**不用**太鼓/军鼓：那是 The King 的武器。这里留白，
+    否则玩家打到 BOSS 时已经听觉疲劳，BOSS 曲的冲击就没了。
+    """
+    a = M.Arrangement(bpm=82, sr=SR, bars=16)
+    k = M.Key('D', 'minor')
+    prog = [0, 5, 3, 4, 0, 5, 2, 4]   # Dm Bb Gm A | Dm Bb F A
+    bpc = 2
+
+    # 极低 pad：雾的"底"（长音，几乎不动）
+    lay_harmony(a, k, prog, 16, inst='pad', octave=3, low=43, high=60,
+                vel=0.40, bars_per_chord=bpc, spread=0.0, pan_base=0.0,
+                attack=1.2, release=1.4)
+
+    # 弦乐震音 + 半音邻音（不安）
+    for ci, deg in enumerate(prog):
+        ch = M.chord_midi(k, deg, 'triad', 4)
+        v = M.voice_lead(None, ch, low=55, high=72)
+        for i in range(16):          # 2 小节 × 16 个 8 分音符
+            p = v[i % 3] + (1 if i % 4 == 3 else 0)   # 每 4 个音加一个半音邻音
+            a.add('strings_tremolo', ci * bpc * 4 + i * 0.5, 0.85, p,
+                  vel=0.34 if i % 2 == 0 else 0.26,
+                  pan=-0.28 + (i % 3) * 0.26, rate=7.5, depth=0.45)
+
+    # 合唱 'oo'：虚空中的低语
+    for ci, deg in enumerate(prog):
+        ch = M.chord_midi(k, deg, 'triad', 4)
+        a.add_chord('choir', ci * bpc * 4, bpc * 4 + 0.6, [ch[0], ch[2]],
+                    vel=0.22, spread=0.06, pan=0.0, vowel='oo',
+                    attack=0.9, release=1.3)
+
+    # 低音
+    bass_line(a, k, prog, inst='bass', octave=2, bars_per_chord=bpc,
+              pattern=(0, 0), vel=0.60)
+
+    # 钟：稀疏、远处、无规律（迷雾里的方位感丧失）
+    for ci in (1, 4, 6, 7):
+        root = k.degree(prog[ci], 5)
+        a.add('bell', ci * bpc * 4 + 1.5, 2.6, root, vel=0.24,
+              pan=(0.44 if ci % 2 == 0 else -0.40), humanize=0.1)
+
+    # 主旋律：木笛低音区，半音下行
+    mel = [
+        ('D4', 0, 2.0, 0.62),  ('C4', 2, 2.0, 0.60),
+        ('Bb3', 4, 2.0, 0.62), ('A3', 6, 2.0, 0.58),
+        ('D4', 8, 1.5, 0.62),  ('C4', 9.5, 0.5, 0.58), ('Bb3', 10, 2.0, 0.60),
+        ('G3', 12, 2.0, 0.58), ('A3', 14, 2.0, 0.56),
+        ('D4', 16, 2.0, 0.64), ('F4', 18, 2.0, 0.62),
+        ('E4', 20, 1.5, 0.60), ('C4', 21.5, 0.5, 0.58), ('D4', 22, 2.0, 0.60),
+        ('A3', 24, 2.0, 0.58), ('Bb3', 26, 2.0, 0.60),
+        ('A3', 28, 2.0, 0.58), ('D4', 30, 2.0, 0.56),
+    ]
+    for p, s, d, v in mel:
+        a.add('recorder', s, d, p, vel=v, pan=0.06, humanize=0.55, breath=0.9)
+    # A' 段：长笛叠高八度（雾里透出的一线光）
+    for p, s, d, v in mel:
+        a.add('flute', s + 32, d, p, vel=v * 0.30, pan=-0.18, humanize=0.5)
+
+    return apply_form(a, [
+        (0, -5.0), (3, -1.2), (8, -4.0), (12, 0.0), (15, -2.0),
+    ], {
+        # 同 magic_tower：pad / 震音 / 贝斯是"雾"本身，不能断。
+        # 第一版把它们压到 0.40~0.55 且弧线开到 7dB，成品 LRA 15.13 越界
+        # （窗口 10~15）。抬高地板、收浅弧线，对比交给合唱/钟/木笛的进出。
+        'pad':             ([(0, 3, 0.70), (8, 12, 0.66)], 1.0),
+        'strings_tremolo': ([(0, 3, 0.62), (8, 12, 0.58)], 1.0),
+        'bass':            ([(0, 3, 0.60), (8, 12, 0.56)], 1.0),
+        'choir':           [(4, 12, 1.0)],
+        'bell':            [(2, 16, 1.0)],
+        'recorder':        [(3, 8, 1.0), (12, 16, 1.0)],
+        'flute':           [(12, 16, 1.0)],
+    })
+
+
+# ============================================================
+# 12. BOSS 曲 —— D 小调，PvZ「The King」风格（用户点名）
+# ============================================================
+
+def compose_the_king():
+    """
+    用户点名要这首（PvZ Zomboss 主题）。它的辨识度来自三样东西，缺一不可：
+      1. **拨奏 ostinato**：8 分音符持续拨弦，贯穿全曲。这是 The King 的心跳，
+         也是它与普通"管弦 BOSS 曲"最大的区别 —— 它不是长音铺底，是**律动**在推。
+      2. **铜管号角动机**：附点节奏 + 四度上行，英雄气与威胁并存。
+      3. **D 小调 + 半音下行的低音**（D - C - Bb - A）：厄运降临的经典走向。
+
+    与 bgm_boss 拉开定位：bgm_boss 是"半音下行 + 合唱"的教堂式压迫（静态），
+    这首是"拨奏驱动 + 铜管号角"的行进式压迫（推进）。
+
+    ★ 注意：管弦音色库里没有钢琴，原曲的"阴森钢琴独奏引子"用 music_box
+      替代 —— 它的音色同样是"敲击后快速衰减的短音"，能给出那股发条般的阴森感。
+    """
+    a = M.Arrangement(bpm=132, sr=SR, bars=16)
+    k = M.Key('D', 'minor')
+    prog = [0, 5, 2, 6, 0, 5, 3, 4]   # Dm Bb F C | Dm Bb Gm A
+    bpc = 2
+
+    # === 1. 拨奏 ostinato：全曲的心脏（8 分音符，跟随和声）===
+    for ci, deg in enumerate(prog):
+        ch = M.chord_midi(k, deg, 'triad', 4)
+        v = M.voice_lead(None, ch, low=55, high=74)
+        for i in range(16):          # 2 小节 × 16 个 8 分音符
+            p = v[i % 3]
+            a.add('strings_pizz', ci * bpc * 4 + i * 0.5, 0.38, p,
+                  vel=(0.56 if i % 2 == 0 else 0.40),
+                  pan=-0.30 + (i % 4) * 0.20, humanize=0.35)
+
+    # === 2. 低音：半音下行 D - C - Bb - A（厄运降临）===
+    for ci, deg in enumerate(prog):
+        root = k.degree(deg, 2)
+        a.add('bass', ci * bpc * 4, 1.9, root, vel=0.70, pan=0.0)
+        a.add('bass', ci * bpc * 4 + 2, 1.9, root + 7, vel=0.56, pan=0.0)
+
+    # === 3. 低音铜管长音（号角的地基）===
+    for ci, deg in enumerate(prog):
+        ch = M.chord_midi(k, deg, 'triad', 3)
+        a.add_chord('horn', ci * bpc * 4, bpc * 4 + 0.2, [ch[0], ch[2]],
+                    vel=0.40, spread=0.12, pan=0.28, attack=0.18, release=0.5)
+
+    # === 4. 铜管号角动机（The King 的"脸"）===
+    # 附点节奏 + 四度上行，重复 = 记忆点。音区抬到 D5~A5（小号最有穿透力的一段），
+    # 避开低音鼓与贝斯占据的 100Hz 以下区域 —— 手机外放才听得见。
+    motif = [('D5', 0, 0.5, 0.95), ('F5', 0.5, 0.25, 0.85), ('A5', 0.75, 1.25, 1.0),
+             ('G5', 2, 0.5, 0.88), ('F5', 2.5, 0.5, 0.86), ('E5', 3, 1.0, 0.90)]
+    for rep in range(16):            # 每小节一次，共 16 次
+        off = rep * 4
+        for p, s, d, v in motif:
+            a.add('brass_stab', off + s, d, p,
+                  vel=v * (1.0 if rep % 2 == 0 else 0.90),
+                  pan=(-0.18 if rep % 2 == 0 else 0.18), humanize=0.18)
+            # 后半段叠高八度圆号，把情绪推上去
+            if rep >= 8:
+                a.add('horn', off + s, d + 0.5, p, vel=v * 0.36,
+                      pan=(0.20 if rep % 2 == 0 else -0.20), attack=0.1, humanize=0.2)
+
+    # === 5. music_box：阴森的短音动机（替代原曲的钢琴引子）===
+    for ci, deg in enumerate(prog):
+        ch = M.chord_midi(k, deg, 'triad', 5)
+        a.add('music_box', ci * bpc * 4, 0.6, ch[0], vel=0.30, pan=0.38, humanize=0.2)
+        a.add('music_box', ci * bpc * 4 + 3, 0.6, ch[1], vel=0.24, pan=-0.34, humanize=0.2)
+        a.add('music_box', ci * bpc * 4 + 6, 0.6, ch[2], vel=0.22, pan=0.30, humanize=0.2)
+
+    # === 6. 合唱 'oo'：BOSS 的仪式感 ===
+    for ci, deg in enumerate(prog):
+        ch = M.chord_midi(k, deg, 'triad', 4)
+        a.add_chord('choir', ci * bpc * 4, bpc * 4 + 0.5, [ch[0], ch[2]],
+                    vel=0.30, spread=0.08, pan=0.0, vowel='oo',
+                    attack=0.6, release=0.9)
+
+    # === 7. 打击乐：行进鼓（The King 的驱动）===
+    # 太鼓音高用 root-5 而不是 root-12：真实太鼓基频 60~90Hz，
+    # 手机微型喇叭 100Hz 以下以约 12dB/oct 衰减，root-12 那段能量基本白给。
+    for ci, deg in enumerate(prog):
+        b = ci * bpc * 4      # 该和弦的起始拍
+        bar = ci * bpc        # 该和弦的起始小节（bpc=2 → 每个和弦 2 小节）
+        root = k.degree(deg, 2)
+        a.add_perc('taiko', b, vel=0.82, pitch=root - 5, pan=0.0)          # 正拍
+        a.add_perc('taiko', b + 2, vel=0.58, pitch=root - 5, pan=0.10)
+        a.add_perc('taiko', b + 5.5, vel=0.50, pitch=root - 5, pan=-0.10)  # 切分
+        a.add_perc('snare', b + 4, vel=0.72, pan=0.22)
+        a.add_perc('snare', b + 7, vel=0.58, pan=-0.18)
+        # 沙锤当 hi-hat（8 分音符，保持律动）
+        for i in range(16):
+            a.add_perc('shaker', b + i * 0.5 + 0.25, vel=0.24, pan=0.30)
+        # ★ 镲只打在 A 段与 A' 段的**进入点**（bar 2 / bar 12）。
+        #   曾写成 `ci % 4 == 0` —— 那落点是 bar 0 与 bar 8：bar 0 在引子里
+        #   （引子不该有 crash），bar 8 又是桥段起点、恰好落在门控区间外。
+        #   而 cymbal 的门控区间是 (2,8)/(12,16)，于是两记镲**全部被静音**，
+        #   段落进入的"落点"整个塌掉（回归 [1] 抓到：门控把整个声部静音了）。
+        #   改成按小节号显式指定，与门控区间对齐。
+        if bar in (2, 12):
+            a.add_perc('cymbal', b, vel=0.80, pan=0.32, crash=True)
+
+    # === 曲式：16 小节 引子 - A - 桥 - A' ===
+    # intro(0-2)：只有拨奏 + 低音铜管 + music_box（BOSS 从雾里走出来，不给重击）
+    # A(2-8)    ：铜管号角动机 + 全套行进鼓
+    # 桥(8-12)  ：撤掉鼓与铜管，只留拨奏与合唱 —— 死寂，为后段留动态空间
+    # A'(12-16) ：号角 + 圆号叠八度 + 全套鼓，全曲顶点
+    return apply_form(a, [
+        (0, -7.5), (2, -1.0), (8, -6.5), (12, 0.0), (15, -1.5),
+    ], {
+        # 拨奏 ostinato 与低音是地基，全曲在场、稀疏段减益（断掉就不是 The King 了）
+        'strings_pizz': ([(0, 2, 0.50), (8, 12, 0.45)], 1.0),
+        'bass':         ([(0, 2, 0.45), (8, 12, 0.42)], 1.0),
+        'horn':         ([(0, 2, 0.50), (8, 12, 0.45)], 1.0),
+        'brass_stab':   [(2, 8, 1.0), (12, 16, 1.0)],
+        'taiko':        [(2, 8, 1.0), (12, 16, 1.0)],
+        'snare':        [(2, 8, 1.0), (12, 16, 1.0)],
+        'shaker':       [(2, 8, 1.0), (12, 16, 1.0)],
+        'cymbal':       [(2, 8, 1.0), (12, 16, 1.0)],
+        # music_box 只属于引子与桥段（阴森的留白），进主段就让位给铜管
+        'music_box':    [(0, 2, 1.0), (8, 12, 1.0)],
+        # 合唱在桥段顶上来（死寂里只剩人声最压迫），A' 段退让给铜管
+        'choir':        [(4, 12, 1.0)],
+    })
+
+
+# ============================================================
 # 曲目注册表
 # ============================================================
 
@@ -908,6 +1399,14 @@ TRACKS = [
     ('bgm_battle',    compose_battle,    'battle',  True),
     ('bgm_boss',      compose_boss,      'boss',    True),
     ('bgm_victory',   compose_victory,   'victory', False),
+    # —— 副本专属环境曲（每个副本一首，不再互相复用） ——
+    # 顺序即曲目表的语义顺序：菜单 → 城镇 → 野外 → 副本 1~5 → 战斗 → BOSS → 胜利
+    ('bgm_magic_tower',   compose_magic_tower,   'magic_tower',   True),
+    ('bgm_merchant_town', compose_merchant_town, 'merchant_town', True),
+    ('bgm_ancient_ruins', compose_ancient_ruins, 'ancient_ruins', True),
+    ('bgm_void_mist',     compose_void_mist,     'void_mist',     True),
+    # —— BOSS 专属曲（PvZ "The King" 风格，用户点名） ——
+    ('bgm_the_king',      compose_the_king,      'the_king',      True),
 ]
 
 
