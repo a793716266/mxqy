@@ -54,13 +54,15 @@ export class CharacterState {
     this.baseMaxHp = heroData.maxHp
     this.baseMaxMp = heroData.maxMp
     this.baseAtk = heroData.atk
+    this.baseMatk = heroData.matk || 0   // ★ 法强基础值（法师词条装备 matk 加成的载体）
     this.baseDef = heroData.def
     this.baseSpd = heroData.spd
-    
+
     // 当前属性（包含等级加成）
     this.maxHp = heroData.maxHp
     this.maxMp = heroData.maxMp
     this.atk = heroData.atk
+    this.matk = this.baseMatk
     this.def = heroData.def
     this.spd = heroData.spd
     
@@ -106,11 +108,12 @@ export class CharacterState {
    */
   _applyLevelUp() {
     const growth = GROWTH_RATE[this.role] || GROWTH_RATE.warrior
-    
-    // 属性成长
+
+    // 属性成长（matk 法强跟随 atk 成长率）
     this.maxHp = Math.floor(this.baseMaxHp * (1 + growth.hp * (this.level - 1)))
     this.maxMp = Math.floor(this.baseMaxMp * (1 + growth.mp * (this.level - 1)))
     this.atk = Math.floor(this.baseAtk * (1 + growth.atk * (this.level - 1)))
+    this.matk = Math.floor(this.baseMatk * (1 + growth.atk * (this.level - 1)))
     this.def = Math.floor(this.baseDef * (1 + growth.def * (this.level - 1)))
     this.spd = Math.floor(this.baseSpd * (1 + growth.spd * (this.level - 1)))
     
@@ -159,18 +162,19 @@ export class CharacterState {
       this.maxExp = Math.floor(EXP_TABLE[10] * Math.pow(1.3, targetLevel - 10))
     }
     
-    // 重新计算属性
+    // 重新计算属性（matk 法强跟随 atk 成长率）
     const growth = GROWTH_RATE[this.role] || GROWTH_RATE.warrior
     this.maxHp = Math.floor(this.baseMaxHp * (1 + growth.hp * (this.level - 1)))
     this.maxMp = Math.floor(this.baseMaxMp * (1 + growth.mp * (this.level - 1)))
     this.atk = Math.floor(this.baseAtk * (1 + growth.atk * (this.level - 1)))
+    this.matk = Math.floor(this.baseMatk * (1 + growth.atk * (this.level - 1)))
     this.def = Math.floor(this.baseDef * (1 + growth.def * (this.level - 1)))
     this.spd = Math.floor(this.baseSpd * (1 + growth.spd * (this.level - 1)))
-    
+
     // 恢复满状态
     this.hp = this.maxHp
     this.mp = this.maxMp
-    
+
     console.log(`[CharacterState] ${this.name} 测试等级: Lv.${oldLevel} -> Lv.${this.level}`)
     console.log(`  属性: HP=${this.maxHp}, MP=${this.maxMp}, ATK=${this.atk}, DEF=${this.def}, SPD=${this.spd}`)
     
@@ -212,11 +216,12 @@ export class CharacterState {
     state.exp = data.exp
     state.maxExp = EXP_TABLE[data.level] || EXP_TABLE[10]
     
-    // 重新计算属性
+    // 重新计算属性（matk 法强跟随 atk 成长率）
     const growth = GROWTH_RATE[state.role] || GROWTH_RATE.warrior
     state.maxHp = Math.floor(state.baseMaxHp * (1 + growth.hp * (state.level - 1)))
     state.maxMp = Math.floor(state.baseMaxMp * (1 + growth.mp * (state.level - 1)))
     state.atk = Math.floor(state.baseAtk * (1 + growth.atk * (state.level - 1)))
+    state.matk = Math.floor(state.baseMatk * (1 + growth.atk * (state.level - 1)))
     state.def = Math.floor(state.baseDef * (1 + growth.def * (state.level - 1)))
     state.spd = Math.floor(state.baseSpd * (1 + growth.spd * (state.level - 1)))
     

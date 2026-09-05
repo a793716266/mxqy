@@ -46,3 +46,9 @@ tools/images/_backup_originals/
 # 两者都不入库 —— 一是体积，二是污染 git status 后容易被 `git add .` 误带进去。
 # 真正交付给玩家的是 subpackages/sound/，那个必须入库。
 tools/audio/out/
+
+# 验证预览产物 / 复盘文档（可再生）
+outputs/
+
+# 本地会话记忆（不入库）
+.workbuddy/

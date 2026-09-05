@@ -562,8 +562,10 @@ export function installFieldBattleSystem(FieldSceneClass) {
                 this._applyMonsterStatus(m, 'atk_down', { duration: pd.debuff.duration || 3, value: pd.debuff.value || 0.3 }, pd.hero)
               }
               // ★ 吸血 / 治愈冲击：按伤害比例治疗施法者
-              if (pd.healCasterPct && pd.healCasterPct > 0 && pd.hero) {
-                const heal = Math.round((pd.damage || 0) * pd.healCasterPct)
+              //   吸血总量 = 技能自带回血比例（drain/heal_strike）+ 装备 lifesteal 词条
+              const _lsTotal = (pd.healCasterPct || 0) + ((pd.hero && pd.hero.lifesteal) || 0)
+              if (_lsTotal > 0 && pd.hero) {
+                const heal = Math.round((pd.damage || 0) * _lsTotal)
                 if (heal > 0) {
                   pd.hero.hp = Math.min(pd.hero.maxHp, (pd.hero.hp || 0) + heal)
                   const hp = (typeof pd.hero.getPos === 'function') ? pd.hero.getPos() : { x: this.playerX, y: this.playerY }
@@ -965,7 +967,7 @@ export function installFieldBattleSystem(FieldSceneClass) {
         const sb = this.battleSystem.skillButtons.find(b => b.skill === skill)
         if (sb) {
           const cdSec = skill.cooldown || 3
-          sb.cooldown = cdSec * 1000
+          sb.cooldown = cdSec * 1000 * this._heroCdrMult(mainHero)   // ★ 装备 CDR 词条
           sb.cooldownMax = sb.cooldown
         }
       }
@@ -1088,7 +1090,7 @@ export function installFieldBattleSystem(FieldSceneClass) {
         const sb = this.battleSystem.skillButtons.find(b => b.skill === skill)
         if (sb) {
           const cdSec = skill.cooldown || 3
-          sb.cooldown = cdSec * 1000
+          sb.cooldown = cdSec * 1000 * this._heroCdrMult(mainHero)   // ★ 装备 CDR 词条
           sb.cooldownMax = sb.cooldown
         }
         mainHero.mp = Math.max(0, mainHero.mp - (skill.mpCost || 0))
@@ -1134,7 +1136,7 @@ export function installFieldBattleSystem(FieldSceneClass) {
     if (skill && (skill.id === 'shield_bash' || skill.type === 'attack_heal')) {
       if (this.battleSystem.skillButtons) {
         const sb = this.battleSystem.skillButtons.find(b => b.skill === skill)
-        if (sb) { sb.cooldown = (skill.cooldown || 3) * 1000; sb.cooldownMax = sb.cooldownMax || sb.cooldown }
+        if (sb) { sb.cooldown = (skill.cooldown || 3) * 1000 * this._heroCdrMult(mainHero); sb.cooldownMax = sb.cooldownMax || sb.cooldown }
       }
       return
     }
@@ -1160,7 +1162,7 @@ export function installFieldBattleSystem(FieldSceneClass) {
       const sb = this.battleSystem.skillButtons.find(b => b.skill === skill)
       if (sb) {
         const cdSec = skill.cooldown || 3
-        sb.cooldown = cdSec * 1000   // 秒 → 毫秒
+        sb.cooldown = cdSec * 1000 * this._heroCdrMult(mainHero)   // 秒 → 毫秒 + ★ 装备 CDR 词条
         sb.cooldownMax = sb.cooldownMax || sb.cooldown  // 记录最大值用于渲染比例
       }
     }
@@ -1487,6 +1489,28 @@ export function installFieldBattleSystem(FieldSceneClass) {
   //   （确保玩家手动攻击 / AI 队友攻击 / 技能 / 持续伤害 都让面板跟随当前交战的怪，
   //    解决"面板只随玩家手动锁定才更新、AI 输出时血条跳变无扣血效果"的问题）
   //   opts: { knockback?:boolean, fromX?, fromY?, knockbackDistance? } —— 直击类伤害传 knockback 触发受击轻推
+  // ★ 装备 CDR（冷却缩减）：技能 CD 统一乘区，下限保留 20% CD（防 0 CD 无限释放）
+  proto._heroCdrMult = function(hero) {
+    const c = (hero && hero.cdr) || 0
+    return Math.max(0.2, 1 - Math.min(0.8, c))
+  }
+
+  // ★ 装备吸血：按本次造成伤害比例回血 + 绿色飘字（hero 为攻击者）
+  proto._applyLifesteal = function(hero, dealt) {
+    if (!hero || !(hero.lifesteal > 0) || !(dealt > 0)) return
+    if (hero.alive === false || (hero.hp || 0) <= 0) return
+    const heal = Math.round(dealt * hero.lifesteal)
+    if (heal <= 0) return
+    hero.hp = Math.min(hero.maxHp, (hero.hp || 0) + heal)
+    const hp = (typeof hero.getPos === 'function') ? hero.getPos() : { x: this.playerX, y: this.playerY }
+    if (this.battleSystem && this.battleSystem.damageTexts) {
+      this.battleSystem.damageTexts.push({
+        text: `+${heal}`, x: hp.x - this.cameraX, y: hp.y - this.cameraY - 60 * this.dpr,
+        color: '#2ed573', life: 1.0, maxLife: 1.0, _startY: hp.y - this.cameraY - 60 * this.dpr
+      })
+    }
+  }
+
   proto._damageMonster = function(m, dmg, opts) {
     if (!m) return 0
     // ★ 隐身无敌（暗影突袭）：隐身期间完全免疫，不掉血、不被打断、不锁目标
@@ -2328,8 +2352,8 @@ export function installFieldBattleSystem(FieldSceneClass) {
       : (skill.effect === 'stun' || skill.type === 'attack') ? 2.5
       : (skill.type === 'buff' || skill.type === 'heal') ? (skill.cooldown || 3)
       : 2
-    hero._aiSkillsCD[skill.id] = skill.cooldown || defaultCD
-    hero._aiSkillLock = skill.cooldown || defaultCD
+    hero._aiSkillsCD[skill.id] = (skill.cooldown || defaultCD) * this._heroCdrMult(hero)   // ★ 装备 CDR 词条
+    hero._aiSkillLock = (skill.cooldown || defaultCD) * this._heroCdrMult(hero)
 
     // ★ 施法 token：标记本次 AI 施法，供"非霸体技能被打断时取消待结算效果"使用
     hero._castToken = (hero._castToken || 0) + 1
@@ -3324,6 +3348,7 @@ export function installFieldBattleSystem(FieldSceneClass) {
             const dmg = Math.max(1, Math.floor(this._getHeroAtk(p.hero) * (p.power || 1.4) - Math.floor(m.def * 0.5)))
             const finalDmg = isCrit ? Math.floor(dmg * 1.5) : dmg
             this._damageMonster(m, finalDmg, { knockback: true, fromX: p.x, fromY: p.y })
+            this._applyLifesteal(p.hero, finalDmg)
             this._pushDamageText(m, finalDmg, isCrit, '#aee6ff')
             if (p._fx && p._fx.playHitEffect) {
               p._fx.playHitEffect('magic_impact', m.x, m.y - 30 * this.dpr, this.dpr, null, { world: true })
@@ -3355,6 +3380,7 @@ export function installFieldBattleSystem(FieldSceneClass) {
           dmg = this._calcSkillDamageToMonster(hitMonster, p.skill, p.hero, isCrit)
         }
         this._damageMonster(hitMonster, dmg, { knockback: true, fromX: p.x, fromY: p.y })
+        this._applyLifesteal(p.hero, dmg)
         // ★ 命中打击感：顿帧 + 震屏 + 闪白 + 命中音
         //   技能弹道传入 skill.id → 播放元素专属命中音；普攻弹道走通用法术命中音
         this._onHitFeedback(hitMonster, isCrit, 'magic',

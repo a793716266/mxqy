@@ -137,14 +137,14 @@ export class EquipmentPanel {
         const unequipBtnY = this.panelY + this.panelHeight - 70 * this.dpr
         const unequipBtnW = 150 * this.dpr
         const unequipBtnH = 45 * this.dpr
-        
+
         if (this._isInRect(tx, ty, unequipBtnX, unequipBtnY, unequipBtnW, unequipBtnH)) {
           this._unequipItem()
           return true
         }
       }
     }
-    
+
     return true
   }
   
@@ -177,15 +177,15 @@ export class EquipmentPanel {
     if (!this.selectedSlot) return
     
     equipmentManager.unequip(this.character, this.selectedSlot)
-    
+
     this.selectedSlot = null
-    
+
     // 保存数据
     const charData = charStateManager.serialize()
     this.game.data.set('characterStates', charData)
     this.game.data.set('equipmentData', equipmentManager.serialize())
   }
-  
+
   /**
    * 处理滚动
    */
@@ -240,7 +240,7 @@ export class EquipmentPanel {
     ctx.fillStyle = '#ffffff'
     ctx.textAlign = 'center'
     ctx.fillText(`装备管理 - ${this.character.name}`, this.panelX + this.panelWidth / 2, this.panelY + 40 * this.dpr)
-    
+
     // 关闭按钮
     const closeBtnX = this.panelX + this.panelWidth - 50 * this.dpr
     const closeBtnY = this.panelY + 15 * this.dpr
@@ -252,16 +252,16 @@ export class EquipmentPanel {
     ctx.fillStyle = '#ffffff'
     ctx.textAlign = 'center'
     ctx.fillText('×', closeBtnX + 20 * this.dpr, closeBtnY + 28 * this.dpr)
-    
+
     // 渲染装备槽
     this._renderEquipmentSlots(ctx)
-    
+
     // 渲染背包
     this._renderInventory(ctx)
-    
+
     // 渲染装备详情
     this._renderDetails(ctx)
-    
+
     // 渲染操作按钮
     this._renderActionButtons(ctx)
   }
@@ -326,10 +326,11 @@ export class EquipmentPanel {
       // 装备名称（如果有）
       if (equipment) {
         const rarityConfig = RARITY_CONFIG[equipment.rarity]
+        const enhLv = equipmentManager.getEnhanceLevel(equipment.id)
         ctx.font = `${12 * this.dpr}px sans-serif`
         ctx.fillStyle = rarityConfig.color
         ctx.textAlign = 'left'
-        ctx.fillText(equipment.name, slotX + slotSize + 10 * this.dpr, slotYPos + 30 * this.dpr)
+        ctx.fillText(equipment.name + (enhLv > 0 ? ` +${enhLv}` : ''), slotX + slotSize + 10 * this.dpr, slotYPos + 30 * this.dpr)
         
         // 属性简略
         ctx.font = `${11 * this.dpr}px sans-serif`
@@ -451,12 +452,13 @@ export class EquipmentPanel {
     }
     
     const rarityConfig = RARITY_CONFIG[item.rarity]
-    
-    // 名称
+    const enhLv = equipmentManager.getEnhanceLevel(item.id)
+
+    // 名称（含强化等级）
     ctx.font = `bold ${16 * this.dpr}px sans-serif`
     ctx.fillStyle = rarityConfig.color
     ctx.textAlign = 'left'
-    ctx.fillText(`${rarityConfig.name} ${item.name}`, detailX, detailY)
+    ctx.fillText(`${rarityConfig.name} ${item.name}` + (enhLv > 0 ? ` +${enhLv}` : ''), detailX, detailY)
     
     // 描述
     ctx.font = `${12 * this.dpr}px sans-serif`

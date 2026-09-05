@@ -14,6 +14,7 @@ import { HEROES } from '../data/heroes.js'
 import { FieldMovement } from '../utils/field-movement.js'
 import { equipmentManager } from '../managers/equipment-manager.js'
 import { EquipmentPanel } from '../ui/equipment-panel.js'
+import { EnhancePanel } from '../ui/enhance-panel.js'
 import { CharacterInfoPanel } from '../ui/character-info-panel.js'
 import { Renderer2D5 } from '../engine/renderer-2.5d.js'
 import {
@@ -80,6 +81,7 @@ export class TownScene {
     
     // 装备面板
     this.equipmentPanel = new EquipmentPanel(game, this.party[0])
+    this.enhancePanel = new EnhancePanel(game)
 
     // 角色信息面板（队伍状态条点击成员 → 打开详情）
     this.charInfoPanel = new CharacterInfoPanel(game, this.party[0])
@@ -208,6 +210,19 @@ export class TownScene {
           { text: '（药店功能开发中...）' }
         ],
         interactionRadius: 55 * dpr
+      },
+      {
+        // ★ 装备强化器（类似 DNF 强化机）：走近交互 → 打开强化面板
+        id: 'enhance_machine',
+        name: '装备强化器',
+        machine: true,
+        x: TOWN_NPC_POSITIONS.enhance_machine.x * dpr,
+        y: TOWN_NPC_POSITIONS.enhance_machine.y * dpr,
+        color: '#f39c12',
+        dialogues: [
+          { action: 'open_enhance' }
+        ],
+        interactionRadius: 60 * dpr
       }
     ]
   }
@@ -277,12 +292,29 @@ export class TownScene {
           this.equipmentPanel.handleTap(tap.x, tap.y)
         }
       }
-      
+
       if (this.game.input.scrollY) {
         this.equipmentPanel.handleScroll(this.game.input.scrollY)
         this.game.input.scrollY = 0
       }
-      
+
+      return
+    }
+
+    // 如果强化器面板打开，只处理面板输入
+    if (this.enhancePanel.active) {
+      if (this.game.input.taps.length > 0) {
+        const tap = this.game.input.consumeTap()
+        if (tap) {
+          this.enhancePanel.handleTap(tap.x, tap.y)
+        }
+      }
+
+      if (this.game.input.scrollY) {
+        this.enhancePanel.handleScroll(this.game.input.scrollY)
+        this.game.input.scrollY = 0
+      }
+
       return
     }
     
@@ -405,6 +437,11 @@ export class TownScene {
             this.dialogue = null
             this.currentDialogueNPC = null
             this.equipmentPanel.open(charStateManager.getAllCharacters()[0])
+            return
+          case 'open_enhance':
+            this.dialogue = null
+            this.currentDialogueNPC = null
+            this.enhancePanel.open()
             return
         }
       }
@@ -568,7 +605,7 @@ export class TownScene {
     this.movement.renderJoystick(ctx)
     
     // 6. UI元素
-    if (this.nearbyNPC && !this.dialogue && !this.equipmentPanel.active && !this.exploreMenu) {
+    if (this.nearbyNPC && !this.dialogue && !this.equipmentPanel.active && !this.enhancePanel.active && !this.exploreMenu) {
       this._renderInteractionTip(ctx)
     }
     
@@ -577,6 +614,7 @@ export class TownScene {
     }
     
     this.equipmentPanel.render(ctx)
+    if (this.enhancePanel.active) this.enhancePanel.render(ctx)
     
     if (this.exploreMenu) {
       this._renderExploreMenu(ctx)
@@ -841,6 +879,44 @@ export class TownScene {
       ctx.arc(sx, sy, npc.interactionRadius || 50 * dpr, 0, Math.PI * 2)
       ctx.fillStyle = `${npc.color || '#ffffff'}33`
       ctx.fill()
+    }
+
+    // ★ 强化器：绘制实体机器（铁灰舱体 + 橙色发光核心 + 提示箭头）
+    if (npc.machine) {
+      const w = 70 * dpr, h = 96 * dpr
+      const bx = sx - w / 2, by = sy - h / 2
+      // 舱体
+      ctx.fillStyle = '#3b4252'
+      ctx.beginPath()
+      this._roundRect(ctx, bx, by, w, h, 10 * dpr)
+      ctx.fill()
+      ctx.strokeStyle = '#f39c12'
+      ctx.lineWidth = 3 * dpr
+      ctx.stroke()
+      // 发光核心
+      const cx = sx, cy = by + h * 0.42
+      const glow = ctx.createRadialGradient(cx, cy, 2 * dpr, cx, cy, 20 * dpr)
+      glow.addColorStop(0, '#fff3c4')
+      glow.addColorStop(0.5, '#f39c12')
+      glow.addColorStop(1, 'rgba(243,156,18,0)')
+      ctx.fillStyle = glow
+      ctx.beginPath()
+      ctx.arc(cx, cy, 20 * dpr, 0, Math.PI * 2)
+      ctx.fill()
+      // 底座
+      ctx.fillStyle = '#2b303b'
+      ctx.beginPath()
+      this._roundRect(ctx, bx - 6 * dpr, by + h - 12 * dpr, w + 12 * dpr, 16 * dpr, 6 * dpr)
+      ctx.fill()
+      // 名称标签
+      ctx.font = `bold ${14 * dpr}px sans-serif`
+      ctx.textAlign = 'center'
+      ctx.fillStyle = '#ffffff'
+      ctx.strokeStyle = '#000000'
+      ctx.lineWidth = 3
+      ctx.strokeText(npc.name || 'Unknown', sx, sy - h / 2 - 10 * dpr)
+      ctx.fillText(npc.name || 'Unknown', sx, sy - h / 2 - 10 * dpr)
+      return
     }
 
     // ★ 村长精灵：优先用真实角色立绘（93×120 透明 PNG），资源未加载则降级 emoji
