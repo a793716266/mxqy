@@ -22,6 +22,7 @@ import { ENEMIES_CH1, getEnemyByLevel } from '../data/enemies.js'
 import { HEROES } from '../data/heroes.js'
 import { charStateManager, CharacterState } from '../data/character-state.js'
 import { getBossDrop, getRandomEquipment } from '../data/equipment.js'
+import { getBossBGM } from '../data/boss-bgm.js'
 import { Renderer2D5 } from '../engine/renderer-2.5d.js'
 import { CollisionEngine } from '../engine/collision-engine.js'
 import { SceneBase } from '../core/scene-base.js'
@@ -269,7 +270,9 @@ export class BattleScene extends SceneBase {
     //   _explicitBGM 保持 false，setScene 照常兜底播 bgm_battle。
     if (this.enemies.some(e => e && e.isBoss)) {
       if (this.game.audio && this.game.audio.playBGM) {
-        this.game.audio.playBGM('bgm_the_king')
+        // ★ 同样走映射表：每个 BOSS 有自己的曲子，不要硬编码成一首
+        const boss = this.enemies.find(e => e && e.isBoss)
+        this.game.audio.playBGM(getBossBGM(boss && (boss.enemyId || boss.id)))
       }
     }
 

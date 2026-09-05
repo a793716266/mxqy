@@ -5,7 +5,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), 'too
 import build_bgm as B
 from meow_audio import dsp as D, music as M
 
-name = sys.argv[1] if len(sys.argv) > 1 else 'bgm_the_king'
+name = sys.argv[1] if len(sys.argv) > 1 else 'bgm_boss_healer'
 entry = [t for t in B.TRACKS if t[0] == name][0]
 a = entry[1]()
 preset, loop = entry[2], entry[3]

@@ -33,8 +33,15 @@ export const SOUNDS = {
   bgm_merchant_town: BGM_DIR + 'bgm_merchant_town.mp3', // 商人镇（D 多利亚，异域集市）
   bgm_ancient_ruins: BGM_DIR + 'bgm_ancient_ruins.mp3', // 远古遗迹（E 弗里几亚，庄严古老）
   bgm_void_mist:     BGM_DIR + 'bgm_void_mist.mp3',     // 虚空迷雾（D 小调，阴森压抑）
-  // ★ BOSS 专属：遇到 BOSS 时切到这首（battle-scene.init 内按 enemy.isBoss 触发）
-  bgm_the_king:      BGM_DIR + 'bgm_the_king.mp3',      // BOSS 战（D 小调，PvZ "The King" 风格）
+  // ==================== BOSS 专属 BGM：每个 BOSS 一首，互不复用 ====================
+  //   曲目 id 与 scripts/data/boss-bgm.js 的映射表一一对应（三方一致的唯一事实源）。
+  //   field-scene._updateBossBGM() 按 BOSS 距离切歌，battle-scene.init() 是兜底路径。
+  bgm_boss_healer:   BGM_DIR + 'bgm_boss_healer.mp3',   // ①迷途的治愈猫（PvZ 僵尸博士风格，120BPM 永动 16 分）
+  bgm_boss_crystal:  BGM_DIR + 'bgm_boss_crystal.mp3',  // ②水晶法师（钟琴 + 机械钟表，无鼓组）
+  bgm_boss_merchant: BGM_DIR + 'bgm_boss_merchant.mp3', // ③黑金奸商（3/4 市集圆舞曲，D 弗里几亚属）
+  bgm_boss_warden:   BGM_DIR + 'bgm_boss_warden.mp3',   // ④远古守望者（铜管众赞歌 + 定音鼓，96BPM）
+  bgm_boss_void:     BGM_DIR + 'bgm_boss_void.mp3',     // ⑤虚空之主（半音上行低音，前 8 小节无鼓）
+  bgm_boss_darkcat:  BGM_DIR + 'bgm_boss_darkcat.mp3',  // ⑥暗影猫王（八音盒摇篮曲 + 三全音）
 
   // ==================== UI 交互音效 ====================
   ui_click:      SFX_DIR + 'ui/ui_click.mp3',       // 按钮点击（木质短促）

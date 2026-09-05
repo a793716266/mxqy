@@ -14,6 +14,7 @@ import { MAGIC_TOWER_DUNGEON } from '../data/magic-tower-dungeon.js'
 import { MERCHANT_TOWN_DUNGEON } from '../data/merchant-town-dungeon.js'
 import { ANCIENT_RUINS_DUNGEON } from '../data/ancient-ruins-dungeon.js'
 import { VOID_MIST_DUNGEON } from '../data/void-mist-dungeon.js'
+import { getBossBGM, BOSS_BGM } from '../data/boss-bgm.js'
 import { charStateManager } from '../data/character-state.js'
 import { CharacterState } from '../data/character-state.js'
 import { CharacterInfoPanel } from '../ui/character-info-panel.js'
@@ -888,7 +889,6 @@ export class FieldScene extends SceneBase {
   _updateBossBGM() {
     const a = this.game && this.game.audio
     if (!a || typeof a.playBGM !== 'function') return
-    if (!this.areaInfo || !this.areaInfo.isDungeon) return
 
     const dungeonBgm = (this._dungeonCfg && this._dungeonCfg.bgm) || 'bgm_grassland'
 
@@ -909,6 +909,17 @@ export class FieldScene extends SceneBase {
       return
     }
 
+    const bossKey = boss.enemyId || boss.id
+    // ★ 只在「登记了专属曲」的 BOSS 上切 BOSS 曲。
+    //   曾经写死 isDungeon 才切，导致洞穴 BOSS dark_cat_king（isDungeon:false）
+    //   永远拿不到自己的 bgm_boss_darkcat；而野外常规 Boss（stray_leader，未登记）
+    //   一旦被放开又会顶成默认曲（又是"所有 Boss 同一首"的伪专属）。
+    //   → 改成「登记了专属曲 = 一定有专属曲」，未登记的一律沿用场景曲。
+    if (!Object.prototype.hasOwnProperty.call(BOSS_BGM, bossKey)) {
+      this._bossBgmOn = false
+      return
+    }
+
     const dx = this.playerX - boss.x
     const dy = this.playerY - boss.y
     const dist = Math.sqrt(dx * dx + dy * dy)
@@ -918,7 +929,10 @@ export class FieldScene extends SceneBase {
 
     if (on !== this._bossBgmOn) {
       this._bossBgmOn = on
-      a.playBGM(on ? 'bgm_the_king' : dungeonBgm)
+      // ★ 每个 BOSS 有自己的专属曲 —— 走映射表，不要硬编码某一首。
+      //   （曾经硬编码 'bgm_the_king'，导致 6 个 BOSS 全放同一首。）
+      const bossBgm = getBossBGM(bossKey)
+      a.playBGM(on ? bossBgm : dungeonBgm)
     }
   }
 

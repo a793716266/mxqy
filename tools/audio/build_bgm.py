@@ -52,11 +52,21 @@ REVERB = {
     'ancient_ruins': dict(mix=0.28, decay_s=2.4, size=1.05, damp_hz=3600, predelay_s=0.020),
     # 虚空迷雾：最大空间、阻尼最低（雾气弥漫，声音化不开）
     'void_mist':     dict(mix=0.36, decay_s=3.0, size=1.30, damp_hz=3000, predelay_s=0.028),
-    # The King（BOSS）：大但收得住 —— 铜管要宏大，但鼓组不能被混响拖散
-    # ★ 电子鼓机必须用**紧房间**，不能用大厅。第一版给了 2.8s 衰减（按交响
-    #   BOSS 曲的直觉配的），结果拍手和踩镲的起音被混响尾巴糊掉 —— 鼓机的
-    #   辨识度全在 attack 上，一糊就变成"有节奏的噪音"，律动彻底消失。
-    'the_king':      dict(mix=0.16, decay_s=1.05, size=0.55, damp_hz=4200, predelay_s=0.008),
+    # —— 六个 BOSS 的专属空间 ——
+    # ★ boss_healer（PvZ 风格电子曲）沿用 the_king 的**紧房间**参数：
+    #   电子鼓机的辨识度全在 attack，一糊就变成"有节奏的噪声"，律动彻底消失。
+    #   这是第一版踩过的坑（给了 2.8s 大厅）。
+    'boss_healer':   dict(mix=0.16, decay_s=1.05, size=0.55, damp_hz=4200, predelay_s=0.008),
+    # 水晶：中等偏亮、尾巴要"脆"（和副本环境曲同族但更短，鼓组是沙锤不是鼓）
+    'boss_crystal':  dict(mix=0.24, decay_s=1.5, size=0.70, damp_hz=6000, predelay_s=0.011),
+    # 商人镇：小房间、极干（街头集市的亲近感）
+    'boss_merchant': dict(mix=0.15, decay_s=0.95, size=0.52, damp_hz=5400, predelay_s=0.009),
+    # 遗迹：大空间、低阻尼（空旷石殿）
+    'boss_warden':   dict(mix=0.30, decay_s=2.6, size=1.15, damp_hz=3400, predelay_s=0.022),
+    # 虚空：最大空间、阻尼最低（雾气弥漫，声音化不开）
+    'boss_void':     dict(mix=0.38, decay_s=3.0, size=1.32, damp_hz=2900, predelay_s=0.030),
+    # 洞穴：中等但很闷（地下的封闭感，高频快速衰减）
+    'boss_darkcat':  dict(mix=0.26, decay_s=1.8, size=0.85, damp_hz=3200, predelay_s=0.014),
 }
 
 # target_lufs: 便携平台目标 -18 LUFS ±2（手机扬声器场景；主机/PC 的 -23/-24 是另一套标准）。
@@ -88,9 +98,23 @@ MASTER = {
     'ancient_ruins': dict(target_lufs=-18.0, comp_ratio=1.5, comp_thresh=-18.0, width=1.20, bright_db=-0.6),
     # 虚空迷雾最暗，但仍留一点低频"撑住"，避免手机上整首听不见
     'void_mist':     dict(target_lufs=-17.8, comp_ratio=1.8, comp_thresh=-18.0, width=1.22, bright_db=-1.0),
-    # The King 是 BOSS 曲，与 boss/victory 同层（-17.0），压缩比给到 2.0
-    # 把铜管与鼓的动态粘住 —— 这是全曲最"满"的一首。
-    'the_king':      dict(target_lufs=-17.0, comp_ratio=2.0, comp_thresh=-18.0, width=1.20, bright_db=0.2),
+    # —— 六个 BOSS：全部定在 -17.0（与旧 boss 曲同层）——
+    #   ★ 强度差异交给配器密度与 LRA，不靠音量旋钮：六个 BOSS 都定同一档，
+    #     玩家打不同 BOSS 时不会觉得"这个 BOSS 怎么这么小声"。
+    #     踩过的坑：目标定得太响 → 归一化时峰值顶破限制器被压回来，
+    #     各曲 miss 的量还不同，反而把强弱梯度搞反。
+    #   comp_ratio：healer 是电子鼓机，给 2.0 把鼓与铜管粘住；
+    #     warden/void 动态本来就大，给 1.6~1.8，压太狠会丢掉"压迫感的起伏"。
+    'boss_healer':   dict(target_lufs=-17.0, comp_ratio=2.0, comp_thresh=-18.0, width=1.20, bright_db=0.2),
+    'boss_crystal':  dict(target_lufs=-17.0, comp_ratio=1.7, comp_thresh=-18.0, width=1.28, bright_db=1.6),
+    # ⚠️ merchant 的峰值问题：3/4 拍 + 手鼓/铃鼓/高音钟琴，瞬态很尖，
+    #    crest 19.9dB，归一化时先顶到 -2dBTP 被限幅器夹住，LUFS 只到 -17.9（目标 -17.0）。
+    #    解法是**削瞬态**（手鼓 0.72→0.56、钟琴 0.20→0.13）再略加压缩（1.8→2.2），
+    #    不是把 target_lufs 调响 —— 调响只会被限幅器更多地压回来，还破坏梯度。
+    'boss_merchant': dict(target_lufs=-17.0, comp_ratio=2.0, comp_thresh=-18.0, width=1.14, bright_db=0.8),
+    'boss_warden':   dict(target_lufs=-17.0, comp_ratio=1.6, comp_thresh=-18.0, width=1.22, bright_db=-0.8),
+    'boss_void':     dict(target_lufs=-17.0, comp_ratio=1.8, comp_thresh=-18.0, width=1.24, bright_db=-1.4),
+    'boss_darkcat':  dict(target_lufs=-17.0, comp_ratio=1.8, comp_thresh=-18.0, width=1.18, bright_db=0.4),
 }
 
 # 真峰值上限：-1 dBTP 是各平台硬标准，再留 1 dB 给 MP3 编码过冲
@@ -1268,191 +1292,734 @@ def compose_void_mist():
 
 
 # ============================================================
-# 12. BOSS 曲 —— C 小调，PvZ「The King」风格（用户点名）
+# 12. BOSS 曲 —— 每个 BOSS 一首专属曲（★ 不是共用一首）
 # ============================================================
+#
+# ★★ 用户需求：**每个 BOSS 有自己的专属音乐**。
+#    曾经把 field-scene 硬编码成 'bgm_the_king'，6 个 BOSS 全放同一首 ——
+#    回归脚本当时只断言"BOSS 靠近会不会切歌"、没断言"切到的是哪一首"，
+#    所以全绿但需求没满足。现在曲目 id 走 scripts/data/boss-bgm.js 的映射表。
 
-def compose_the_king():
+
+def _perpetual_16(a, inst, seq, bars, start_bar=0, vel=0.60, pan=0.0,
+                  dur=0.22, humanize=0.05, accent_every=4):
+    """永动 16 分音符 ostinato（"Brainiac Maniac" 的发动机）。
+
+    节奏网格取自真实扒谱 MIDI：每小节 14~15 个 16 分音符，
+    **在第 3 拍（slot 8）缺一口气** —— 这个"缺一口"是它听起来像一台机器
+    而不是琶音练习的关键；偶数小节末尾（slot 15）再缺一口，形成 2 小节循环。
     """
-    PvZ BOSS 战曲（用户点名要这首）。
+    for b in range(bars):
+        base = (start_bar + b) * a.meter
+        hits = [s for s in range(16) if s != 8 and not (s == 15 and b % 2 == 0)]
+        for i, slot in enumerate(hits):
+            p = seq[i % len(seq)]
+            v = vel * (1.0 if slot % accent_every == 0 else 0.80)
+            a.add(inst, base + slot * 0.25, dur, p, vel=v, pan=pan,
+                  humanize=humanize)
+    return a
 
-    ★ 第一版被判「感觉和原版差距很大」，根因不是旋律，是**音色和律动**：
-      当时用 弦乐 + 圆号 + 太鼓 + 沙锤 + 八音盒 去配 —— 那是交响史诗的配器，
-      而原曲是 **80/90 年代游戏电子配器**。据两份独立扒谱 MIDI，原曲是：
 
-        Electric Piano 1   508 音，平均音高 **F5**，音域 F4–C6   ← 主旋律在**高音区**
-        Pizzicato Strings  278 音                                ← 固定音型（心跳）
-        Syn Brass 1        229 音                                ← **合成**铜管，非声学铜管
-        Lead 1 (square)     73 音                                ← 方波主音（机械感）
-        Orchestral Harp     40 音 / Electric Guitar (jazz) 46 音  ← 少量色彩
-        Acoustic Bass       35 音
-        鼓组 = 底鼓 + **拍手(Hand Clap)** + 电子军鼓 + 闭镲/踏镲   ← 放克鼓机，不是太鼓
-
-      调号 E♭（= C 小调；PvZ 除禅境花园外全是小调），速度多条来源指向 137。
-
-      所以这一版改了四件事：
-        1. 给合成器库补了 epiano / synth_brass / square_lead / kick / clap / hihat
-           —— 电子音色库里本来一个都没有，巧妇难为无米之炊
-        2. 调性 D 小调 → **C 小调**；速度 132 → **136**
-        3. 加了 **swing**（反拍 8 分延后 0.16 拍）。原曲是摇摆律动，
-           这是"行进鼓号队"与"放克鼓机"的分界线
-        4. 混响 2.8s 大厅 → 1.05s 紧房间：鼓机的辨识度全在 attack，
-           一糊就变成"有节奏的噪声"，律动彻底消失
-
-    曲式：16 小节 引子(0-2) - A(2-8) - 桥(8-12) - A'(12-16)
+def compose_boss_healer():
     """
-    a = M.Arrangement(bpm=136, sr=SR, bars=16)
-    k = M.Key('C', 'minor')
-    prog = [0, 5, 2, 6, 0, 5, 3, 4]   # Cm Ab Eb Bb | Cm Ab Fm G
+    BOSS 曲 ①：第一章·草原「迷途的治愈猫」（艾米 Boss 形态）
+    风格 = PvZ 僵尸博士 "Brainiac Maniac"（用户点名喜欢这首）。
+
+    ★★ 这一版的数据不是猜的，是**下载了原曲音频 + 官方扒谱 MIDI 实测出来的**
+       （2026-09-05）。上一版被判"感觉和原版差距很大"，根因是我拿乐器统计表
+       反推曲子、**没听原曲**。实测结果推翻了之前五个判断：
+
+       原曲音频（官方 OST，Brainiac Maniac，102.6s，逐帧分析）：
+         · 速度：低频起振自相关 → **120.2 BPM**（不是我从扒谱网站抄来的 137）
+         · 底鼓落点（16 分网格起振强度，1-indexed）：**1.00 / 1.75 / 3.50**，
+           不是四踩；4.75 还有一下（句尾 pickup）
+         · 色度向量：C 1.00 / F 0.66 / A# 0.62 / A 0.51 / G 0.50 / B 0.16
+           → 中心是 **C**，音集 C-F-G-B♮ 配 B♭ = **C 和声小调**（大七度色彩）
+
+       原曲 MIDI（vgmusic, BluePikman；Type 1 / 960tpq / 11 轨 / 50 小节）：
+         · Piano **645 音** —— 从头跑到尾的 16 分音符 ostinato。
+           这才是这首歌的身份：**不是旋律，是那台永动机**。
+         · Guitar(prog29 过载吉他) 278 音：切分两音动机，跟和声走
+         · Sawtooth(prog81) 216 音：乐句末尾的 16 分上下行 fill（"电压升高"）
+         · Percussive Organ 98 音，平均 G5，音域 F4–G6：顶层高频闪光
+         · Synth Bass 2 **37 音**，平均时长 1.93 拍 → **长音铺底**，不是 8 分驱动
+         · 鼓组：Bass Drum 1 ×132 / Acoustic Snare ×68（**2、4 反拍**）/
+           Pedal Hi-Hat ×60 / Closed Hi-Hat ×40 / Hand Clap ×10
+
+       上一版错在哪（逐条对照）：
+         1. 136 BPM        → 实测 **120**
+         2. C 小调         → 实测 **C 和声小调**（B♮ 是导音，不是 B♭）
+         3. 8 分拨奏 ostinato → 原曲是 **16 分**，密度差近一倍
+         4. 底鼓 0/2.5、拍手在 2 → 实测底鼓 **1 / 1.75 / 3.5**，军鼓打 **2 和 4**
+         5. 加了 swing       → 实测踩镲严格落在 16 分网格上，是**直的**；
+            机器般精准本来就是"疯狂科学家"性格的一部分
+
+    关于旋律：节奏网格、音区（C5–C6）、音集（根音/八度/四度/五度/大七度）
+    按扒谱来（这是"感觉"的来源），但**音符序列是自己写的** ——
+    既保住用户要的那个味道，也不照抄原旋律。
+
+    曲式（16 小节 @120 = 32s）：引子(0-2) - A(2-8) - 桥(8-12) - A'(12-16)
+    """
+    a = M.Arrangement(bpm=120, sr=SR, bars=16)
+    k = M.Key('C', 'harmonic_minor')
+    # i - III - iv - VI - i - III - VI - VII（C 和声小调；与原曲 bar8-12 的
+    # 贝斯进行 C-E♭-F-A♭-B♭-C 同形）
+    prog = [0, 2, 3, 5, 0, 2, 5, 6]
     bpc = 2
 
-    # ★ 摇摆：反拍 8 分音符延后 0.16 拍（三连音摇摆 = 0.167）。
-    #   只给踩镲和旋律，**贝斯保持直线** —— 地基直、上层摇，律动才不散。
-    SW = 0.16
+    # === 1. 永动 16 分 ostinato：全曲的心脏（原曲 Piano 645 音）===
+    #    音集 = 根音/八度/五度/四度/大七度，音区 C5–C6（与原曲一致）。
+    A_OST = ['C5', 'C6', 'G5', 'F5', 'B5', 'G5', 'C6', 'F5',
+             'G5', 'C6', 'F5', 'B5', 'G5', 'F5']
+    _perpetual_16(a, 'epiano', A_OST, 12, start_bar=0, vel=0.56, pan=0.06,
+                  dur=0.20, humanize=0.05)
+    # 桥段（bar 8-12）：换材料，往 bVI / bVII 上走（原曲也是这么换的）
+    B_OST = ['Ab5', 'Eb6', 'A5', 'Eb6', 'Ab5', 'A5', 'Eb6', 'A5',
+             'Bb5', 'F6', 'B5', 'F6', 'Bb5', 'B5']
+    _perpetual_16(a, 'epiano', B_OST, 2, start_bar=8, vel=0.52, pan=0.06,
+                  dur=0.20, humanize=0.05)
+    B2_OST = ['Bb5', 'F6', 'B5', 'F6', 'Bb5', 'B5', 'F6', 'B5',
+              'C6', 'G6', 'C6', 'B5', 'G5', 'F5']
+    _perpetual_16(a, 'epiano', B2_OST, 2, start_bar=10, vel=0.54, pan=0.06,
+                  dur=0.20, humanize=0.05)
+    _perpetual_16(a, 'epiano', A_OST, 4, start_bar=12, vel=0.60, pan=0.06,
+                  dur=0.20, humanize=0.05)
 
-    def sw(beat):
-        return beat + (SW if abs((beat % 1.0) - 0.5) < 1e-6 else 0.0)
-
-    # === 1. 拨奏 ostinato：全曲的心脏（8 分音符，跟随和声）===
-    #    原曲 278 个音，是密度最高的声部之一 —— 它不是伴奏，是**律动本身**。
-    for ci, deg in enumerate(prog):
-        ch = M.chord_midi(k, deg, 'triad', 4)
-        v = M.voice_lead(None, ch, low=55, high=74)
-        for i in range(16):          # 2 小节 × 16 个 8 分音符
-            a.add('strings_pizz', ci * bpc * 4 + i * 0.5, 0.34, v[i % 3],
-                  vel=(0.54 if i % 2 == 0 else 0.38),
-                  pan=-0.28 + (i % 4) * 0.18, humanize=0.30)
-
-    # === 2. 贝斯：8 分音符驱动（不是长音铺底）===
+    # === 2. 合成贝斯：长音铺底（原曲 Synth Bass 2，平均 1.93 拍）===
     for ci, deg in enumerate(prog):
         b = ci * bpc * 4
         root = k.degree(deg, 2)
-        for i in range(16):
-            p = root if i % 4 in (0, 1) else (root + 12 if i % 4 == 2 else root + 7)
-            a.add('bass', b + i * 0.5, 0.42, p,
-                  vel=(0.58 if i % 2 == 0 else 0.44), pan=0.0, humanize=0.12)
+        a.add('bass', b, bpc * 4 - 0.15, root, vel=0.72, pan=0.0, humanize=0.10)
+        a.add('bass', b + 2.0, 1.6, root + 7, vel=0.50, pan=0.0, humanize=0.16)
 
-    # === 3. 合成铜管 riff：短促的节奏钩子（原曲 Syn Brass 1，229 音）===
-    #    落点刻意切分（0 / 1.5 / 3 / 4.5 / 6 / 7），与底鼓错开 ——
-    #    铜管负责"咬"、鼓负责"推"，两个声部不抢同一拍才有放克感。
+    # === 3. 合成铜管 riff：切分动机（原曲 Syn Brass 1）===
     for ci, deg in enumerate(prog):
         b = ci * bpc * 4
         ch = M.chord_midi(k, deg, 'triad', 4)
-        for off, v in ((0, 0.78), (1.5, 0.58), (3, 0.70),
-                       (4.5, 0.58), (6, 0.74), (7, 0.62)):
-            a.add_chord('synth_brass', b + off, 0.42, [ch[0], ch[2]],
-                        vel=v, spread=0.05,
-                        pan=(-0.22 if off % 2 == 0 else 0.22), humanize=0.14)
+        for off, v in ((0.0, 0.62), (1.5, 0.44), (3.0, 0.54), (4.5, 0.40),
+                       (6.0, 0.58), (7.5, 0.42)):
+            a.add_chord('synth_brass', b + off, 0.62, ch, vel=v, spread=0.02,
+                        pan=-0.28, humanize=0.10)
 
-    # === 4. 电钢主旋律（原曲 Electric Piano 1，平均音高 F5）===
-    #    音域 G4~C6，刻意顶在高音区 —— 那是原曲最醒目的特征。
-    #    大量 Ab（小六度上邻音）制造原曲那种"又坏又快活"的调子。
-    mel = [
-        # ---- 乐句 1（0-16 拍，Cm / Ab）----
-        ('G5', 0, 0.5, 0.95), ('Ab5', 0.5, 0.5, 0.84), ('G5', 1.0, 0.5, 0.90),
-        ('Eb5', 1.5, 0.5, 0.80), ('C5', 2.0, 1.0, 0.86), ('Eb5', 3.5, 0.5, 0.78),
-        ('G5', 4.0, 0.5, 0.95), ('Ab5', 4.5, 0.5, 0.84), ('Bb5', 5.0, 1.0, 0.90),
-        ('G5', 6.5, 0.5, 0.82), ('Eb5', 7.0, 1.0, 0.84),
-        ('Ab5', 8.0, 0.5, 0.92), ('G5', 8.5, 0.5, 0.82), ('Eb5', 9.0, 1.0, 0.84),
-        ('C5', 10.5, 0.5, 0.80), ('Eb5', 11.0, 1.0, 0.84),
-        ('G5', 12.0, 0.5, 0.95), ('Ab5', 12.5, 0.5, 0.84), ('C6', 13.0, 1.5, 0.98),
-        ('Bb5', 15.0, 1.0, 0.88),
-        # ---- 乐句 2（16-32 拍，Eb / Bb）----
-        ('Eb5', 16.0, 0.5, 0.90), ('F5', 16.5, 0.5, 0.84), ('G5', 17.0, 1.0, 0.92),
-        ('Eb5', 18.5, 0.5, 0.80), ('Bb4', 19.0, 1.0, 0.84),
-        ('G5', 20.0, 0.5, 0.92), ('Ab5', 20.5, 0.5, 0.84), ('Bb5', 21.0, 1.0, 0.90),
-        ('G5', 22.5, 0.5, 0.82), ('Eb5', 23.0, 1.0, 0.84),
-        ('D5', 24.0, 0.5, 0.88), ('F5', 24.5, 0.5, 0.84), ('Bb5', 25.0, 1.0, 0.92),
-        ('Ab5', 26.5, 0.5, 0.82), ('F5', 27.0, 1.0, 0.86),
-        ('D5', 28.0, 0.5, 0.88), ('Eb5', 28.5, 0.5, 0.82), ('F5', 29.0, 0.5, 0.86),
-        ('G5', 29.5, 0.5, 0.88), ('Ab5', 30.0, 2.0, 0.94),
-        # ---- 乐句 3（32-48 拍，桥：下移、留白）----
-        ('C5', 32.0, 1.0, 0.80), ('Eb5', 33.5, 0.5, 0.76),
-        ('G5', 34.0, 1.0, 0.84), ('Ab5', 35.5, 0.5, 0.78),
-        ('G5', 36.0, 0.5, 0.86), ('Eb5', 36.5, 0.5, 0.76), ('C5', 37.0, 2.0, 0.80),
-        ('G4', 40.0, 1.0, 0.78), ('Ab4', 41.5, 0.5, 0.74),
-        ('C5', 42.0, 1.0, 0.82), ('Eb5', 43.5, 0.5, 0.78),
-        ('G5', 44.0, 0.5, 0.86), ('G5', 45.0, 0.5, 0.84), ('Ab5', 45.5, 0.5, 0.82),
-        ('G5', 46.0, 2.0, 0.88),
-        # ---- 乐句 4（48-64 拍，Fm / G：全曲顶点）----
-        ('Ab5', 48.0, 0.5, 0.92), ('G5', 48.5, 0.5, 0.84), ('F5', 49.0, 1.0, 0.88),
-        ('G5', 50.5, 0.5, 0.82), ('Ab5', 51.0, 1.0, 0.90),
-        ('C6', 52.0, 0.5, 0.98), ('Bb5', 52.5, 0.5, 0.86), ('Ab5', 53.0, 1.0, 0.92),
-        ('G5', 54.5, 0.5, 0.84), ('F5', 55.0, 1.0, 0.88),
-        ('G5', 56.0, 0.5, 0.94), ('Bb5', 56.5, 0.5, 0.86), ('C6', 57.0, 1.5, 0.98),
-        ('Bb5', 59.0, 1.0, 0.94),
-        ('Bb5', 60.0, 0.5, 0.90), ('Ab5', 60.5, 0.5, 0.84), ('G5', 61.0, 1.0, 0.92),
-        ('F5', 62.5, 0.5, 0.84), ('G5', 63.0, 1.0, 0.92),
-    ]
-    for p, s, d, v in mel:
-        a.add('epiano', sw(s), d, p, vel=v, pan=0.14, humanize=0.14)
-
-    # === 5. 方波主音：机械感的对位（原曲 Lead 1 square）===
-    #    16 分音符琶音，只在 A 段后半与 A' 段出现 —— 它是"电压升高"的信号，
-    #    全曲都有的话就失去了推进感。
+    # === 4. 过载吉他：两音切分点缀（原曲 prog29，278 音）===
     for ci, deg in enumerate(prog):
         b = ci * bpc * 4
-        ch = M.chord_midi(k, deg, 'triad', 5)
-        for i in range(32):          # 2 小节 × 16 个 16 分音符
-            if i % 2 == 1 and i % 4 != 3:
+        root = k.degree(deg, 3)
+        for off, p, v in ((0.0, root, 0.40), (0.5, root, 0.32),
+                          (1.75, root + 12, 0.34), (2.25, root, 0.36),
+                          (2.5, root, 0.30), (3.0, root - 2, 0.32),
+                          (5.0, root, 0.38), (5.5, root + 12, 0.30),
+                          (7.0, root - 2, 0.34)):
+            a.add('lute', b + off, 0.28, p, vel=v, pan=0.40, humanize=0.14)
+
+    # === 5. 方波主音：乐句末尾的"电压升高"fill（原曲 Sawtooth，216 音）===
+    for bar in (3, 7, 11, 15):
+        b = bar * 4
+        run = ['G3', 'C4', 'Eb4', 'G4', 'F4', 'Eb4', 'C4']
+        for i, p in enumerate(run):
+            a.add('square_lead', b + 2.25 + i * 0.25, 0.22, p,
+                  vel=0.34 + i * 0.03, pan=-0.36, humanize=0.0)
+    # A' 段再来一层高把位对位
+    for bar in (12, 13, 14, 15):
+        b = bar * 4
+        for i in range(8):
+            if i % 2 == 1:
                 continue
-            a.add('square_lead', b + i * 0.25, 0.20, ch[i % 3],
-                  vel=(0.30 if i % 4 == 0 else 0.20), pan=-0.34, humanize=0.0)
+            a.add('square_lead', b + i * 0.5, 0.30,
+                  ['C5', 'G5', 'Eb5', 'B5'][(i // 2) % 4],
+                  vel=0.24, pan=-0.34, humanize=0.0)
 
-    # === 6. 鲁特琴：爵士吉他式的和弦点缀（原曲 Electric Guitar (jazz)，46 音）===
-    for ci, deg in enumerate(prog):
-        b = ci * bpc * 4
-        ch = M.chord_midi(k, deg, 'triad', 4)
-        for off, v in ((1.5, 0.34), (3.5, 0.28), (5.5, 0.32), (7.5, 0.26)):
-            a.add_chord('lute', b + off, 0.5, ch, vel=v, spread=0.04,
-                        pan=0.36, humanize=0.18)
+    # === 6. 高频闪光：钢片琴点缀（原曲 Percussive Organ 98 音，平均 G5）===
+    for bar in range(16):
+        if bar % 2 == 1:
+            continue
+        b = bar * 4
+        for off, p in ((0.0, 'G6'), (2.5, 'C6'), (3.5, 'B5')):
+            a.add('glockenspiel', b + off, 0.32, p, vel=0.20, pan=0.34)
 
-    # === 7. 竖琴：桥段的滑奏（原曲 Orchestral Harp，40 音）===
-    for ci in (4, 5):                # bar 8-12（桥段）
+    # === 7. 竖琴滑奏：桥段的"走神"（原曲 Orchestral Harp，40 音）===
+    for ci in (4, 5):
         ch = M.chord_midi(k, prog[ci], 'triad', 5)
         seq = sorted(ch + [p + 12 for p in ch])
         for i, p in enumerate(seq):
-            a.add('harp', ci * bpc * 4 + i * 0.22, 0.7, p, vel=0.30, pan=0.42)
+            a.add('harp', ci * bpc * 4 + i * 0.22, 0.7, p, vel=0.28, pan=0.44)
 
-    # === 8. 鼓机：放克律动（底鼓 + 拍手 + 军鼓 + 踩镲）===
-    #    ⚠️ 不是太鼓。拍手落在 2、4（backbeat）是这首歌最容易被认出来的特征。
+    # === 8. 鼓机：放克律动（★ 落点按实测：底鼓 1/1.75/3.5，军鼓 2、4）===
+    #    不是四踩，不是太鼓。军鼓打反拍是这首歌最容易被认出来的特征。
     for bar in range(16):
         b = bar * 4
-        a.add_perc('kick', b, vel=0.92)
-        a.add_perc('kick', b + 2.5, vel=0.76)
-        a.add_perc('clap', b + 2, vel=0.80, pan=0.10)
-        a.add_perc('snare', b + 3.5, vel=0.52, pan=-0.14)
-        if bar % 2 == 1:
-            a.add_perc('snare', b + 1.5, vel=0.34, pan=0.16)
-        for i in range(8):           # 8 分音符踩镲，带摇摆
-            a.add_perc('hihat', sw(b + i * 0.5),
-                       vel=(0.40 if i % 2 == 0 else 0.24), pan=0.28)
-        if bar % 4 == 3:             # 每 4 小节一个开镲，抬一下
-            a.add_perc('hihat', b + 3.5, vel=0.38, pan=0.28, open=True)
+        # 引子 0-2 小节不放鼓（原曲 bar0-3 的低频能量也只有 A 段的 1/10）
+        if bar < 2:
+            continue
+        a.add_perc('kick', b + 0.0, vel=0.95)
+        a.add_perc('kick', b + 0.75, vel=0.72)
+        a.add_perc('kick', b + 2.5, vel=0.82)
+        a.add_perc('snare', b + 1.0, vel=0.78, pan=0.06)
+        a.add_perc('snare', b + 3.0, vel=0.74, pan=-0.06)
+        # 每 4 小节：拍手加花 + 句尾 fill + 开镲
+        if bar % 4 == 3:
+            a.add_perc('clap', b + 3.0, vel=0.66, pan=0.14)
+            a.add_perc('snare', b + 3.75, vel=0.58, pan=0.20)
+            a.add_perc('hihat', b + 3.75, vel=0.38, pan=0.30, open=True)
+        elif bar % 4 == 1:
+            a.add_perc('clap', b + 1.0, vel=0.44, pan=-0.12)
+        # 踩镲：严格 16 分网格（实测是直的，不摇摆）
+        for s in (0.0, 0.5, 0.75, 1.5, 1.75, 2.0, 2.5, 2.75, 3.5, 3.75):
+            a.add_perc('hihat', b + s,
+                       vel=(0.42 if s in (0.0, 2.0) else 0.24), pan=0.30)
 
-    # === 曲式：16 小节 引子(0-2) - A(2-8) - 桥(8-12) - A'(12-16) ===
-    # intro：只有拨奏 + 贝斯 + 电钢（BOSS 从雾里走出来，先不给鼓）
-    # A    ：全套鼓机 + 合成铜管 riff + 电钢旋律
-    # 桥   ：撤掉鼓与铜管，竖琴滑奏 + 方波 —— 死寂，为 A' 留动态空间
-    # A'   ：全部声部 + 开镲，全曲顶点
-    #
-    # ★ 门控语义（magic_tower / void_mist / merchant_town 都栽在这上面）：
-    #   拨奏/贝斯/电钢是**地基**，用 default=1.0 + 稀疏段减益，地板 0.50 以上；
-    #   鼓与铜管是**事件**，用区间列表。把地基当事件门控会让安静段塌掉 →
-    #   LRA 冲过 15、安静段地板 L10 掉到 -30 以下。
+    # === 曲式 ===
+    # ★ 门控语义（本项目踩过三次）：epiano / bass / synth_brass 是**地基**，
+    #   用 default=1.0 + 稀疏段减益（地板 ≥0.36），不能当事件门控，
+    #   否则安静段会整个塌掉 → LRA 冲过 15、L10 掉到 -30 以下。
+    #   反方向也踩过：地板抬太高 + 弧线压太平 → LRA 只有 7.85（太低）。
+    #   所以这一版弧线开 8.5dB、地板 0.36~0.44，两个方向都要量。
     return apply_form(a, [
         (0, -8.5), (2, -1.0), (8, -8.0), (12, 0.0), (15, -1.5),
     ], {
-        'strings_pizz': ([(0, 2, 0.44), (8, 12, 0.38)], 1.0),
-        'bass':         ([(0, 2, 0.42), (8, 12, 0.36)], 1.0),
-        'epiano':       ([(0, 2, 0.40), (8, 12, 0.44)], 1.0),
-        'synth_brass':  [(2, 8, 1.0), (12, 16, 1.0)],
-        'lute':         [(2, 8, 1.0), (12, 16, 1.0)],
-        'square_lead':  [(4, 8, 1.0), (12, 16, 1.0)],
-        'kick':         [(2, 8, 1.0), (12, 16, 1.0)],
-        'clap':         [(2, 8, 1.0), (12, 16, 1.0)],
-        'snare':        [(2, 8, 1.0), (12, 16, 1.0)],
-        'hihat':        [(1, 8, 1.0), (12, 16, 1.0)],
-        'harp':         [(8, 12, 1.0)],
+        'epiano':      ([(0, 2, 0.44), (8, 12, 0.38)], 1.0),
+        'bass':        ([(0, 2, 0.42), (8, 12, 0.36)], 1.0),
+        'synth_brass': ([(0, 2, 0.40), (8, 12, 0.42)], 1.0),
+        'lute':        [(2, 8, 1.0), (12, 16, 1.0)],
+        'square_lead': [(2, 8, 1.0), (12, 16, 1.0)],
+        'glockenspiel': [(4, 8, 1.0), (12, 16, 1.0)],
+        'harp':        [(8, 12, 1.0)],
+        'kick':        [(2, 8, 1.0), (12, 16, 1.0)],
+        'snare':       [(2, 8, 1.0), (12, 16, 1.0)],
+        'clap':        [(2, 8, 1.0), (12, 16, 1.0)],
+        'hihat':       [(2, 8, 1.0), (12, 16, 1.0)],
+    })
+
+
+def compose_boss_crystal():
+    """
+    BOSS 曲 ②：第二章·魔法塔「水晶法师」（安妮 Boss 形态）
+
+    水晶 / 机械钟表。**整首不放鼓组** —— 律动全部交给钟琴的 16 分音符与
+    沙锤的"滴答"，这样和 ① 的放克鼓机、④ 的定音鼓形成明确的音色分工，
+    六个 BOSS 不会听起来像同一首曲子换了个调。
+
+    配器：glockenspiel（发动机）+ bell（报时钟声）+ strings（持续衬底）
+          + harp（滑奏）+ shaker/tambourine（钟表滴答）+ pizz_bass
+          + square_lead（玻璃质对位）+ choir（桥段）
+
+    曲式（12 小节 @132 = 21.8s）：引子(0-2) - A(2-6) - 桥(6-9) - A'(9-12)
+    """
+    a = M.Arrangement(bpm=132, sr=SR, bars=12)
+    k = M.Key('A', 'harmonic_minor')     # 有 G# 导音，水晶的"棱角"来自它
+    prog = [0, 3, 5, 4, 0, 3]            # Am Dm F E | Am Dm
+    bpc = 2
+
+    # === 1. 钟琴 16 分 ostinato：水晶发动机（上下往复的琶音）===
+    for ci, deg in enumerate(prog):
+        ch = M.chord_midi(k, deg, 'triad', 5)
+        seq = list(ch) + [int(ch[-1]) + 12] + list(reversed(ch[1:]))
+        b = ci * bpc * 4
+        for i in range(32):              # 2 小节 × 16 个 16 分音符
+            a.add('glockenspiel', b + i * 0.25, 0.20, seq[i % len(seq)],
+                  vel=(0.46 if i % 4 == 0 else 0.32),
+                  pan=-0.30 + (i % 5) * 0.14, humanize=0.04)
+
+    # === 2. 拨奏贝斯：根音 + 五度（钟摆）===
+    for ci, deg in enumerate(prog):
+        b = ci * bpc * 4
+        root = k.degree(deg, 2)
+        for off in (0.0, 1.5, 2.0, 3.5):
+            a.add('pizz_bass', b + off, 0.42,
+                  root if off in (0.0, 2.0) else root + 7,
+                  vel=(0.66 if off in (0.0, 2.0) else 0.46), pan=0.0,
+                  humanize=0.14)
+
+    # === 3. 弦乐持续衬底：水晶的"底光" ===
+    lay_harmony(a, k, prog, 12, inst='strings', octave=4, low=55, high=76,
+                vel=0.34, bars_per_chord=bpc, spread=0.30, pan_base=0.0,
+                attack=0.5, release=0.9)
+
+    # === 4. 钟：每 2 小节一记报时（空灵、无来源感）===
+    for bar in range(0, 12, 2):
+        a.add('bell', bar * 4, 2.4, 'A5', vel=0.30, pan=0.36, humanize=0.05)
+    for bar in (5, 11):
+        a.add('bell', bar * 4 + 2.0, 2.0, 'E6', vel=0.22, pan=-0.34)
+
+    # === 5. 沙锤 / 铃鼓：钟表的滴答（代替鼓组的律动层）===
+    for bar in range(12):
+        b = bar * 4
+        if bar < 2:
+            continue
+        for i in range(8):
+            a.add_perc('shaker', b + i * 0.5,
+                       vel=(0.34 if i % 2 == 0 else 0.18), pan=0.30)
+        a.add_perc('tambourine', b + 1.0, vel=0.42, pan=0.18)
+        a.add_perc('tambourine', b + 3.0, vel=0.38, pan=-0.18)
+        if bar % 4 == 3:
+            a.add_perc('tambourine', b + 3.75, vel=0.30, pan=0.24)
+
+    # === 6. 方波对位：玻璃质感的第二层（后半段才进来）===
+    for bar in range(6, 12):
+        b = bar * 4
+        for i in range(16):
+            if i % 2 == 1:
+                continue
+            ch = M.chord_midi(k, prog[bar // 2], 'triad', 6)
+            a.add('square_lead', b + i * 0.25, 0.18, ch[(i // 2) % 3],
+                  vel=0.18, pan=-0.38, humanize=0.0)
+
+    # === 7. 竖琴滑奏 + 合唱：桥段的"光散开" ===
+    for ci in (2, 3):                    # bar 4-8
+        ch = M.chord_midi(k, prog[ci], 'triad', 5)
+        seq = sorted(ch + [p + 12 for p in ch] + [p + 24 for p in ch[:2]])
+        for i, p in enumerate(seq):
+            a.add('harp', ci * bpc * 4 + i * 0.16, 0.6, p, vel=0.24, pan=0.44)
+    for ci in (2, 3):
+        ch = M.chord_midi(k, prog[ci], 'triad', 4)
+        a.add_chord('choir', ci * bpc * 4, bpc * 4 + 0.4, ch, vel=0.22,
+                    spread=0.06, pan=0.0, vowel='ah', attack=0.8, release=1.0)
+
+    return apply_form(a, [
+        (0, -8.0), (2, -1.0), (6, -7.5), (9, 0.0), (11, -1.5),
+    ], {
+        'glockenspiel': ([(0, 2, 0.42), (6, 9, 0.38)], 1.0),
+        'pizz_bass':    ([(0, 2, 0.40), (6, 9, 0.34)], 1.0),
+        'strings':      ([(0, 2, 0.38), (6, 9, 0.40)], 1.0),
+        'bell':         [(2, 6, 1.0), (9, 12, 1.0)],
+        'shaker':       [(2, 6, 1.0), (9, 12, 1.0)],
+        'tambourine':   [(2, 6, 1.0), (9, 12, 1.0)],
+        'square_lead':  [(9, 12, 1.0)],
+        'harp':         [(4, 9, 1.0)],
+        'choir':        [(5, 9, 1.0)],
+    })
+
+
+def compose_boss_merchant():
+    """
+    BOSS 曲 ③：第三章·商人镇「黑金奸商」（钱多多 Boss 形态）
+
+    油腻的市集圆舞曲 —— **3/4 拍**（六个 BOSS 里唯一的三拍子，一秒就能分辨）。
+    D 弗里几亚属（b2 + 大三度 + b7）：集市/异域调式，而 b2→3 的**增二度**
+    就是那股"油味"的来源，自然小调和多利亚都替不了（为此给音阶库补了这个调式）。
+
+    配器：lute（oom-pah-pah）+ oboe（鼻音、油滑的叫卖旋律）+ hand_drum（达布卡）
+          + tambourine + pizz_bass（下行半音）+ bell（**金币叮当**）
+          + synth_brass（油腻的铜管点缀）+ harp（桥段）
+
+    曲式（24 小节 @150 三拍子 = 28.8s）：引子(0-3) - A(3-12) - 桥(12-18) - A'(18-24)
+    """
+    a = M.Arrangement(bpm=150, sr=SR, bars=24, meter=3.0)
+    # 用显式和弦而不是音阶三和弦 —— 弗里几亚属的和声是" borrowed "来的，
+    # 按音阶自动生成会得到一堆减三和弦，那不是集市，是恐怖片。
+    prog_ch = [
+        ['D4', 'F#4', 'A4'],    # D（同主音大三度 = 调式特征）
+        ['Eb4', 'G4', 'Bb4'],   # bII —— 最"弗里几亚"的一下
+        ['D4', 'F#4', 'A4'],
+        ['C4', 'Eb4', 'G4'],    # bVII
+        ['D4', 'F#4', 'A4'],
+        ['Bb3', 'D4', 'F4'],    # bVI
+        ['C4', 'Eb4', 'G4'],
+        ['A3', 'C#4', 'E4'],    # V（C# 导音，回 D）
+    ]
+    roots = ['D2', 'Eb2', 'D2', 'C2', 'D2', 'Bb1', 'C2', 'A1']
+    bpc = 3                              # 每个和弦 3 小节
+
+    # === 1. oom-pah-pah：低音在 1，和弦在 2、3（圆舞曲的根本）===
+    for ci, ch in enumerate(prog_ch):
+        b = ci * bpc * 3
+        a.add('pizz_bass', b, 0.9, roots[ci], vel=0.66, pan=0.0, humanize=0.16)
+        for off in (1.0, 2.0):
+            # ⚠️ lute 是共享音色（vel=1.0 peak 1.367），三音和弦几乎同时发声会叠到 1.5，
+            #    整首归一化被它卡在限幅器上（TP 顶死 -2.0，LUFS 上不去）。
+            #    降力度 + 加大 spread 错开起音，把和弦波峰拆开。
+            a.add_chord('lute', b + off, 0.5, ch, vel=0.15, spread=0.09,
+                        pan=0.22, humanize=0.20)
+
+    # === 2. 下行半音贝斯：贪婪（每 3 小节往下啃半音）===
+    for ci in range(len(prog_ch)):
+        b = ci * bpc * 3
+        a.add('bass', b + 2.5, 0.5, roots[ci], vel=0.70, pan=0.0, humanize=0.14)
+        a.add('bass', b + 2.75, 0.25, D.note2midi(roots[ci]) - 1,
+              vel=0.54, pan=0.0, humanize=0.14)
+
+    # === 2.5 持续中低音弦乐衬底：给整首"身体"（油腻集市下的人声暗流）===
+    #    ★ 这整首原本几乎全是瞬态（lute 拨奏 + 手鼓 + 铃 + 双簧管），crest 比
+    #      18dB 还高，限幅器把 TP 顶死在 -2.0、归一度怎么推 LUFS 都卡在 -18 上不去。
+    #      铺一层**持续**中低音弦乐把 RMS 抬起来，crest 降下来，LUFS 自然能到 -17，
+    #      安静段 L10 也跟着抬（LRA 反而更稳）。弦乐走 default=1.0 地基门控（见 form）。
+    for ci, ch in enumerate(prog_ch):
+        b = ci * bpc * 3
+        a.add_chord('strings', b, bpc * 3 - 0.1, [D.note2midi(p) for p in ch],
+                    vel=0.22, spread=0.12, pan=0.0, attack=0.6, release=0.8)
+
+    # === 3. 双簧管：叫卖旋律（切分、绕着导音转）===
+    mel = [
+        ('D5', 0, 0.5, 0.60), ('Eb5', 0.5, 0.5, 0.56), ('F#5', 1.0, 1.0, 0.64),
+        ('E5', 2.0, 0.5, 0.54), ('D5', 2.5, 0.5, 0.58),
+        ('C#5', 3.0, 0.5, 0.56), ('D5', 3.5, 1.0, 0.60), ('A4', 4.5, 1.5, 0.54),
+        ('Bb4', 6.0, 0.5, 0.56), ('A4', 6.5, 0.5, 0.52), ('G4', 7.0, 1.0, 0.58),
+        ('F#4', 8.0, 1.0, 0.54),
+        ('D5', 9.0, 0.5, 0.62), ('F#5', 9.5, 0.5, 0.58), ('A5', 10.0, 1.5, 0.66),
+        ('G5', 11.5, 0.5, 0.56),
+        ('F5', 12.0, 0.5, 0.58), ('E5', 12.5, 0.5, 0.54), ('Eb5', 13.0, 1.0, 0.60),
+        ('D5', 14.0, 1.0, 0.56),
+        ('C5', 15.0, 0.5, 0.54), ('Bb4', 15.5, 0.5, 0.52), ('A4', 16.0, 2.0, 0.58),
+        ('G#4', 18.0, 0.5, 0.56), ('A4', 18.5, 0.5, 0.54), ('C#5', 19.0, 1.0, 0.62),
+        ('D5', 20.0, 1.0, 0.60),
+        ('F#5', 21.0, 0.5, 0.62), ('E5', 21.5, 0.5, 0.56), ('D5', 22.0, 2.0, 0.64),
+    ]
+    for p, s, d, v in mel:
+        a.add('oboe', s * 1.0, d, p, vel=v, pan=-0.12, humanize=0.42)
+
+    # === 4. 手鼓 + 铃鼓：集市节奏（三拍子的 dum - tek tek）===
+    for bar in range(24):
+        b = bar * 3
+        if bar < 3:
+            continue
+        a.add_perc('hand_drum', b + 0.0, vel=0.52, pitch='D3', pan=0.0)
+        a.add_perc('hand_drum', b + 2.0, vel=0.38, pitch='D3', pan=0.14)
+        a.add_perc('tambourine', b + 1.0, vel=0.36, pan=0.20)
+        a.add_perc('tambourine', b + 2.0, vel=0.27, pan=-0.16)
+        if bar % 3 == 2:
+            a.add_perc('tambourine', b + 2.5, vel=0.27, pan=0.24)
+
+    # === 5. 金币：钟琴的叮当（落在弱拍，像钱袋晃动）===
+    for bar in range(3, 24, 2):
+        b = bar * 3
+        a.add('glockenspiel', b + 1.5, 0.24, 'D6', vel=0.16, pan=0.40)
+        a.add('glockenspiel', b + 2.5, 0.24, 'A6', vel=0.12, pan=-0.36)
+
+    # === 6. 合成铜管：油腻的点缀（乐句尾巴）===
+    for ci in (1, 3, 5, 7):
+        b = ci * bpc * 3
+        a.add_chord('synth_brass', b + 7.0, 0.9, prog_ch[ci], vel=0.42,
+                    spread=0.03, pan=-0.30, humanize=0.14)
+
+    # === 7. 竖琴 + 长笛：桥段（集市散场，露出贪婪的底）===
+    for bar in range(12, 18):
+        ch = prog_ch[(bar // 3) % len(prog_ch)]
+        for i, p in enumerate(ch):
+            a.add('harp', bar * 3 + i * 0.5, 0.8, p, vel=0.24, pan=0.42)
+    for p, s, d, v in (('D5', 36, 3.0, 0.44), ('C5', 39, 1.5, 0.40),
+                       ('Bb4', 40.5, 1.5, 0.38), ('A4', 42, 3.0, 0.42)):
+        a.add('recorder', s, d, p, vel=v, pan=-0.20, humanize=0.5, breath=0.9)
+
+    return apply_form(a, [
+        (0, -10.0), (3, -1.0), (12, -11.0), (18, 0.0), (23, -1.5),
+    ], {
+        'pizz_bass':   ([(0, 3, 0.40), (12, 18, 0.34)], 1.0),
+        'lute':        ([(0, 3, 0.40), (12, 18, 0.36)], 1.0),
+        'bass':        ([(0, 3, 0.38), (12, 18, 0.32)], 1.0),
+        'strings':     ([(0, 3, 0.30), (12, 18, 0.32)], 1.0),
+        'oboe':        [(3, 12, 1.0), (18, 24, 1.0)],
+        'hand_drum':   [(3, 12, 1.0), (18, 24, 1.0)],
+        'tambourine':  [(3, 12, 1.0), (18, 24, 1.0)],
+        'synth_brass': [(3, 12, 1.0), (18, 24, 1.0)],
+        'glockenspiel': [(3, 12, 1.0), (18, 24, 1.0)],
+        'harp':        [(12, 18, 1.0)],
+        'recorder':    [(12, 18, 1.0)],
+    })
+
+
+def compose_boss_warden():
+    """
+    BOSS 曲 ④：第四章·远古遗迹「远古守望者」（小贝 Boss 形态）
+
+    祭祀。缓慢、不可逆的压迫 —— 96 BPM，是六个 BOSS 里最慢的。
+    E 弗里几亚：**bII（F 大调）是恐惧的来源**，那一下落下去就像石门关上。
+    （和 ① 的放克鼓机、② 的钟琴、③ 的三拍子完全不同族。）
+
+    配器：horn（铜管众赞歌）+ timpani（定音鼓，跟随和声根音）
+          + pizz_bass（三音心跳 ostinato）+ strings_tremolo（持续紧张）
+          + choir 'oo'（祭祀人声）+ brass_stab（bII 的重锤）+ cymbal（高潮）
+
+    曲式（12 小节 @96 = 30s）：引子(0-2) - A(2-6) - 桥(6-9) - A'(9-12)
+    """
+    a = M.Arrangement(bpm=96, sr=SR, bars=12)
+    k = M.Key('E', 'phrygian')
+    prog = [0, 1, 0, 6, 0, 1]            # Em F Em Dm | Em F
+    bpc = 2
+
+    # === 1. 三音心跳：拨奏贝斯 ostinato（这是"活着的东西"的证据）===
+    for ci, deg in enumerate(prog):
+        b = ci * bpc * 4
+        root = k.degree(deg, 2)
+        for off, p, v in ((0.0, root, 0.72), (2.5, root, 0.52),
+                          (3.5, root + 7, 0.58)):
+            a.add('pizz_bass', b + off, 0.5, p, vel=v, pan=0.0, humanize=0.18)
+        for off in (4.0, 6.5):
+            a.add('pizz_bass', b + off, 0.5, root if off == 4.0 else root + 7,
+                  vel=(0.66 if off == 4.0 else 0.48), pan=0.0, humanize=0.18)
+
+    # === 2. 弦乐震音：持续的紧张（石殿里的空气）===
+    # ⚠️ strings_tremolo() 只接受 rate / depth，**没有 attack / release**
+    #    （音色签名查过：strings_tremolo(freq, dur, vel, sr, rate, depth, seed)）。
+    #    想要渐入就只能用 rate/depth 或换 strings —— 乱传 kwarg 直接 TypeError。
+    lay_harmony(a, k, prog, 12, inst='strings_tremolo', octave=4, low=52,
+                high=74, vel=0.36, bars_per_chord=bpc, spread=0.22,
+                pan_base=0.0, rate=7.0, depth=0.62)
+
+    # === 3. 铜管众赞歌：半音级进的长音（不可逆）===
+    prev = None
+    for ci, deg in enumerate(prog):
+        ch = M.chord_midi(k, deg, 'triad', 3)
+        v = M.voice_lead(prev, ch, low=48, high=67)
+        prev = v
+        st = ci * bpc * 4
+        a.add_chord('horn', st, bpc * 4 - 0.2, v, vel=0.52, spread=0.10,
+                    pan=0.0, attack=0.35, humanize=0.22)
+
+    # === 4. 定音鼓：仪式重击（跟随和声根音）===
+    for ci, deg in enumerate(prog):
+        root = k.degree(deg, 2)
+        b = ci * bpc * 4
+        a.add_perc('timpani', b + 0.0, vel=0.62, pitch=root, pan=0.0)
+        a.add_perc('timpani', b + 2.0, vel=0.40, pitch=root, pan=0.10)
+        if ci % 2 == 1:
+            a.add_perc('timpani', b + 6.0, vel=0.44, pitch=root, pan=-0.10)
+            a.add_perc('timpani', b + 7.0, vel=0.30, pitch=root, pan=0.16)
+
+    # === 5. 人声 'oo'：祭祀（低沉、无词）===
+    for ci, deg in enumerate(prog):
+        ch = M.chord_midi(k, deg, 'triad', 3)
+        a.add_chord('choir', ci * bpc * 4, bpc * 4 + 0.6, ch, vel=0.28,
+                    spread=0.08, pan=0.0, vowel='oo', attack=0.9, release=1.2)
+
+    # === 6. 铜管重锤：bII 那一下（石门关上）===
+    for ci, deg in enumerate(prog):
+        if deg != 1:
+            continue
+        b = ci * bpc * 4
+        a.add_chord('brass_stab', b, 1.4, M.chord_midi(k, 1, 'triad', 3),
+                    vel=0.60, spread=0.02, pan=0.0, humanize=0.10)
+        a.add_chord('brass_stab', b + 4.0, 1.4, M.chord_midi(k, 1, 'triad', 3),
+                    vel=0.50, spread=0.02, pan=0.0, humanize=0.10)
+
+    # === 7. 低音：撑住手机扬声器（遗迹曲整体偏暗，低频要有）===
+    for ci, deg in enumerate(prog):
+        a.add('bass', ci * bpc * 4, bpc * 4 - 0.2, k.degree(deg, 1),
+              vel=0.66, pan=0.0, humanize=0.12)
+
+    # === 8. 镲：高潮的一次膨胀 ===
+    a.add_perc('cymbal', 9 * 4, vel=0.52, pan=0.0)
+    a.add_perc('cymbal', 11 * 4 + 2.0, vel=0.36, pan=0.10)
+
+    # ★ LRA 实测 18.18（超上限 15）的修法：这首 96BPM 只有 122 个音，是六首里
+    #   最稀疏的 —— 同样的弧线深度，在稀疏曲上造成的相对落差远大于密集曲。
+    #   所以两头都要收：弧线 -8.5/-7.5 → **-5.0/-4.5**，地板 0.34~0.42 → **0.58~0.66**。
+    #   （反方向也踩过：地板抬过头 + 弧线压太平 → LRA 掉到 7.85。两个方向都要量。）
+    return apply_form(a, [
+        (0, -7.2), (2, -1.0), (6, -6.5), (9, 0.0), (11, -1.5),
+    ], {
+        'pizz_bass':       ([(0, 2, 0.50), (6, 9, 0.46)], 1.0),
+        'strings_tremolo': ([(0, 2, 0.48), (6, 9, 0.44)], 1.0),
+        'bass':            ([(0, 2, 0.48), (6, 9, 0.44)], 1.0),
+        # 铜管众赞歌是**地基**不是事件：慢曲里它一撤，安静段就只剩心跳，
+        #   落差直接失控。改成 default=1.0 + 减益。
+        'horn':            ([(0, 2, 0.52), (6, 9, 0.54)], 1.0),
+        'choir':           ([(0, 2, 0.46), (6, 9, 0.50)], 1.0),
+        'brass_stab':      [(2, 6, 1.0), (9, 12, 1.0)],
+        'timpani':         [(2, 6, 1.0), (9, 12, 1.0)],
+        'cymbal':          [(9, 12, 1.0)],
+    })
+
+
+def compose_boss_void():
+    """
+    BOSS 曲 ⑤：终章·虚空迷雾「虚空之主」
+
+    没有鼓，没有旋律，只有**无法逃离的上升**。
+    半音上行的低音（D→E♭→E→F）是唯一的"事件" —— 它从不解决，
+    这正是虚空的感觉：**不给你出口**。
+
+    与副本环境曲 bgm_void_mist 的分工：那首是"雾里走路"（82 BPM、更静态），
+    这首是"雾里那个东西醒了"（108 BPM、持续上行、最后 4 小节才放太鼓）。
+
+    ⚠️ 前 8 小节**完全不放打击乐**，这是刻意的留白 —— 但 pad / 震音 / 低音
+       三层地基必须 default=1.0 且有地板，否则安静段会塌到 L10 < -30 LUFS
+       （手机外放直接被环境噪声埋掉）。
+
+    曲式（12 小节 @108 = 26.7s）：压抑(0-4) - 上行(4-8) - 爆发(8-12)
+    """
+    a = M.Arrangement(bpm=108, sr=SR, bars=12)
+    prog = [0, 0, 1, 1, 2, 2, 3, 3, 0, 0, 4, 4]   # 半音爬升：Dm Ebm Em Fm | Dm A
+    bpc = 1
+
+    # === 1. pad：不协和的音块（小二度堆叠 = 化不开的雾）===
+    for ci in range(12):
+        root = 38 + prog[ci]                       # D2 起，逐格升半音
+        ch = [root, root + 1, root + 7, root + 12]  # 根 + 小二度 + 五度 + 八度
+        a.add_chord('pad', ci * 4, 4.4, ch, vel=0.44, spread=0.0, pan=0.0,
+                    attack=1.1, release=1.3)
+
+    # === 2. 弦乐震音：不安（不协和、不解决）===
+    for ci in range(12):
+        root = 50 + prog[ci]
+        a.add_chord('strings_tremolo', ci * 4, 4.2, [root, root + 6, root + 13],
+                    vel=0.34, spread=0.16, pan=0.0, rate=7.2, depth=0.66)
+
+    # === 3. 低音：半音上行（★ 全曲唯一的"事件"，也是恐惧的来源）===
+    for ci in range(12):
+        root = 26 + prog[ci]                       # D0/D1 区，手机上只感到"压"
+        a.add('bass', ci * 4, 3.8, root, vel=0.70, pan=0.0, humanize=0.16)
+        a.add('bass', ci * 4 + 2.0, 1.8, root + 12, vel=0.44, pan=0.0,
+              humanize=0.20)
+
+    # === 4. 人声 'oo'：低沉、无词（虚空里的呼吸）===
+    for ci in range(12):
+        if ci % 2 == 1:
+            continue
+        root = 50 + prog[ci]
+        a.add_chord('choir', ci * 4, 8.2, [root, root + 7, root + 12],
+                    vel=0.24, spread=0.10, pan=0.0, vowel='oo',
+                    attack=1.2, release=1.4)
+
+    # === 5. 钟：远处、不知来源（比密集打击乐更瘆人）===
+    for bar in (1, 5, 9):
+        a.add('bell', bar * 4 + 2.0, 2.6, 'D5', vel=0.22, pan=0.38,
+              humanize=0.05)
+
+    # === 6. 爆发段（bar 8-12）：太鼓 + 合成铜管 —— 它看见你了 ===
+    for bar in range(8, 12):
+        b = bar * 4
+        a.add_perc('taiko', b + 0.0, vel=0.86, pan=0.0)
+        a.add_perc('taiko', b + 1.5, vel=0.52, pan=0.12)
+        a.add_perc('taiko', b + 2.0, vel=0.68, pan=-0.08)
+        a.add_perc('taiko', b + 3.5, vel=0.46, pan=0.16)
+        if bar % 2 == 1:
+            a.add_perc('taiko', b + 3.75, vel=0.40, pan=-0.14)
+    for bar in range(8, 12):
+        b = bar * 4
+        a.add_chord('synth_brass', b + 0.0, 1.6,
+                    [38 + prog[bar], 38 + prog[bar] + 7, 38 + prog[bar] + 12],
+                    vel=0.54, spread=0.02, pan=-0.24)
+        a.add_chord('synth_brass', b + 2.0, 1.4,
+                    [38 + prog[bar], 38 + prog[bar] + 6, 38 + prog[bar] + 12],
+                    vel=0.42, spread=0.02, pan=0.24)
+    for bar in range(8, 12):
+        for i in range(8):
+            a.add_perc('shaker', bar * 4 + i * 0.5,
+                       vel=(0.26 if i % 2 == 0 else 0.14), pan=0.30)
+
+    return apply_form(a, [
+        (0, -8.0), (4, -2.5), (8, 0.0), (11, -2.0),
+    ], {
+        # ★ 三层地基全是 default=1.0：前 8 小节没有鼓，靠它们撑住 L10
+        'pad':             ([(0, 4, 0.62), (8, 12, 1.0)], 1.0),
+        'strings_tremolo': ([(0, 4, 0.58), (8, 12, 1.0)], 1.0),
+        'bass':            ([(0, 4, 0.56), (8, 12, 1.0)], 1.0),
+        'choir':           [(2, 8, 1.0), (8, 12, 1.0)],
+        'bell':            [(0, 8, 1.0)],
+        'taiko':           [(8, 12, 1.0)],
+        'synth_brass':     [(8, 12, 1.0)],
+        'shaker':          [(8, 12, 1.0)],
+    })
+
+
+def compose_boss_darkcat():
+    """
+    BOSS 曲 ⑥：洞穴「暗影猫王」
+
+    八音盒摇篮曲**被三全音污染**：旋律是甜的（F 大调式的级进），
+    和声是脏的（贝斯走 F - B 三全音）。这种"童真 + 恶意"的错位
+    比任何咆哮都瘆人，而且是六个 BOSS 里唯一走"可爱恐怖"路线的。
+
+    节奏用 **3+3+2 的 clave**（不是 4/4 的平均律），走起来一瘸一拐，
+    像猫靠近时的脚步。
+
+    配器：music_box（摇篮曲）+ pizz_bass（三全音行走低音）+ wood_block（关节响）
+          + snare（刷子，落在反拍）+ harp + bell + choir（气声）
+
+    曲式（12 小节 @126 = 22.9s）：独奏(0-2) - A(2-6) - 桥(6-9) - A'(9-12)
+    """
+    a = M.Arrangement(bpm=126, sr=SR, bars=12)
+
+    # === 1. 八音盒：摇篮曲（甜）===
+    #    旋律走 F 大调，故意不碰小三度 —— 甜到发腻，才好衬托下面的脏和声
+    mel = [
+        ('F5', 0.0, 0.5, 0.58), ('G5', 0.5, 0.5, 0.54), ('A5', 1.0, 1.0, 0.62),
+        ('G5', 2.0, 0.5, 0.52), ('F5', 2.5, 0.5, 0.56), ('E5', 3.0, 1.0, 0.50),
+        ('F5', 4.0, 0.5, 0.58), ('A5', 4.5, 0.5, 0.54), ('C6', 5.0, 1.0, 0.64),
+        ('Bb5', 6.0, 1.0, 0.54), ('A5', 7.0, 1.0, 0.52),
+        ('G5', 8.0, 0.5, 0.56), ('F5', 8.5, 0.5, 0.52), ('E5', 9.0, 1.0, 0.54),
+        ('F5', 10.0, 2.0, 0.60),
+        ('A5', 12.0, 0.5, 0.58), ('Bb5', 12.5, 0.5, 0.54), ('C6', 13.0, 1.0, 0.64),
+        ('A5', 14.0, 1.0, 0.54), ('G5', 15.0, 1.0, 0.52),
+        ('F5', 16.0, 0.5, 0.58), ('E5', 16.5, 0.5, 0.52), ('D5', 17.0, 1.0, 0.54),
+        ('C5', 18.0, 1.0, 0.50), ('F5', 19.0, 1.0, 0.58),
+        ('F5', 20.0, 0.5, 0.60), ('G5', 20.5, 0.5, 0.54), ('A5', 21.0, 1.0, 0.62),
+        ('Bb5', 22.0, 0.5, 0.56), ('A5', 22.5, 0.5, 0.52), ('F5', 23.0, 1.0, 0.60),
+    ]
+    for p, s, d, v in mel:
+        a.add('music_box', s, d, p, vel=v, pan=0.10, humanize=0.30)
+    # A' 段：高八度叠一层（两个八音盒，其中一个走音了）
+    for p, s, d, v in mel:
+        if s >= 32.0:
+            a.add('music_box', s, d, D.note2midi(p) - 12, vel=v * 0.44,
+                  pan=-0.22, humanize=0.40)
+
+    # === 2. 三全音行走低音（脏）—— F 与 B 交替，永远不解决 ===
+    walk = ['F2', 'B2', 'F2', 'C3', 'B2', 'F2', 'E2', 'B2',
+            'F2', 'B2', 'F2', 'C3', 'B2', 'F2', 'E2', 'B2',
+            'F2', 'B2', 'F2', 'C3', 'B2', 'F2', 'E2', 'B2']
+    for bar in range(12):
+        b = bar * 4
+        for i, p in enumerate(walk[(bar * 2) % len(walk):(bar * 2) % len(walk) + 2]):
+            a.add('pizz_bass', b + i * 2.0, 1.6, p,
+                  vel=(0.68 if i == 0 else 0.52), pan=0.0, humanize=0.20)
+
+    # === 3. 拨奏弦乐：稀疏的心跳（猫的呼吸）===
+    for bar in range(12):
+        b = bar * 4
+        a.add('strings_pizz', b + 1.0, 0.4, 'F4', vel=0.34, pan=-0.30,
+              humanize=0.22)
+        a.add('strings_pizz', b + 3.0, 0.4, 'B4', vel=0.28, pan=0.28,
+              humanize=0.22)
+
+    # === 4. 木鱼：3+3+2 的 clave（一瘸一拐的脚步）===
+    CLAVE = (0.0, 0.75, 1.5, 2.5, 3.25)
+    for bar in range(12):
+        if bar < 2:
+            continue
+        b = bar * 4
+        for i, off in enumerate(CLAVE):
+            a.add_perc('wood_block', b + off,
+                       vel=(0.52 if i in (0, 3) else 0.32),
+                       pan=(0.26 if i % 2 == 0 else -0.24))
+
+    # === 5. 刷子军鼓：落在反拍（不是进行曲，是潜行）===
+    for bar in range(12):
+        if bar < 2:
+            continue
+        b = bar * 4
+        a.add_perc('snare', b + 1.0, vel=0.40, pan=0.10)
+        a.add_perc('snare', b + 3.0, vel=0.36, pan=-0.10)
+        if bar % 4 == 3:
+            a.add_perc('snare', b + 3.5, vel=0.30, pan=0.18)
+            a.add_perc('snare', b + 3.75, vel=0.26, pan=-0.16)
+
+    # === 6. 竖琴 + 钟：桥段的空（洞穴的回声）===
+    for bar in range(6, 9):
+        b = bar * 4
+        a.add('harp', b + 0.0, 0.9, 'F4', vel=0.24, pan=0.44)
+        a.add('harp', b + 1.0, 0.9, 'A4', vel=0.20, pan=-0.40)
+        a.add('harp', b + 2.0, 0.9, 'B4', vel=0.22, pan=0.36)
+    for bar in (0, 6, 11):
+        a.add('bell', bar * 4 + 2.0, 2.2, 'F5', vel=0.20, pan=0.34)
+
+    # === 7. 人声：气声 'oo'（桥段，像有人在黑暗里哼歌）===
+    for bar in range(6, 9):
+        a.add_chord('choir', bar * 4, 4.4, ['F4', 'A4', 'C5'], vel=0.20,
+                    spread=0.08, pan=0.0, vowel='oo', attack=0.9, release=1.1)
+
+    return apply_form(a, [
+        (0, -8.5), (2, -1.0), (6, -8.0), (9, 0.0), (11, -1.5),
+    ], {
+        # ★ 八音盒是身份、低音是地基：两个都不能在桥段整个消失
+        'music_box':    ([(0, 2, 0.44), (6, 9, 0.40)], 1.0),
+        'pizz_bass':    ([(0, 2, 0.42), (6, 9, 0.36)], 1.0),
+        'strings_pizz': ([(0, 2, 0.40), (6, 9, 0.34)], 1.0),
+        'wood_block':   [(2, 6, 1.0), (9, 12, 1.0)],
+        'snare':        [(2, 6, 1.0), (9, 12, 1.0)],
+        'harp':         [(6, 9, 1.0)],
+        'choir':        [(6, 9, 1.0)],
+        'bell':         [(0, 6, 1.0), (9, 12, 1.0)],
     })
 
 
@@ -1474,8 +2041,17 @@ TRACKS = [
     ('bgm_merchant_town', compose_merchant_town, 'merchant_town', True),
     ('bgm_ancient_ruins', compose_ancient_ruins, 'ancient_ruins', True),
     ('bgm_void_mist',     compose_void_mist,     'void_mist',     True),
-    # —— BOSS 专属曲（PvZ "The King" 风格，用户点名） ——
-    ('bgm_the_king',      compose_the_king,      'the_king',      True),
+    # —— BOSS 专属曲：★ 每个 BOSS 一首，互不复用 ——
+    #   曲目 id 与 scripts/data/boss-bgm.js 的映射表一一对应，
+    #   verify_dungeon_bgm.mjs 会交叉校验这两边 + sound-config.js 三方一致。
+    #   曾经 6 个 BOSS 共用 'bgm_the_king'，被用户当场指出 —— 断言必须回答
+    #   "玩家听到的是哪一首"，而不只是"有没有切歌"。
+    ('bgm_boss_healer',   compose_boss_healer,   'boss_healer',   True),
+    ('bgm_boss_crystal',  compose_boss_crystal,  'boss_crystal',  True),
+    ('bgm_boss_merchant', compose_boss_merchant, 'boss_merchant', True),
+    ('bgm_boss_warden',   compose_boss_warden,   'boss_warden',   True),
+    ('bgm_boss_void',     compose_boss_void,     'boss_void',     True),
+    ('bgm_boss_darkcat',  compose_boss_darkcat,  'boss_darkcat',  True),
 ]
 
 

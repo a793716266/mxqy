@@ -1,26 +1,31 @@
 /**
  * verify_dungeon_bgm.mjs
  * ------------------------------------------------------------------
- * 「每个副本一首专属曲 + BOSS 有专属曲」的端到端验证。
+ * 「每个 BOSS 有**自己的**专属曲」的端到端验证。
  *
  * 为什么需要这个文件：
  *   PvZ《The King》那首曲子**早就写在 tools/audio/_legacy_generators/ 里了**，
  *   但既没接进 build_bgm.py、也没登记进 SOUNDS、更没部署到分包 —— 玩家一个音都
  *   听不到，而当时所有回归都是全绿的。脚本绿 ≠ 玩家听到了。
- *   所以这里每一条都只认**真实数据 + 真实代码路径**：
  *
- *   A. 副本曲登记 ── 5 个副本各有 bgm 字段；ID 在 SOUNDS 里；mp3 在磁盘上真实存在
- *                    （存在且 >1KB，0 字节 mp3 在真机上是静默失败）；5 首互不重复
- *   B. BOSS 触发条件 ── 每个副本的 bossEnemy 在怪物数据里 isBoss === true。
- *                    少了这一步，BOSS 曲写得再好也永远不会触发
- *   C. 真跑 `FieldScene._updateBossBGM()` —— **副本战斗的真实入口**。
- *                    靠近 BOSS 切 The King / 脱离或击杀后切回副本曲 / 回差不横跳 /
- *                    通关时不打扰胜利曲。跑的是原型上的真方法，不是抄一份逻辑。
- *                    ★ 上一版跑的是 BattleScene，而副本战斗根本不进 BattleScene
- *                      —— "代码路径全绿、玩家永远走不到"，就是这么翻的车
- *   C2. 兜底路径 `BattleScene.init()` —— map-scene / 主菜单测试入口会走它
- *   D. 真跑 AudioManager ── playBGM('bgm_the_king') 之后 setScene('battle')
- *                    不会被默认的 bgm_battle 顶掉（_explicitBGM 机制）
+ *   ★★ 本文件的灵魂：断言必须回答「玩家听到的是哪一首」，而不是「代码有没有执行」。
+ *      曾经只断言"BOSS 靠近会不会切歌"，没断言"切到的是哪一首" ——
+ *      结果 field-scene 里硬编码 'bgm_the_king'，6 个 BOSS 全放同一首，回归全绿、
+ *      需求没满足，用户当场指出"你把每个 BOSS 的背景音乐都设置成一样了"。
+ *
+ *   所以每一条都只认**真实数据 + 真实代码路径**：
+ *
+ *   A. 每 BOSS 专属曲登记 ── BOSS_BGM 映射表里每个敌人 → 互不相同的曲目 id；
+ *      每个 id 在 SOUNDS 里注册、在 build_bgm.py 的 TRACKS 里有作曲函数、
+ *      在 tools/audio/out/mp3 里真实编译出来（>1KB，0 字节在真机是静默失败）。
+ *   B. 触发条件 ── 每个副本的 bossEnemy 在怪物数据里 isBoss === true，
+ *      且**登记进了 BOSS_BGM**（漏登记 → 回退默认曲 → 又变成"所有 Boss 同一首"）。
+ *   C. 真跑 `FieldScene._updateBossBGM()` —— 副本战斗的真实入口（玩家真走的路径）。
+ *      靠近 BOSS 切到「该 BOSS 自己的曲」、脱离/击杀切回副本曲、回差不横跳、
+ *      通关不打扰胜利曲。洞穴 BOSS dark_cat_king（isDungeon:false）也走这条，
+ *      只要登记了专属曲就必定拿到自己的曲。
+ *   C2. 兜底路径 `BattleScene.init()` —— map-scene / 主菜单测试入口会走它。
+ *   D. 真跑 AudioManager ── playBGM(专属曲) 之后 setScene('battle') 不会被默认曲顶掉。
  *
  * 运行：npm run verify-dungeon-bgm
  */
@@ -98,6 +103,8 @@ globalThis.wx = {
 const { SOUNDS, SCENE_BGM } = await import('../scripts/config/sound-config.js')
 const { AudioManager } = await import('../scripts/core/audio-manager.js')
 const { BattleScene } = await import('../scripts/scenes/battle-scene.js')
+const { FieldScene } = await import('../scripts/scenes/field-scene.js')
+const { BOSS_BGM, DEFAULT_BOSS_BGM, getBossBGM } = await import('../scripts/data/boss-bgm.js')
 
 const { GRASSLAND_DUNGEON } = await import('../scripts/data/grassland-dungeon.js')
 const { MAGIC_TOWER_DUNGEON } = await import('../scripts/data/magic-tower-dungeon.js')
@@ -114,57 +121,62 @@ const DUNGEONS = [
   ['void_mist', '虚无之境', VOID_MIST_DUNGEON],
 ]
 
-/** 曲子是否真的在磁盘上（>1KB，防 0 字节静默失败） */
-function fileOk(id) {
-  const p = SOUNDS[id]
-  if (!p) return false
-  const abs = path.join(ROOT, p)
-  if (!fs.existsSync(abs)) return false
-  return fs.statSync(abs).size > 1024
+// ============================================================
+// 三方一致性的数据源
+// ============================================================
+// build_bgm.py 的 TRACKS 表里登记过的曲目 id（作曲函数真的存在）
+const bgmSrc = fs.readFileSync(path.join(ROOT, 'tools/audio/build_bgm.py'), 'utf8')
+const composedIds = new Set(
+  [...bgmSrc.matchAll(/\(\s*'(bgm_boss_[a-z]+)'\s*,\s*compose_/g)].map(m => m[1])
+)
+
+/** 音频源已编译（>1KB，防 0 字节静默失败）。跑这条之前必须先 build_bgm.py */
+function composedOk(id) {
+  const p = path.join(ROOT, 'tools/audio/out/mp3', id + '.mp3')
+  if (!fs.existsSync(p)) return false
+  return fs.statSync(p).size > 1024
 }
 
-// field-scene 源码：A 段查"字段有没有人读"，B 段查 bossEnemy ↔ dungeonCfg 配对
+// field-scene 源码：B 段查"字段有没有人读"，反漂移查半径
 const fsSrc = fs.readFileSync(path.join(ROOT, 'scripts/scenes/field-scene.js'), 'utf8')
 
 // ============================================================
-section('A. 每个副本都有专属曲（登记 + 文件真实存在 + 互不重复）')
+section('A. 每个 BOSS 都有专属曲（映射表 + 互不重复 + 三方一致 + 已编译）')
 // ============================================================
-const bossBgmId = 'bgm_the_king'
-const ids = []
-for (const [area, label, cfg] of DUNGEONS) {
-  const id = cfg && cfg.bgm
-  check(`[${area}] ${label} 配置了 bgm 字段`, !!id, id || '(缺失)')
-  if (!id) continue
-  check(`[${area}] ${id} 已在 SOUNDS 中登记`, !!SOUNDS[id], SOUNDS[id] || '(未登记 —— 播不出来)')
-  check(`[${area}] ${id} 的 mp3 真实存在且非空`, fileOk(id), SOUNDS[id] || '(无路径)')
-  ids.push(id)
+const bossIds = Object.keys(BOSS_BGM)
+const trackIds = Object.values(BOSS_BGM)
+
+check(`BOSS_BGM 映射表登记了 ${bossIds.length} 个 BOSS 的专属曲`,
+  bossIds.length >= 5, bossIds.join(', '))
+
+check('6 个 BOSS 的曲目互不相同（不是同一首换皮）',
+  new Set(trackIds).size === trackIds.length,
+  trackIds.join(', '))
+
+for (const enemyId of bossIds) {
+  const id = BOSS_BGM[enemyId]
+  check(`[${enemyId}] → ${id} 已在 SOUNDS 中注册`, !!SOUNDS[id], SOUNDS[id] || '(未注册 → 播不出来)')
+  check(`[${enemyId}] → ${id} 已在 build_bgm.py 的 TRACKS 登记（真的有作曲函数）`,
+    composedIds.has(id), composedIds.has(id) ? '' : '(TRACKS 里没有 → 编译不出)')
+  check(`[${enemyId}] → ${id} 已编译成 mp3（out/mp3，>1KB）`,
+    composedOk(id), composedOk(id) ? '' : '(没 build → 玩家听不到)')
 }
 
-check('5 个副本的曲目互不重复（不是同一首换皮）',
-  new Set(ids).size === ids.length,
-  ids.join(', '))
-
-// 通用曲（场景兜底）不该被副本拿来顶替
+// 专属曲不能和通用曲撞车
 const generic = ['bgm_menu', 'bgm_town', 'bgm_explore', 'bgm_battle', 'bgm_boss', 'bgm_victory', 'bgm_tower']
-const reused = ids.filter(i => generic.includes(i))
-check('副本曲没有复用通用曲（menu/town/battle/boss…）', reused.length === 0, reused.join(', '))
+const reused = trackIds.filter(i => generic.includes(i))
+check('BOSS 专属曲没有复用通用曲（menu/town/battle/boss…）', reused.length === 0, reused.join(', '))
 
-check(`BOSS 专属曲 ${bossBgmId} 已登记`, !!SOUNDS[bossBgmId], SOUNDS[bossBgmId] || '(未登记)')
-check(`BOSS 专属曲 ${bossBgmId} 文件真实存在且非空`, fileOk(bossBgmId), SOUNDS[bossBgmId] || '(无路径)')
-check(`BOSS 专属曲与普通战斗曲不同（${bossBgmId} ≠ ${SCENE_BGM['battle']}）`,
-  bossBgmId !== SCENE_BGM['battle'], SCENE_BGM['battle'])
+// 兜底默认曲也得存在
+check(`兜底默认曲 ${DEFAULT_BOSS_BGM} 已注册`, !!SOUNDS[DEFAULT_BOSS_BGM], SOUNDS[DEFAULT_BOSS_BGM] || '(未注册)')
 
-// 配了字段 ≠ 有人读。field-scene 必须真的把 dungeonCfg.bgm 交给 playBGM，
-// 否则副本曲就是一堆没人播放的文件（这正是当年 The King 的死法）。
+// 配了字段 ≠ 有人读。field-scene 必须真的把 dungeonCfg.bgm 交给 playBGM
 check('field-scene 真的会读 dungeonCfg.bgm 并播放（字段没白配）',
   /_dungeonCfg\.bgm/.test(fsSrc) && /playBGM\(\s*\(?\s*this\._dungeonCfg/.test(fsSrc),
   'field-scene.js 中未找到 dungeonCfg.bgm → playBGM 的调用')
 
 // ============================================================
-section('B. 每个副本的 BOSS 在数据里真的是 BOSS（否则 BOSS 曲永不触发）')
-// ============================================================
-// field-scene 的 area 表里，bossEnemy 恒在 dungeonCfg 之前 —— 用非贪婪配对抓出来，
-// 这样"以后新增副本忘了配 bossEnemy"会直接在这里被抓到（而不是等玩家反馈）。
+section('B. 每个副本的 BOSS 在数据里真的是 BOSS，且登记了专属曲')
 // ============================================================
 const pairs = [...fsSrc.matchAll(/bossEnemy:\s*'([a-z0-9_]+)'[\s\S]*?dungeonCfg:\s*([A-Z_]+)/g)]
   .map(m => ({ boss: m[1], cfgName: m[2] }))
@@ -187,12 +199,15 @@ for (const [area, label] of DUNGEONS) {
   const bossId = bossByArea.get(area)
   check(`[${area}] ${label} 有 bossEnemy`, !!bossId, '(缺失)')
   if (!bossId) continue
-  // 怪物 id 'crystal_mage' → 文件 scripts/entities/monsters/crystal-mage.js
+  // ★ 漏登记 → getBossBGM 回退默认曲 → 又变成"所有 Boss 同一首"。
+  //   （治愈猫的专属曲恰好就是默认兜底曲 bgm_boss_healer，所以只判"登记了专属曲"，
+  //    不判"≠ 默认"；两 Boss 撞同一首由上面的「曲目互不重复」断言拦。）
+  check(`[${area}] BOSS ${bossId} 已登记专属曲`,
+    Object.prototype.hasOwnProperty.call(BOSS_BGM, bossId),
+    getBossBGM(bossId))
   const file = path.join(ROOT, 'scripts/entities/monsters', bossId.replace(/_/g, '-') + '.js')
   let data = null
-  try {
-    data = (await import(file)).default
-  } catch (e) { /* 下面统一断言 */ }
+  try { data = (await import(file)).default } catch (e) { /* 下面统一断言 */ }
   check(`[${area}] BOSS 怪物 ${bossId} 数据可加载`, !!data, `文件 ${path.basename(file)}`)
   check(`[${area}] BOSS 怪物 ${bossId} 的 isBoss === true`, !!(data && data.isBoss === true),
     data ? `isBoss=${data.isBoss}` : '(无数据)')
@@ -201,28 +216,15 @@ for (const [area, label] of DUNGEONS) {
 // ============================================================
 section('C. 真跑副本战斗入口 —— FieldScene._updateBossBGM()（玩家真正走的路径）')
 // ============================================================
-// ★ 这一段是上次翻车的地方。上一版把 BOSS 曲接在 battle-scene.init()，
-//   回归跑 BattleScene 全绿 —— 但副本战斗**压根不进 BattleScene**：
-//   changeScene('battle') 全工程只在 map-scene 与 main-menu 出现，
-//   副本是 FieldScene 里的实时 battleSystem，而且进图那一刻就 active=true，
-//   全程没有"进入战斗场景"这个事件可挂。玩家永远走不到那条路径，
-//   于是"还是一样 BOSS 没有专属音乐"，而回归是绿的。
-//
-//   → 教训：验证要跑**玩家真正会走进去的入口**，不是跑"代码写得对不对"。
-//
-//   这里跑的是 `FieldScene.prototype._updateBossBGM` 这个**真方法**
-//   （用 fake this 驱动它的状态机），不是抄一份逻辑 —— 改实现这里会跟着变。
-
-const { FieldScene } = await import('../scripts/scenes/field-scene.js')
+// 跑的是 `FieldScene.prototype._updateBossBGM` 这个**真方法**（用 fake this 驱动状态机），
+// 不是抄一份逻辑 —— 改实现这里会跟着变。每个 BOSS 都要切到「它自己那首」，
+// 且洞穴 BOSS dark_cat_king（isDungeon:false）也要能拿到自己的曲。
 const bossBgmFn = FieldScene.prototype._updateBossBGM
 check('FieldScene 上存在 _updateBossBGM（副本 BOSS 曲的切歌入口）',
   typeof bossBgmFn === 'function', typeof bossBgmFn)
 
 // 与实现保持一致的半径（改了实现这里也要跟着改，否则断言会假绿）
 const ENGAGE = 420, RELEASE = 640
-
-// 反漂移：把半径从**实现源码**里抠出来比对。改了实现而测试没跟上就直接失败 ——
-// 否则断言会拿着旧阈值继续"全绿"，这正是上一次翻车的形态。
 const implSrc = bossBgmFn.toString()
 const mm = implSrc.match(/this\._bossBgmOn\s*\?\s*([\d.]+)\s*:\s*([\d.]+)\s*\)\s*\*\s*this\.dpr/)
 check('能从实现中解析出「进入 / 脱离」半径', !!mm, implSrc.slice(0, 100))
@@ -232,11 +234,11 @@ check('测试的半径常量与实现一致（防断言假绿）',
   IMPL_ENGAGE === ENGAGE && IMPL_RELEASE === RELEASE,
   `实现 ${IMPL_ENGAGE}/${IMPL_RELEASE} vs 测试 ${ENGAGE}/${RELEASE}`)
 
-function runField({ dungeonBgm = 'bgm_magic_tower', bossAlive = true, dist = 9999,
-                    dungeon = true, cleared = false, startOn = false } = {}) {
+function runField({ bossKey = 'crystal_mage', dungeonBgm = 'bgm_magic_tower', bossAlive = true,
+                    dist = 9999, dungeon = true, cleared = false, startOn = false } = {}) {
   const calls = []
   const sc = {
-    dpr: 1,                                  // dpr=1 → 距离直接与阈值同单位
+    dpr: 1,
     playerX: 0, playerY: 0,
     areaInfo: { isDungeon: dungeon, name: '测试副本' },
     _dungeonCfg: { bgm: dungeonBgm },
@@ -244,50 +246,65 @@ function runField({ dungeonBgm = 'bgm_magic_tower', bossAlive = true, dist = 999
     _bossMonologueActive: false,
     showDungeonClear: false,
     _bossBgmOn: startOn,
-    mapMonsters: [{ id: 'boss', name: 'BOSS', isBoss: true, alive: bossAlive, x: dist, y: 0 }],
+    mapMonsters: [{ id: bossKey, enemyId: bossKey, name: 'BOSS', isBoss: true, alive: bossAlive, x: dist, y: 0 }],
     game: { audio: { playBGM: (id) => calls.push(id), playSFX() {}, setScene() {} } },
   }
-  bossBgmFn.call(sc)                         // ← 跑原型上的真方法
+  bossBgmFn.call(sc)
   return { calls, sc }
 }
 
-const f1 = runField({ dist: 900 })
+const f1 = runField({ bossKey: 'crystal_mage', dist: 900 })
 check(`远离 BOSS（> ${ENGAGE}）：不切歌`, f1.calls.length === 0, `[${f1.calls.join(', ')}]`)
 
-const f2 = runField({ dist: 300 })
-check(`靠近 BOSS（< ${ENGAGE}）：切到 ${bossBgmId}`,
-  f2.calls.length === 1 && f2.calls[0] === bossBgmId, `[${f2.calls.join(', ')}]`)
+const f2 = runField({ bossKey: 'crystal_mage', dist: 300 })
+const expectCrystal = getBossBGM('crystal_mage')
+check(`靠近水晶法师：切到它自己的 ${expectCrystal}（不是某首写死的曲）`,
+  f2.calls.length === 1 && f2.calls[0] === expectCrystal, `[${f2.calls.join(', ')}]`)
 check('切歌后状态位 _bossBgmOn 置起', f2.sc._bossBgmOn === true, String(f2.sc._bossBgmOn))
 
-const f3 = runField({ dist: 500, startOn: true })   // 420 ~ 640 之间
+const f3 = runField({ bossKey: 'crystal_mage', dist: 500, startOn: true })
 check(`回差：已在 BOSS 曲中、距离 ${ENGAGE}~${RELEASE} 之间时保持不变（不横跳）`,
   f3.calls.length === 0, `[${f3.calls.join(', ')}]`)
 
-const f4 = runField({ dist: 700, startOn: true })
+const f4 = runField({ bossKey: 'crystal_mage', dist: 700, startOn: true })
 check(`脱离 BOSS（> ${RELEASE}）：切回副本曲`,
   f4.calls.length === 1 && f4.calls[0] === 'bgm_magic_tower', `[${f4.calls.join(', ')}]`)
 
-const f5 = runField({ bossAlive: false, startOn: true })
+const f5 = runField({ bossKey: 'crystal_mage', bossAlive: false, startOn: true })
 check('BOSS 被击败：切回副本曲',
   f5.calls.length === 1 && f5.calls[0] === 'bgm_magic_tower', `[${f5.calls.join(', ')}]`)
 
-const f6 = runField({ dist: 100, startOn: true, cleared: true })
+const f6 = runField({ bossKey: 'crystal_mage', dist: 100, startOn: true, cleared: true })
 check('副本已通关：不打扰胜利曲（一条 playBGM 都不发）',
   f6.calls.length === 0, `[${f6.calls.join(', ')}]`)
 
-const f7 = runField({ dist: 100, dungeon: false })
-check('非副本野外：不切 BOSS 曲', f7.calls.length === 0, `[${f7.calls.join(', ')}]`)
-
-// 每个副本都能切回**它自己那首**，而不是写死某一首
+// ★ 每个副本 BOSS 都切到「它自己那首」—— 这是用户"每个 BOSS 有自己的专属音乐"的硬判据
 for (const [area, label, cfg] of DUNGEONS) {
-  const r = runField({ dungeonBgm: cfg.bgm, dist: 700, startOn: true })
-  check(`[${area}] ${label} 脱离 BOSS 后切回自己的 ${cfg.bgm}`,
-    r.calls.length === 1 && r.calls[0] === cfg.bgm, `[${r.calls.join(', ')}]`)
+  const bossId = bossByArea.get(area)
+  if (!bossId) continue
+  const r = runField({ bossKey: bossId, dungeonBgm: cfg.bgm, dist: 300, startOn: false })
+  check(`[${area}] ${label} BOSS ${bossId} 靠近切到专属曲 ${getBossBGM(bossId)}`,
+    r.calls.length === 1 && r.calls[0] === getBossBGM(bossId), `[${r.calls.join(', ')}]`)
+  const r2 = runField({ bossKey: bossId, dungeonBgm: cfg.bgm, dist: 700, startOn: true })
+  check(`[${area}] ${label} BOSS ${bossId} 脱离切回自己的 ${cfg.bgm}`,
+    r2.calls.length === 1 && r2.calls[0] === cfg.bgm, `[${r2.calls.join(', ')}]`)
 }
 
-// ------------------------------------------------------------
+// ★ 洞穴 BOSS dark_cat_king（isDungeon:false）也走这条：登记了专属曲就必定拿到
+const fc = runField({ bossKey: 'dark_cat_king', dungeon: false, dungeonBgm: 'bgm_grassland', dist: 300 })
+check(`洞穴 BOSS dark_cat_king（非副本）靠近切到专属曲 ${getBossBGM('dark_cat_king')}`,
+  fc.calls.length === 1 && fc.calls[0] === getBossBGM('dark_cat_king'), `[${fc.calls.join(', ')}]`)
+check('洞穴 BOSS 切歌后 _bossBgmOn 置起',
+  fc.sc._bossBgmOn === true, String(fc.sc._bossBgmOn))
+
+// ★ 未登记专属曲的 BOSS（如野外 stray_leader）绝不顶成默认曲 —— 沿用场景曲
+const fUnreg = runField({ bossKey: 'stray_leader', dungeon: false, dungeonBgm: 'bgm_grassland', dist: 300 })
+check('野外未登记 BOSS（stray_leader）靠近也不切 BOSS 曲（沿用场景曲，避免伪专属）',
+  fUnreg.calls.length === 0, `[${fUnreg.calls.join(', ')}]`)
+
+// ============================================================
 section('C2. 兜底路径：BattleScene.init()（map-scene / 主菜单测试入口会走它）')
-// ------------------------------------------------------------
+// ============================================================
 function silent(fn) {
   const orig = console.log
   console.log = () => {}
@@ -316,33 +333,32 @@ const bossEnemy = { id: 'crystal_mage', name: '水晶法师', isBoss: true, hp: 
 const mobEnemy = { id: 'magic_sprite', name: '魔法精灵', hp: 60, maxHp: 60, level: 10 }
 
 const r1 = runBattleInit([bossEnemy])
-check('BOSS 战：init() 调了 playBGM(\'bgm_the_king\')',
-  r1.calls.includes(bossBgmId), `实际调用 = [${r1.calls.join(', ')}]`)
+const bossBgm1 = getBossBGM('crystal_mage')
+check(`BOSS 战：init() 调了 playBGM('${bossBgm1}')（走映射表，不是写死 the_king）`,
+  r1.calls.includes(bossBgm1), `实际调用 = [${r1.calls.join(', ')}]`)
 check('BOSS 战：只切一次（不是每帧重复调）',
-  r1.calls.filter(c => c === bossBgmId).length === 1, `次数 = ${r1.calls.length}`)
+  r1.calls.filter(c => c === bossBgm1).length === 1, `次数 = ${r1.calls.length}`)
 
 const r2 = runBattleInit([mobEnemy, { ...mobEnemy, id: 'ghost_cat', name: '幽灵猫' }])
 check('普通战：不切 BOSS 曲（沿用场景默认 bgm_battle）',
-  !r2.calls.includes(bossBgmId), `实际调用 = [${r2.calls.join(', ')}]`)
+  !r2.calls.includes(bossBgm1), `实际调用 = [${r2.calls.join(', ')}]`)
 
 const r3 = runBattleInit([mobEnemy, bossEnemy, { ...mobEnemy, id: 'stone_golem', name: '石魔像' }])
-check('混合战（1 BOSS + 2 小怪）：只要有一个 BOSS 就切',
-  r3.calls.includes(bossBgmId), `实际调用 = [${r3.calls.join(', ')}]`)
+check('混合战（1 BOSS + 2 小怪）：只要有一个 BOSS 就切它自己的曲',
+  r3.calls.includes(bossBgm1), `实际调用 = [${r3.calls.join(', ')}]`)
 
 // ============================================================
 section('D. 真跑 AudioManager —— BOSS 曲不会被 setScene 的默认曲顶掉')
 // ============================================================
-// game.changeScene 的顺序是 init() → audio.setScene(name)：
-// init 里调 playBGM 置 _explicitBGM=true，setScene 看到就尊重场景的选择。
-// 这条挂了 = BOSS 曲刚响就被 bgm_battle 盖掉，玩家只会听到"闪了一下"。
+const amBgm = getBossBGM('crystal_mage')
 const am = new AudioManager()
-am.playBGM(bossBgmId)
-check(`playBGM 后当前曲是 ${bossBgmId}`, am._bgmId === bossBgmId, am._bgmId)
+am.playBGM(amBgm)
+check(`playBGM 后当前曲是 ${amBgm}`, am._bgmId === amBgm, am._bgmId)
 check('playBGM 置起了 _explicitBGM', am._explicitBGM === true, String(am._explicitBGM))
 
 am.setScene('battle')
-check('setScene(\'battle\') 之后仍是 BOSS 曲（没被 bgm_battle 顶掉）',
-  am._bgmId === bossBgmId, `实际 = ${am._bgmId}`)
+check(`setScene('battle') 之后仍是 ${amBgm}（没被 bgm_battle 顶掉）`,
+  am._bgmId === amBgm, `实际 = ${am._bgmId}`)
 
 // 非 BOSS 战：不调 playBGM，setScene 应当正常兜底到 bgm_battle
 const am2 = new AudioManager()
@@ -351,12 +367,11 @@ check('非 BOSS 战：setScene 正常兜底到 bgm_battle',
   am2._bgmId === SCENE_BGM['battle'], `实际 = ${am2._bgmId}`)
 
 // 打的确实是那首文件（不是同名空壳）
-const kingPath = SOUNDS[bossBgmId]
-const kingCtx = audioCreated.find(c => c.src && c.src.includes(path.basename(kingPath)))
-check(`BOSS 曲实例指向真实文件 ${path.basename(kingPath)}`, !!kingCtx,
+const amCtx = audioCreated.find(c => c.src && c.src.includes(path.basename(SOUNDS[amBgm])))
+check(`BOSS 曲实例指向真实文件 ${path.basename(SOUNDS[amBgm])}`, !!amCtx,
   audioCreated.map(c => c.src).filter(Boolean).join(' | '))
-check('BOSS 曲实例已 loop（副本 BOSS 战可能拖很久）', !!(kingCtx && kingCtx.loop === true),
-  kingCtx ? String(kingCtx.loop) : '(无实例)')
+check('BOSS 曲实例已 loop（副本 BOSS 战可能拖很久）', !!(amCtx && amCtx.loop === true),
+  amCtx ? String(amCtx.loop) : '(无实例)')
 
 // ============================================================
 console.log('\n' + '='.repeat(70))
