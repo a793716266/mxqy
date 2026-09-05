@@ -142,6 +142,9 @@ export class FieldScene extends SceneBase {
     
     // 战斗触发标志（防止重复触发）
     this.isEnteringBattle = false
+
+    // ★ BOSS 专属音乐状态（场景实例会被复用，必须在 init 复位）
+    this._bossBgmOn = false
     
     // ★ 新增：ARPG战斗系统（在地图上直接战斗）
     this.battleSystem = {
@@ -425,6 +428,14 @@ export class FieldScene extends SceneBase {
         atk: charState.atk,
         def: charState.def,
         spd: charState.spd,
+
+        // ★ 装备词条属性（此前缺失 → 副本内回蓝/回血/暴击/法强/吸血/CDR 全部失效的根因）
+        matk: charState.matk || 0,
+        crit: charState.crit || 0,
+        mpRegen: charState.mpRegen || 0,
+        hpRegen: charState.hpRegen || 0,
+        lifesteal: charState.lifesteal || 0,
+        cdr: charState.cdr || 0,
         
         // 当前状态
         hp: charState.hp,
@@ -860,6 +871,57 @@ export class FieldScene extends SceneBase {
     }
   }
 
+  /**
+   * ★ BOSS 专属音乐：靠近 BOSS 切到 The King，脱离或击杀后切回副本曲。
+   *
+   * 为什么写在这里、而不是 battle-scene.init()：
+   *   副本里的战斗**压根不进 BattleScene**。changeScene('battle') 全工程只在
+   *   map-scene 与 main-menu 出现；副本是 FieldScene 里的实时 battleSystem，
+   *   而且进图那一刻就 active=true，全程没有"进入战斗场景"这个事件可挂。
+   *   上一版把接线放在 battle-scene.init()，回归脚本跑 BattleScene 全绿，
+   *   但玩家永远走不到那条路径 —— 于是"BOSS 还是没有专属音乐"。
+   *   ★ 教训：验证要跑**玩家真正会走进去的入口**，不是跑"代码写得对不对"。
+   *
+   * 触发：与 BOSS 的距离进入 ENGAGE 半径。带回差（脱离半径更大），
+   *   否则玩家在阈值附近来回走会让音乐反复横跳。
+   */
+  _updateBossBGM() {
+    const a = this.game && this.game.audio
+    if (!a || typeof a.playBGM !== 'function') return
+    if (!this.areaInfo || !this.areaInfo.isDungeon) return
+
+    const dungeonBgm = (this._dungeonCfg && this._dungeonCfg.bgm) || 'bgm_grassland'
+
+    // 副本已通关 / 正在放 BOSS 独白 / 通关遮罩：胜利曲正在放或即将放，
+    // 别插一脚把副本曲顶上来（否则会先闪一下副本曲再跳胜利曲）
+    if (this.dungeonCleared || this._bossMonologueActive || this.showDungeonClear) {
+      this._bossBgmOn = false
+      return
+    }
+
+    const boss = (this.mapMonsters || []).find(m => m.isBoss && m.alive)
+    if (!boss) {
+      // BOSS 已被击败（alive=false 就查不到了）→ 回到副本曲
+      if (this._bossBgmOn) {
+        this._bossBgmOn = false
+        a.playBGM(dungeonBgm)
+      }
+      return
+    }
+
+    const dx = this.playerX - boss.x
+    const dy = this.playerY - boss.y
+    const dist = Math.sqrt(dx * dx + dy * dy)
+    // 进入 420、脱离 640：比登场对话的 240 更早一点，让玩家"听着音乐走近去"
+    const threshold = (this._bossBgmOn ? 640 : 420) * this.dpr
+    const on = dist < threshold
+
+    if (on !== this._bossBgmOn) {
+      this._bossBgmOn = on
+      a.playBGM(on ? 'bgm_the_king' : dungeonBgm)
+    }
+  }
+
   init() {
     // 队友 AI 行为模式：false=自行寻怪战斗不跟随；true=召回（紧跟主角身边）
     this.aiRecall = false
@@ -1148,6 +1210,8 @@ baseRadius: 50 * this.dpr,    // 底座半径（缩小）
     // ★ 副本：Boss 接近登场对话
     if (this.areaInfo && this.areaInfo.isDungeon) {
       this._checkBossApproach()
+      // ★ BOSS 专属音乐（副本战斗不进 BattleScene，必须在这里切）
+      this._updateBossBGM()
     }
 
     // 更新怪物移动

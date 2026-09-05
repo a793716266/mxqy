@@ -406,6 +406,186 @@ def music_box(freq, dur, vel=0.8, sr=SR, seed=None):
 
 
 # ============================================================
+# 电子 / 合成器音色（80~90 年代游戏电子配器，PvZ BOSS 曲是核心用例）
+# ============================================================
+# 上面整组是「管弦 / 民谣」取向的物理建模；这一组是**电子**取向：
+# FM 电钢、锯齿波合成铜管、方波主音、鼓机（底鼓 / 拍手 / 踩镲）。
+#
+# 为什么必须单独加这一组：用弦乐 + 太鼓去配一首电子放克曲，**旋律写得再像
+# 也出不来那个味道**。这就是 "The King 感觉和原版差距很大" 的根因 ——
+# 差的不是音符，是音色和律动。原曲配器（据两份独立扒谱 MIDI）：
+#   Electric Piano 1（508 音，平均音高 F5，主旋律在高音区）
+#   Pizzicato Strings（278 音，固定音型）/ Syn Brass 1（229 音）/ Lead 1 square
+#   鼓组 = 底鼓 + **拍手** + 电子军鼓 + 闭镲 / 踏镲
+# 没有管风琴、没有太鼓、没有定音鼓。
+
+def _syn_env(n, sr, attack=0.004, decay_tau=0.35, hold=0.0):
+    """
+    合成器通用包络：极短起音 →（可选平台）→ 指数衰减 → **末尾强制归零**。
+
+    末尾一定要回到 0：dur 约定已含 release 尾巴，不归零的话循环折叠时
+    会在接缝处留下一个阶跃（咔哒）。
+    """
+    t = np.arange(n) / sr
+    a = 1.0 - np.exp(-t / max(attack, 1e-5))
+    if hold > 0:
+        hi = min(int(hold * sr), n)
+        d = np.ones(n)
+        if hi < n:
+            d[hi:] = np.exp(-(t[hi:] - t[hi]) / max(decay_tau, 1e-4))
+    else:
+        d = np.exp(-t / max(decay_tau, 1e-4))
+    e = a * d
+    k = max(1, int(n * 0.08))
+    e[-k:] *= np.linspace(1.0, 0.0, k)
+    return e
+
+
+def epiano(freq, dur, vel=0.8, sr=SR, ratio=1.0, index=3.4, decay=0.75,
+           bright=0.6, seed=None):
+    """
+    FM 电钢琴（DX7 Rhodes 类）—— PvZ BOSS 曲主旋律的音色。
+
+    算法：y = sin(2π·fc·t + I(t)·sin(2π·fm·t))
+    **调制指数 I(t) 从 index 快速衰减** —— 起音瞬间炸出大量边频（金属"铛"），
+    随后收敛成近乎纯净的正弦（电钢的木质延音）。这条衰减曲线就是电钢的身份，
+    任何静态泛音堆叠都替不了（曾用 music_box 顶替，被判"和原版差距很大"）。
+    """
+    n = int(dur * sr)
+    if n <= 0:
+        return np.zeros(0)
+    gain, bright_add = _vel(vel)
+    t = np.arange(n) / sr
+    fm = freq * ratio
+    I = index * (0.5 + 0.5 * gain) * (
+        0.82 * np.exp(-t / max(decay * 0.20, 1e-3))
+        + 0.18 * np.exp(-t / max(decay, 1e-3)))
+    y = np.sin(2 * np.pi * freq * t + I * np.sin(2 * np.pi * fm * t))
+    # 力度驱动亮度：击弦越重高频越多
+    fc = 1400.0 + (bright + bright_add) * 5600.0 * (1.0 + 1.8 * _reg_area(freq))
+    y = D.lowpass(y, float(min(fc, sr * 0.45)), q=0.7, sr=sr)
+    rng = np.random.default_rng(seed)
+    y = y + rng.standard_normal(n) * np.exp(-t / 0.0035) * 0.22   # 击弦槌瞬态
+    return y * _syn_env(n, sr, attack=0.002,
+                        decay_tau=max(dur * 0.55, 0.22)) * gain * 0.62
+
+
+def synth_brass(freq, dur, vel=0.9, sr=SR, bright=0.5, seed=None):
+    """
+    锯齿波合成铜管（对应原曲的 Syn Brass 1）。
+
+    与声学 brass_stab 的区别：合成铜管没有气声、没有唇振噪声，它的亮度
+    全部来自**滤波器起音时的"哇"声**（filter blat）—— 截止频率在 6ms 内
+    从基频附近扫到 peak 再回落。这一下就是 80 年代合成器铜管的签名。
+    """
+    n = int(dur * sr)
+    if n <= 0:
+        return np.zeros(0)
+    gain, bright_add = _vel(vel)
+    t = np.arange(n) / sr
+    rng = np.random.default_rng(seed)
+    det = rng.uniform(6.0, 14.0)                       # 两振荡器失谐（cents）
+    f1 = D.freq_env(freq, n, sr=sr, vib_rate=4.6, vib_cents=5.0)
+    f2 = D.freq_env(freq * (2 ** (det / 1200.0)), n, sr=sr, vib_rate=4.3, vib_cents=4.0)
+    y = D.osc('saw', f1, sr=sr) * 0.6 + D.osc('saw', f2, sr=sr) * 0.5
+    base = 420.0 + (bright + bright_add) * 2600.0
+    peak = base * (2.6 + 2.2 * float(np.clip(vel, 0.0, 1.0)))
+    fc = base + (peak - base) * np.exp(-t / 0.055) * (1.0 - np.exp(-t / 0.006))
+    y = D.lowpass(y, np.clip(fc, 120.0, sr * 0.42), q=0.9, sr=sr, block=256)
+    return y * _syn_env(n, sr, attack=0.012, decay_tau=max(dur * 0.5, 0.18),
+                        hold=dur * 0.45) * gain * 0.34
+
+
+def square_lead(freq, dur, vel=0.8, sr=SR, bright=0.7, vibrato=True, seed=None):
+    """
+    方波主音（对应原曲的 Lead 1 square）。
+
+    方波只有奇次谐波 —— 天生"空心、塑料、机械"，这是老游戏音乐的骨架音色。
+    截止频率上挂一条慢速 LFO，避免长时间聆听时的呆板与刺耳。
+    """
+    n = int(dur * sr)
+    if n <= 0:
+        return np.zeros(0)
+    gain, bright_add = _vel(vel)
+    t = np.arange(n) / sr
+    vib = 5.2 if vibrato else 0.0
+    f = D.freq_env(freq, n, sr=sr, vib_rate=vib, vib_cents=14.0)
+    y = D.osc('square', f, sr=sr)
+    fc = (1800.0 + (bright + bright_add) * 4200.0) * (1.0 + 0.22 * np.sin(2 * np.pi * 3.1 * t))
+    y = D.lowpass(y, np.clip(fc, 300.0, sr * 0.42), q=0.8, sr=sr, block=512)
+    return y * _syn_env(n, sr, attack=0.003, decay_tau=max(dur * 0.55, 0.18),
+                        hold=dur * 0.35) * gain * 0.30
+
+
+def kick(dur=0.5, vel=1.0, sr=SR, seed=None):
+    """
+    鼓机底鼓 —— 音高从 135Hz 迅速下扫到 48Hz 的正弦 + 击打瞬态。
+
+    ⚠️ 不是太鼓。太鼓是膜振动（有音高感、有皮膜噪声），底鼓是**扫频正弦**，
+    下扫的那一下"咚"是电子鼓机的核心。用 taiko 顶替会把放克律动变成行进鼓号队。
+    """
+    n = int(dur * sr)
+    gain, _ = _vel(vel)
+    t = np.arange(n) / sr
+    f = D.freq_sweep(135.0, 48.0, n, sr=sr, curve='exp')
+    body = np.sin(2 * np.pi * np.cumsum(f) / sr) * np.exp(-t / 0.16)
+    rng = np.random.default_rng(seed)
+    click = D.highpass(rng.standard_normal(n), 1200.0, q=0.7, sr=sr) \
+        * np.exp(-t / 0.006) * 0.5
+    # 0.48 不是随手取的：底鼓是整首的响度锚点，实测此系数下 peak@vel=1.0 ≈ 0.90，
+    # 与库里最响的原声打击乐（snare 0.93）齐平 —— 再高就会在母带前就顶到 0dBFS。
+    return (body + click) * gain * 0.48
+
+
+def clap(dur=0.4, vel=0.9, sr=SR, seed=None):
+    """
+    鼓机拍手 —— 4 个间隔 9ms 的噪声爆发 + 一条约 110ms 的散射尾巴。
+
+    单次噪声听着只是"沙沙"，多次快速叠加才会被大脑认成"一巴掌"。
+    Hand Clap 是原曲鼓组的骨架之一（两份扒谱 MIDI 都明确列了 Hand Clap）。
+    """
+    n = int(dur * sr)
+    gain, _ = _vel(vel)
+    t = np.arange(n) / sr
+    rng = np.random.default_rng(seed)
+    noise = D.bandpass(rng.standard_normal(n), 1500.0, q=0.62, sr=sr)
+    y = np.zeros(n)
+    for off_ms in (0.0, 9.0, 18.0, 27.0):
+        i0 = int(off_ms * 0.001 * sr)
+        if i0 >= n:
+            break
+        m = n - i0
+        y[i0:] += noise[:m] * np.exp(-t[:m] / 0.012)
+    tail = noise * np.exp(-t / 0.11) * 0.55
+    return (y * 0.5 + tail) * gain * 0.5
+
+
+def hihat(dur=None, vel=0.7, sr=SR, open=False, seed=None):
+    """
+    鼓机踩镲 —— 6 个**非谐**方波分音 + 高通噪声。闭镲 ~45ms、开镲 ~300ms。
+
+    分音比取自经典的金属音簇（不是整数倍）：整数倍会变成"正弦和弦"而不是镲。
+    dur=None 时按开/闭自动取时长 —— 否则 open=True 只是衰减变长、缓冲区却没变长，
+    开镲会被硬生生截断（曾踩过：open 与 closed 返回长度一模一样）。
+    """
+    if dur is None:
+        dur = 0.34 if open else 0.13
+    n = int(max(dur, 0.05) * sr)
+    gain, _ = _vel(vel)
+    t = np.arange(n) / sr
+    rng = np.random.default_rng(seed)
+    tau = 0.30 if open else 0.045
+    y = np.zeros(n)
+    for f, a in ((205.3, 1.0), (304.4, 0.82), (369.6, 0.72),
+                 (522.7, 0.60), (800.0, 0.48), (1150.0, 0.36)):
+        y += a * np.sin(2 * np.pi * f * t + rng.uniform(0, 2 * np.pi))
+    y = D.highpass(y / 3.0, 7000.0, q=0.7, sr=sr)
+    noise = D.highpass(rng.standard_normal(n), 9000.0, q=0.6, sr=sr)
+    y = y * np.exp(-t / tau) + noise * np.exp(-t / (tau * 0.7)) * 0.7
+    return y * gain * 0.30
+
+
+# ============================================================
 # 打击乐（三层设计：瞬态 / 体 / 尾）
 # ============================================================
 
@@ -643,6 +823,10 @@ INSTRUMENTS = {
     'music_box': music_box,
     'bass': bass_sustained,
     'pad': pad,
+    # ---- 电子 / 合成器（PvZ BOSS 曲等电子配器用）----
+    'epiano': epiano,
+    'synth_brass': synth_brass,
+    'square_lead': square_lead,
 }
 
 PERCUSSION = {
@@ -654,6 +838,10 @@ PERCUSSION = {
     'cymbal': cymbal,
     'shaker': shaker,
     'wood_block': wood_block,
+    # ---- 鼓机（电子律动用，与上面的原声打击乐不是一类）----
+    'kick': kick,
+    'clap': clap,
+    'hihat': hihat,
 }
 
 

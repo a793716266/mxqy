@@ -13,8 +13,12 @@
  *                    （存在且 >1KB，0 字节 mp3 在真机上是静默失败）；5 首互不重复
  *   B. BOSS 触发条件 ── 每个副本的 bossEnemy 在怪物数据里 isBoss === true。
  *                    少了这一步，BOSS 曲写得再好也永远不会触发
- *   C. 真跑 BattleScene.init() ── BOSS 战真的调 playBGM('bgm_the_king')，
- *                    非 BOSS 战不调（不检查"代码里有那一行"，而是跑一遍看调用轨迹）
+ *   C. 真跑 `FieldScene._updateBossBGM()` —— **副本战斗的真实入口**。
+ *                    靠近 BOSS 切 The King / 脱离或击杀后切回副本曲 / 回差不横跳 /
+ *                    通关时不打扰胜利曲。跑的是原型上的真方法，不是抄一份逻辑。
+ *                    ★ 上一版跑的是 BattleScene，而副本战斗根本不进 BattleScene
+ *                      —— "代码路径全绿、玩家永远走不到"，就是这么翻的车
+ *   C2. 兜底路径 `BattleScene.init()` —— map-scene / 主菜单测试入口会走它
  *   D. 真跑 AudioManager ── playBGM('bgm_the_king') 之后 setScene('battle')
  *                    不会被默认的 bgm_battle 顶掉（_explicitBGM 机制）
  *
@@ -195,8 +199,95 @@ for (const [area, label] of DUNGEONS) {
 }
 
 // ============================================================
-section('C. 真跑 BattleScene.init() —— 看调用轨迹，不是看代码里有没有那一行')
+section('C. 真跑副本战斗入口 —— FieldScene._updateBossBGM()（玩家真正走的路径）')
 // ============================================================
+// ★ 这一段是上次翻车的地方。上一版把 BOSS 曲接在 battle-scene.init()，
+//   回归跑 BattleScene 全绿 —— 但副本战斗**压根不进 BattleScene**：
+//   changeScene('battle') 全工程只在 map-scene 与 main-menu 出现，
+//   副本是 FieldScene 里的实时 battleSystem，而且进图那一刻就 active=true，
+//   全程没有"进入战斗场景"这个事件可挂。玩家永远走不到那条路径，
+//   于是"还是一样 BOSS 没有专属音乐"，而回归是绿的。
+//
+//   → 教训：验证要跑**玩家真正会走进去的入口**，不是跑"代码写得对不对"。
+//
+//   这里跑的是 `FieldScene.prototype._updateBossBGM` 这个**真方法**
+//   （用 fake this 驱动它的状态机），不是抄一份逻辑 —— 改实现这里会跟着变。
+
+const { FieldScene } = await import('../scripts/scenes/field-scene.js')
+const bossBgmFn = FieldScene.prototype._updateBossBGM
+check('FieldScene 上存在 _updateBossBGM（副本 BOSS 曲的切歌入口）',
+  typeof bossBgmFn === 'function', typeof bossBgmFn)
+
+// 与实现保持一致的半径（改了实现这里也要跟着改，否则断言会假绿）
+const ENGAGE = 420, RELEASE = 640
+
+// 反漂移：把半径从**实现源码**里抠出来比对。改了实现而测试没跟上就直接失败 ——
+// 否则断言会拿着旧阈值继续"全绿"，这正是上一次翻车的形态。
+const implSrc = bossBgmFn.toString()
+const mm = implSrc.match(/this\._bossBgmOn\s*\?\s*([\d.]+)\s*:\s*([\d.]+)\s*\)\s*\*\s*this\.dpr/)
+check('能从实现中解析出「进入 / 脱离」半径', !!mm, implSrc.slice(0, 100))
+const IMPL_RELEASE = mm ? Number(mm[1]) : NaN
+const IMPL_ENGAGE = mm ? Number(mm[2]) : NaN
+check('测试的半径常量与实现一致（防断言假绿）',
+  IMPL_ENGAGE === ENGAGE && IMPL_RELEASE === RELEASE,
+  `实现 ${IMPL_ENGAGE}/${IMPL_RELEASE} vs 测试 ${ENGAGE}/${RELEASE}`)
+
+function runField({ dungeonBgm = 'bgm_magic_tower', bossAlive = true, dist = 9999,
+                    dungeon = true, cleared = false, startOn = false } = {}) {
+  const calls = []
+  const sc = {
+    dpr: 1,                                  // dpr=1 → 距离直接与阈值同单位
+    playerX: 0, playerY: 0,
+    areaInfo: { isDungeon: dungeon, name: '测试副本' },
+    _dungeonCfg: { bgm: dungeonBgm },
+    dungeonCleared: cleared,
+    _bossMonologueActive: false,
+    showDungeonClear: false,
+    _bossBgmOn: startOn,
+    mapMonsters: [{ id: 'boss', name: 'BOSS', isBoss: true, alive: bossAlive, x: dist, y: 0 }],
+    game: { audio: { playBGM: (id) => calls.push(id), playSFX() {}, setScene() {} } },
+  }
+  bossBgmFn.call(sc)                         // ← 跑原型上的真方法
+  return { calls, sc }
+}
+
+const f1 = runField({ dist: 900 })
+check(`远离 BOSS（> ${ENGAGE}）：不切歌`, f1.calls.length === 0, `[${f1.calls.join(', ')}]`)
+
+const f2 = runField({ dist: 300 })
+check(`靠近 BOSS（< ${ENGAGE}）：切到 ${bossBgmId}`,
+  f2.calls.length === 1 && f2.calls[0] === bossBgmId, `[${f2.calls.join(', ')}]`)
+check('切歌后状态位 _bossBgmOn 置起', f2.sc._bossBgmOn === true, String(f2.sc._bossBgmOn))
+
+const f3 = runField({ dist: 500, startOn: true })   // 420 ~ 640 之间
+check(`回差：已在 BOSS 曲中、距离 ${ENGAGE}~${RELEASE} 之间时保持不变（不横跳）`,
+  f3.calls.length === 0, `[${f3.calls.join(', ')}]`)
+
+const f4 = runField({ dist: 700, startOn: true })
+check(`脱离 BOSS（> ${RELEASE}）：切回副本曲`,
+  f4.calls.length === 1 && f4.calls[0] === 'bgm_magic_tower', `[${f4.calls.join(', ')}]`)
+
+const f5 = runField({ bossAlive: false, startOn: true })
+check('BOSS 被击败：切回副本曲',
+  f5.calls.length === 1 && f5.calls[0] === 'bgm_magic_tower', `[${f5.calls.join(', ')}]`)
+
+const f6 = runField({ dist: 100, startOn: true, cleared: true })
+check('副本已通关：不打扰胜利曲（一条 playBGM 都不发）',
+  f6.calls.length === 0, `[${f6.calls.join(', ')}]`)
+
+const f7 = runField({ dist: 100, dungeon: false })
+check('非副本野外：不切 BOSS 曲', f7.calls.length === 0, `[${f7.calls.join(', ')}]`)
+
+// 每个副本都能切回**它自己那首**，而不是写死某一首
+for (const [area, label, cfg] of DUNGEONS) {
+  const r = runField({ dungeonBgm: cfg.bgm, dist: 700, startOn: true })
+  check(`[${area}] ${label} 脱离 BOSS 后切回自己的 ${cfg.bgm}`,
+    r.calls.length === 1 && r.calls[0] === cfg.bgm, `[${r.calls.join(', ')}]`)
+}
+
+// ------------------------------------------------------------
+section('C2. 兜底路径：BattleScene.init()（map-scene / 主菜单测试入口会走它）')
+// ------------------------------------------------------------
 function silent(fn) {
   const orig = console.log
   console.log = () => {}

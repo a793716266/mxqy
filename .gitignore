@@ -40,3 +40,9 @@ _source_backup/
 Thumbs.db
 Desktop.ini
 tools/images/_backup_originals/
+
+# 音频构建产物（可再生：build_bgm.py / build_sfx.py 是确定性的，种子固定）
+# out/wav 是无损母版（152MB），out/mp3 是投产前的中间 MP3。
+# 两者都不入库 —— 一是体积，二是污染 git status 后容易被 `git add .` 误带进去。
+# 真正交付给玩家的是 subpackages/sound/，那个必须入库。
+tools/audio/out/

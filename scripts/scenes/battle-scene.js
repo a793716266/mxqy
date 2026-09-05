@@ -251,6 +251,13 @@ export class BattleScene extends SceneBase {
 
     // ★ BOSS 专属音乐：任一敌人是 BOSS 就切到 The King（PvZ Zomboss 风格）
     //
+    // ⚠️ 这不是副本 BOSS 战的主路径！副本战斗根本不进 BattleScene
+    //    （changeScene('battle') 全工程只在 map-scene 与 main-menu 出现；
+    //     副本是 FieldScene 里的实时 battleSystem，进图即 active）。
+    //    副本 BOSS 的切歌在 `field-scene._updateBossBGM()`。
+    //    这段只是兜底：哪天有别的地方（map-scene 等）用 BattleScene 打 BOSS，
+    //    这里能保证音乐还是对的。
+    //
     // 为什么写在这里、而不是改 SCENE_BGM['battle']：
     //   SCENE_BGM 是"场景 → 曲目"的静态映射，表达不了"同样是 battle 场景、
     //   但这次打的是 BOSS"这个区别 —— 它无法读到敌人数据。
