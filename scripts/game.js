@@ -8,6 +8,7 @@ import { FieldScene } from './scenes/field-scene.js'
 import { BattleScene } from './scenes/battle-scene.js'
 import { CollectionScene } from './scenes/collection-scene.js'
 import { TowerScene } from './scenes/tower/tower-scene.js'
+import { CutsceneScene } from './core/cutscene-scene.js'
 import { DataManager } from './core/data-manager.js'
 import { InputManager } from './core/input-manager.js'
 import { AudioManager } from './core/audio-manager.js'
@@ -28,7 +29,8 @@ export const SCENE = {
   FIELD: 'field',
   BATTLE: 'battle',
   COLLECTION: 'collection',
-  TOWER: 'tower'
+  TOWER: 'tower',
+  CUTSCENE: 'cutscene'
 }
 
 export class Game {
@@ -176,9 +178,12 @@ export class Game {
         case SCENE.COLLECTION:
           this.currentScene = new CollectionScene(this)
           break
-        case SCENE.TOWER:
-          this.currentScene = new TowerScene(this)
-          break
+      case SCENE.TOWER:
+        this.currentScene = new TowerScene(this)
+        break
+      case SCENE.CUTSCENE:
+        this.currentScene = new CutsceneScene(this, data)
+        break
       }
 
       if (this.currentScene) {
@@ -197,6 +202,15 @@ export class Game {
       this._syncRuntimeState()
       this.data.save()
     })
+  }
+
+  /**
+   * 播放引擎内过场演出（路线 A：零包体成本，复用现有精灵）
+   * @param {string} scenarioId - CUTSCENES 注册表中的剧本 id（如 'ch1_intro'）
+   * @param {Function} [onDone] - 演出结束回调；省略则回到城镇
+   */
+  playCutscene(scenarioId, onDone) {
+    this.changeScene(SCENE.CUTSCENE, { scenarioId, onDone })
   }
 
   /**
@@ -452,6 +466,8 @@ export class Game {
     // ★ dungeonIntroDialogue / clearedDialogue 由 field-scene 维护（Boss 战前后独白）
     if (s.dungeonIntroDialogue) return true
     if (s.clearedDialogue || s.dungeonClearedDialogue) return true
+    // 过场演出场景：隐藏全局背包按钮，避免遮挡影院画面
+    if (s.cutscene) return true
     return false
   }
 
